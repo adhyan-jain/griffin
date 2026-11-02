@@ -20,8 +20,8 @@ GRANT USAGE ON SCHEMA auth   TO griffin_app, griffin_system;
 DO $$ BEGIN
     IF NOT has_schema_privilege('griffin_app', 'auth', 'USAGE')
        AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-        GRANT authenticated TO griffin_app;
-        ALTER ROLE griffin_app INHERIT;
+        -- PG16+: the grant carries its own INHERIT option (not the member's rolinherit at a later time).
+        GRANT authenticated TO griffin_app WITH INHERIT TRUE;
     END IF;
 END $$;
 GRANT USAGE ON SCHEMA public TO griffin_app, griffin_system;
