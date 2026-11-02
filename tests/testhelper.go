@@ -45,7 +45,12 @@ func SetupTestEnv(t *testing.T) *TestEnv {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	db, err := database.Connect(ctx, TestDBURL)
+	testDBURL := os.Getenv("GRIFFIN_TEST_DB_URL")
+	if testDBURL == "" {
+		testDBURL = TestDBURL
+	}
+
+	db, err := database.Connect(ctx, testDBURL)
 	if err != nil {
 		t.Fatalf("failed to connect to test database: %v", err)
 	}
