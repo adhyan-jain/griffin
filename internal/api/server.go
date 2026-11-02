@@ -69,13 +69,22 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.HandleFunc("GET /healthz", healthHandler.Healthz)
 	mux.HandleFunc("GET /readyz", healthHandler.Readyz)
 
-	if deps.DB != nil && deps.Config != nil {
+	// Development-only login. Never registered in production, even if ENABLE_DEV_LOGIN is set
+	// (config.Load also refuses that combination).
+	if deps.DB != nil && deps.Config != nil && deps.Config.EnableDevLogin && !deps.Config.IsProduction() {
 		authHandler := handlers.NewAuthHandler(deps.DB, deps.Config.SupabaseJWTSecret)
 		mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
 	}
 
 	// 2. User-authenticated route groups
-	userAuth := middleware.AuthenticateUser(deps.Config.SupabaseJWTSecret)
+	authOpts := middleware.AuthOptions{
+		HMACSecret: deps.Config.SupabaseJWTSecret,
+		Issuer:     deps.Config.SupabaseJWTIssuer,
+	}
+	if deps.Config.SupabaseJWKSURL != "" {
+		authOpts.JWKS = middleware.NewJWKSCache(deps.Config.SupabaseJWKSURL, nil)
+	}
+	userAuth := middleware.AuthenticateUser(authOpts)
 
 	scaleToZero := false
 	if deps.Config != nil {
@@ -98,7 +107,7 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.ListAgents)))
 	mux.Handle("POST /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.RegisterAgent)))
 
-	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo, deps.StorageService)
+	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo, deps.StorageService, deps.TaskRepo, deps.Config.MaxUploadBytes)
 	mux.Handle("GET /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.ListArtifacts)))
 	mux.Handle("GET /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
 	mux.Handle("POST /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.CreateArtifact)))
@@ -142,12 +151,12 @@ func NewServer(deps ServerDependencies) *Server {
 
 	// Runner management endpoints
 	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, deps.Wakeup, scaleToZero)
-	mux.HandleFunc("GET /api/v1/runner/status", runnerHandler.GetStatus)
+	mux.Handle("GET /api/v1/runner/status", userAuth(http.HandlerFunc(runnerHandler.GetStatus)))
 	mux.Handle("POST /api/v1/runner/wake", userAuth(http.HandlerFunc(runnerHandler.WakeRunner)))
 	mux.Handle("POST /api/v1/runner/sleep", userAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
 
 	// 4. Global middleware wrapping with CORS
-	handler := middleware.CORS()(
+	handler := middleware.CORS(deps.Config.CORSAllowedOrigins)(
 		middleware.RequestID(
 			middleware.Logger(deps.Logger)(
 				middleware.Recovery(deps.Logger)(mux),

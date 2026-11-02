@@ -2,17 +2,20 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/api"
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/storage"
 )
 
 func TestAPIEndpoints(t *testing.T) {
@@ -28,6 +31,7 @@ func TestAPIEndpoints(t *testing.T) {
 		ApprovalRepo:    env.ApprovalRepo,
 		AgentRepo:       env.AgentRepo,
 		ArtifactRepo:    env.ArtifactRepo,
+		StorageService:  env.StorageService,
 		WorkerDefRepo:   env.WorkerDefRepo,
 		OrchRepo:        env.OrchRepo,
 		Orchestrator:    env.Orchestrator,
@@ -279,10 +283,17 @@ func TestAPIEndpoints(t *testing.T) {
 
 	// 6. Artifact API
 	t.Run("Artifacts API", func(t *testing.T) {
+		// Register an object that already exists under user A's own storage prefix.
+		objKey := storage.UserKeyPrefix(userA) + "artifacts/report.md"
+		if _, err := env.StorageProvider.Upload(context.Background(), storage.UploadInput{
+			Bucket: env.StorageService.Bucket(), Key: objKey, Body: strings.NewReader("# report"), ContentType: "text/markdown",
+		}); err != nil {
+			t.Fatalf("seed object: %v", err)
+		}
 		artBody := map[string]any{
 			"title":         "Research Summary",
 			"artifact_type": "MARKDOWN",
-			"storage_uri":   "s3://griffin-artifacts/report.md",
+			"object_key":    objKey,
 		}
 		artBytes, _ := json.Marshal(artBody)
 

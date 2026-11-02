@@ -69,6 +69,96 @@ func (s *StorageService) Bucket() string {
 	return s.bucket
 }
 
+// UserKeyPrefix is the mandatory S3 key prefix owned by a single user. Every object the API
+// writes lives under it, and every read/presign/delete re-checks it, so a database row can never
+// be used to reach another tenant's object.
+func UserKeyPrefix(userID uuid.UUID) string {
+	return "users/" + userID.String() + "/"
+}
+
+// ownsObject reports whether the artifact's stored location is in this service's bucket and
+// under the user's prefix.
+func (s *StorageService) ownsObject(art *domain.Artifact, userID uuid.UUID) bool {
+	if art.Bucket == nil || art.ObjectKey == nil || *art.ObjectKey == "" {
+		return false
+	}
+	if *art.Bucket != s.bucket {
+		return false
+	}
+	return validOwnedKey(*art.ObjectKey, userID)
+}
+
+func validOwnedKey(key string, userID uuid.UUID) bool {
+	prefix := UserKeyPrefix(userID)
+	if !strings.HasPrefix(key, prefix) || len(key) == len(prefix) {
+		return false
+	}
+	for _, seg := range strings.Split(key, "/") {
+		if seg == ".." || seg == "." {
+			return false
+		}
+	}
+	return !strings.ContainsAny(key, "\\\x00")
+}
+
+// RegisterInput describes an already-uploaded object a user wants to record.
+type RegisterInput struct {
+	UserID       uuid.UUID
+	TaskID       *uuid.UUID
+	Title        string
+	ArtifactType string
+	Bucket       *string // optional; must equal the service bucket
+	ObjectKey    string  // required; must be under the caller's prefix
+	Filename     *string
+	MimeType     *string
+	Checksum     *string
+	Metadata     json.RawMessage
+}
+
+// RegisterArtifact records metadata for an object the caller owns. Client-supplied bucket and
+// storage URI are never trusted: the bucket must match the service bucket, the key must be under
+// the caller's prefix, the object must exist, and the URI is derived server-side.
+func (s *StorageService) RegisterArtifact(ctx context.Context, in RegisterInput) (*domain.Artifact, error) {
+	if in.UserID == uuid.Nil {
+		return nil, domain.ErrUnauthorized
+	}
+	if strings.TrimSpace(in.Title) == "" || strings.TrimSpace(in.ArtifactType) == "" {
+		return nil, fmt.Errorf("%w: title and artifact_type are required", domain.ErrValidation)
+	}
+	if in.Bucket != nil && *in.Bucket != s.bucket {
+		return nil, fmt.Errorf("%w: bucket is not permitted", domain.ErrForbidden)
+	}
+	if !validOwnedKey(in.ObjectKey, in.UserID) {
+		return nil, fmt.Errorf("%w: object key is outside the caller's storage prefix", domain.ErrForbidden)
+	}
+	info, err := s.provider.Head(ctx, HeadInput{Bucket: s.bucket, Key: in.ObjectKey})
+	if err != nil {
+		return nil, fmt.Errorf("%w: object does not exist", domain.ErrValidation)
+	}
+	bucket, key, size := s.bucket, in.ObjectKey, info.Size
+	meta := in.Metadata
+	if meta == nil {
+		meta = json.RawMessage("{}")
+	}
+	art := &domain.Artifact{
+		ID:              uuid.New(),
+		UserID:          in.UserID,
+		TaskID:          in.TaskID,
+		Title:           in.Title,
+		ArtifactType:    in.ArtifactType,
+		StorageURI:      fmt.Sprintf("s3://%s/%s", bucket, key),
+		StorageProvider: s.provider.Name(),
+		Bucket:          &bucket,
+		ObjectKey:       &key,
+		Filename:        in.Filename,
+		FileSizeBytes:   &size,
+		MimeType:        in.MimeType,
+		Checksum:        in.Checksum,
+		Metadata:        meta,
+	}
+	return s.artifactRepo.CreateArtifact(ctx, art)
+}
+
 // GenerateObjectKey produces a task-scoped or artifact-scoped object key.
 // Path structure:
 //   - Task-scoped: tasks/{task_id}/outputs/{filename}
@@ -136,7 +226,7 @@ func (s *StorageService) SaveArtifact(ctx context.Context, input SaveArtifactInp
 	}
 
 	cleanFilename := filepath.Base(input.Filename)
-	objectKey := GenerateObjectKey(input.TaskID, cleanFilename)
+	objectKey := UserKeyPrefix(input.UserID) + GenerateObjectKey(input.TaskID, cleanFilename)
 
 	// Stream and compute SHA-256 checksum and size
 	hasher := sha256.New()
@@ -249,8 +339,8 @@ func (s *StorageService) DownloadArtifact(ctx context.Context, id uuid.UUID, use
 		return nil, nil, err
 	}
 
-	if art.Bucket == nil || art.ObjectKey == nil || *art.ObjectKey == "" {
-		return nil, nil, fmt.Errorf("%w: artifact has no storage location", ErrObjectNotFound)
+	if !s.ownsObject(art, userID) {
+		return nil, nil, domain.ErrNotFound
 	}
 
 	downOut, err := s.provider.Download(ctx, DownloadInput{
@@ -271,7 +361,9 @@ func (s *StorageService) DeleteArtifact(ctx context.Context, id uuid.UUID, userI
 		return err
 	}
 
-	if art.Bucket != nil && art.ObjectKey != nil && *art.ObjectKey != "" {
+	// Only touch storage for objects inside this tenant's prefix; a row pointing elsewhere is
+	// removed from the database without deleting any foreign object.
+	if s.ownsObject(art, userID) {
 		if delErr := s.provider.Delete(ctx, DeleteInput{
 			Bucket: *art.Bucket,
 			Key:    *art.ObjectKey,
@@ -294,8 +386,8 @@ func (s *StorageService) GetPresignedDownloadURL(ctx context.Context, id uuid.UU
 		return nil, err
 	}
 
-	if art.Bucket == nil || art.ObjectKey == nil || *art.ObjectKey == "" {
-		return nil, fmt.Errorf("%w: artifact has no storage location", ErrObjectNotFound)
+	if !s.ownsObject(art, userID) {
+		return nil, domain.ErrNotFound
 	}
 
 	return s.provider.PresignDownloadURL(ctx, PresignInput{

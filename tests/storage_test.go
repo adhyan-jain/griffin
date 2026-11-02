@@ -70,7 +70,7 @@ func TestStorageIntegration_FullLifecycle(t *testing.T) {
 	if art.ID == uuid.Nil {
 		t.Fatalf("artifact ID should not be nil")
 	}
-	expectedObjectKey := fmt.Sprintf("tasks/%s/outputs/%s", task.ID.String(), filename)
+	expectedObjectKey := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/%s", task.ID.String(), filename)
 	if art.ObjectKey == nil || *art.ObjectKey != expectedObjectKey {
 		t.Fatalf("expected object key %s, got %v", expectedObjectKey, art.ObjectKey)
 	}

@@ -22,13 +22,37 @@ import (
 type ArtifactHandler struct {
 	artifactRepo repository.ArtifactRepository
 	storageSvc   *storage.StorageService
+	taskRepo     repository.TaskRepository
+	maxUpload    int64
 }
 
-func NewArtifactHandler(artifactRepo repository.ArtifactRepository, storageSvc *storage.StorageService) *ArtifactHandler {
+// NewArtifactHandler builds the artifact handler. taskRepo is used to verify that any task_id a
+// caller supplies belongs to them; maxUpload caps request bodies (bytes, <=0 means 5 MiB).
+func NewArtifactHandler(artifactRepo repository.ArtifactRepository, storageSvc *storage.StorageService, taskRepo repository.TaskRepository, maxUpload int64) *ArtifactHandler {
+	if maxUpload <= 0 {
+		maxUpload = 5 << 20
+	}
 	return &ArtifactHandler{
 		artifactRepo: artifactRepo,
 		storageSvc:   storageSvc,
+		taskRepo:     taskRepo,
+		maxUpload:    maxUpload,
 	}
+}
+
+// ownsTask verifies a caller-supplied task id belongs to the user. Unknown and foreign tasks are
+// indistinguishable (both ErrNotFound).
+func (h *ArtifactHandler) ownsTask(r *http.Request, taskID *uuid.UUID, userID uuid.UUID) error {
+	if taskID == nil {
+		return nil
+	}
+	if h.taskRepo == nil {
+		return domain.ErrNotFound
+	}
+	if _, err := h.taskRepo.GetTaskByIDAndUser(r.Context(), *taskID, userID); err != nil {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 func (h *ArtifactHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -108,33 +132,32 @@ func (h *ArtifactHandler) CreateArtifact(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if req.Title == "" || req.ArtifactType == "" || req.StorageURI == "" {
-		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("title, artifact_type, and storage_uri are required")))
+	if h.storageSvc == nil {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: storage service is not initialized", domain.ErrValidation))
+		return
+	}
+	if req.ObjectKey == nil || *req.ObjectKey == "" {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("title, artifact_type and object_key are required")))
+		return
+	}
+	if err := h.ownsTask(r, req.TaskID, userID); err != nil {
+		httputil.ErrorJSON(w, err)
 		return
 	}
 
-	provider := req.StorageProvider
-	if provider == "" {
-		provider = "S3"
-	}
-
-	art := &domain.Artifact{
-		UserID:          userID,
-		TaskID:          req.TaskID,
-		Title:           req.Title,
-		ArtifactType:    req.ArtifactType,
-		StorageURI:      req.StorageURI,
-		StorageProvider: provider,
-		Bucket:          req.Bucket,
-		ObjectKey:       req.ObjectKey,
-		Filename:        req.Filename,
-		FileSizeBytes:   req.FileSizeBytes,
-		MimeType:        req.MimeType,
-		Checksum:        req.Checksum,
-		Metadata:        req.Metadata,
-	}
-
-	created, err := h.artifactRepo.CreateArtifact(r.Context(), art)
+	// bucket, storage_uri and storage_provider from the client are never trusted.
+	created, err := h.storageSvc.RegisterArtifact(r.Context(), storage.RegisterInput{
+		UserID:       userID,
+		TaskID:       req.TaskID,
+		Title:        req.Title,
+		ArtifactType: req.ArtifactType,
+		Bucket:       req.Bucket,
+		ObjectKey:    *req.ObjectKey,
+		Filename:     req.Filename,
+		MimeType:     req.MimeType,
+		Checksum:     req.Checksum,
+		Metadata:     req.Metadata,
+	})
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return
@@ -159,11 +182,13 @@ func (h *ArtifactHandler) UploadArtifact(w http.ResponseWriter, r *http.Request)
 	var taskID *uuid.UUID
 	var bodyReader io.Reader
 
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload)
+
 	// Check if request is multipart/form-data
 	contentTypeHeader := r.Header.Get("Content-Type")
 	if len(contentTypeHeader) >= 19 && contentTypeHeader[:19] == "multipart/form-data" {
 		// Max memory 32MB for form parsing
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if err := r.ParseMultipartForm(h.maxUpload); err != nil {
 			httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, fmt.Errorf("failed parsing multipart form: %w", err)))
 			return
 		}
@@ -212,6 +237,11 @@ func (h *ArtifactHandler) UploadArtifact(w http.ResponseWriter, r *http.Request)
 				taskID = &tid
 			}
 		}
+	}
+
+	if err := h.ownsTask(r, taskID, userID); err != nil {
+		httputil.ErrorJSON(w, err)
+		return
 	}
 
 	if filename == "" {
