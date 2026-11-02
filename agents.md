@@ -73,9 +73,9 @@ Every agent working on Griffin must consult and update these two living ledgers:
 | **Phase 2** | Antigravity Primary Execution Provider & Subprocess Containment | **COMPLETE (37/37 Tests PASS)** |
 | **Scale-to-Zero** | On-Demand EC2 Scale-to-Zero, Wake-up Controller, Idle Shutdown, EventBridge Tick | **IMPLEMENTED (42/42 Tests PASS)** |
 | **Phase 3** | JJ Orchestration Engine, 11 Specialist Managers, Agent Factory & Capability Taxonomy | **COMPLETE (62/62 Tests PASS)** |
-| **Phase 4** | AWS S3 Object Storage Integration & Dual-Persistence (Presigned URLs, Multipart, Compensating Saga) | **COMPLETE (76/76 Tests PASS)** |
-| **Phase 5** | Next.js 15 PWA Interface & Real-Time SSE Streaming | NEXT (Ready for Execution) |
-| **Phase 6** | Production Hardening, Cloud Activation & 30-Day Longevity | PLANNED |
+| **Phase 4** | AWS S3 Object Storage Integration & Dual-Persistence (Presigned URLs, Multipart, Compensating Saga) | **COMPLETE (76/76 Tests PASS, LIVE VERIFIED)** |
+| **Phase 5** | Next.js 15 PWA Interface (10 Screens, TypeScript, Tailwind, Responsive Mobile Drawer/Navbar) | **COMPLETE (0 Build Errors, Tested)** |
+| **Phase 6** | Production Hardening, Cloud Release Runbooks & Unattended Antigravity Execution | **COMPLETE** |
 
 ---
 
@@ -85,11 +85,17 @@ Every agent working on Griffin must consult and update these two living ledgers:
 griffin/
 ├── cmd/
 │   └── griffin-server/      # Main entrypoint (server lifecycle, background daemons, startup sync)
+├── web/                     # Next.js 15 TypeScript PWA Frontend (10 Management Screens)
+│   ├── src/
+│   │   ├── app/             # App Router: /, /chat, /tasks, /approvals, /artifacts, /workforce, /settings, /login
+│   │   ├── components/      # Navigation, RunnerPill, StatusBadge
+│   │   └── lib/             # Typed API client & auth session management
+│   └── public/              # PWA manifest, icons
 ├── internal/
-│   ├── api/                 # HTTP routing, server setup
-│   │   ├── handlers/        # Tasks, Approvals, Agents, Artifacts, Workers, Orchestrator, WorkerDefs, Health
+│   ├── api/                 # HTTP routing, CORS middleware, server setup
+│   │   ├── handlers/        # Tasks, Approvals, Agents, Artifacts, Workers, Orchestrator, WorkerDefs, Health, Auth, Runner
 │   │   ├── httputil/        # Standard JSON envelopes & error mapping
-│   │   └── middleware/      # Supabase JWT Auth, Worker Auth, Logger, Recovery, RequestID
+│   │   └── middleware/      # CORS, Supabase JWT Auth, Worker Auth, Logger, Recovery, RequestID
 │   ├── config/              # Environment-driven configuration (S3, runner, AGY, database)
 │   ├── database/            # pgxpool connection pool, migrations runner, tx helpers
 │   ├── domain/              # Task state machine, capabilities, orchestrations, worker definitions, sentinel errors
@@ -105,19 +111,20 @@ griffin/
 │   ├── 000002_rls_policies.up.sql / down.sql
 │   ├── 000003_orchestration_and_agent_factory.up.sql / down.sql
 │   └── 000004_s3_storage_artifacts.up.sql / down.sql
-├── tests/                   # Full integration test suite (Engine, RLS, API, Worker, Orchestration, Storage)
+├── tests/                   # Full integration test suite (Engine, RLS, API, Worker, Orchestration, S3 Live)
 ├── infra/                   # Automated AWS EC2 launch & cloud-init provisioning scripts
 ├── docs/                    # Architecture blueprints, implementation specs, and test reports
+│   ├── DEPLOYMENT_RUNBOOK.md
+│   ├── ANTIGRAVITY_CLOUD_RUNNER.md
 │   ├── JJ_ORCHESTRATOR.md
 │   ├── MANAGER_FRAMEWORK.md
 │   ├── AGENT_FACTORY.md
-│   ├── CAPABILITY_AND_APPROVAL_POLICIES.md
 │   ├── STORAGE_ARCHITECTURE.md
 │   ├── S3_STORAGE_CONFIGURATION.md
-│   ├── PHASE_4_S3_IMPLEMENTATION_REPORT.md
-│   └── PHASE_3_TEST_REPORT.md
+│   └── IMPLEMENTATION_STATUS.md
 ├── decisions.md             # Canonical record of all decisions made & planned
 ├── evolution.md             # Chronicle of product pivots and lessons learned
+
 ├── agents.md                # This operating manual
 ├── Makefile                 # Developer build, test, run, and migration targets
 ├── README.md                # Quick start, API reference, and curl examples
