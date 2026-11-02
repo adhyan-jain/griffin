@@ -155,7 +155,7 @@ linux/arm64 builds of server, migrate tool, Lambda zip and worker bundle · web:
 
 ## G8 — Missing deployment components
 
-- **Delivered:** `infra/systemd/griffin-worker.service`, `infra/bin/griffin-fetch-env.sh` (SSM →
+- **Delivered:** `infra/systemd/griffin-worker.service`, `infra/helpers/griffin-fetch-env.sh` (SSM →
   `/etc/griffin/worker.env`, fail-closed, no echo), `infra/install-worker.sh`,
   `scripts/package-lambda.sh` / `package-worker.sh` (`make package`, offline), hardened
   `infra/provision-ec2.sh` (no hard-coded AMI, SSM-parameter AMI, duplicate-runner guard, IMDSv2,
@@ -187,3 +187,7 @@ linux/arm64 builds of server, migrate tool, Lambda zip and worker bundle · web:
 - `go.mod` gains `aws-sdk-go-v2/service/ec2`; web gains `@supabase/supabase-js`.
 - Intermediate commits are grouped by gate; shared files (`server.go`, `main.go`) mean only the final
   commit is guaranteed to build in isolation.
+- CI caught one defect that local runs could not: `.gitignore` ignores `bin/`, so
+  `infra/bin/griffin-fetch-env.sh` was never committed (it existed locally). It now lives in
+  `infra/helpers/`. Lesson recorded: local green is not CI green; the first push of this sprint
+  failed *Test & Build* for this reason and was fixed in the following commit.

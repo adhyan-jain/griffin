@@ -11,7 +11,7 @@ trap 'rm -rf "$STAGE"' EXIT
 
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$STAGE/griffin-server" ./cmd/griffin-server
 mkdir -p "$STAGE/infra"
-cp -r infra/bin infra/systemd infra/sudoers.d "$STAGE/infra/"
+cp -r infra/helpers infra/systemd infra/sudoers.d "$STAGE/infra/"
 cp infra/install-worker.sh "$STAGE/install-worker.sh"
 
 file "$STAGE/griffin-server" | grep -q "ARM aarch64" || { echo "griffin-server is not arm64" >&2; exit 1; }

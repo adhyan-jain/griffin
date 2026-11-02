@@ -261,7 +261,7 @@ func TestShellScriptsParse(t *testing.T) {
 	if err != nil {
 		t.Skip("bash not available")
 	}
-	for _, f := range []string{"infra/install-worker.sh", "infra/bin/griffin-fetch-env.sh", "infra/user-data.sh",
+	for _, f := range []string{"infra/install-worker.sh", "infra/helpers/griffin-fetch-env.sh", "infra/user-data.sh",
 		"infra/provision-ec2.sh", "scripts/package-lambda.sh", "scripts/package-worker.sh"} {
 		if out, err := exec.Command(bash, "-n", "../../"+f).CombinedOutput(); err != nil {
 			t.Errorf("%s: %v\n%s", f, err, out)
@@ -270,7 +270,7 @@ func TestShellScriptsParse(t *testing.T) {
 }
 
 func TestFetchEnvScriptFailsClosedAndNeverEchoesSecrets(t *testing.T) {
-	s := read(t, "../../infra/bin/griffin-fetch-env.sh")
+	s := read(t, "../../infra/helpers/griffin-fetch-env.sh")
 	for _, must := range []string{"DATABASE_URL", "SUPABASE_JWT_SECRET", "WORKER_API_KEY", "mv -f", "chmod 0640", "--with-decryption"} {
 		if !strings.Contains(s, must) {
 			t.Errorf("fetch-env script missing %q", must)

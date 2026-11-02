@@ -25,7 +25,7 @@ fi
 install -d -o griffin -g griffin -m 755 /opt/griffin
 install -d -o root -g griffin -m 750 /etc/griffin
 install -o griffin -g griffin -m 755 "$HERE/griffin-server" /opt/griffin/griffin-server
-install -o root -g root -m 750 "$HERE/infra/bin/griffin-fetch-env.sh" /usr/local/bin/griffin-fetch-env.sh
+install -o root -g root -m 750 "$HERE/infra/helpers/griffin-fetch-env.sh" /usr/local/bin/griffin-fetch-env.sh
 install -o root -g root -m 644 "$HERE/infra/systemd/griffin-worker.service" /etc/systemd/system/griffin-worker.service
 
 # sudoers: validate before installing so a typo can never lock out sudo.
