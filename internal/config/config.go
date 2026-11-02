@@ -18,21 +18,37 @@ type Config struct {
 	HeartbeatIntervalSeconds int
 	ReaperIntervalSeconds    int
 	MaxConcurrentWorkers     int
+
+	// AI Execution Provider settings (Phase 2)
+	AIProvider                 string // "antigravity" (default) or "mock"
+	AntigravityBinary          string // path or command name, default "agy"
+	MaxConcurrentAntigravity   int    // default 1, maximum 2
+	ExecutionTimeoutSeconds    int    // default 300
+	GracefulTerminationSeconds int    // default 5
+	WorkspaceRoot              string // default "/tmp/griffin-workspaces"
+	RetainWorkspacesOnFailure  bool   // default false
 }
 
 // Load reads configuration from environment variables, applying secure defaults.
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:                     getEnvAsInt("PORT", 8080),
-		DatabaseURL:              getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:54322/griffin_dev?sslmode=disable"),
-		SupabaseJWTSecret:        getEnv("SUPABASE_JWT_SECRET", "griffin-dev-secret-key-do-not-use-in-prod-minimum32chars"),
-		WorkerAPIKey:             getEnv("WORKER_API_KEY", "griffin-worker-secret-key-dev"),
-		Environment:              getEnv("ENVIRONMENT", "development"),
-		LogLevel:                 getEnv("LOG_LEVEL", "info"),
-		LeaseDurationSeconds:     getEnvAsInt("LEASE_DURATION_SECONDS", 60),
-		HeartbeatIntervalSeconds: getEnvAsInt("HEARTBEAT_INTERVAL_SECONDS", 15),
-		ReaperIntervalSeconds:    getEnvAsInt("REAPER_INTERVAL_SECONDS", 30),
-		MaxConcurrentWorkers:     getEnvAsInt("MAX_CONCURRENT_WORKERS", 2),
+		Port:                       getEnvAsInt("PORT", 8080),
+		DatabaseURL:                getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:54322/griffin_dev?sslmode=disable"),
+		SupabaseJWTSecret:          getEnv("SUPABASE_JWT_SECRET", "griffin-dev-secret-key-do-not-use-in-prod-minimum32chars"),
+		WorkerAPIKey:               getEnv("WORKER_API_KEY", "griffin-worker-secret-key-dev"),
+		Environment:                getEnv("ENVIRONMENT", "development"),
+		LogLevel:                   getEnv("LOG_LEVEL", "info"),
+		LeaseDurationSeconds:       getEnvAsInt("LEASE_DURATION_SECONDS", 60),
+		HeartbeatIntervalSeconds:   getEnvAsInt("HEARTBEAT_INTERVAL_SECONDS", 15),
+		ReaperIntervalSeconds:      getEnvAsInt("REAPER_INTERVAL_SECONDS", 30),
+		MaxConcurrentWorkers:       getEnvAsInt("MAX_CONCURRENT_WORKERS", 2),
+		AIProvider:                 getEnv("AI_PROVIDER", "antigravity"),
+		AntigravityBinary:          getEnv("ANTIGRAVITY_BINARY", "agy"),
+		MaxConcurrentAntigravity:   getEnvAsInt("MAX_CONCURRENT_ANTIGRAVITY", 1),
+		ExecutionTimeoutSeconds:    getEnvAsInt("EXECUTION_TIMEOUT_SECONDS", 300),
+		GracefulTerminationSeconds: getEnvAsInt("GRACEFUL_TERMINATION_SECONDS", 5),
+		WorkspaceRoot:              getEnv("WORKSPACE_ROOT", "/tmp/griffin-workspaces"),
+		RetainWorkspacesOnFailure:  getEnvAsBool("RETAIN_WORKSPACES_ON_FAILURE", false),
 	}
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {
@@ -46,6 +62,18 @@ func Load() (*Config, error) {
 	}
 	if cfg.WorkerAPIKey == "" {
 		return nil, fmt.Errorf("WORKER_API_KEY is required")
+	}
+	if cfg.MaxConcurrentAntigravity <= 0 {
+		cfg.MaxConcurrentAntigravity = 1
+	}
+	if cfg.MaxConcurrentAntigravity > 2 {
+		cfg.MaxConcurrentAntigravity = 2 // Bounded maximum of 2 on EC2 host
+	}
+	if cfg.ExecutionTimeoutSeconds <= 0 {
+		cfg.ExecutionTimeoutSeconds = 300
+	}
+	if cfg.GracefulTerminationSeconds <= 0 {
+		cfg.GracefulTerminationSeconds = 5
 	}
 
 	return cfg, nil
@@ -64,6 +92,18 @@ func getEnvAsInt(key string, defaultVal int) int {
 		return defaultVal
 	}
 	val, err := strconv.Atoi(valStr)
+	if err != nil {
+		return defaultVal
+	}
+	return val
+}
+
+func getEnvAsBool(key string, defaultVal bool) bool {
+	valStr := getEnv(key, "")
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.ParseBool(valStr)
 	if err != nil {
 		return defaultVal
 	}

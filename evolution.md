@@ -14,7 +14,8 @@ timeline
     Epoch 2 : The Primary Provider Pivot : Antigravity CLI Discovery : Zero API Billing Architecture
     Epoch 3 : Cloud Runner Validation (Phase 0.5) : Empirical Linux Benchmarking : 2-Worker Concurrency Model : Staged AWS SSM Automation
     Epoch 4 : Core Engine Implementation (Phase 1) : 11-State DAG Lifecycle : PostgreSQL SKIP LOCKED : RLS Isolation Tested
-    Future Epochs : Phase 2 (Antigravity Runner) : Phase 3 (Specialist Managers) : Phase 4 (Next.js PWA)
+    Epoch 5 : Primary AI Provider Integration (Phase 2) : Subprocess Process Groups : Pure argv Injection Defense : Zero Paid Fallback Enforced
+    Future Epochs : Phase 3 (Specialist Managers) : Phase 4 (Next.js PWA)
 ```
 
 ---
@@ -101,24 +102,53 @@ When we began writing Go code and SQL migrations in Phase 1, several assumptions
 
 ---
 
+### Epoch 5: Phase 2 Antigravity Primary Execution Provider (The Subprocess Realities)
+Integrating the real Google Antigravity CLI as Griffin's primary engine surfaced critical distributed systems realities:
+
+#### 1. The Subprocess Zombie Problem & Process Group Isolation
+- *The Issue*: When a task times out or is cancelled, calling `cmd.Process.Kill()` only kills the parent `agy` process PID. Any subagents, compilers, or child tool processes spawned by `agy` become orphan zombies attached to PID 1, consuming CPU and memory.
+- *The Evolution*: Configured `cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}` to give every task attempt a dedicated process group. When terminating, Griffin sends `SIGTERM` to `-pgid`, waits a 5-second graceful window, and escalates to `SIGKILL` to `-pgid`, followed by `cmd.Wait()` to guarantee complete kernel reaping.
+
+#### 2. Shell Injection Defense via Pure `argv` Tokens
+- *The Issue*: Passing complex task goals, user prompts, and JSON schemas through shell wrappers (`bash -c`) introduces severe argument injection vulnerabilities when user text contains metacharacters (`"`, `;`, `$()`, `|`).
+- *The Evolution*: Eliminated all shell wrappers. All executions assemble discrete argument slices (`[]string{"-p", prompt, "--output-format", "json", ...}`) passed directly to `execve` syscalls.
+
+#### 3. Scratchpad Isolation & Path Traversal Rejection
+- *The Issue*: Workers need dedicated filesystem directories to prevent concurrent tasks from overwriting temporary files, but malicious or corrupted task identifiers could attempt directory traversal (`../`).
+- *The Evolution*: Implemented [`WorkspaceManager`](internal/provider/antigravity/workspace.go) with `filepath.Clean` validation, verifying target directories strictly reside within `WORKSPACE_ROOT`. Directory mode is restricted to `0700` and payload files to `0600`.
+
+#### 4. The Zero-Paid-Fallback Enforcement
+- *The Issue*: If the Antigravity session expires, standard agent frameworks often fall back to paid API keys, silently charging the user's credit card.
+- *The Evolution*: Griffin strictly halts on `ErrAuthenticationRequired`. The worker marks the task failed with `retryable: false`, records an `AUTHENTICATION_REQUIRED` event in PostgreSQL `task_events`, and alerts the operator. No paid API fallback exists.
+
+#### 5. Two-Tier Testing Strategy
+- *The Issue*: Running tests against the real `agy` CLI requires external network calls and takes ~20 seconds per turn.
+- *The Evolution*: Separated testing into fast hermetic mock subprocess tests (using temporary bash scripts) and an opt-in live integration probe (`TestAntigravityLiveIntegration`) gated behind `GRIFFIN_ENABLE_LIVE_AGY_TEST=true`.
+
+---
+
 ## 3. Product Vision & Architecture Comparison
 
-| Architectural Dimension | Initial Concept (Day 1) | Mid-Point Investigation | Current Built Reality (Phase 1 Complete) |
+| Architectural Dimension | Initial Concept (Day 1) | Phase 1 (Engine Core) | Current Built Reality (Phase 2 Complete) |
 | :--- | :--- | :--- | :--- |
-| **Compute Location** | Local Laptop or Generic Cloud | AWS EC2 `ap-south-1` Mumbai | Dedicated EC2 Graviton2 with SSM Session Manager |
-| **AI Execution Engine** | Commercial Model API Keys | Antigravity CLI as an option | **Antigravity CLI as PRIMARY Default Engine** |
-| **API Token Cost** | Pay-per-token ($$$/month) | Mixed hybrid billing | **$0.00 model token cost** (Personal Subscription) |
-| **Task Queue** | Abstract / Redis considered | PostgreSQL `SKIP LOCKED` | **Native PostgreSQL 17 `SKIP LOCKED` with Leases** |
-| **Task States** | 5 simple states | 7 states | **11 robust states with DAG dependency cascading** |
-| **Worker Concurrency** | Unbounded goroutines | Bounded at 2 workers | **2-worker pool + 2 GiB swapfile + backpressure** |
-| **Tenant Isolation** | App-level filtering | Basic RLS | **`FORCE ROW LEVEL SECURITY` verified with test role** |
-| **Testing Strategy** | Manual runs | Staged POC tests | **Full automated Go test suite (25/25 scenarios PASS)** |
+| **Compute Location** | Local Laptop or Generic Cloud | Dedicated EC2 Graviton2 with SSM | Dedicated EC2 Graviton2 with SSM Session Manager |
+| **AI Execution Engine** | Commercial Model API Keys | MockExecutor in Go | **Antigravity CLI as PRIMARY Default Engine** |
+| **API Token Cost** | Pay-per-token ($$$/month) | $0.00 (Mock Engine) | **$0.00 model token cost** (Personal Subscription) |
+| **Subprocess Containment**| None | Abstract provider contract | **`Setpgid: true`, SIGTERM/SIGKILL, Process Groups** |
+| **Workspace Security** | Shared /tmp | None | **Isolated 0700 Scratchpads with Path Traversal Defense** |
+| **Task Queue** | Abstract / Redis considered | PostgreSQL 17 `SKIP LOCKED` | **Native PostgreSQL 17 `SKIP LOCKED` with Leases** |
+| **Task States** | 5 simple states | 11 robust states | **11 robust states with DAG dependency cascading** |
+| **Worker Concurrency** | Unbounded goroutines | 2 workers configured | **2-worker pool bounded semaphore + 2 GiB swapfile** |
+| **Tenant Isolation** | App-level filtering | `FORCE ROW LEVEL SECURITY` | **`FORCE ROW LEVEL SECURITY` verified with test role** |
+| **Testing Strategy** | Manual runs | Mock unit & integration tests | **Two-Tier: 100% Hermetic Mocks + Live CLI Probe** |
 
 ---
 
 ## 4. Key Lessons Learned for Future Phases
 
 1. **Subscriptions beat per-token APIs for background agents**: Running an agent workforce on pay-per-token APIs creates anxiety around looping prompts, large context windows, and periodic cron jobs. Running against a fixed monthly subscription transforms background AI into an ambient utility.
-2. **PostgreSQL is all the message broker you need for V1**: Before adding Redis, Celery, or RabbitMQ, standard PostgreSQL row-level locks (`SELECT ... FOR UPDATE SKIP LOCKED`) provide crash resilience, transactional safety, and sub-millisecond polling with zero extra infrastructure.
-3. **Always test RLS as a non-superuser**: Never assume RLS works just because `CREATE POLICY` executed. Superusers bypass policies; test suites must explicitly drop privileges to verify security gates.
-4. **Build the harness before the model**: Having a rock-solid task queue, heartbeat renewals, and crash recovery in place before wiring up the real AI CLI ensures that model timeouts, token refreshes, and rate limits are handled gracefully rather than corrupting user workflows.
+2. **Subprocesses require process groups**: When controlling external agent CLIs, never kill raw PIDs. Always use process groups (`Setpgid`) and send negative signals (`-pgid`) to cleanly eradicate child tool processes.
+3. **Never allow silent paid fallbacks**: AI systems must fail fast and halt when subscription credentials expire. Silent failover to paid API endpoints leads to unexpected bill shock.
+4. **PostgreSQL is all the message broker you need for V1**: Standard PostgreSQL row-level locks (`SELECT ... FOR UPDATE SKIP LOCKED`) provide crash resilience, transactional safety, and sub-millisecond polling with zero extra infrastructure.
+5. **Pure `argv` slices neutralize prompt injection attacks against host OS**: Treating LLM prompts as raw data tokens rather than shell arguments keeps the host OS safe from execution attacks.
+

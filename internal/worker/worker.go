@@ -2,8 +2,11 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -133,9 +136,28 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		}
 
 		errMsg := failErr.Error()
-		w.logger.Warn("Task execution failed", "worker_id", w.ID, "task_id", task.ID, "error", errMsg)
+		isAuthErr := errors.Is(failErr, domain.ErrAuthenticationRequired) || strings.Contains(strings.ToLower(errMsg), "authentication required")
+		if isAuthErr {
+			retryable = false
+			w.logger.Error("CRITICAL: Antigravity authentication required; task execution halted without retrying. Operator intervention required (run `agy auth login`)",
+				"worker_id", w.ID,
+				"task_id", task.ID,
+			)
+		} else {
+			w.logger.Warn("Task execution failed", "worker_id", w.ID, "task_id", task.ID, "error", errMsg)
+		}
+
 		if err := w.engine.FailTask(ctx, task.ID, w.ID, errMsg, retryable); err != nil {
 			w.logger.Error("engine.FailTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+		}
+
+		if isAuthErr && w.taskRepo != nil {
+			_ = w.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+				TaskID:    task.ID,
+				EventType: "AUTHENTICATION_REQUIRED",
+				Message:   "Antigravity authentication expired or required. Execution halted without retry.",
+				Metadata:  json.RawMessage(`{"provider":"antigravity","error":"ErrAuthenticationRequired"}`),
+			})
 		}
 
 		attempt.Status = "FAILED"

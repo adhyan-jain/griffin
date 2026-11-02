@@ -100,22 +100,64 @@ This document is the canonical ledger of all architectural, product, engineering
 
 ---
 
-## 2. Decisions Planned (Future Phases)
-
-### Phase 2: Antigravity Primary Execution Provider & Runner Adapter
-
 #### ADR-015: Subprocess Isolation & Scratch Workspace Eviction
-- **Status**: PLANNED (Phase 2)
-- **Decision**: Each task executed by `agy` runs inside an isolated scratch workspace `/var/griffin/workspaces/task-<task_id>/` with permissions `0700`. Upon task completion or failure, the Go runner recursively deletes the directory.
-- **Rationale**: Prevents filesystem collisions between concurrent workers and bounds disk consumption on the 30 GiB EBS volume.
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: Each task executed by `agy` runs inside an isolated scratch workspace `<WorkspaceRoot>/task-<task_id>-<exec_id>/` with permissions `0700`. Input payloads are serialized as `task_input.json` with permissions `0600`. Upon task completion, the runner recursively removes the directory unless `RETAIN_WORKSPACES_ON_FAILURE=true` is set.
+- **Rationale**: Prevents filesystem collisions between concurrent workers, contains temporary files, and bounds disk consumption on persistent storage.
+- **Location**: [`internal/provider/antigravity/workspace.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/workspace.go)
 
 #### ADR-016: Structured Output via Native `--json-schema`
-- **Status**: PLANNED (Phase 2)
-- **Decision**: Griffin task prompts pass JSON schemas via `--json-schema` directly to `agy`, enforcing that LLM responses deserialize into typed Go domain structs without regex parsing or text extraction heuristics.
-- **Rationale**: Empirically validated in Phase 0.5; guarantees deterministic JSON formatting from Gemini models.
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: Griffin task prompts pass JSON schemas via `--json-schema` directly to `agy`, enforcing that LLM responses deserialize into typed Go domain structs and structured output JSON without regex heuristics.
+- **Rationale**: Empirically validated in Phase 0.5 and Phase 2; guarantees deterministic JSON formatting from Gemini models.
+- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go), [`internal/provider/antigravity/parser.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/parser.go)
+
+#### ADR-023: Process Group Containment (`Setpgid`) and Two-Stage Termination
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: Subprocesses are spawned in separate process groups (`cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}`). On timeout or cancellation, `SIGTERM` is sent to `-pgid`, followed by a 5-second graceful wait, and `SIGKILL` to `-pgid` if processes remain alive.
+- **Rationale**: Completely eliminates zombie processes and orphan child tool processes spawned by `agy`.
+- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go)
+
+#### ADR-024: Pure `argv` Slice Subprocess Execution without Shell Interpolation
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: Commands are launched via `exec.Command(binaryPath, args...)` using discrete string slices. Shell execution (`sh -c`, `bash -c`, or string interpolation) is strictly forbidden.
+- **Rationale**: Neutralizes shell injection vulnerabilities from user-provided prompts, schemas, and parameters.
+- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go)
+
+#### ADR-025: Path Traversal Defense on Workspace Operations
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: All workspace directory creation and cleanup operations enforce `filepath.Clean` and verify that the target directory strictly begins with `rootDir + filepath.Separator`. Violations return `ErrWorkspacePathTraversal`.
+- **Rationale**: Prevents malicious or corrupted task identifiers from modifying or deleting directories outside the designated scratchpad area.
+- **Location**: [`internal/provider/antigravity/workspace.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/workspace.go)
+
+#### ADR-026: Multi-Turn Conversation Continuation via `--conversation <id>`
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: The executor extracts `conversation_id` from task input envelopes and forwards it via `--conversation <id>` to `agy`. Upon task completion, new or returned conversation IDs are captured and stored with the execution result.
+- **Rationale**: Enables multi-step missions and interactive conversation threads across discrete tasks while preserving full context in Google Antigravity.
+- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go)
+
+#### ADR-027: Typed Authentication Failure Detection & Immediate Halt
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: Subprocess outputs indicating authentication expiry ("authentication required", "unauthenticated", "token expired") are parsed into `ErrAuthenticationRequired`. The worker disables retries (`retryable: false`), logs a critical operator alert, records an `AUTHENTICATION_REQUIRED` event in PostgreSQL `task_events`, and halts execution without silent paid fallback.
+- **Rationale**: Enforces Griffin's zero-paid-fallback guarantee and prevents wasteful, endless retry loops on invalid credentials.
+- **Location**: [`internal/provider/antigravity/parser.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/parser.go), [`internal/worker/worker.go`](file:///home/adhyan/Desktop/griffin/internal/worker/worker.go)
+
+#### ADR-028: Two-Tier Subprocess Testing Strategy
+- **Status**: IMPLEMENTED (Phase 2)
+- **Decision**: AI provider testing is divided into:
+  1. Hermetic controlled subprocess mock tests using temporary scripts (sub-second, runs in CI without tokens).
+  2. Opt-in live integration probe against installed `/usr/bin/agy` gated behind `GRIFFIN_ENABLE_LIVE_AGY_TEST=true`.
+- **Rationale**: Guarantees reproducible, fast automated testing in development and CI environments while retaining an automated verification probe for live binary compatibility.
+- **Location**: [`internal/provider/antigravity/executor_test.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor_test.go), [`tests/worker_test.go`](file:///home/adhyan/Desktop/griffin/tests/worker_test.go)
+
+---
+
+## 2. Decisions Planned (Future Phases)
+
+### Phase 2 Operations & Background Maintenance
 
 #### ADR-017: 6-Hour Background Canary Health Probe
-- **Status**: PLANNED (Phase 2 / Phase 5)
+- **Status**: PLANNED (Phase 2 Operations / Phase 5)
 - **Decision**: A lightweight systemd timer executes `agy -p "ping" --output-format json` every 6 hours. If token refresh fails, it flags `provider_health` and triggers user alerts before scheduled user tasks run.
 - **Rationale**: Proactively detects OAuth session expirations before critical morning briefing missions.
 

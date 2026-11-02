@@ -1,6 +1,6 @@
 # Binaries
 bin/
-griffin-server
+/griffin-server
 
 # Environment & secrets
 .env

@@ -1,32 +1,35 @@
 # Griffin Implementation Status Tracker (Antigravity Primary)
 
 ## 1. Project Phase
-- **Current Phase**: **Phase 1 — Core Engine & Data Foundations (COMPLETED & VERIFIED)**
-- **Status**: Production-ready Go modular monolith foundation, PostgreSQL migrations, durable task engine, concurrency leasing, RLS isolation, REST API, worker execution foundation, and 100% passing automated test suite.
-- **Next Phase**: **Phase 2 — Antigravity Primary Execution Provider & Runner Adapter** (or **Phase 0.5 EC2 Cloud Runner Activation** upon user authorization).
+- **Current Phase**: **Phase 2 — Antigravity Primary Execution Provider & Runner Adapter (COMPLETED & VERIFIED)**
+- **Status**: Google Antigravity CLI (`agy`) fully integrated as Griffin's primary AI execution provider behind a provider-neutral interface. Subprocess management, process group termination (`Setpgid: true`, `SIGTERM` -> `SIGKILL`), scratch workspace isolation (0700 permissions with path traversal defense), output parsing with structured JSON schema extraction, conversation continuation, bounded concurrency (1-2 workers), and authentication failure detection without silent paid fallback implemented and tested with 100% passing automated tests.
+- **Next Phase**: **Phase 3 — Multi-Agent Workforce & Domain Managers** (or **Phase 0.5 EC2 Cloud Runner Activation** upon user authorization).
 
 ---
 
-## 2. Completed Implementation Deliverables (Phase 1)
+## 2. Completed Implementation Deliverables
 
-### Go Application Foundation (`cmd/`, `internal/`)
+### Phase 2: Antigravity Primary Execution Provider (`internal/provider/antigravity/`)
+- **Antigravity Executor**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go) — Implements `worker.TaskExecutor` contract with bounded concurrency semaphore (1-2 max), pure `argv` slice argument assembly (no shell interpolation), multi-turn conversation continuation via `--conversation <id>`, model routing, schema enforcement (`--json-schema`), process group isolation (`Setpgid: true`), and two-stage graceful termination (`SIGTERM` followed by `SIGKILL` to `-pgid`).
+- **Workspace Manager**: [`internal/provider/antigravity/workspace.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/workspace.go) — Isolated scratch directory provisioning (`<WorkspaceRoot>/task-<id>-<exec>`), 0700/0600 permissions, path traversal rejection (`ErrWorkspacePathTraversal`), input serialization (`task_input.json`), and retention on failure logic.
+- **Output Parser & Telemetry**: [`internal/provider/antigravity/parser.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/parser.go) — Extracts structured JSON, extracts `structured_output` conforming to JSON schemas, captures token usage telemetry (`input_tokens`, `output_tokens`, `total_tokens`), detects banner logs, and maps errors (`ErrAuthenticationRequired`, `ErrRateLimitExceeded`, `ErrInvalidOutput`, `ErrExecutionFailed`).
+- **Sentinel Domain Errors**: [`internal/provider/antigravity/errors.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/errors.go), [`internal/domain/errors.go`](file:///home/adhyan/Desktop/griffin/internal/domain/errors.go) — Typed errors with explicit classification.
+- **Worker & Server Integration**: [`cmd/griffin-server/main.go`](file:///home/adhyan/Desktop/griffin/cmd/griffin-server/main.go), [`internal/worker/worker.go`](file:///home/adhyan/Desktop/griffin/internal/worker/worker.go) — Dynamic provider selection based on `cfg.AIProvider` ("antigravity" vs "mock"); worker detects `ErrAuthenticationRequired`, halts retries (`retryable: false`), logs critical operator alert, and records `AUTHENTICATION_REQUIRED` event in PostgreSQL audit ledger.
+- **Documentation**:
+  - [`docs/ANTIGRAVITY_EXECUTOR.md`](file:///home/adhyan/Desktop/griffin/docs/ANTIGRAVITY_EXECUTOR.md) — Subprocess execution architecture, CLI flags, schema extraction, and conversation continuation.
+  - [`docs/ANTIGRAVITY_SECURITY.md`](file:///home/adhyan/Desktop/griffin/docs/ANTIGRAVITY_SECURITY.md) — Security model, scratchpad isolation, path traversal defense, and zero-paid-fallback policy.
+  - [`docs/ANTIGRAVITY_INTEGRATION_TESTS.md`](file:///home/adhyan/Desktop/griffin/docs/ANTIGRAVITY_INTEGRATION_TESTS.md) — Test taxonomy, hermetic mock subprocess tests, and live CLI integration probe.
+
+### Phase 1: Go Application Foundation (`cmd/`, `internal/`)
 - **Main Server Entrypoint**: [`cmd/griffin-server/main.go`](file:///home/adhyan/Desktop/griffin/cmd/griffin-server/main.go) — Clean startup, graceful shutdown on `SIGINT`/`SIGTERM`, background worker pools and lease reaper supervision.
-- **Configuration Management**: [`internal/config/config.go`](file:///home/adhyan/Desktop/griffin/internal/config/config.go) — Environment-driven configuration with validated defaults.
+- **Configuration Management**: [`internal/config/config.go`](file:///home/adhyan/Desktop/griffin/internal/config/config.go) — Environment-driven configuration with validated defaults for AI provider, binary, timeouts, and workspaces.
 - **Domain Models & Enums**: [`internal/domain/task.go`](file:///home/adhyan/Desktop/griffin/internal/domain/task.go), [`internal/domain/entities.go`](file:///home/adhyan/Desktop/griffin/internal/domain/entities.go), [`internal/domain/errors.go`](file:///home/adhyan/Desktop/griffin/internal/domain/errors.go) — 11-state task lifecycle, priority tiers, validation, and sentinel domain errors.
 - **Database & Migration Layer**: [`internal/database/postgres.go`](file:///home/adhyan/Desktop/griffin/internal/database/postgres.go), [`internal/database/migrations.go`](file:///home/adhyan/Desktop/griffin/internal/database/migrations.go) — Connection pooling via `pgxpool`, transaction helpers, and programmatic migration runner.
 - **Repositories**: [`internal/repository/task_repo.go`](file:///home/adhyan/Desktop/griffin/internal/repository/task_repo.go), [`internal/repository/approval_repo.go`](file:///home/adhyan/Desktop/griffin/internal/repository/approval_repo.go), [`internal/repository/agent_repo.go`](file:///home/adhyan/Desktop/griffin/internal/repository/agent_repo.go), [`internal/repository/artifact_repo.go`](file:///home/adhyan/Desktop/griffin/internal/repository/artifact_repo.go).
 - **Task Engine Core Service**: [`internal/service/task_engine.go`](file:///home/adhyan/Desktop/griffin/internal/service/task_engine.go) — Atomic task claiming, DAG dependency resolution, cascading cancellation, exponential backoff retries, and approval gates.
-- **Worker Execution Foundation**: [`internal/worker/worker.go`](file:///home/adhyan/Desktop/griffin/internal/worker/worker.go), [`internal/worker/executor.go`](file:///home/adhyan/Desktop/griffin/internal/worker/executor.go), [`internal/worker/mock_executor.go`](file:///home/adhyan/Desktop/griffin/internal/worker/mock_executor.go), [`internal/worker/reaper.go`](file:///home/adhyan/Desktop/griffin/internal/worker/reaper.go) — Provider-neutral worker loop, heartbeat goroutines, attempt tracking, and deterministic mock executor.
+- **Worker Execution Foundation**: [`internal/worker/worker.go`](file:///home/adhyan/Desktop/griffin/internal/worker/worker.go), [`internal/worker/executor.go`](file:///home/adhyan/Desktop/griffin/internal/worker/executor.go), [`internal/worker/mock_executor.go`](file:///home/adhyan/Desktop/griffin/internal/worker/mock_executor.go), [`internal/worker/reaper.go`](file:///home/adhyan/Desktop/griffin/internal/worker/reaper.go).
 - **HTTP REST API & Middleware**: [`internal/api/server.go`](file:///home/adhyan/Desktop/griffin/internal/api/server.go), [`internal/api/middleware/auth.go`](file:///home/adhyan/Desktop/griffin/internal/api/middleware/auth.go), [`internal/api/middleware/logger.go`](file:///home/adhyan/Desktop/griffin/internal/api/middleware/logger.go), [`internal/api/middleware/recovery.go`](file:///home/adhyan/Desktop/griffin/internal/api/middleware/recovery.go), [`internal/api/middleware/request_id.go`](file:///home/adhyan/Desktop/griffin/internal/api/middleware/request_id.go), and handlers for tasks, approvals, agents, artifacts, and workers.
-
-### Version-Controlled Database Migrations (`migrations/`)
-- `000001_init_schema.up.sql` / `000001_init_schema.down.sql` — Profiles, workspaces, agents, tasks, task_dependencies, task_attempts, task_events, approvals, schedules, artifacts, and notifications.
-- `000002_rls_policies.up.sql` / `000002_rls_policies.down.sql` — Row Level Security (`FORCE ROW LEVEL SECURITY`) with `auth.uid() = user_id` tenant isolation policies.
-
-### Developer Experience & Tooling
-- [`.env.example`](file:///home/adhyan/Desktop/griffin/.env.example) — Clean template for environment variables.
-- [`Makefile`](file:///home/adhyan/Desktop/griffin/Makefile) — Convenient build, run, test, and migration targets.
-- [`README.md`](file:///home/adhyan/Desktop/griffin/README.md) — Comprehensive architecture, quick start, API documentation, and `curl` examples.
+- **Version-Controlled Migrations**: `migrations/000001_init_schema.*`, `migrations/000002_rls_policies.*`.
 
 ---
 
@@ -38,8 +41,25 @@ All tests run against a real Supabase/PostgreSQL 17 database instance:
 | :--- | :--- | :--- | :--- |
 | `TestTaskStatusTransitions` | `internal/domain/task_test.go` | **PASS** | Validates all 11 lifecycle state transitions, rejects invalid leaps, protects terminal states. |
 | `TestTaskValidation` | `internal/domain/task_test.go` | **PASS** | Required field validations, priority defaults, domain normalization. |
-| `TestConfigLoadDefaults` | `internal/config/config_test.go` | **PASS** | Default configuration parsing, port checks, concurrency limits. |
-| `TestConfigOverrideEnv` | `internal/config/config_test.go` | **PASS** | Environment variable overrides. |
+| `TestConfigLoadDefaults` | `internal/config/config_test.go` | **PASS** | Default configuration parsing, port checks, concurrency limits, AI provider defaults. |
+| `TestConfigOverrideEnv` | `internal/config/config_test.go` | **PASS** | Environment variable overrides for AI provider, workspace roots, timeouts. |
+| `TestWorkspaceManager_CreateAndCleanup` | `internal/provider/antigravity/workspace_test.go` | **PASS** | Scratchpad creation, 0700 mode, input payload writing, cleanup on success. |
+| `TestWorkspaceManager_RetainOnFailure` | `internal/provider/antigravity/workspace_test.go` | **PASS** | Workspaces retained when `retainOnFailure: true` and task fails; purged on success. |
+| `TestWorkspaceManager_PathTraversalDefense` | `internal/provider/antigravity/workspace_test.go` | **PASS** | Rejects directory traversal attempts (`../`) outside workspace root with `ErrWorkspacePathTraversal`. |
+| `TestParseOutput_SuccessStructured` | `internal/provider/antigravity/parser_test.go` | **PASS** | Structured output JSON parsing, token telemetry mapping, duration capture. |
+| `TestParseOutput_BannerLogsBeforeJSON` | `internal/provider/antigravity/parser_test.go` | **PASS** | Strips CLI banner logs and extracts valid JSON payload. |
+| `TestParseOutput_AuthFailure` | `internal/provider/antigravity/parser_test.go` | **PASS** | Detects authentication failure keywords across stdout/stderr, maps to `ErrAuthenticationRequired`. |
+| `TestParseOutput_RateLimitExceeded` | `internal/provider/antigravity/parser_test.go` | **PASS** | Detects rate limit / quota exhaustion, maps to `ErrRateLimitExceeded`. |
+| `TestParseOutput_CLIErrorStatus` | `internal/provider/antigravity/parser_test.go` | **PASS** | Detects `status: "ERROR"`, maps to `ErrExecutionFailed`. |
+| `TestParseOutput_MalformedJSON` | `internal/provider/antigravity/parser_test.go` | **PASS** | Non-JSON output mapped to `ErrInvalidOutput`. |
+| `TestAntigravityExecutor_Success` | `internal/provider/antigravity/executor_test.go` | **PASS** | End-to-end executor invocation with mock script, healthy status, structured result. |
+| `TestAntigravityExecutor_ArgumentPassing` | `internal/provider/antigravity/executor_test.go` | **PASS** | Verifies pure `argv` construction without shell injection; passes conversation, model, schema. |
+| `TestAntigravityExecutor_AuthFailure` | `internal/provider/antigravity/executor_test.go` | **PASS** | Subprocess auth failure halts execution, disables retries, marks executor unhealthy. |
+| `TestAntigravityExecutor_ProcessTimeoutAndKill` | `internal/provider/antigravity/executor_test.go` | **PASS** | SIGTERM followed by SIGKILL for unresponsive process group; returns `ErrProcessTimeout`. |
+| `TestAntigravityExecutor_ProcessCancellation` | `internal/provider/antigravity/executor_test.go` | **PASS** | Context cancellation aborts subprocess group cleanly, returns `ErrProcessCancelled`. |
+| `TestAntigravityExecutor_BoundedConcurrency` | `internal/provider/antigravity/executor_test.go` | **PASS** | Semaphore pool enforces strict task serialization (limit 1) with zero concurrency overlap. |
+| `TestAntigravityExecutor_BinaryNotFound` | `internal/provider/antigravity/executor_test.go` | **PASS** | Missing binary caught immediately with `ErrBinaryNotFound` without panic. |
+| `TestAntigravityLiveIntegration` | `internal/provider/antigravity/executor_test.go` | **PASS** (Opt-in) | Verified live against `/usr/bin/agy` (v0.1.0-alpha) with prompt, JSON schema, and token telemetry (~29.5k tokens). |
 | `TestTaskCreationAndRetrieval` | `tests/task_engine_test.go` | **PASS** | Persistent task creation, default status QUEUED, event logging. |
 | `TestTaskIdempotency` | `tests/task_engine_test.go` | **PASS** | Unique idempotency key enforcement per user; duplicate submissions return `ErrIdempotentConflict`. |
 | `TestConcurrentWorkerClaims` | `tests/task_engine_test.go` | **PASS** | 10 concurrent workers competing via `SELECT FOR UPDATE SKIP LOCKED`; zero duplicate claims, zero lock contention. |
@@ -52,9 +72,12 @@ All tests run against a real Supabase/PostgreSQL 17 database instance:
 | `TestWorkerEndToEndExecution`| `tests/worker_test.go` | **PASS** | Worker claims task, runs MockExecutor, records attempt, and completes task end-to-end. |
 | `TestWorkerFailureAndRetryAttempt`| `tests/worker_test.go` | **PASS** | Worker captures executor failure, marks attempt FAILED, schedules retry with exponential backoff. |
 | `TestWorkerApprovalPause` | `tests/worker_test.go` | **PASS** | Worker intercepts approval requirement and transitions task to `AWAITING_APPROVAL`. |
+| `TestWorkerAntigravityAuthFailureEvent` | `tests/worker_test.go` | **PASS** | Worker captures Antigravity auth failure, disables retries, marks FAILED, records `AUTHENTICATION_REQUIRED` event in PostgreSQL audit ledger. |
+| `TestWorkerAntigravitySuccess` | `tests/worker_test.go` | **PASS** | Worker executes task via Antigravity provider, persists output payload and attempt telemetry in PostgreSQL. |
 | `TestAPIEndpoints` | `tests/api_test.go` | **PASS** | Health/readiness, Supabase JWT auth, worker API key auth, task CRUD, approvals, artifacts, agents. |
 | `TestGracefulShutdown` | `tests/lifecycle_test.go` | **PASS** | HTTP server drains active connections and shuts down cleanly within timeout window. |
 | `TestDatabaseTransactionRollbackOnFailure`| `tests/lifecycle_test.go` | **PASS** | Mid-transaction errors abort cleanly; rolled back mutations do not persist. |
+
 
 ---
 

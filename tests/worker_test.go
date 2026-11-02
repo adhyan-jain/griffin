@@ -3,12 +3,15 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/provider/antigravity"
 	"github.com/griffin/core/internal/worker"
 )
 
@@ -212,3 +215,169 @@ func TestWorkerApprovalPause(t *testing.T) {
 		t.Fatalf("expected task status AWAITING_APPROVAL, got %s", pausedTask.Status)
 	}
 }
+
+func TestWorkerAntigravityAuthFailureEvent(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	userID := CreateTestUser(t, env.DB, "worker_agy_auth@example.com")
+
+	// Create mock script simulating expired credentials
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "mock_agy_auth_fail.sh")
+	err := os.WriteFile(scriptPath, []byte("#!/bin/bash\necho 'error: authentication required. Please run agy auth login' >&2\nexit 1\n"), 0755)
+	if err != nil {
+		t.Fatalf("failed to write script: %v", err)
+	}
+
+	agyExec, err := antigravity.NewAntigravityExecutor(antigravity.ExecutorConfig{
+		BinaryPath:       scriptPath,
+		WorkspaceRoot:    t.TempDir(),
+		ExecutionTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("create antigravity executor: %v", err)
+	}
+
+	w := worker.NewWorker(worker.Config{
+		ID:                "test-worker-agy-auth",
+		Engine:            env.Engine,
+		TaskRepo:          env.TaskRepo,
+		Executor:          agyExec,
+		LeaseDuration:     10 * time.Second,
+		HeartbeatInterval: 1 * time.Second,
+		PollInterval:      100 * time.Millisecond,
+	})
+
+	task, err := env.Engine.CreateTask(ctx, &domain.Task{
+		UserID:     userID,
+		Title:      "Antigravity Auth Failure Task",
+		Goal:       "Trigger auth error handling",
+		MaxRetries: 3,
+	}, nil)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	processed, err := w.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("ProcessNext failed: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected task to be processed")
+	}
+
+	// Verify task failed permanently (no retries scheduled)
+	failedTask, err := env.Engine.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if failedTask.Status != domain.TaskStatusFailed {
+		t.Fatalf("expected task status FAILED, got %s", failedTask.Status)
+	}
+	if failedTask.RetryCount != 0 {
+		t.Fatalf("expected RetryCount 0 (retries disabled for auth failure), got %d", failedTask.RetryCount)
+	}
+
+	// Verify AUTHENTICATION_REQUIRED event exists in the audit ledger
+	events, err := env.TaskRepo.GetEvents(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("get events: %v", err)
+	}
+	foundAuthEvent := false
+	for _, e := range events {
+		if e.EventType == "AUTHENTICATION_REQUIRED" {
+			foundAuthEvent = true
+			break
+		}
+	}
+	if !foundAuthEvent {
+		t.Fatalf("expected AUTHENTICATION_REQUIRED event in task events, got: %+v", events)
+	}
+}
+
+func TestWorkerAntigravitySuccess(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	userID := CreateTestUser(t, env.DB, "worker_agy_ok@example.com")
+
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "mock_agy_ok.sh")
+	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
+echo '{"conversation_id":"conv-e2e-123","status":"SUCCESS","response":"Worker executed successfully","num_turns":1,"structured_output":{"result":"ok"},"usage":{"input_tokens":50,"output_tokens":25,"total_tokens":75}}'
+exit 0
+`), 0755)
+	if err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	agyExec, err := antigravity.NewAntigravityExecutor(antigravity.ExecutorConfig{
+		BinaryPath:       scriptPath,
+		WorkspaceRoot:    t.TempDir(),
+		ExecutionTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("create executor: %v", err)
+	}
+
+	w := worker.NewWorker(worker.Config{
+		ID:                "test-worker-agy-ok",
+		Engine:            env.Engine,
+		TaskRepo:          env.TaskRepo,
+		Executor:          agyExec,
+		LeaseDuration:     10 * time.Second,
+		HeartbeatInterval: 1 * time.Second,
+		PollInterval:      100 * time.Millisecond,
+	})
+
+	task, err := env.Engine.CreateTask(ctx, &domain.Task{
+		UserID: userID,
+		Title:  "Antigravity Success Task",
+		Goal:   "Run successful prompt",
+	}, nil)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	processed, err := w.ProcessNext(ctx)
+	if err != nil {
+		t.Fatalf("ProcessNext failed: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected task to be processed")
+	}
+
+	completedTask, err := env.Engine.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if completedTask.Status != domain.TaskStatusCompleted {
+		t.Fatalf("expected COMPLETED status, got %s", completedTask.Status)
+	}
+	if len(completedTask.OutputPayload) == 0 {
+		t.Fatal("expected non-empty output payload")
+	}
+
+	// Verify attempt record was saved with token usage
+	attempts, err := env.TaskRepo.GetAttempts(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("get attempts: %v", err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("expected 1 attempt, got %d", len(attempts))
+	}
+	if attempts[0].Status != "COMPLETED" {
+		t.Fatalf("expected attempt status COMPLETED, got %s", attempts[0].Status)
+	}
+	if attempts[0].PromptTokens != 50 || attempts[0].CompletionTokens != 25 {
+		t.Fatalf("expected prompt=50, completion=25 tokens, got %d / %d", attempts[0].PromptTokens, attempts[0].CompletionTokens)
+	}
+}
+
