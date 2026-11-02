@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeTickDestinationOnly",
+      "Effect": "Allow",
+      "Action": "events:InvokeApiDestination",
+      "Resource": "arn:aws:events:ap-south-1:123456789012:api-destination/griffin-tick/*"
+    }
+  ]
+}

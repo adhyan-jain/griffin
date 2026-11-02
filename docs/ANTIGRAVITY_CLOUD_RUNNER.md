@@ -54,7 +54,7 @@ deliberately not implemented in Griffin.
 ### 2.3 Procedure
 See `docs/DEPLOYMENT_RUNBOOK.md` section 8: authenticate once over SSM as `griffin`, then run the
 reboot and stop/start persistence tests *before* enabling `griffin-worker`. If the login does not
-survive a reboot, fall back to the documented `GEMINI_API_KEY` mode (accepting per-token cost).
+survive a reboot, STOP and report to the user; `GEMINI_API_KEY`/ADC modes are per-usage billed and must not be enabled without the user's explicit decision.
 
 ---
 

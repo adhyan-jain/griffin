@@ -459,7 +459,7 @@ Execute on the deployed EC2 host via AWS Systems Manager Session Manager:
   ```
   Wait for instance to return to running, then execute the headless command in step 8.
   - **Pass**: Returns exit 0 and valid JSON.
-  - **Fail**: Returns `ErrAuthenticationRequired` (indicates DBus keyring locked upon reboot). If failed, enable `GEMINI_API_KEY` fallback mode in `/etc/griffin/worker.env`.
+  - **Fail**: Returns `ErrAuthenticationRequired` (indicates DBus keyring locked upon reboot). If failed: STOP, keep the worker disabled and report alternatives; do NOT enable `GEMINI_API_KEY` (per-token billing) without explicit user approval.
 - [ ] **10. Enable Systemd Service**:
   ```bash
   sudo systemctl enable --now griffin-worker
@@ -517,7 +517,7 @@ sequenceDiagram
 | :--- | :--- | :--- | :--- |
 | **BLK-01** | `griffin-bootstrap` IAM user lacks `ec2:RunInstances` (Dry-run failed with `UnauthorizedOperation`). | **CRITICAL** | Attach Policy A in Section 5 via Account Admin identity before running `./infra/provision-ec2.sh`. |
 | **BLK-02** | `GriffinEC2WorkerRole` lacks `ssm:GetParametersByPath` on `/griffin/prod/worker*` and `s3:AbortMultipartUpload`. | **HIGH** | Update inline policy on `GriffinEC2WorkerRole` with Policy C in Section 5. |
-| **BLK-03** | Antigravity CLI keyring persistence across unattended cold reboot is unproven in AWS cloud. | **HIGH** | Perform Stage 2 verification (Section 7) on the provisioned runner. Keep `GEMINI_API_KEY` ready as contingency. |
+| **BLK-03** | Antigravity CLI keyring persistence across unattended cold reboot is unproven in AWS cloud. | **HIGH** | Perform Stage 2 verification (Section 7) on the provisioned runner. No silent API-key fallback; see docs/CLOUD_ACCEPTANCE_TESTS.md. |
 | **BLK-04** | Remote Supabase project and credentials have not been configured or migrated. | **HIGH** | Follow Section 6 checklist to set up hosted database and apply migrations. |
 | **BLK-05** | Real DNS domains (`API_DOMAIN`, `WEB_DOMAIN`) not yet supplied (currently using documentation placeholders). | **MEDIUM** | Designate domain names and register DNS records pointing to API Gateway and Vercel. |
 | **BLK-06** | S3 bucket `griffin-artifacts-123456789012-ap-south-1` lacks lifecycle rule (`NoSuchLifecycleConfiguration`). | **MEDIUM** | Apply lifecycle policy to expire non-current versions after 30 days and abort incomplete multipart uploads after 7 days. |
@@ -540,5 +540,7 @@ However, the repository is **GENUINELY READY FOR CONTROLLED DEPLOYMENT**:
 4. Packaging scripts deterministically produce valid `linux/arm64` binaries for both worker and Lambda.
 5. Frontend compiles cleanly with 0 type errors, 0 lint errors, and zero dev-login leaks.
 6. The exact prerequisites, corrected least-privilege IAM policies, and execution steps are fully documented and ready for sequential execution once the administrator attaches Policy A.
+
+> Superseded in part by `docs/CONTROLLED_DEPLOYMENT_REPORT.md` and `docs/FINAL_IAM_POLICIES/` (policy A/B/C/D/E definitions changed).
 
 **Next Immediate Step**: Account administrator attaches **Policy A** to `griffin-bootstrap` and **Policy C** to `GriffinEC2WorkerRole`. Once confirmed, proceed with Phase 1 of the Deployment Runbook.
