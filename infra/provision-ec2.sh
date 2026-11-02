@@ -127,6 +127,9 @@ if [ -z "${SG_ID:-}" ] || [ "${SG_ID}" == "None" ] || [[ "${SG_ID}" != sg-* ]]; 
     exit 1
 fi
 
+SUBNET_ID=$(aws ec2 describe-subnets ${PROFILE_ARG} --region "${REGION}" --filters "Name=vpc-id,Values=${VPC_ID}" "Name=default-for-az,Values=true" --query "Subnets[0].SubnetId" --output text 2>/dev/null || true)
+echo "Selected Subnet ID: ${SUBNET_ID:-default}"
+
 # 4. Launch EC2 Instance with encrypted 30 GiB gp3 root volume
 echo "[4/5] Launching EC2 ${INSTANCE_TYPE} instance..."
 if ! INSTANCE_ID=$(aws ec2 run-instances ${PROFILE_ARG} \
@@ -134,6 +137,7 @@ if ! INSTANCE_ID=$(aws ec2 run-instances ${PROFILE_ARG} \
     --image-id "${AMI_ID}" \
     --instance-type "${INSTANCE_TYPE}" \
     --iam-instance-profile Name="${PROFILE_NAME}" \
+    ${SUBNET_ID:+--subnet-id "${SUBNET_ID}"} \
     --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
     --instance-initiated-shutdown-behavior stop \
     ${SG_ID:+--security-group-ids "${SG_ID}"} \
