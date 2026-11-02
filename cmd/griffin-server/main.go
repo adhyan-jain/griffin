@@ -21,6 +21,7 @@ import (
 	"github.com/griffin/core/internal/service"
 	"github.com/griffin/core/internal/storage"
 	"github.com/griffin/core/internal/worker"
+	"github.com/griffin/core/migrations"
 )
 
 func main() {
@@ -59,7 +60,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	db, err := database.Connect(ctx, cfg.DatabaseURL)
+	db, err := database.ConnectWithOptions(ctx, cfg.DatabaseURL, database.PoolOptions{
+		MaxConns: int32(cfg.DBMaxConns),
+		MinConns: int32(cfg.DBMinConns),
+	})
 	if err != nil {
 		logger.Error("Failed to connect to PostgreSQL", "error", err)
 		os.Exit(1)
@@ -67,12 +71,13 @@ func main() {
 	defer db.Close()
 	logger.Info("Connected to PostgreSQL successfully")
 
-	// 4. Run database migrations
-	if err := database.RunMigrations(ctx, db, "migrations"); err != nil {
-		logger.Error("Failed to apply database migrations", "error", err)
+	// 4. Verify (read-only) that the schema is current. Migrations are applied explicitly with
+	// `griffin-migrate up`, never by the server.
+	if err := database.CheckSchema(ctx, db, migrations.FS); err != nil {
+		logger.Error("Database schema check failed", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("Database migrations verified and up to date")
+	logger.Info("Database schema verified up to date")
 
 	// 5. Initialize Repositories
 	taskRepo := repository.NewPostgresTaskRepository(db.Pool)
@@ -117,14 +122,20 @@ func main() {
 
 	// 7. Initialize Wakeup Controller for scale-to-zero
 	var instanceMgr runner.InstanceManager
-	if cfg.EC2InstanceID != "" {
-		ec2Mgr, err := runner.NewEC2InstanceManager(cfg.EC2InstanceID, cfg.AWSRegion)
+	switch {
+	case cfg.EC2InstanceID != "":
+		ec2Mgr, err := runner.NewEC2InstanceManager(ctx, cfg.EC2InstanceID, cfg.AWSRegion)
 		if err != nil {
 			logger.Error("Failed to initialize EC2 instance manager", "error", err)
 			os.Exit(1)
 		}
 		instanceMgr = ec2Mgr
-	} else {
+	case cfg.IsProduction():
+		// Production without an instance id would silently never wake the runner (config.Load
+		// already rejects this for API mode); worker mode does not wake anything.
+		instanceMgr = runner.NewMockInstanceManager(runner.RunnerStateRunning)
+		logger.Warn("No EC2_INSTANCE_ID configured; runner wake-up is disabled in this process")
+	default:
 		instanceMgr = runner.NewMockInstanceManager(runner.RunnerStateRunning)
 	}
 

@@ -2,9 +2,11 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -53,24 +55,57 @@ func (s *MockStopper) StopInstance(ctx context.Context) error {
 	return nil
 }
 
-// SystemStopper calls the Linux system shutdown binary.
-type SystemStopper struct {
-	logger *slog.Logger
+// ShutdownBinary is the absolute path granted in infra/sudoers.d/griffin-shutdown.
+const ShutdownBinary = "/usr/sbin/shutdown"
+
+// ShutdownCommand is the exact argv used to power the host off. `sudo -n` fails immediately
+// instead of prompting for a password, and the absolute path must match the sudoers entry.
+func ShutdownCommand() []string {
+	return []string{"sudo", "-n", ShutdownBinary, "-h", "now"}
 }
 
-// NewSystemStopper creates a SystemStopper.
+// ErrShutdownFailed wraps a failed host shutdown command.
+var ErrShutdownFailed = errors.New("host shutdown command failed")
+
+// CommandRunner executes a command and returns combined output (injectable for tests).
+type CommandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
+
+func execRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+// SystemStopper powers off the Linux host (the EC2 instance then ends up `stopped`, because the
+// instance is launched with --instance-initiated-shutdown-behavior stop).
+type SystemStopper struct {
+	logger *slog.Logger
+	run    CommandRunner
+}
+
+// NewSystemStopper creates a SystemStopper that really runs the shutdown command.
 func NewSystemStopper(logger *slog.Logger) *SystemStopper {
+	return NewSystemStopperWithRunner(logger, execRunner)
+}
+
+// NewSystemStopperWithRunner creates a SystemStopper with an injected command runner.
+func NewSystemStopperWithRunner(logger *slog.Logger, run CommandRunner) *SystemStopper {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &SystemStopper{logger: logger}
+	if run == nil {
+		run = execRunner
+	}
+	return &SystemStopper{logger: logger, run: run}
 }
 
-// StopInstance executes `sudo shutdown -h now` on Linux.
+// StopInstance runs `sudo -n /usr/sbin/shutdown -h now`.
 func (s *SystemStopper) StopInstance(ctx context.Context) error {
-	s.logger.Info("Executing host system poweroff / shutdown")
-	cmd := exec.CommandContext(ctx, "sudo", "shutdown", "-h", "now")
-	return cmd.Run()
+	argv := ShutdownCommand()
+	s.logger.Info("Executing host system poweroff", "cmd", argv)
+	out, err := s.run(ctx, argv[0], argv[1:]...)
+	if err != nil {
+		return fmt.Errorf("%w: %v: %s", ErrShutdownFailed, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // MockWorkerDrainer is a thread-safe drainer mock.

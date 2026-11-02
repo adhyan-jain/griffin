@@ -93,11 +93,12 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	// and return 202 Accepted with status header.
 	if h.scaleToZeroEnabled && created.Status == domain.TaskStatusQueued {
 		if h.wakeup != nil {
-			go func() {
-				bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-				_ = h.wakeup.TriggerWakeup(bgCtx)
-			}()
+			// Synchronous (bounded) so it also completes on Lambda, where the container is frozen
+			// right after the response. Best-effort: the task is durably queued and the scheduler
+			// tick retries the wake-up if this fails.
+			wakeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			_ = h.wakeup.TriggerWakeup(wakeCtx)
+			cancel()
 		}
 		w.Header().Set("X-Runner-Status", "WAKEUP_SIGNALED")
 		httputil.JSON(w, http.StatusAccepted, created)
