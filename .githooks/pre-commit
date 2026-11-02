@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Griffin Git Pre-Commit Hook
+# Enforces Go code formatting, static analysis, secret prevention, and unit test integrity.
+
+set -e
+
+echo "==> [pre-commit] Running Griffin pre-commit checks..."
+
+# 1. Format check
+UNFORMATTED=$(gofmt -l .)
+if [ -n "$UNFORMATTED" ]; then
+    echo "ERROR: [pre-commit] Unformatted Go files detected:"
+    echo "$UNFORMATTED"
+    echo "Run 'gofmt -w -s .' or 'make fmt' to format files."
+    exit 1
+fi
+
+# 2. Go vet static analysis
+echo "==> [pre-commit] Running go vet static analysis..."
+go vet ./...
+
+# 3. Secret leak check (prevent committing sensitive keys/tokens/env files)
+echo "==> [pre-commit] Inspecting staged files for secrets and credentials..."
+STAGED_FILES=$(git diff --cached --name-only)
+for f in $STAGED_FILES; do
+    if [[ "$f" == *".env"* && "$f" != *".env.example"* ]]; then
+        echo "ERROR: [pre-commit] Blocked commit of environment file: $f"
+        echo "Only .env.example should be tracked in git."
+        exit 1
+    fi
+    if [[ "$f" == *"id_rsa"* || "$f" == *"*.pem"* || "$f" == *"*.key"* ]]; then
+        echo "ERROR: [pre-commit] Blocked commit of private key file: $f"
+        exit 1
+    fi
+done
+
+# 4. Fast unit test check (hermetic packages with no external database requirement)
+echo "==> [pre-commit] Running fast hermetic unit tests..."
+go test -short ./internal/config ./internal/domain ./internal/manager ./internal/provider/antigravity ./internal/runner
+
+echo "==> [pre-commit] All pre-commit checks passed successfully!"

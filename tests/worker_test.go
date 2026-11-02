@@ -380,4 +380,3 @@ exit 0
 		t.Fatalf("expected prompt=50, completion=25 tokens, got %d / %d", attempts[0].PromptTokens, attempts[0].CompletionTokens)
 	}
 }
-

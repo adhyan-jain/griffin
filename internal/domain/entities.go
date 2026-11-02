@@ -12,7 +12,7 @@ type Agent struct {
 	UserID                 uuid.UUID `json:"user_id"`
 	Name                   string    `json:"name"`
 	RoleType               string    `json:"role_type"`      // 'ORCHESTRATOR', 'MANAGER', 'WORKER'
-	ManagerDomain          string    `json:"manager_domain"`  // 'JJ', 'CAREER', 'RESEARCH', etc.
+	ManagerDomain          string    `json:"manager_domain"` // 'JJ', 'CAREER', 'RESEARCH', etc.
 	Description            string    `json:"description"`
 	SystemPrompt           string    `json:"system_prompt"`
 	ProviderPreference     string    `json:"provider_preference"`

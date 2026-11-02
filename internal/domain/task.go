@@ -54,8 +54,8 @@ type Task struct {
 	IdempotencyKey  *string         `json:"idempotency_key,omitempty"`
 
 	// Distributed lease fields
-	LeasedBy        *string    `json:"leased_by,omitempty"`
-	LeaseExpiresAt  *time.Time `json:"lease_expires_at,omitempty"`
+	LeasedBy       *string    `json:"leased_by,omitempty"`
+	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
 
 	// Execution tracking & retries
 	RetryCount    int        `json:"retry_count"`

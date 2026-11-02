@@ -14,25 +14,25 @@ var validWorkerKeyRegex = regexp.MustCompile(`^[a-z0-9_-]{3,64}$`)
 
 // WorkerDefinition represents a reusable specialist worker specification with explicit versioning.
 type WorkerDefinition struct {
-	ID                  uuid.UUID       `json:"id"`
-	UserID              uuid.UUID       `json:"user_id"`
-	WorkerKey           string          `json:"worker_key"`
-	Version             int             `json:"version"`
-	ManagerID           string          `json:"manager_id"`
-	Name                string          `json:"name"`
-	Description         string          `json:"description"`
-	SystemPrompt        string          `json:"system_prompt"`
-	Domain              string          `json:"domain"`
-	InputSchema         json.RawMessage `json:"input_schema"`
-	OutputSchema        json.RawMessage `json:"output_schema"`
-	AllowedCapabilities []string        `json:"allowed_capabilities"`
-	AllowedTools        []string        `json:"allowed_tools"`
-	ExecutionTimeoutSec int             `json:"execution_timeout_sec"`
-	MaxRetries          int             `json:"max_retries"`
-	VerificationCriteria []string       `json:"verification_criteria"`
-	IsActive            bool            `json:"is_active"`
-	CreatedAt           time.Time       `json:"created_at"`
-	UpdatedAt           time.Time       `json:"updated_at"`
+	ID                   uuid.UUID       `json:"id"`
+	UserID               uuid.UUID       `json:"user_id"`
+	WorkerKey            string          `json:"worker_key"`
+	Version              int             `json:"version"`
+	ManagerID            string          `json:"manager_id"`
+	Name                 string          `json:"name"`
+	Description          string          `json:"description"`
+	SystemPrompt         string          `json:"system_prompt"`
+	Domain               string          `json:"domain"`
+	InputSchema          json.RawMessage `json:"input_schema"`
+	OutputSchema         json.RawMessage `json:"output_schema"`
+	AllowedCapabilities  []string        `json:"allowed_capabilities"`
+	AllowedTools         []string        `json:"allowed_tools"`
+	ExecutionTimeoutSec  int             `json:"execution_timeout_sec"`
+	MaxRetries           int             `json:"max_retries"`
+	VerificationCriteria []string        `json:"verification_criteria"`
+	IsActive             bool            `json:"is_active"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
 // Validate checks worker definition constraints and ensures governance compliance.
@@ -103,16 +103,16 @@ func (w *WorkerDefinition) Validate() error {
 
 // WorkerDefinitionUpdate represents update parameters for versioning a worker definition.
 type WorkerDefinitionUpdate struct {
-	Name                *string          `json:"name,omitempty"`
-	Description         *string          `json:"description,omitempty"`
-	SystemPrompt        *string          `json:"system_prompt,omitempty"`
-	InputSchema         *json.RawMessage `json:"input_schema,omitempty"`
-	OutputSchema        *json.RawMessage `json:"output_schema,omitempty"`
-	AllowedCapabilities *[]string        `json:"allowed_capabilities,omitempty"`
-	AllowedTools        *[]string        `json:"allowed_tools,omitempty"`
-	ExecutionTimeoutSec *int             `json:"execution_timeout_sec,omitempty"`
-	MaxRetries          *int             `json:"max_retries,omitempty"`
-	VerificationCriteria *[]string       `json:"verification_criteria,omitempty"`
+	Name                 *string          `json:"name,omitempty"`
+	Description          *string          `json:"description,omitempty"`
+	SystemPrompt         *string          `json:"system_prompt,omitempty"`
+	InputSchema          *json.RawMessage `json:"input_schema,omitempty"`
+	OutputSchema         *json.RawMessage `json:"output_schema,omitempty"`
+	AllowedCapabilities  *[]string        `json:"allowed_capabilities,omitempty"`
+	AllowedTools         *[]string        `json:"allowed_tools,omitempty"`
+	ExecutionTimeoutSec  *int             `json:"execution_timeout_sec,omitempty"`
+	MaxRetries           *int             `json:"max_retries,omitempty"`
+	VerificationCriteria *[]string        `json:"verification_criteria,omitempty"`
 }
 
 // AgentFactoryAudit records changes to worker definitions.

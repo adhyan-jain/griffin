@@ -29,13 +29,13 @@ type Config struct {
 	RetainWorkspacesOnFailure  bool   // default false
 
 	// Scale-to-Zero and Runner settings
-	GriffinMode                       string // "all" (default), "api", "worker"
-	ScaleToZeroEnabled                bool   // default true
-	IdleShutdownSeconds               int    // default 300
-	PreShutdownCheckIntervalSeconds   int    // default 5
-	EC2InstanceID                     string // e.g. "i-0123456789abcdef0"
-	AWSRegion                         string // default "ap-south-1"
-	RunnerWakeupCooldownSeconds       int    // default 30
+	GriffinMode                     string // "all" (default), "api", "worker"
+	ScaleToZeroEnabled              bool   // default true
+	IdleShutdownSeconds             int    // default 300
+	PreShutdownCheckIntervalSeconds int    // default 5
+	EC2InstanceID                   string // e.g. "i-0123456789abcdef0"
+	AWSRegion                       string // default "ap-south-1"
+	RunnerWakeupCooldownSeconds     int    // default 30
 }
 
 // Load reads configuration from environment variables, applying secure defaults.

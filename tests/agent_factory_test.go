@@ -215,16 +215,16 @@ func TestAgentFactory_InstantiateTask(t *testing.T) {
 	userID := CreateTestUser(t, env.DB, "instantiate_tester@example.com")
 
 	def := &domain.WorkerDefinition{
-		UserID:               userID,
-		WorkerKey:            "learning_curriculum_designer",
-		ManagerID:            "learning",
-		Name:                 "Curriculum Designer",
-		SystemPrompt:         "Design structured learning roadmaps.",
-		AllowedCapabilities:  []string{domain.CapabilityResearchRead},
-		AllowedTools:         []string{"web_search"},
-		MaxRetries:           2,
-		InputSchema:          json.RawMessage(`{"type":"object"}`),
-		OutputSchema:         json.RawMessage(`{"type":"object"}`),
+		UserID:              userID,
+		WorkerKey:           "learning_curriculum_designer",
+		ManagerID:           "learning",
+		Name:                "Curriculum Designer",
+		SystemPrompt:        "Design structured learning roadmaps.",
+		AllowedCapabilities: []string{domain.CapabilityResearchRead},
+		AllowedTools:        []string{"web_search"},
+		MaxRetries:          2,
+		InputSchema:         json.RawMessage(`{"type":"object"}`),
+		OutputSchema:        json.RawMessage(`{"type":"object"}`),
 	}
 
 	created, err := env.AgentFactory.CreateWorkerDefinition(ctx, def, "USER")

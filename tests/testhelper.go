@@ -25,18 +25,18 @@ const (
 )
 
 type TestEnv struct {
-	DB           *database.DB
-	TaskRepo     repository.TaskRepository
-	ApprovalRepo repository.ApprovalRepository
-	AgentRepo    repository.AgentRepository
-	ArtifactRepo repository.ArtifactRepository
+	DB            *database.DB
+	TaskRepo      repository.TaskRepository
+	ApprovalRepo  repository.ApprovalRepository
+	AgentRepo     repository.AgentRepository
+	ArtifactRepo  repository.ArtifactRepository
 	WorkerDefRepo repository.WorkerDefinitionRepository
-	OrchRepo     repository.OrchestrationRepository
-	ManagerReg   *manager.Registry
-	AgentFactory *service.AgentFactoryService
-	Orchestrator *service.JJOrchestrator
-	Engine       *service.TaskEngine
-	Config       *config.Config
+	OrchRepo      repository.OrchestrationRepository
+	ManagerReg    *manager.Registry
+	AgentFactory  *service.AgentFactoryService
+	Orchestrator  *service.JJOrchestrator
+	Engine        *service.TaskEngine
+	Config        *config.Config
 }
 
 func SetupTestEnv(t *testing.T) *TestEnv {
@@ -89,18 +89,18 @@ func SetupTestEnv(t *testing.T) *TestEnv {
 	orchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, nil, nil)
 
 	return &TestEnv{
-		DB:           db,
-		TaskRepo:     taskRepo,
-		ApprovalRepo: approvalRepo,
-		AgentRepo:    agentRepo,
-		ArtifactRepo: artifactRepo,
+		DB:            db,
+		TaskRepo:      taskRepo,
+		ApprovalRepo:  approvalRepo,
+		AgentRepo:     agentRepo,
+		ArtifactRepo:  artifactRepo,
 		WorkerDefRepo: workerDefRepo,
-		OrchRepo:     orchRepo,
-		ManagerReg:   mgrReg,
-		AgentFactory: agentFactory,
-		Orchestrator: orchestrator,
-		Engine:       engine,
-		Config:       cfg,
+		OrchRepo:      orchRepo,
+		ManagerReg:    mgrReg,
+		AgentFactory:  agentFactory,
+		Orchestrator:  orchestrator,
+		Engine:        engine,
+		Config:        cfg,
 	}
 }
 

@@ -556,4 +556,3 @@ func TestCountRunnableTasks(t *testing.T) {
 		t.Fatalf("expected 0 runnable tasks after all completed, got %d (err: %v)", count, err)
 	}
 }
-

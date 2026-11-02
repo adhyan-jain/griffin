@@ -288,4 +288,3 @@ func (p *WorkerPool) ActiveCount() int {
 func (p *WorkerPool) Workers() []*Worker {
 	return p.workers
 }
-

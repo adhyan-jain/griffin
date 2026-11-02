@@ -287,7 +287,7 @@ func (e *TaskEngine) cascadeCancelDownstream(ctx context.Context, taskID uuid.UU
 }
 
 func calculateBackoff(retryCount int) time.Duration {
-	base := 5.0 // 5 seconds
+	base := 5.0     // 5 seconds
 	maxSec := 600.0 // 10 minutes
 
 	mult := math.Pow(2, float64(retryCount))

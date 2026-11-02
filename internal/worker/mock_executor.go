@@ -100,13 +100,13 @@ func (m *MockExecutor) Execute(ctx context.Context, task *domain.Task) (*Executi
 	convID := fmt.Sprintf("mock-conv-%s", task.ID.String()[:8])
 
 	return &ExecutionResult{
-		ExecutionID:    execID,
-		ProviderName:   m.Name(),
-		ConversationID: &convID,
-		Status:         "SUCCESS",
-		Output:         outBytes,
-		TextOutput:     fmt.Sprintf("Mock executed task %s successfully", task.Title),
-		PromptTokens:   100,
+		ExecutionID:      execID,
+		ProviderName:     m.Name(),
+		ConversationID:   &convID,
+		Status:           "SUCCESS",
+		Output:           outBytes,
+		TextOutput:       fmt.Sprintf("Mock executed task %s successfully", task.Title),
+		PromptTokens:     100,
 		CompletionTokens: 50,
 		Usage: &UsageMetadata{
 			InputTokens:  100,
