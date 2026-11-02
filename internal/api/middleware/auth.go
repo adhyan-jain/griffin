@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,9 +26,44 @@ type SupabaseClaims struct {
 	jwt.RegisteredClaims
 }
 
+// AuthOptions configures Supabase JWT verification.
+type AuthOptions struct {
+	HMACSecret string     // legacy HS256 JWT secret (optional if JWKS set)
+	JWKS       *JWKSCache // asymmetric signing keys (optional if HMACSecret set)
+	Issuer     string     // expected "iss" (optional)
+}
+
 // AuthenticateUser verifies Supabase JWTs and populates the authenticated user ID in context.
-func AuthenticateUser(jwtSecret string) func(http.Handler) http.Handler {
-	secretBytes := []byte(jwtSecret)
+// Only HS256 (with HMACSecret) and ES256/RS256 (with JWKS) are accepted; "none" and any other
+// algorithm are rejected. Tokens must carry role=authenticated and aud=authenticated, which
+// excludes Supabase anon and service_role keys.
+func AuthenticateUser(opts AuthOptions) func(http.Handler) http.Handler {
+	secretBytes := []byte(opts.HMACSecret)
+
+	keyFunc := func(t *jwt.Token) (any, error) {
+		switch t.Method.Alg() {
+		case "HS256":
+			if len(secretBytes) == 0 {
+				return nil, fmt.Errorf("HS256 not enabled")
+			}
+			return secretBytes, nil
+		case "ES256", "RS256":
+			if opts.JWKS == nil {
+				return nil, fmt.Errorf("asymmetric tokens not enabled")
+			}
+			kid, _ := t.Header["kid"].(string)
+			return opts.JWKS.Key(kid)
+		}
+		return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+	}
+	parserOpts := []jwt.ParserOption{
+		jwt.WithValidMethods([]string{"HS256", "ES256", "RS256"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithAudience("authenticated"),
+	}
+	if opts.Issuer != "" {
+		parserOpts = append(parserOpts, jwt.WithIssuer(opts.Issuer))
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,19 +79,14 @@ func AuthenticateUser(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			tokenString := parts[1]
-
-			// Parse and validate token
 			claims := &SupabaseClaims{}
-			token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
-				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-				}
-				return secretBytes, nil
-			})
-
+			token, err := jwt.ParseWithClaims(parts[1], claims, keyFunc, parserOpts...)
 			if err != nil || !token.Valid {
 				unauthorizedResponse(w, "Invalid or expired authentication token")
+				return
+			}
+			if claims.Role != "authenticated" {
+				unauthorizedResponse(w, "Token role is not authenticated")
 				return
 			}
 
@@ -80,7 +111,9 @@ func AuthenticateUser(jwtSecret string) func(http.Handler) http.Handler {
 }
 
 // AuthenticateWorker protects background worker endpoints with a shared secret API key.
+// The key is accepted via X-Worker-Key / X-Worker-API-Key / Bearer and compared in constant time.
 func AuthenticateWorker(workerAPIKey string) func(http.Handler) http.Handler {
+	want := []byte(workerAPIKey)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.Header.Get("X-Worker-Key")
@@ -94,7 +127,7 @@ func AuthenticateWorker(workerAPIKey string) func(http.Handler) http.Handler {
 				}
 			}
 
-			if apiKey == "" || apiKey != workerAPIKey {
+			if len(want) == 0 || apiKey == "" || subtle.ConstantTimeCompare([]byte(apiKey), want) != 1 {
 				unauthorizedResponse(w, "Invalid or missing worker API key")
 				return
 			}

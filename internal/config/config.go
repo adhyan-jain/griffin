@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds environment-driven settings for the Griffin engine and API server.
@@ -45,16 +47,52 @@ type Config struct {
 	S3ForcePathStyle       bool   // default false
 	AWSProfile             string // optional named AWS CLI profile for local dev
 	S3PresignExpiryMinutes int    // default 15 minutes
+
+	// Security hardening
+	CORSAllowedOrigins []string // exact origins; wildcard is rejected
+	EnableDevLogin     bool     // dev-only POST /api/v1/auth/login; refused in production
+	SupabaseJWKSURL    string   // optional JWKS endpoint for ES256/RS256 Supabase signing keys
+	SupabaseJWTIssuer  string   // optional expected "iss"
+	MaxUploadBytes     int64    // artifact upload cap, default 5 MiB
+
+	// Database pool (Supabase pooler friendly)
+	DBMaxConns int // default 25 (use 2 on Lambda)
+	DBMinConns int // default 2 (use 0 on Lambda)
+}
+
+// Environment names. Anything unset or unknown is treated as production (fail closed).
+const (
+	EnvProduction  = "production"
+	EnvDevelopment = "development"
+	EnvTest        = "test"
+)
+
+// IsProduction reports whether production safety rules apply.
+func (c *Config) IsProduction() bool { return c.Environment == EnvProduction }
+
+// knownDevSecrets are placeholder values that must never be used in production.
+var knownDevSecrets = map[string]bool{
+	"griffin-dev-secret-key-do-not-use-in-prod-minimum32chars": true,
+	"griffin-worker-secret-key-dev":                            true,
+	"test-secret-key-32chars-minimum-length-for-hmac!":         true,
+	"test-worker-api-key-secret-12345":                         true,
 }
 
 // Load reads configuration from environment variables, applying secure defaults.
 func Load() (*Config, error) {
+	env := strings.ToLower(strings.TrimSpace(getEnv("ENVIRONMENT", EnvProduction)))
+	switch env {
+	case EnvProduction, EnvDevelopment, EnvTest:
+	default:
+		return nil, fmt.Errorf("invalid ENVIRONMENT %q (want production, development or test)", env)
+	}
+
 	cfg := &Config{
 		Port:                            getEnvAsInt("PORT", 8080),
-		DatabaseURL:                     getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:54322/griffin_dev?sslmode=disable"),
-		SupabaseJWTSecret:               getEnv("SUPABASE_JWT_SECRET", "griffin-dev-secret-key-do-not-use-in-prod-minimum32chars"),
-		WorkerAPIKey:                    getEnv("WORKER_API_KEY", "griffin-worker-secret-key-dev"),
-		Environment:                     getEnv("ENVIRONMENT", "development"),
+		DatabaseURL:                     getEnv("DATABASE_URL", ""),
+		SupabaseJWTSecret:               getEnv("SUPABASE_JWT_SECRET", ""),
+		WorkerAPIKey:                    getEnv("WORKER_API_KEY", ""),
+		Environment:                     env,
 		LogLevel:                        getEnv("LOG_LEVEL", "info"),
 		LeaseDurationSeconds:            getEnvAsInt("LEASE_DURATION_SECONDS", 60),
 		HeartbeatIntervalSeconds:        getEnvAsInt("HEARTBEAT_INTERVAL_SECONDS", 15),
@@ -81,6 +119,13 @@ func Load() (*Config, error) {
 		S3ForcePathStyle:                getEnvAsBool("S3_FORCE_PATH_STYLE", false),
 		AWSProfile:                      getEnv("AWS_PROFILE", ""),
 		S3PresignExpiryMinutes:          getEnvAsInt("S3_PRESIGN_EXPIRY_MINUTES", 15),
+		CORSAllowedOrigins:              splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "")),
+		EnableDevLogin:                  getEnvAsBool("ENABLE_DEV_LOGIN", false),
+		SupabaseJWKSURL:                 getEnv("SUPABASE_JWKS_URL", ""),
+		SupabaseJWTIssuer:               getEnv("SUPABASE_JWT_ISSUER", ""),
+		MaxUploadBytes:                  int64(getEnvAsInt("MAX_UPLOAD_BYTES", 5<<20)),
+		DBMaxConns:                      getEnvAsInt("DB_MAX_CONNS", 25),
+		DBMinConns:                      getEnvAsInt("DB_MIN_CONNS", 2),
 	}
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {
@@ -89,8 +134,8 @@ func Load() (*Config, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
-	if cfg.SupabaseJWTSecret == "" {
-		return nil, fmt.Errorf("SUPABASE_JWT_SECRET is required")
+	if cfg.SupabaseJWTSecret == "" && cfg.SupabaseJWKSURL == "" {
+		return nil, fmt.Errorf("SUPABASE_JWT_SECRET (or SUPABASE_JWKS_URL) is required")
 	}
 	if cfg.WorkerAPIKey == "" {
 		return nil, fmt.Errorf("WORKER_API_KEY is required")
@@ -113,8 +158,102 @@ func Load() (*Config, error) {
 	if cfg.GracefulTerminationSeconds <= 0 {
 		cfg.GracefulTerminationSeconds = 5
 	}
+	if cfg.MaxUploadBytes <= 0 {
+		cfg.MaxUploadBytes = 5 << 20
+	}
+	if cfg.DBMaxConns <= 0 {
+		cfg.DBMaxConns = 25
+	}
+	if cfg.DBMinConns < 0 || cfg.DBMinConns > cfg.DBMaxConns {
+		cfg.DBMinConns = 0
+	}
+	for _, o := range cfg.CORSAllowedOrigins {
+		if err := validateOrigin(o); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.EnableDevLogin && cfg.IsProduction() {
+		return nil, fmt.Errorf("ENABLE_DEV_LOGIN must not be set in production")
+	}
+	if cfg.IsProduction() {
+		if err := cfg.validateProduction(); err != nil {
+			return nil, err
+		}
+	}
 
 	return cfg, nil
+}
+
+// validateProduction enforces fail-closed rules so development shortcuts cannot reach production.
+func (c *Config) validateProduction() error {
+	if c.SupabaseJWTSecret != "" {
+		if len(c.SupabaseJWTSecret) < 32 || knownDevSecrets[c.SupabaseJWTSecret] {
+			return fmt.Errorf("SUPABASE_JWT_SECRET is a development placeholder or shorter than 32 characters")
+		}
+	}
+	if len(c.WorkerAPIKey) < 32 || knownDevSecrets[c.WorkerAPIKey] {
+		return fmt.Errorf("WORKER_API_KEY is a development placeholder or shorter than 32 characters")
+	}
+	if c.WorkerAPIKey == c.SupabaseJWTSecret {
+		return fmt.Errorf("WORKER_API_KEY must differ from SUPABASE_JWT_SECRET")
+	}
+	u, err := url.Parse(c.DatabaseURL)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("DATABASE_URL is not a valid URL")
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return fmt.Errorf("DATABASE_URL must not point at localhost in production")
+	}
+	if m := u.Query().Get("sslmode"); m == "disable" || m == "allow" || m == "prefer" {
+		return fmt.Errorf("DATABASE_URL sslmode %q is not allowed in production", m)
+	}
+	if c.StorageProvider != "s3" {
+		return fmt.Errorf("STORAGE_PROVIDER must be s3 in production")
+	}
+	if _, set := os.LookupEnv("S3_BUCKET"); !set || c.S3Bucket == "griffin-artifacts" {
+		return fmt.Errorf("S3_BUCKET must be set explicitly in production")
+	}
+	if c.S3Endpoint != "" || c.AWSProfile != "" {
+		return fmt.Errorf("S3_ENDPOINT and AWS_PROFILE must not be set in production (use the IAM role)")
+	}
+	mode := c.GriffinMode
+	if mode != "all" && mode != "api" && mode != "worker" {
+		return fmt.Errorf("invalid GRIFFIN_MODE %q", mode)
+	}
+	runsAPI := mode == "all" || mode == "api"
+	runsWorker := mode == "all" || mode == "worker"
+	if runsAPI && len(c.CORSAllowedOrigins) == 0 {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS is required in production")
+	}
+	if runsAPI && c.ScaleToZeroEnabled && c.EC2InstanceID == "" {
+		return fmt.Errorf("EC2_INSTANCE_ID is required in production when scale-to-zero is enabled")
+	}
+	if runsWorker && c.AIProvider != "antigravity" {
+		return fmt.Errorf("AI_PROVIDER must be antigravity in production (mock executor is not allowed)")
+	}
+	return nil
+}
+
+func validateOrigin(o string) error {
+	if o == "*" || strings.Contains(o, "*") {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS must not contain wildcards: %q", o)
+	}
+	u, err := url.Parse(o)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.Path != "" || u.RawQuery != "" {
+		return fmt.Errorf("invalid CORS origin %q (want scheme://host[:port])", o)
+	}
+	return nil
+}
+
+func splitCSV(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, strings.TrimRight(p, "/"))
+		}
+	}
+	return out
 }
 
 func getEnv(key, defaultVal string) string {
