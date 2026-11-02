@@ -1,0 +1,19 @@
+-- 000001_init_schema.down.sql
+-- Griffin Core Schema Rollback
+
+DROP TABLE IF EXISTS notifications CASCADE;
+DROP TABLE IF EXISTS artifacts CASCADE;
+DROP TABLE IF EXISTS schedules CASCADE;
+DROP TABLE IF EXISTS approvals CASCADE;
+DROP TABLE IF EXISTS task_events CASCADE;
+DROP TABLE IF EXISTS task_attempts CASCADE;
+DROP TABLE IF EXISTS task_dependencies CASCADE;
+DROP TABLE IF EXISTS tasks CASCADE;
+DROP TABLE IF EXISTS agents CASCADE;
+DROP TABLE IF EXISTS workspaces CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;
+
+DROP TYPE IF EXISTS approval_risk_level;
+DROP TYPE IF EXISTS approval_status;
+DROP TYPE IF EXISTS task_priority;
+DROP TYPE IF EXISTS task_status;

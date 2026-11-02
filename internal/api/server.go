@@ -1,0 +1,127 @@
+package api
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/griffin/core/internal/api/handlers"
+	"github.com/griffin/core/internal/api/middleware"
+	"github.com/griffin/core/internal/config"
+	"github.com/griffin/core/internal/database"
+	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/service"
+)
+
+// Server coordinates HTTP routing, middleware chains, and lifecycle.
+type Server struct {
+	httpServer *http.Server
+	cfg        *config.Config
+	logger     *slog.Logger
+	engine     *service.TaskEngine
+}
+
+// ServerDependencies holds all required repositories and services for HTTP routing.
+type ServerDependencies struct {
+	Config       *config.Config
+	Logger       *slog.Logger
+	DB           *database.DB
+	Engine       *service.TaskEngine
+	TaskRepo     repository.TaskRepository
+	ApprovalRepo repository.ApprovalRepository
+	AgentRepo    repository.AgentRepository
+	ArtifactRepo repository.ArtifactRepository
+}
+
+// NewServer initializes and configures the HTTP server.
+func NewServer(deps ServerDependencies) *Server {
+	if deps.Logger == nil {
+		deps.Logger = slog.Default()
+	}
+
+	mux := http.NewServeMux()
+
+	// 1. Health & Readiness handlers (unauthenticated)
+	healthHandler := handlers.NewHealthHandler(deps.DB)
+	mux.HandleFunc("GET /healthz", healthHandler.Healthz)
+	mux.HandleFunc("GET /readyz", healthHandler.Readyz)
+
+	// 2. User-authenticated route groups
+	userAuth := middleware.AuthenticateUser(deps.Config.SupabaseJWTSecret)
+
+	taskHandler := handlers.NewTaskHandler(deps.Engine, deps.TaskRepo)
+	mux.Handle("POST /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.CreateTask)))
+	mux.Handle("GET /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.ListTasks)))
+	mux.Handle("GET /api/v1/tasks/{id}", userAuth(http.HandlerFunc(taskHandler.GetTask)))
+	mux.Handle("POST /api/v1/tasks/{id}/cancel", userAuth(http.HandlerFunc(taskHandler.CancelTask)))
+	mux.Handle("GET /api/v1/tasks/{id}/events", userAuth(http.HandlerFunc(taskHandler.GetTaskEvents)))
+	mux.Handle("GET /api/v1/tasks/{id}/attempts", userAuth(http.HandlerFunc(taskHandler.GetTaskAttempts)))
+
+	approvalHandler := handlers.NewApprovalHandler(deps.Engine, deps.ApprovalRepo)
+	mux.Handle("GET /api/v1/approvals", userAuth(http.HandlerFunc(approvalHandler.ListApprovals)))
+	mux.Handle("POST /api/v1/approvals/{id}/respond", userAuth(http.HandlerFunc(approvalHandler.RespondApproval)))
+
+	agentHandler := handlers.NewAgentHandler(deps.AgentRepo)
+	mux.Handle("GET /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.ListAgents)))
+	mux.Handle("POST /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.RegisterAgent)))
+
+	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo)
+	mux.Handle("GET /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.ListArtifacts)))
+	mux.Handle("GET /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
+	mux.Handle("POST /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.CreateArtifact)))
+
+	// 3. Worker-authenticated route group
+	workerAuth := middleware.AuthenticateWorker(deps.Config.WorkerAPIKey)
+	workerHandler := handlers.NewWorkerHandler(deps.Engine, time.Duration(deps.Config.LeaseDurationSeconds)*time.Second)
+
+	mux.Handle("POST /api/v1/workers/claim", workerAuth(http.HandlerFunc(workerHandler.ClaimTask)))
+	mux.Handle("POST /api/v1/workers/{task_id}/heartbeat", workerAuth(http.HandlerFunc(workerHandler.Heartbeat)))
+	mux.Handle("POST /api/v1/workers/{task_id}/complete", workerAuth(http.HandlerFunc(workerHandler.CompleteTask)))
+	mux.Handle("POST /api/v1/workers/{task_id}/fail", workerAuth(http.HandlerFunc(workerHandler.FailTask)))
+
+	// 4. Global middleware wrapping
+	handler := middleware.RequestID(
+		middleware.Logger(deps.Logger)(
+			middleware.Recovery(deps.Logger)(mux),
+		),
+	)
+
+	addr := fmt.Sprintf(":%d", deps.Config.Port)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	return &Server{
+		httpServer: srv,
+		cfg:        deps.Config,
+		logger:     deps.Logger,
+		engine:     deps.Engine,
+	}
+}
+
+// Handler returns the underlying http.Handler for testing.
+func (s *Server) Handler() http.Handler {
+	return s.httpServer.Handler
+}
+
+// Start begins listening and serving traffic.
+func (s *Server) Start() error {
+	s.logger.Info("Starting Griffin HTTP Server", "addr", s.httpServer.Addr, "env", s.cfg.Environment)
+	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("http server failure: %w", err)
+	}
+	return nil
+}
+
+// Shutdown gracefully drains active connections.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.logger.Info("Gracefully shutting down HTTP server")
+	return s.httpServer.Shutdown(ctx)
+}

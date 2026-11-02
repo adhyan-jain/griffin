@@ -1,0 +1,15 @@
+# Binaries
+bin/
+griffin-server
+
+# Environment & secrets
+.env
+*.local
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+*.tmp
