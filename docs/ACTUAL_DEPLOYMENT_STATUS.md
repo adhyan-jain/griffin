@@ -5,8 +5,15 @@ Last verified: 2026-11-02 (live read-only checks; nothing created). **Griffin is
 | Item | Status | Evidence |
 |---|---|---|
 | Code on `origin/master` | VERIFIED | `83a0783` present, CI green (Test & Build, Web, Code Quality) |
-| `~/.griffin-prod.env` | **MISSING** | file not found → no Supabase credentials available |
-| Supabase project / JWT type / poolers | **BLOCKED** | cannot be checked without the env file |
+| `~/.griffin-prod.env` | VERIFIED (mode 600, outside repo; 10 variables; repo grep shows no credential in Git) | values never printed |
+| Supabase project / region | VERIFIED | `aws-0-ap-south-1` pooler answers; Postgres 17.11 |
+| Supabase poolers | VERIFIED | session :5432 and transaction :6543 both authenticate. Direct host is IPv6-only (unusable from this machine/AWS default VPC) |
+| JWT signing | VERIFIED asymmetric | JWKS has one ES256/P-256 key → `SUPABASE_JWKS_URL` + issuer; no legacy secret |
+| Publishable key | VERIFIED accepted by Auth; supabase-js ^2.118 compatible | backend never uses it |
+| **Public sign-ups** | **NOT DISABLED** (`disable_signup:false`) | dashboard action required **before any public deployment** |
+| Operator user | MISSING | `auth.users` has 0 rows |
+| Database schema | EMPTY — 4 migrations pending | see `docs/SUPABASE_MIGRATION_PLAN.md` (**awaiting approval**) |
+| RLS on backend path | FINDING | role `postgres` has BYPASSRLS; isolation is app-level; plan adds least-privilege `griffin_app` |
 | IAM Policy A (deployer EC2/SSM) | **MISSING** | `ec2 run-instances --dry-run` → `UnauthorizedOperation` |
 | IAM Policy C (worker runtime) | **MISSING** | worker role still has only `GriffinArtifactStorageAccess` |
 | Lambda / API Gateway / EventBridge / SSM access | **BLOCKED** | `AccessDenied` for `griffin-bootstrap` (needs Policy D) |
