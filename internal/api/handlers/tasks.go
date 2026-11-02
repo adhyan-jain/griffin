@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -16,15 +17,24 @@ import (
 	"github.com/griffin/core/internal/service"
 )
 
-type TaskHandler struct {
-	engine   *service.TaskEngine
-	taskRepo repository.TaskRepository
+// RunnerWakeup defines the interface for triggering an on-demand runner startup.
+type RunnerWakeup interface {
+	TriggerWakeup(ctx context.Context) error
 }
 
-func NewTaskHandler(engine *service.TaskEngine, taskRepo repository.TaskRepository) *TaskHandler {
+type TaskHandler struct {
+	engine             *service.TaskEngine
+	taskRepo           repository.TaskRepository
+	wakeup             RunnerWakeup
+	scaleToZeroEnabled bool
+}
+
+func NewTaskHandler(engine *service.TaskEngine, taskRepo repository.TaskRepository, wakeup RunnerWakeup, scaleToZeroEnabled bool) *TaskHandler {
 	return &TaskHandler{
-		engine:   engine,
-		taskRepo: taskRepo,
+		engine:             engine,
+		taskRepo:           taskRepo,
+		wakeup:             wakeup,
+		scaleToZeroEnabled: scaleToZeroEnabled,
 	}
 }
 
@@ -76,6 +86,21 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	created, err := h.engine.CreateTask(r.Context(), task, req.Dependencies)
 	if err != nil {
 		httputil.ErrorJSON(w, err)
+		return
+	}
+
+	// In scale-to-zero mode, when work is queued for a runner, asynchronously trigger wake-up
+	// and return 202 Accepted with status header.
+	if h.scaleToZeroEnabled && created.Status == domain.TaskStatusQueued {
+		if h.wakeup != nil {
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				_ = h.wakeup.TriggerWakeup(bgCtx)
+			}()
+		}
+		w.Header().Set("X-Runner-Status", "WAKEUP_SIGNALED")
+		httputil.JSON(w, http.StatusAccepted, created)
 		return
 	}
 

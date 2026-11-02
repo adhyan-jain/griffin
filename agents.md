@@ -11,7 +11,7 @@ Before modifying code or proposing architectural changes, you **must** read and 
 **Griffin** is a cloud-first personal AI workforce.
 - **JJ** is the top-level orchestrator and Chief of Staff.
 - JJ coordinates **11 specialist domain managers** (Career, Research, Engineering, Networking, Finance, etc.), which delegate work to specialist workers.
-- Griffin runs 24/7 on an AWS EC2 Linux instance in Mumbai (`ap-south-1`) so the user's laptop is **never required to remain open or online**.
+- Griffin runs on an AWS EC2 Linux runner in Mumbai (`ap-south-1`) with on-demand scale-to-zero, so the user's laptop is **never required to remain open or online**, while compute stops when idle to minimize costs (>90% compute savings).
 - **Antigravity CLI (`agy`)** under the user's existing subscription is the **PRIMARY** execution engine, delivering high-intelligence reasoning with **zero per-token API billing**.
 
 ---
@@ -56,18 +56,23 @@ Every agent working on Griffin must consult and update these two living ledgers:
 7. **Database-Level Tenant Isolation (ADR-003)**:
    - `FORCE ROW LEVEL SECURITY` is enabled across all tenant tables.
    - Never trust frontend-supplied user IDs; validate Supabase JWTs and enforce `auth.uid() = user_id`.
+8. **On-Demand Scale-to-Zero & Atomic Pre-Shutdown Safety (ADR-029, ADR-031)**:
+   - EC2 compute scales to zero after a configurable idle period (`IDLE_SHUTDOWN_SECONDS`, default 300s).
+   - Ingress API remains available 24/7 independently, returning `202 Accepted` on queued work and waking the runner asynchronously.
+   - The idle shutdown monitor enforces an atomic PostgreSQL recheck (`CountRunnableTasks`) immediately prior to issuing system shutdown, completely neutralizing shutdown race conditions.
 
 ---
 
 ## 4. Current Implementation State
 
-| Phase | Description | Status |
+| Phase / Milestone | Description | Status |
 | :--- | :--- | :--- |
 | **Phase 0** | Architecture & Feasibility Audit (18 architecture documents) | **COMPLETE** |
 | **Phase 0.5** | AWS Antigravity Cloud Runner Proof of Concept & Empirical Benchmarks | **VALIDATED & STAGED** |
 | **Phase 1** | Core Engine & Data Foundations (Go Monolith, Migrations, Task Engine, RLS, REST API) | **COMPLETE (25/25 Tests PASS)** |
-| **Phase 2** | Antigravity Primary Execution Provider & Runner Adapter | **NEXT (Ready for Execution)** |
-| **Phase 3** | JJ Orchestration Engine & Specialist Managers | PLANNED |
+| **Phase 2** | Antigravity Primary Execution Provider & Subprocess Containment | **COMPLETE (37/37 Tests PASS)** |
+| **Scale-to-Zero** | On-Demand EC2 Scale-to-Zero, Wake-up Controller, Idle Shutdown, EventBridge Tick | **IMPLEMENTED (42/42 Tests PASS)** |
+| **Phase 3** | JJ Orchestration Engine & Specialist Managers | NEXT (Ready for Execution) |
 | **Phase 4** | Next.js 15 PWA Interface & Real-Time SSE Streaming | PLANNED |
 | **Phase 5** | Production Hardening, Cloud Activation & 30-Day Longevity | PLANNED |
 

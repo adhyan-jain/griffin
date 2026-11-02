@@ -15,6 +15,7 @@ timeline
     Epoch 3 : Cloud Runner Validation (Phase 0.5) : Empirical Linux Benchmarking : 2-Worker Concurrency Model : Staged AWS SSM Automation
     Epoch 4 : Core Engine Implementation (Phase 1) : 11-State DAG Lifecycle : PostgreSQL SKIP LOCKED : RLS Isolation Tested
     Epoch 5 : Primary AI Provider Integration (Phase 2) : Subprocess Process Groups : Pure argv Injection Defense : Zero Paid Fallback Enforced
+    Epoch 6 : The Scale-to-Zero Pivot (Cost Amendment) : Decoupled Serverless API : EC2 On-Demand Compute : Atomic Pre-Shutdown Check
     Future Epochs : Phase 3 (Specialist Managers) : Phase 4 (Next.js PWA)
 ```
 
@@ -127,20 +128,35 @@ Integrating the real Google Antigravity CLI as Griffin's primary engine surfaced
 
 ---
 
+### Epoch 6: The Scale-to-Zero Pivot (Cost & Architecture Amendment)
+- **The Financial Reality**: Even with promotional credits on AWS, keeping a dedicated VM running 24/7 incurs continuous billing. Once credits expire, compute on `t4g.medium` costs ~$16.35/month. For a personal AI workforce that is actively executing tasks 1 to 2 hours per day, running 24/7 means paying for 22+ hours of idle CPU.
+- **The Decision**: Griffin must scale to zero on demand. The EC2 VM stops during idle windows and starts automatically when runnable tasks appear.
+- **The Distributed Systems Discoveries**:
+  1. *Decoupled API Ingress*: The public REST API cannot reside solely on the stoppable EC2 VM, or users would experience connection failures whenever the runner is asleep. Ingress is decoupled into a lightweight serverless entrypoint, while EC2 acts as an ephemeral execution runner.
+  2. *Cold Boots and 202 Accepted*: Booting an EC2 instance from stopped to running takes 30–45 seconds. Synchronous HTTP responses would time out. The API shifts to asynchronous ingestion: returning `202 Accepted` with `X-Runner-Status: WAKEUP_SIGNALED` within 20ms.
+  3. *The AWS Stopping State Trap*: Calling AWS `ec2:StartInstances` while an instance is still in the `stopping` transitional state throws `InvalidInstanceState`. The wake-up controller implements debounced polling with exponential backoff until the runner reaches `stopped` before issuing `StartInstances`.
+  4. *The Simultaneous Task Arrival Shutdown Race*: If a task arrives just as the idle shutdown monitor enters draining or prepares to call the shutdown syscall, naive systems stop the machine and starve the newly arrived task until an external trigger. Griffin introduces an **atomic pre-shutdown recheck**: `CountRunnableTasks` is queried immediately before shutdown. If any task arrived or the check fails, shutdown is aborted, workers resume, and the monitor resets to `ACTIVE`.
+  5. *Periodic Cron Scans without VM Cron*: Because the VM sleeps, OS-level cron cannot be relied upon to trigger scheduled tasks. AWS EventBridge Scheduler triggers `POST /api/v1/scheduler/tick` on the ingress API every minute, waking the runner when cron tasks are ready.
+- **The Outcome**: Compute costs drop by >90% (to ~$1.34/mo for 2hr/day workloads), bringing total operating costs (including encrypted storage) to ~$4.13/mo.
+
+---
+
 ## 3. Product Vision & Architecture Comparison
 
-| Architectural Dimension | Initial Concept (Day 1) | Phase 1 (Engine Core) | Current Built Reality (Phase 2 Complete) |
-| :--- | :--- | :--- | :--- |
-| **Compute Location** | Local Laptop or Generic Cloud | Dedicated EC2 Graviton2 with SSM | Dedicated EC2 Graviton2 with SSM Session Manager |
-| **AI Execution Engine** | Commercial Model API Keys | MockExecutor in Go | **Antigravity CLI as PRIMARY Default Engine** |
-| **API Token Cost** | Pay-per-token ($$$/month) | $0.00 (Mock Engine) | **$0.00 model token cost** (Personal Subscription) |
-| **Subprocess Containment**| None | Abstract provider contract | **`Setpgid: true`, SIGTERM/SIGKILL, Process Groups** |
-| **Workspace Security** | Shared /tmp | None | **Isolated 0700 Scratchpads with Path Traversal Defense** |
-| **Task Queue** | Abstract / Redis considered | PostgreSQL 17 `SKIP LOCKED` | **Native PostgreSQL 17 `SKIP LOCKED` with Leases** |
-| **Task States** | 5 simple states | 11 robust states | **11 robust states with DAG dependency cascading** |
-| **Worker Concurrency** | Unbounded goroutines | 2 workers configured | **2-worker pool bounded semaphore + 2 GiB swapfile** |
-| **Tenant Isolation** | App-level filtering | `FORCE ROW LEVEL SECURITY` | **`FORCE ROW LEVEL SECURITY` verified with test role** |
-| **Testing Strategy** | Manual runs | Mock unit & integration tests | **Two-Tier: 100% Hermetic Mocks + Live CLI Probe** |
+| Architectural Dimension | Initial Concept (Day 1) | Phase 1 (Engine Core) | Phase 2 (Antigravity Primary) | Current Built Reality (Scale-to-Zero) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Compute Model** | Local Laptop or Cloud | Dedicated 24/7 EC2 VM | Dedicated 24/7 EC2 VM | **On-Demand Scale-to-Zero EC2 Runner** |
+| **Ingress Availability** | Coupled to host | Coupled to host | Coupled to host | **Decoupled Serverless / Always-On Ingress** |
+| **Task Ingestion Semantics**| Synchronous | Synchronous 201 Created | Synchronous 201 Created | **Asynchronous 202 Accepted on Sleep** |
+| **AI Execution Engine** | Commercial Model API Keys | MockExecutor in Go | Antigravity CLI (`agy`) | **Antigravity CLI (`agy`) Primary** |
+| **API Token Cost** | Pay-per-token ($$$/month) | $0.00 (Mock Engine) | $0.00 model token cost | **$0.00 model token cost (Personal Sub)** |
+| **EC2 Compute Cost** | N/A | ~$16.35/mo (always-on) | ~$16.35/mo (always-on) | **~$1.34/mo (91.8% savings on 2hr/day)** |
+| **Subprocess Containment**| None | Abstract provider contract | `Setpgid: true`, Process Groups | **`Setpgid: true`, Process Groups** |
+| **Shutdown Race Handling**| None | None | Graceful OS shutdown | **Atomic Pre-Shutdown DB Recheck** |
+| **Task Queue** | Abstract / Redis | PostgreSQL 17 `SKIP LOCKED` | PostgreSQL 17 `SKIP LOCKED` | **Native PostgreSQL 17 `SKIP LOCKED`** |
+| **Task States** | 5 simple states | 11 robust states | 11 robust states with DAG | **11 robust states with DAG** |
+| **Worker Concurrency** | Unbounded | 2 workers configured | 2-worker bounded pool | **2-worker bounded pool + Draining** |
+| **Testing Strategy** | Manual runs | Mock unit & integration | Two-Tier (Hermetic + Live) | **Two-Tier + Scale-to-Zero State Machine Suite** |
 
 ---
 
@@ -151,4 +167,6 @@ Integrating the real Google Antigravity CLI as Griffin's primary engine surfaced
 3. **Never allow silent paid fallbacks**: AI systems must fail fast and halt when subscription credentials expire. Silent failover to paid API endpoints leads to unexpected bill shock.
 4. **PostgreSQL is all the message broker you need for V1**: Standard PostgreSQL row-level locks (`SELECT ... FOR UPDATE SKIP LOCKED`) provide crash resilience, transactional safety, and sub-millisecond polling with zero extra infrastructure.
 5. **Pure `argv` slices neutralize prompt injection attacks against host OS**: Treating LLM prompts as raw data tokens rather than shell arguments keeps the host OS safe from execution attacks.
+6. **Scale-to-zero requires atomic double-checking before machine power-off**: In distributed on-demand compute, task arrival is asynchronous to shutdown timers. Never initiate a system stop without an atomic database recheck immediately before the power syscall; otherwise, tasks submitted during draining will starve until an external stimulus occurs.
+
 

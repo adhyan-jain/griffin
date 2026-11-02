@@ -152,6 +152,49 @@ This document is the canonical ledger of all architectural, product, engineering
 
 ---
 
+### Scale-to-Zero & On-Demand Cloud Runner Architecture
+
+#### ADR-029: On-Demand Compute via Scale-to-Zero Architecture
+- **Status**: IMPLEMENTED (Scale-to-Zero)
+- **Decision**: Pivot from an always-on 24/7 EC2 compute model to on-demand execution where the EC2 runner stops during idle periods and wakes up on runnable work. Ingress API stays online 24/7 independently on serverless compute. Supabase PostgreSQL remains the durable source of truth.
+- **Rationale**: Slashes monthly EC2 compute costs by over 90% (from ~$16.35/mo to ~$1.34/mo for typical 2hr/day workloads) while preserving unattended execution, encrypted EBS state, and zero-paid-fallback guarantees.
+- **Location**: [`docs/SCALE_TO_ZERO_ARCHITECTURE.md`](file:///home/adhyan/Desktop/griffin/docs/SCALE_TO_ZERO_ARCHITECTURE.md), [`internal/runner/`](file:///home/adhyan/Desktop/griffin/internal/runner/)
+
+#### ADR-030: Asynchronous 202 Accepted Task Ingestion
+- **Status**: IMPLEMENTED (Scale-to-Zero)
+- **Decision**: When `SCALE_TO_ZERO_ENABLED=true` and tasks are submitted in `QUEUED` state, the API persists the task durably in PostgreSQL, triggers runner wake-up asynchronously, and immediately responds to the client with `202 Accepted` and `X-Runner-Status: WAKEUP_SIGNALED`.
+- **Rationale**: Decouples client HTTP latency (<20ms response time) from cloud VM cold-boot latencies (30–45s boot time), preventing HTTP timeouts on edge and mobile clients.
+- **Location**: [`internal/api/handlers/tasks.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/tasks.go)
+
+#### ADR-031: Atomic Pre-Shutdown Database Recheck to Neutralize Shutdown Races
+- **Status**: IMPLEMENTED (Scale-to-Zero)
+- **Decision**: When the idle shutdown timer expires, the worker pool pauses task claims and enters `DRAINING`. Once in-flight executions finish, the monitor performs an atomic database recheck (`CountRunnableTasks(ctx)`). If ANY runnable task arrived during draining, or if the recheck fails, shutdown is aborted, workers resume, and the monitor resets to `ACTIVE`.
+- **Rationale**: Prevents task starvation and race conditions where tasks arriving milliseconds before machine shutdown would otherwise remain stranded until an external trigger.
+- **Location**: [`internal/runner/shutdown.go`](file:///home/adhyan/Desktop/griffin/internal/runner/shutdown.go)
+
+#### ADR-032: Debounced Wake-Up Controller with Stopping-State Retry Backoff
+- **Status**: IMPLEMENTED (Scale-to-Zero)
+- **Decision**: The wake-up controller enforces a 30-second cooldown window between AWS `ec2:StartInstances` API calls, protecting against request stampedes. If the EC2 instance is currently in `stopping` state (which returns `InvalidInstanceState` on immediate `StartInstances`), the controller enters a background retry loop polling with exponential backoff until the instance reaches `stopped`, then issues `StartInstances`.
+- **Rationale**: AWS EC2 rejects start commands on instances that have not yet fully stopped. Debouncing and retries guarantee reliable runner startup without race crashes.
+- **Location**: [`internal/runner/wakeup.go`](file:///home/adhyan/Desktop/griffin/internal/runner/wakeup.go)
+
+#### ADR-033: Decoupled Multi-Mode Binary Entrypoint (`GRIFFIN_MODE=all|api|worker`)
+- **Status**: IMPLEMENTED (Scale-to-Zero)
+- **Decision**: The single `griffin-server` binary supports three runtime modes:
+  1. `all`: Monolithic mode running both API server and background workers (default for local dev).
+  2. `api`: Ingress-only mode running HTTP endpoints and wake-up controller (for serverless edge or container hosting).
+  3. `worker`: Headless runner mode running worker pools, task execution, and idle shutdown monitor on EC2.
+- **Rationale**: Allows deploying identical, battle-tested Go code across serverless ingress and stoppable EC2 compute without maintaining separate codebases.
+- **Location**: [`cmd/griffin-server/main.go`](file:///home/adhyan/Desktop/griffin/cmd/griffin-server/main.go), [`internal/config/config.go`](file:///home/adhyan/Desktop/griffin/internal/config/config.go)
+
+#### ADR-034: External Periodic Scheduler Tick via EventBridge
+- **Status**: IMPLEMENTED (Scale-to-Zero)
+- **Decision**: Griffin exposes an authenticated `POST /api/v1/scheduler/tick` endpoint protected by `X-Worker-Key`. AWS EventBridge Scheduler triggers this endpoint every minute to inspect PostgreSQL for due cron tasks and trigger runner wake-up when runnable work exists.
+- **Rationale**: Offloads periodic scheduling from the stoppable EC2 VM to free-tier cloud serverless infrastructure, ensuring scheduled tasks (such as morning briefings) wake the runner right on time.
+- **Location**: [`internal/api/handlers/scheduler.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/scheduler.go), [`docs/SERVERLESS_API_DESIGN.md`](file:///home/adhyan/Desktop/griffin/docs/SERVERLESS_API_DESIGN.md)
+
+---
+
 ## 2. Decisions Planned (Future Phases)
 
 ### Phase 2 Operations & Background Maintenance

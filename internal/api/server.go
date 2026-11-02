@@ -33,6 +33,7 @@ type ServerDependencies struct {
 	ApprovalRepo repository.ApprovalRepository
 	AgentRepo    repository.AgentRepository
 	ArtifactRepo repository.ArtifactRepository
+	Wakeup       handlers.RunnerWakeup
 }
 
 // NewServer initializes and configures the HTTP server.
@@ -51,7 +52,12 @@ func NewServer(deps ServerDependencies) *Server {
 	// 2. User-authenticated route groups
 	userAuth := middleware.AuthenticateUser(deps.Config.SupabaseJWTSecret)
 
-	taskHandler := handlers.NewTaskHandler(deps.Engine, deps.TaskRepo)
+	scaleToZero := false
+	if deps.Config != nil {
+		scaleToZero = deps.Config.ScaleToZeroEnabled
+	}
+
+	taskHandler := handlers.NewTaskHandler(deps.Engine, deps.TaskRepo, deps.Wakeup, scaleToZero)
 	mux.Handle("POST /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.CreateTask)))
 	mux.Handle("GET /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.ListTasks)))
 	mux.Handle("GET /api/v1/tasks/{id}", userAuth(http.HandlerFunc(taskHandler.GetTask)))
@@ -59,7 +65,7 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/tasks/{id}/events", userAuth(http.HandlerFunc(taskHandler.GetTaskEvents)))
 	mux.Handle("GET /api/v1/tasks/{id}/attempts", userAuth(http.HandlerFunc(taskHandler.GetTaskAttempts)))
 
-	approvalHandler := handlers.NewApprovalHandler(deps.Engine, deps.ApprovalRepo)
+	approvalHandler := handlers.NewApprovalHandler(deps.Engine, deps.ApprovalRepo, deps.Wakeup)
 	mux.Handle("GET /api/v1/approvals", userAuth(http.HandlerFunc(approvalHandler.ListApprovals)))
 	mux.Handle("POST /api/v1/approvals/{id}/respond", userAuth(http.HandlerFunc(approvalHandler.RespondApproval)))
 
@@ -72,7 +78,7 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
 	mux.Handle("POST /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.CreateArtifact)))
 
-	// 3. Worker-authenticated route group
+	// 3. Worker-authenticated route group & Scheduler route
 	workerAuth := middleware.AuthenticateWorker(deps.Config.WorkerAPIKey)
 	workerHandler := handlers.NewWorkerHandler(deps.Engine, time.Duration(deps.Config.LeaseDurationSeconds)*time.Second)
 
@@ -80,6 +86,9 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("POST /api/v1/workers/{task_id}/heartbeat", workerAuth(http.HandlerFunc(workerHandler.Heartbeat)))
 	mux.Handle("POST /api/v1/workers/{task_id}/complete", workerAuth(http.HandlerFunc(workerHandler.CompleteTask)))
 	mux.Handle("POST /api/v1/workers/{task_id}/fail", workerAuth(http.HandlerFunc(workerHandler.FailTask)))
+
+	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.Wakeup)
+	mux.Handle("POST /api/v1/scheduler/tick", workerAuth(http.HandlerFunc(schedulerHandler.Tick)))
 
 	// 4. Global middleware wrapping
 	handler := middleware.RequestID(

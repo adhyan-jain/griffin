@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,9 @@ type Worker struct {
 	heartbeatInterval time.Duration
 	pollInterval      time.Duration
 	logger            *slog.Logger
+
+	paused   atomic.Bool
+	inFlight atomic.Int32
 }
 
 // Config holds settings for constructing a Worker.
@@ -70,8 +74,27 @@ func NewWorker(cfg Config) *Worker {
 	}
 }
 
+// Pause halts new task claiming by this worker.
+func (w *Worker) Pause() {
+	w.paused.Store(true)
+}
+
+// Resume allows this worker to resume claiming tasks.
+func (w *Worker) Resume() {
+	w.paused.Store(false)
+}
+
+// InFlight returns the number of tasks currently being executed by this worker.
+func (w *Worker) InFlight() int {
+	return int(w.inFlight.Load())
+}
+
 // ProcessNext attempts to claim and execute one task. Returns true if a task was claimed and processed.
 func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
+	if w.paused.Load() {
+		return false, nil
+	}
+
 	task, err := w.engine.ClaimTask(ctx, w.ID, w.leaseDuration)
 	if err != nil {
 		return false, fmt.Errorf("claim task: %w", err)
@@ -79,6 +102,9 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	if task == nil {
 		return false, nil // Queue was empty
 	}
+
+	w.inFlight.Add(1)
+	defer w.inFlight.Add(-1)
 
 	w.logger.Info("Worker claimed task", "worker_id", w.ID, "task_id", task.ID, "title", task.Title)
 
@@ -219,3 +245,47 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 	}
 }
+
+// WorkerPool groups multiple workers and satisfies the runner.WorkerDrainer interface.
+type WorkerPool struct {
+	workers []*Worker
+}
+
+// NewWorkerPool wraps multiple workers.
+func NewWorkerPool(workers ...*Worker) *WorkerPool {
+	return &WorkerPool{workers: workers}
+}
+
+// Add appends a worker to the pool.
+func (p *WorkerPool) Add(w *Worker) {
+	p.workers = append(p.workers, w)
+}
+
+// Pause pauses all workers in the pool.
+func (p *WorkerPool) Pause() {
+	for _, w := range p.workers {
+		w.Pause()
+	}
+}
+
+// Resume resumes all workers in the pool.
+func (p *WorkerPool) Resume() {
+	for _, w := range p.workers {
+		w.Resume()
+	}
+}
+
+// ActiveCount sums in-flight tasks across all workers.
+func (p *WorkerPool) ActiveCount() int {
+	total := 0
+	for _, w := range p.workers {
+		total += w.InFlight()
+	}
+	return total
+}
+
+// Workers returns the underlying worker slice.
+func (p *WorkerPool) Workers() []*Worker {
+	return p.workers
+}
+

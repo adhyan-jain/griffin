@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -18,12 +20,14 @@ import (
 type ApprovalHandler struct {
 	engine       *service.TaskEngine
 	approvalRepo repository.ApprovalRepository
+	wakeup       RunnerWakeup
 }
 
-func NewApprovalHandler(engine *service.TaskEngine, approvalRepo repository.ApprovalRepository) *ApprovalHandler {
+func NewApprovalHandler(engine *service.TaskEngine, approvalRepo repository.ApprovalRepository, wakeup RunnerWakeup) *ApprovalHandler {
 	return &ApprovalHandler{
 		engine:       engine,
 		approvalRepo: approvalRepo,
+		wakeup:       wakeup,
 	}
 }
 
@@ -89,6 +93,14 @@ func (h *ApprovalHandler) RespondApproval(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return
+	}
+
+	if approved && h.wakeup != nil {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_ = h.wakeup.TriggerWakeup(bgCtx)
+		}()
 	}
 
 	httputil.JSON(w, http.StatusOK, app)

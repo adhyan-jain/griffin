@@ -52,6 +52,7 @@ type TaskRepository interface {
 	GetAttempts(ctx context.Context, taskID uuid.UUID) ([]*domain.TaskAttempt, error)
 
 	TransitionToApproval(ctx context.Context, taskID uuid.UUID, approval *domain.Approval) error
+	CountRunnableTasks(ctx context.Context) (int64, error)
 }
 
 // PostgresTaskRepository implements TaskRepository on top of pgxpool.Pool.
@@ -680,6 +681,27 @@ func (r *PostgresTaskRepository) TransitionToApproval(ctx context.Context, taskI
 	}
 
 	return tx.Commit(ctx)
+}
+
+// CountRunnableTasks returns the number of tasks that are currently runnable or in flight.
+func (r *PostgresTaskRepository) CountRunnableTasks(ctx context.Context) (int64, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM tasks t
+		WHERE t.status IN ('RUNNING', 'QUEUED', 'ROUTED')
+		   OR (t.status = 'WAITING_FOR_DEPENDENCY' AND NOT EXISTS (
+		       SELECT 1 FROM task_dependencies td
+		       JOIN tasks parent ON parent.id = td.depends_on_task_id
+		       WHERE td.task_id = t.id AND parent.status != 'COMPLETED'
+		   ))
+		   OR (t.status = 'RETRYING' AND (t.scheduled_for IS NULL OR t.scheduled_for <= NOW()));
+	`
+	var count int64
+	err := r.pool.QueryRow(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count runnable tasks: %w", err)
+	}
+	return count, nil
 }
 
 type scannable interface {

@@ -466,3 +466,94 @@ func TestApprovalCheckpointFlow(t *testing.T) {
 		t.Fatalf("expected task to be QUEUED after approval, got %s", taskResumed.Status)
 	}
 }
+
+func TestCountRunnableTasks(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "runnable_test@example.com")
+
+	// Initially 0 runnable tasks
+	count, err := env.TaskRepo.CountRunnableTasks(ctx)
+	if err != nil {
+		t.Fatalf("CountRunnableTasks failed: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 runnable tasks initially, got %d", count)
+	}
+
+	// Create parent task (QUEUED)
+	parent, err := env.Engine.CreateTask(ctx, &domain.Task{
+		UserID: userID,
+		Title:  "Parent Task",
+		Goal:   "Parent Goal",
+	}, nil)
+	if err != nil {
+		t.Fatalf("create parent task: %v", err)
+	}
+
+	// Now count should be 1
+	count, err = env.TaskRepo.CountRunnableTasks(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("expected 1 runnable task (parent queued), got %d (err: %v)", count, err)
+	}
+
+	// Create child task dependent on parent (WAITING_FOR_DEPENDENCY)
+	child, err := env.Engine.CreateTask(ctx, &domain.Task{
+		UserID: userID,
+		Title:  "Child Task",
+		Goal:   "Child Goal",
+	}, []uuid.UUID{parent.ID})
+	if err != nil {
+		t.Fatalf("create child task: %v", err)
+	}
+
+	// Count should STILL be 1 because child is blocked on parent!
+	count, err = env.TaskRepo.CountRunnableTasks(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("expected 1 runnable task (parent only, child blocked), got %d (err: %v)", count, err)
+	}
+
+	// Worker claims parent (now RUNNING)
+	claimed, err := env.Engine.ClaimTask(ctx, "worker-1", 10*time.Second)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim parent task failed: %v", err)
+	}
+
+	// Count should STILL be 1 (parent is RUNNING, child is still WAITING_FOR_DEPENDENCY)
+	count, err = env.TaskRepo.CountRunnableTasks(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("expected 1 runnable task (parent running), got %d (err: %v)", count, err)
+	}
+
+	// Worker completes parent task
+	err = env.Engine.CompleteTask(ctx, parent.ID, "worker-1", json.RawMessage(`{"result":"done"}`))
+	if err != nil {
+		t.Fatalf("complete parent task failed: %v", err)
+	}
+
+	// Child is now automatically unblocked into QUEUED!
+	// Count should be 1 (child queued, parent completed)
+	count, err = env.TaskRepo.CountRunnableTasks(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("expected 1 runnable task (child unblocked to queued), got %d (err: %v)", count, err)
+	}
+
+	// Claim and complete child
+	claimedChild, err := env.Engine.ClaimTask(ctx, "worker-1", 10*time.Second)
+	if err != nil || claimedChild == nil {
+		t.Fatalf("claim child task failed: %v", err)
+	}
+	err = env.Engine.CompleteTask(ctx, child.ID, "worker-1", json.RawMessage(`{"result":"child done"}`))
+	if err != nil {
+		t.Fatalf("complete child task failed: %v", err)
+	}
+
+	// Both are completed: count should now be 0!
+	count, err = env.TaskRepo.CountRunnableTasks(ctx)
+	if err != nil || count != 0 {
+		t.Fatalf("expected 0 runnable tasks after all completed, got %d (err: %v)", count, err)
+	}
+}
+

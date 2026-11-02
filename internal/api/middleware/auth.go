@@ -85,6 +85,9 @@ func AuthenticateWorker(workerAPIKey string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.Header.Get("X-Worker-Key")
 			if apiKey == "" {
+				apiKey = r.Header.Get("X-Worker-API-Key")
+			}
+			if apiKey == "" {
 				authHeader := r.Header.Get("Authorization")
 				if strings.HasPrefix(authHeader, "Bearer ") {
 					apiKey = strings.TrimPrefix(authHeader, "Bearer ")
