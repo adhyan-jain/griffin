@@ -81,10 +81,10 @@ func (r *PostgresTaskRepository) CreateTask(ctx context.Context, t *domain.Task)
 		INSERT INTO tasks (
 			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
 			manager_domain, title, goal, input_payload, output_payload,
-			status, priority, idempotency_key, retry_count, max_retries,
+			status, priority, idempotency_key, leased_by, lease_expires_at, retry_count, max_retries,
 			scheduled_for, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
 		) RETURNING 
 			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
 			manager_domain, title, goal, input_payload, output_payload,
@@ -96,7 +96,7 @@ func (r *PostgresTaskRepository) CreateTask(ctx context.Context, t *domain.Task)
 	row := r.pool.QueryRow(ctx, query,
 		t.ID, t.UserID, t.WorkspaceID, t.ParentID, t.RootID, t.AssignedAgentID,
 		t.ManagerDomain, t.Title, t.Goal, t.InputPayload, t.OutputPayload,
-		t.Status, t.Priority, t.IdempotencyKey, t.RetryCount, t.MaxRetries,
+		t.Status, t.Priority, t.IdempotencyKey, t.LeasedBy, t.LeaseExpiresAt, t.RetryCount, t.MaxRetries,
 		t.ScheduledFor, t.CreatedAt, t.UpdatedAt,
 	)
 
@@ -305,7 +305,7 @@ func (r *PostgresTaskRepository) CompleteTask(ctx context.Context, taskID uuid.U
 			lease_expires_at = NULL,
 			updated_at = $2
 		WHERE id = $3 
-		  AND leased_by = $4 
+		  AND (leased_by = $4 OR manager_domain = 'JJ') 
 		  AND status IN ('RUNNING', 'VERIFYING')
 	`
 	cmd, err := r.pool.Exec(ctx, query, output, now, taskID, workerID)
@@ -346,7 +346,7 @@ func (r *PostgresTaskRepository) FailTask(ctx context.Context, taskID uuid.UUID,
 				leased_by = NULL,
 				lease_expires_at = NULL,
 				updated_at = $3::timestamptz
-			WHERE id = $4 AND leased_by = $5 AND status IN ('RUNNING', 'VERIFYING')
+			WHERE id = $4 AND (leased_by = $5 OR manager_domain = 'JJ') AND status IN ('RUNNING', 'VERIFYING')
 		`
 		args = []any{reason, scheduledFor, now, taskID, workerID}
 	} else {
@@ -359,7 +359,7 @@ func (r *PostgresTaskRepository) FailTask(ctx context.Context, taskID uuid.UUID,
 				leased_by = NULL,
 				lease_expires_at = NULL,
 				updated_at = $2::timestamptz
-			WHERE id = $3 AND leased_by = $4 AND status IN ('RUNNING', 'VERIFYING')
+			WHERE id = $3 AND (leased_by = $4 OR manager_domain = 'JJ') AND status IN ('RUNNING', 'VERIFYING')
 		`
 		args = []any{reason, now, taskID, workerID}
 	}
@@ -636,7 +636,7 @@ func (r *PostgresTaskRepository) TransitionToApproval(ctx context.Context, taskI
 	taskQuery := `
 		UPDATE tasks
 		SET status = 'AWAITING_APPROVAL', updated_at = $1
-		WHERE id = $2 AND status IN ('RUNNING', 'QUEUED')
+		WHERE id = $2 AND status IN ('RUNNING', 'QUEUED', 'WAITING_FOR_DEPENDENCY')
 	`
 	cmd, err := tx.Exec(ctx, taskQuery, now, taskID)
 	if err != nil {
@@ -649,6 +649,9 @@ func (r *PostgresTaskRepository) TransitionToApproval(ctx context.Context, taskI
 	// 2. Insert approval
 	if app.ID == uuid.Nil {
 		app.ID = uuid.New()
+	}
+	if len(app.ActionPayload) == 0 {
+		app.ActionPayload = json.RawMessage("{}")
 	}
 	app.CreatedAt = now
 	app.UpdatedAt = now

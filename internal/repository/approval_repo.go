@@ -122,6 +122,19 @@ func (r *PostgresApprovalRepository) RespondToApproval(ctx context.Context, id u
 	}
 
 	// Update associated task status
+	if approved {
+		depCheck := `
+			SELECT COUNT(*) 
+			FROM task_dependencies d
+			JOIN tasks p ON p.id = d.depends_on_task_id
+			WHERE d.task_id = $1 AND p.status != 'COMPLETED'
+		`
+		var pendingDeps int
+		if err := tx.QueryRow(ctx, depCheck, a.TaskID).Scan(&pendingDeps); err == nil && pendingDeps > 0 {
+			taskStatus = domain.TaskStatusWaitingForDependency
+		}
+	}
+
 	taskUpdate := `
 		UPDATE tasks
 		SET status = $1, updated_at = $2

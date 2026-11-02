@@ -20,14 +20,19 @@ func TestAPIEndpoints(t *testing.T) {
 	defer env.Teardown()
 
 	server := api.NewServer(api.ServerDependencies{
-		Config:       env.Config,
-		Logger:       nil,
-		DB:           env.DB,
-		Engine:       env.Engine,
-		TaskRepo:     env.TaskRepo,
-		ApprovalRepo: env.ApprovalRepo,
-		AgentRepo:    env.AgentRepo,
-		ArtifactRepo: env.ArtifactRepo,
+		Config:          env.Config,
+		Logger:          nil,
+		DB:              env.DB,
+		Engine:          env.Engine,
+		TaskRepo:        env.TaskRepo,
+		ApprovalRepo:    env.ApprovalRepo,
+		AgentRepo:       env.AgentRepo,
+		ArtifactRepo:    env.ArtifactRepo,
+		WorkerDefRepo:   env.WorkerDefRepo,
+		OrchRepo:        env.OrchRepo,
+		Orchestrator:    env.Orchestrator,
+		Factory:         env.AgentFactory,
+		ManagerRegistry: env.ManagerReg,
 	})
 
 	ts := httptest.NewServer(server.Handler())
@@ -305,5 +310,238 @@ func TestAPIEndpoints(t *testing.T) {
 			t.Fatalf("GET /api/v1/artifacts/{id} failed with code %d", resp.StatusCode)
 		}
 		resp.Body.Close()
+	})
+
+	// 7. JJ Orchestrator API
+	var createdOrchID uuid.UUID
+	var createdPlanID uuid.UUID
+
+	t.Run("JJ Orchestrator API", func(t *testing.T) {
+		reqBody := map[string]any{
+			"request_text": "Research distributed consensus protocols in Go",
+			"priority":     "HIGH_P1",
+		}
+		reqBytes, _ := json.Marshal(reqBody)
+
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/orchestrator/requests", bytes.NewReader(reqBytes))
+		req.Header.Set("Authorization", jwtUserA)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusCreated {
+			t.Fatalf("POST /api/v1/orchestrator/requests failed with code %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+
+		var orchResp struct {
+			Data struct {
+				Orchestration domain.OrchestrationRecord `json:"orchestration"`
+				Plan          domain.OrchestrationPlan   `json:"plan"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&orchResp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if orchResp.Data.Orchestration.ID == uuid.Nil {
+			t.Fatal("expected non-nil orchestration ID")
+		}
+		if orchResp.Data.Plan.ID == uuid.Nil {
+			t.Fatal("expected non-nil plan ID")
+		}
+		createdOrchID = orchResp.Data.Orchestration.ID
+		createdPlanID = orchResp.Data.Plan.ID
+
+		// Get orchestration by ID
+		getReq, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/orchestrator/requests/%s", ts.URL, createdOrchID), nil)
+		getReq.Header.Set("Authorization", jwtUserA)
+		resp, err = client.Do(getReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /api/v1/orchestrator/requests/{id} failed with code %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		// Get plan by ID
+		getPlanReq, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/orchestrator/plans/%s", ts.URL, createdPlanID), nil)
+		getPlanReq.Header.Set("Authorization", jwtUserA)
+		resp, err = client.Do(getPlanReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /api/v1/orchestrator/plans/{id} failed with code %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+	})
+
+	// 8. Manager Framework API
+	t.Run("Manager Framework API", func(t *testing.T) {
+		// List all 11 managers
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/managers", nil)
+		req.Header.Set("Authorization", jwtUserA)
+
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /api/v1/managers failed with code %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+
+		var mgrResp struct {
+			Data []map[string]any `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&mgrResp); err != nil {
+			t.Fatalf("failed to decode managers: %v", err)
+		}
+		if len(mgrResp.Data) != 11 {
+			t.Fatalf("expected 11 standard managers, got %d", len(mgrResp.Data))
+		}
+
+		// Get specific manager by ID
+		mgrReq, _ := http.NewRequest("GET", ts.URL+"/api/v1/managers/research", nil)
+		mgrReq.Header.Set("Authorization", jwtUserA)
+		resp, err = client.Do(mgrReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /api/v1/managers/research failed with code %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		// Non-existent manager returns 404
+		notFoundReq, _ := http.NewRequest("GET", ts.URL+"/api/v1/managers/unknown_manager", nil)
+		notFoundReq.Header.Set("Authorization", jwtUserA)
+		resp, err = client.Do(notFoundReq)
+		if err != nil || resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("expected 404 for unknown manager, got %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+	})
+
+	// 9. Worker Definitions (Agent Factory) API
+	t.Run("Worker Definitions API", func(t *testing.T) {
+		defBody := map[string]any{
+			"worker_key":           "api_test_analyst",
+			"manager_id":           "research",
+			"name":                 "API Test Analyst",
+			"description":          "Analyst for API tests",
+			"system_prompt":        "You are an API analyst specialist.",
+			"input_schema":         map[string]any{"type": "object"},
+			"output_schema":        map[string]any{"type": "object"},
+			"allowed_capabilities": []string{"research:read", "web:read"},
+			"allowed_tools":        []string{"search_web"},
+			"is_active":            true,
+		}
+		defBytes, _ := json.Marshal(defBody)
+
+		// Create definition
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workers/definitions", bytes.NewReader(defBytes))
+		req.Header.Set("Authorization", jwtUserA)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusCreated {
+			t.Fatalf("POST /api/v1/workers/definitions failed with code %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+
+		var createdDefResp struct {
+			Data domain.WorkerDefinition `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&createdDefResp); err != nil {
+			t.Fatalf("failed to decode created definition: %v", err)
+		}
+		createdDef := createdDefResp.Data
+		if createdDef.Version != 1 {
+			t.Fatalf("expected initial version 1, got %d", createdDef.Version)
+		}
+
+		// List definitions
+		listReq, _ := http.NewRequest("GET", ts.URL+"/api/v1/workers/definitions?manager_id=research", nil)
+		listReq.Header.Set("Authorization", jwtUserA)
+		resp, err = client.Do(listReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /api/v1/workers/definitions failed with code %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+
+		var listDefsResp struct {
+			Data []domain.WorkerDefinition `json:"data"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&listDefsResp)
+		if len(listDefsResp.Data) == 0 {
+			t.Fatal("expected at least 1 definition returned")
+		}
+
+		// Get definition by ID
+		getReq, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/workers/definitions/%s", ts.URL, createdDef.ID), nil)
+		getReq.Header.Set("Authorization", jwtUserA)
+		resp, err = client.Do(getReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /api/v1/workers/definitions/{id} failed with code %d", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		// Update definition (creates version 2)
+		newName := "API Test Senior Analyst"
+		updateBody := map[string]any{
+			"name": newName,
+		}
+		updateBytes, _ := json.Marshal(updateBody)
+		putReq, _ := http.NewRequest("PUT", fmt.Sprintf("%s/api/v1/workers/definitions/%s", ts.URL, createdDef.ID), bytes.NewReader(updateBytes))
+		putReq.Header.Set("Authorization", jwtUserA)
+		putReq.Header.Set("Content-Type", "application/json")
+
+		resp, err = client.Do(putReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("PUT /api/v1/workers/definitions/{id} failed with code %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+
+		var updatedDefResp struct {
+			Data domain.WorkerDefinition `json:"data"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&updatedDefResp)
+		updatedDef := updatedDefResp.Data
+		if updatedDef.Version != 2 {
+			t.Fatalf("expected version 2 after update, got %d", updatedDef.Version)
+		}
+		if updatedDef.Name != newName {
+			t.Fatalf("expected updated name '%s', got '%s'", newName, updatedDef.Name)
+		}
+
+		// Toggle definition
+		toggleBody := map[string]any{
+			"is_active": false,
+		}
+		toggleBytes, _ := json.Marshal(toggleBody)
+		toggleReq, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/workers/definitions/%s/toggle", ts.URL, updatedDef.ID), bytes.NewReader(toggleBytes))
+		toggleReq.Header.Set("Authorization", jwtUserA)
+		toggleReq.Header.Set("Content-Type", "application/json")
+
+		resp, err = client.Do(toggleReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("POST /api/v1/workers/definitions/{id}/toggle failed with code %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+
+		var toggledDefResp struct {
+			Data domain.WorkerDefinition `json:"data"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&toggledDefResp)
+		if toggledDefResp.Data.IsActive {
+			t.Fatal("expected is_active to be false after toggle")
+		}
+
+		// List versions
+		verReq, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/workers/definitions/%s/versions", ts.URL, updatedDef.ID), nil)
+		verReq.Header.Set("Authorization", jwtUserA)
+		resp, err = client.Do(verReq)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /api/v1/workers/definitions/{id}/versions failed with code %d", resp.StatusCode)
+		}
+		defer resp.Body.Close()
+
+		var versionsResp struct {
+			Data []domain.WorkerDefinition `json:"data"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&versionsResp)
+		if len(versionsResp.Data) != 2 {
+			t.Fatalf("expected 2 versions, got %d", len(versionsResp.Data))
+		}
 	})
 }

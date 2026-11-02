@@ -114,10 +114,12 @@ func IsValidTransition(from, to TaskStatus) bool {
 
 	case TaskStatusWaitingForDependency:
 		return to == TaskStatusQueued ||
+			to == TaskStatusAwaitingApproval ||
 			to == TaskStatusCancelled
 
 	case TaskStatusQueued:
 		return to == TaskStatusRunning ||
+			to == TaskStatusAwaitingApproval ||
 			to == TaskStatusCancelled
 
 	case TaskStatusRunning:
@@ -135,6 +137,7 @@ func IsValidTransition(from, to TaskStatus) bool {
 
 	case TaskStatusAwaitingApproval:
 		return to == TaskStatusQueued ||
+			to == TaskStatusWaitingForDependency ||
 			to == TaskStatusRunning ||
 			to == TaskStatusCancelled
 

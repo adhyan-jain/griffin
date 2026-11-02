@@ -11,6 +11,7 @@ import (
 	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/config"
 	"github.com/griffin/core/internal/database"
+	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
 )
@@ -25,21 +26,36 @@ type Server struct {
 
 // ServerDependencies holds all required repositories and services for HTTP routing.
 type ServerDependencies struct {
-	Config       *config.Config
-	Logger       *slog.Logger
-	DB           *database.DB
-	Engine       *service.TaskEngine
-	TaskRepo     repository.TaskRepository
-	ApprovalRepo repository.ApprovalRepository
-	AgentRepo    repository.AgentRepository
-	ArtifactRepo repository.ArtifactRepository
-	Wakeup       handlers.RunnerWakeup
+	Config          *config.Config
+	Logger          *slog.Logger
+	DB              *database.DB
+	Engine          *service.TaskEngine
+	TaskRepo        repository.TaskRepository
+	ApprovalRepo    repository.ApprovalRepository
+	AgentRepo       repository.AgentRepository
+	ArtifactRepo    repository.ArtifactRepository
+	WorkerDefRepo   repository.WorkerDefinitionRepository
+	OrchRepo        repository.OrchestrationRepository
+	Orchestrator    *service.JJOrchestrator
+	Factory         *service.AgentFactoryService
+	ManagerRegistry *manager.Registry
+	Wakeup          handlers.RunnerWakeup
 }
 
 // NewServer initializes and configures the HTTP server.
 func NewServer(deps ServerDependencies) *Server {
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
+	}
+
+	if deps.ManagerRegistry == nil {
+		deps.ManagerRegistry = manager.NewDefaultRegistry()
+	}
+	if deps.WorkerDefRepo != nil && deps.Factory == nil {
+		deps.Factory = service.NewAgentFactoryService(deps.WorkerDefRepo, deps.ManagerRegistry, deps.Logger)
+	}
+	if deps.OrchRepo != nil && deps.Orchestrator == nil && deps.Engine != nil && deps.TaskRepo != nil {
+		deps.Orchestrator = service.NewJJOrchestrator(deps.Engine, deps.OrchRepo, deps.TaskRepo, deps.ManagerRegistry, deps.Factory, nil, deps.Logger)
 	}
 
 	mux := http.NewServeMux()
@@ -77,6 +93,27 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.ListArtifacts)))
 	mux.Handle("GET /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
 	mux.Handle("POST /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.CreateArtifact)))
+
+	// JJ Orchestrator & Manager routes
+	if deps.Orchestrator != nil && deps.ManagerRegistry != nil {
+		orchHandler := handlers.NewOrchestratorHandler(deps.Orchestrator, deps.ManagerRegistry)
+		mux.Handle("POST /api/v1/orchestrator/requests", userAuth(http.HandlerFunc(orchHandler.SubmitRequest)))
+		mux.Handle("GET /api/v1/orchestrator/requests/{id}", userAuth(http.HandlerFunc(orchHandler.GetRequest)))
+		mux.Handle("GET /api/v1/orchestrator/plans/{id}", userAuth(http.HandlerFunc(orchHandler.GetPlan)))
+		mux.Handle("GET /api/v1/managers", userAuth(http.HandlerFunc(orchHandler.ListManagers)))
+		mux.Handle("GET /api/v1/managers/{id}", userAuth(http.HandlerFunc(orchHandler.GetManager)))
+	}
+
+	// Worker Definition / Agent Factory routes
+	if deps.Factory != nil {
+		workerDefHandler := handlers.NewWorkerDefinitionHandler(deps.Factory)
+		mux.Handle("GET /api/v1/workers/definitions", userAuth(http.HandlerFunc(workerDefHandler.ListDefinitions)))
+		mux.Handle("GET /api/v1/workers/definitions/{id}", userAuth(http.HandlerFunc(workerDefHandler.GetDefinition)))
+		mux.Handle("GET /api/v1/workers/definitions/{id}/versions", userAuth(http.HandlerFunc(workerDefHandler.GetDefinitionVersions)))
+		mux.Handle("POST /api/v1/workers/definitions", userAuth(http.HandlerFunc(workerDefHandler.CreateDefinition)))
+		mux.Handle("PUT /api/v1/workers/definitions/{id}", userAuth(http.HandlerFunc(workerDefHandler.UpdateDefinition)))
+		mux.Handle("POST /api/v1/workers/definitions/{id}/toggle", userAuth(http.HandlerFunc(workerDefHandler.ToggleDefinition)))
+	}
 
 	// 3. Worker-authenticated route group & Scheduler route
 	workerAuth := middleware.AuthenticateWorker(deps.Config.WorkerAPIKey)

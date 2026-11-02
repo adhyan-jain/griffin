@@ -16,7 +16,8 @@ timeline
     Epoch 4 : Core Engine Implementation (Phase 1) : 11-State DAG Lifecycle : PostgreSQL SKIP LOCKED : RLS Isolation Tested
     Epoch 5 : Primary AI Provider Integration (Phase 2) : Subprocess Process Groups : Pure argv Injection Defense : Zero Paid Fallback Enforced
     Epoch 6 : The Scale-to-Zero Pivot (Cost Amendment) : Decoupled Serverless API : EC2 On-Demand Compute : Atomic Pre-Shutdown Check
-    Future Epochs : Phase 3 (Specialist Managers) : Phase 4 (Next.js PWA)
+    Epoch 7 : The Multi-Agent Workforce (Phase 3) : Kahn's DAG Validation : 11 Specialist Managers : Immutable Worker Versioning
+    Future Epochs : Phase 4 (Next.js PWA) : Phase 5 (Production Hardening)
 ```
 
 ---
@@ -141,22 +142,46 @@ Integrating the real Google Antigravity CLI as Griffin's primary engine surfaced
 
 ---
 
+### Epoch 7: Phase 3 JJ Orchestrator, Manager Framework & Agent Factory (The Realities of Hierarchical Delegation)
+Implementing the multi-agent orchestration layer surfaced key distributed systems insights:
+
+#### 1. Kahn's Algorithm DAG Cycle Defense
+- *The Issue*: When an LLM generates a multi-step task breakdown, it can easily create circular dependency references (e.g. `Task A` requires `Task B`, and `Task B` requires `Task A`). If persisted, these tasks remain permanently trapped in `WAITING_FOR_DEPENDENCY`, deadlocking the workflow.
+- *The Evolution*: Integrated Kahn's topological sort algorithm into `domain.ValidatePlan`. Plans with cycles or dangling prerequisite keys are detected in memory and rejected (`domain.PlanStatusRejected`) before creating database records.
+
+#### 2. Root Task vs Child Task Lease Duality
+- *The Issue*: In Phase 1, `CompleteTask` and `FailTask` strictly enforced `WHERE id = $id AND leased_by = $worker_id`. However, the root task representing JJ's overall orchestration is not claimed or leased by an ephemeral background worker. When JJ attempted to complete or fail the root task, the query affected 0 rows because `leased_by` was NULL.
+- *The Evolution*: Refined the SQL completion/failure predicate to `WHERE id = $3 AND (leased_by = $4 OR manager_domain = 'JJ')`. This preserved worker lease invariants for child tasks while granting JJ authoritative completion rights over root tasks.
+
+#### 3. Interlocking Dependencies with Sensitive Approval Gates
+- *The Issue*: A child task may both depend on an earlier prerequisite AND require human approval (e.g., code deployment depending on build passing). If approval unblocking transitions directly to `QUEUED`, it prematurely executes before prerequisites complete. If it waits for dependencies first, humans are asked to approve obsolete tasks if dependencies fail.
+- *The Evolution*: Griffin establishes state precedence: tasks requiring approval start in `AWAITING_APPROVAL`. When the user approves, `RespondToApproval` inspects `task_dependencies`. If prerequisites are still running, the task moves to `WAITING_FOR_DEPENDENCY`; if all prerequisites are completed, it unblocks to `QUEUED`.
+
+#### 4. Specialist Worker Versioned Immutability & Audit Trail
+- *The Issue*: Prompts and schema definitions evolve rapidly. Mutating worker definitions in-place destroys historical reproducibility: re-inspecting an old task execution would show prompts that weren't present when the task actually ran.
+- *The Evolution*: The Agent Factory treats worker updates as append-only: updating a worker creates a new database row with `version = version + 1`, preserving the entire historical lineage. Every mutation records an entry in `agent_factory_audits` with actor attribution, timestamp, and JSON diffs.
+
+#### 5. Circular Package Import Neutralization
+- *The Issue*: The JJ planner needed to invoke `worker.TaskExecutor` to prompt AI models for plans, while `worker` imported `service.TaskEngine`. This created a Go import cycle (`service` $\rightarrow$ `worker` $\rightarrow$ `service`).
+- *The Evolution*: Defined a consumer-side `PlanExecutor` interface inside `internal/service/planner.go` and implemented an adapter in `internal/worker/plan_adapter.go`, eliminating the circular package dependency.
+
+---
+
 ## 3. Product Vision & Architecture Comparison
 
-| Architectural Dimension | Initial Concept (Day 1) | Phase 1 (Engine Core) | Phase 2 (Antigravity Primary) | Current Built Reality (Scale-to-Zero) |
-| :--- | :--- | :--- | :--- | :--- |
-| **Compute Model** | Local Laptop or Cloud | Dedicated 24/7 EC2 VM | Dedicated 24/7 EC2 VM | **On-Demand Scale-to-Zero EC2 Runner** |
-| **Ingress Availability** | Coupled to host | Coupled to host | Coupled to host | **Decoupled Serverless / Always-On Ingress** |
-| **Task Ingestion Semantics**| Synchronous | Synchronous 201 Created | Synchronous 201 Created | **Asynchronous 202 Accepted on Sleep** |
-| **AI Execution Engine** | Commercial Model API Keys | MockExecutor in Go | Antigravity CLI (`agy`) | **Antigravity CLI (`agy`) Primary** |
-| **API Token Cost** | Pay-per-token ($$$/month) | $0.00 (Mock Engine) | $0.00 model token cost | **$0.00 model token cost (Personal Sub)** |
-| **EC2 Compute Cost** | N/A | ~$16.35/mo (always-on) | ~$16.35/mo (always-on) | **~$1.34/mo (91.8% savings on 2hr/day)** |
-| **Subprocess Containment**| None | Abstract provider contract | `Setpgid: true`, Process Groups | **`Setpgid: true`, Process Groups** |
-| **Shutdown Race Handling**| None | None | Graceful OS shutdown | **Atomic Pre-Shutdown DB Recheck** |
-| **Task Queue** | Abstract / Redis | PostgreSQL 17 `SKIP LOCKED` | PostgreSQL 17 `SKIP LOCKED` | **Native PostgreSQL 17 `SKIP LOCKED`** |
-| **Task States** | 5 simple states | 11 robust states | 11 robust states with DAG | **11 robust states with DAG** |
-| **Worker Concurrency** | Unbounded | 2 workers configured | 2-worker bounded pool | **2-worker bounded pool + Draining** |
-| **Testing Strategy** | Manual runs | Mock unit & integration | Two-Tier (Hermetic + Live) | **Two-Tier + Scale-to-Zero State Machine Suite** |
+| Architectural Dimension | Initial Concept (Day 1) | Phase 1 (Engine Core) | Phase 2 (Antigravity Primary) | Scale-to-Zero (Epoch 6) | Phase 3 (Multi-Agent Workforce) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Compute Model** | Local Laptop or Cloud | Dedicated 24/7 EC2 VM | Dedicated 24/7 EC2 VM | On-Demand Scale-to-Zero EC2 | **On-Demand Scale-to-Zero EC2** |
+| **Ingress Availability** | Coupled to host | Coupled to host | Coupled to host | Decoupled Serverless Ingress | **Decoupled Serverless Ingress** |
+| **Orchestration Layer** | Single monolithic prompt | None (Raw Tasks) | None (Raw Tasks) | Task engine queue | **JJ Orchestrator (8-stage lifecycle)** |
+| **Domain Delegation** | Flat agent list | Static domain tags | Static domain tags | Static domain tags | **11 Specialist Managers + Registry** |
+| **Worker Definitions** | None | Ad-hoc task payloads | Ad-hoc task payloads | Ad-hoc task payloads | **Agent Factory (Immutable Versions)** |
+| **DAG Validation** | None | Runtime dependency check | Runtime dependency check | Runtime dependency check | **Kahn's Algorithm Cycle Rejection** |
+| **Capability Governance**| Unbounded | Ad-hoc approval flag | Ad-hoc approval flag | Ad-hoc approval flag | **11 Typed Capabilities + Gating** |
+| **Process Crash Recovery**| Lost on crash | Lease Reaper recovery | Lease Reaper recovery | Pre-shutdown verification | **`ReconcileInFlight` Startup Sync** |
+| **AI Execution Engine** | Commercial Model API Keys | MockExecutor in Go | Antigravity CLI (`agy`) | Antigravity CLI (`agy`) Primary | **Antigravity Primary + AI Planner** |
+| **API Token Cost** | Pay-per-token ($$$/month) | $0.00 (Mock Engine) | $0.00 model token cost | $0.00 model token cost | **$0.00 model token cost (Personal Sub)** |
+| **EC2 Compute Cost** | N/A | ~$16.35/mo (always-on) | ~$16.35/mo (always-on) | ~$1.34/mo (91.8% savings) | **~$1.34/mo (91.8% savings)** |
 
 ---
 
@@ -168,5 +193,7 @@ Integrating the real Google Antigravity CLI as Griffin's primary engine surfaced
 4. **PostgreSQL is all the message broker you need for V1**: Standard PostgreSQL row-level locks (`SELECT ... FOR UPDATE SKIP LOCKED`) provide crash resilience, transactional safety, and sub-millisecond polling with zero extra infrastructure.
 5. **Pure `argv` slices neutralize prompt injection attacks against host OS**: Treating LLM prompts as raw data tokens rather than shell arguments keeps the host OS safe from execution attacks.
 6. **Scale-to-zero requires atomic double-checking before machine power-off**: In distributed on-demand compute, task arrival is asynchronous to shutdown timers. Never initiate a system stop without an atomic database recheck immediately before the power syscall; otherwise, tasks submitted during draining will starve until an external stimulus occurs.
+7. **DAG plans must be validated topologically before database persistence**: Never trust LLMs to produce non-cyclic dependencies. Validate with Kahn's algorithm before creating task records to prevent silent workflow deadlocks.
+8. **Worker templates must be immutable**: Never mutate worker definitions in place. Treat prompts, tools, and schemas as append-only versioned assets to preserve historical reproducibility and audit compliance.
 
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/griffin/core/internal/config"
 	"github.com/griffin/core/internal/database"
+	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
 )
@@ -29,6 +30,11 @@ type TestEnv struct {
 	ApprovalRepo repository.ApprovalRepository
 	AgentRepo    repository.AgentRepository
 	ArtifactRepo repository.ArtifactRepository
+	WorkerDefRepo repository.WorkerDefinitionRepository
+	OrchRepo     repository.OrchestrationRepository
+	ManagerReg   *manager.Registry
+	AgentFactory *service.AgentFactoryService
+	Orchestrator *service.JJOrchestrator
 	Engine       *service.TaskEngine
 	Config       *config.Config
 }
@@ -74,8 +80,13 @@ func SetupTestEnv(t *testing.T) *TestEnv {
 	approvalRepo := repository.NewPostgresApprovalRepository(db.Pool)
 	agentRepo := repository.NewPostgresAgentRepository(db.Pool)
 	artifactRepo := repository.NewPostgresArtifactRepository(db.Pool)
+	workerDefRepo := repository.NewPostgresWorkerDefinitionRepository(db.Pool)
+	orchRepo := repository.NewPostgresOrchestrationRepository(db.Pool)
 
 	engine := service.NewTaskEngine(taskRepo, approvalRepo, nil)
+	mgrReg := manager.NewDefaultRegistry()
+	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, nil)
+	orchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, nil, nil)
 
 	return &TestEnv{
 		DB:           db,
@@ -83,6 +94,11 @@ func SetupTestEnv(t *testing.T) *TestEnv {
 		ApprovalRepo: approvalRepo,
 		AgentRepo:    agentRepo,
 		ArtifactRepo: artifactRepo,
+		WorkerDefRepo: workerDefRepo,
+		OrchRepo:     orchRepo,
+		ManagerReg:   mgrReg,
+		AgentFactory: agentFactory,
+		Orchestrator: orchestrator,
 		Engine:       engine,
 		Config:       cfg,
 	}
@@ -101,6 +117,11 @@ func cleanTables(t *testing.T, db *database.DB) {
 
 	query := `
 		TRUNCATE TABLE 
+			delegation_records,
+			orchestration_plans,
+			orchestrations,
+			agent_factory_audits,
+			worker_definitions,
 			notifications,
 			artifacts,
 			schedules,

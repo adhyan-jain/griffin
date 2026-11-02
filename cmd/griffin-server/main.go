@@ -14,6 +14,7 @@ import (
 	"github.com/griffin/core/internal/api"
 	"github.com/griffin/core/internal/config"
 	"github.com/griffin/core/internal/database"
+	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/provider/antigravity"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/runner"
@@ -77,9 +78,14 @@ func main() {
 	approvalRepo := repository.NewPostgresApprovalRepository(db.Pool)
 	agentRepo := repository.NewPostgresAgentRepository(db.Pool)
 	artifactRepo := repository.NewPostgresArtifactRepository(db.Pool)
+	workerDefRepo := repository.NewPostgresWorkerDefinitionRepository(db.Pool)
+	orchRepo := repository.NewPostgresOrchestrationRepository(db.Pool)
 
-	// 6. Initialize Task Engine
+	// 6. Initialize Task Engine, Manager Registry & Agent Factory
 	engine := service.NewTaskEngine(taskRepo, approvalRepo, logger)
+	mgrReg := manager.NewDefaultRegistry()
+	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, logger)
+	jjOrchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, nil, logger)
 
 	// 7. Initialize Wakeup Controller for scale-to-zero
 	var instanceMgr runner.InstanceManager
@@ -183,21 +189,28 @@ func main() {
 				"idle_timeout_seconds", cfg.IdleShutdownSeconds,
 			)
 		}
+		// Reconcile in-flight orchestrations on startup
+		_ = jjOrchestrator.ReconcileInFlight(ctx)
 	}
 
 	var server *api.Server
 	if runAPI {
 		// 10. HTTP API Server
 		server = api.NewServer(api.ServerDependencies{
-			Config:       cfg,
-			Logger:       logger,
-			DB:           db,
-			Engine:       engine,
-			TaskRepo:     taskRepo,
-			ApprovalRepo: approvalRepo,
-			AgentRepo:    agentRepo,
-			ArtifactRepo: artifactRepo,
-			Wakeup:       wakeupCtrl,
+			Config:          cfg,
+			Logger:          logger,
+			DB:              db,
+			Engine:          engine,
+			TaskRepo:        taskRepo,
+			ApprovalRepo:    approvalRepo,
+			AgentRepo:       agentRepo,
+			ArtifactRepo:    artifactRepo,
+			WorkerDefRepo:   workerDefRepo,
+			OrchRepo:        orchRepo,
+			Orchestrator:    jjOrchestrator,
+			Factory:         agentFactory,
+			ManagerRegistry: mgrReg,
+			Wakeup:          wakeupCtrl,
 		})
 
 		go func() {

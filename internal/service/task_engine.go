@@ -41,12 +41,14 @@ func (e *TaskEngine) CreateTask(ctx context.Context, task *domain.Task, dependen
 		return nil, err
 	}
 
-	// 1. Determine initial status based on dependencies
-	initialStatus := domain.TaskStatusQueued
-	if len(dependencyIDs) > 0 {
-		initialStatus = domain.TaskStatusWaitingForDependency
+	// 1. Determine initial status based on dependencies if not explicitly pre-set
+	if task.Status != domain.TaskStatusRunning && task.Status != domain.TaskStatusAwaitingApproval {
+		initialStatus := domain.TaskStatusQueued
+		if len(dependencyIDs) > 0 {
+			initialStatus = domain.TaskStatusWaitingForDependency
+		}
+		task.Status = initialStatus
 	}
-	task.Status = initialStatus
 
 	// 2. Persist task
 	created, err := e.taskRepo.CreateTask(ctx, task)
