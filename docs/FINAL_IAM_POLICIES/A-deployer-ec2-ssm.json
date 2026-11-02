@@ -131,13 +131,10 @@
       }
     },
     {
-      "Sid": "SessionManagerToRunner",
+      "Sid": "SessionManagerToTaggedRunner",
       "Effect": "Allow",
       "Action": "ssm:StartSession",
-      "Resource": [
-        "arn:aws:ec2:ap-south-1:123456789012:instance/*",
-        "arn:aws:ssm:ap-south-1:123456789012:document/SSM-SessionManagerRunShell"
-      ],
+      "Resource": "arn:aws:ec2:ap-south-1:123456789012:instance/*",
       "Condition": {
         "StringEquals": {
           "ssm:resourceTag/Project": "Griffin"
@@ -145,18 +142,30 @@
       }
     },
     {
-      "Sid": "RunCommandOnRunner",
+      "Sid": "SessionManagerShellDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": [
+        "arn:aws:ssm:ap-south-1:123456789012:document/SSM-SessionManagerRunShell",
+        "arn:aws:ssm:ap-south-1::document/AWS-StartInteractiveCommand"
+      ]
+    },
+    {
+      "Sid": "RunCommandOnTaggedRunner",
       "Effect": "Allow",
       "Action": "ssm:SendCommand",
-      "Resource": [
-        "arn:aws:ec2:ap-south-1:123456789012:instance/*",
-        "arn:aws:ssm:ap-south-1::document/AWS-RunShellScript"
-      ],
+      "Resource": "arn:aws:ec2:ap-south-1:123456789012:instance/*",
       "Condition": {
         "StringEquals": {
           "ssm:resourceTag/Project": "Griffin"
         }
       }
+    },
+    {
+      "Sid": "RunCommandShellDocument",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ssm:ap-south-1::document/AWS-RunShellScript"
     },
     {
       "Sid": "SsmReadOnlyHousekeeping",
