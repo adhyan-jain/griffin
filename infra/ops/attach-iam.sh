@@ -28,7 +28,20 @@ done
 
 if [ "$APPLY" != "1" ]; then echo "Validation passed. Re-run with --apply to attach."; exit 0; fi
 
-aws iam put-user-policy "${P[@]}" --user-name griffin-bootstrap --policy-name GriffinDeployerEc2Ssm   --policy-document file://A-deployer-ec2-ssm.json
-aws iam put-user-policy "${P[@]}" --user-name griffin-bootstrap --policy-name GriffinDeployerApiOps   --policy-document file://D-deployer-api-scheduler-ops.json
-aws iam put-role-policy "${P[@]}" --role-name GriffinEC2WorkerRole --policy-name GriffinWorkerRuntime  --policy-document file://C-worker-role-runtime.json
-echo "Attached: GriffinDeployerEc2Ssm, GriffinDeployerApiOps (user griffin-bootstrap); GriffinWorkerRuntime (role GriffinEC2WorkerRole)."
+# A and D exceed the 2048-char inline limit for IAM *users*, so they are standalone managed policies (limit 6144 each).
+attach_managed() { # name file
+  local name=$1 file=$2 arn="arn:aws:iam::123456789012:policy/$1"
+  if aws iam get-policy "${P[@]}" --policy-arn "$arn" >/dev/null 2>&1; then
+    aws iam create-policy-version "${P[@]}" --policy-arn "$arn" --policy-document "file://$file" --set-as-default >/dev/null
+    echo "updated $name (new default version)"
+  else
+    aws iam create-policy "${P[@]}" --policy-name "$name" --policy-document "file://$file" >/dev/null
+    echo "created $name"
+  fi
+  aws iam attach-user-policy "${P[@]}" --user-name griffin-bootstrap --policy-arn "$arn"
+}
+attach_managed GriffinDeployerEc2Ssm A-deployer-ec2-ssm.json
+attach_managed GriffinDeployerApiOps D-deployer-api-scheduler-ops.json
+# C is small (680 chars): inline on the worker role, alongside its existing policies.
+aws iam put-role-policy "${P[@]}" --role-name GriffinEC2WorkerRole --policy-name GriffinWorkerRuntime --policy-document file://C-worker-role-runtime.json
+echo "Attached: managed GriffinDeployerEc2Ssm + GriffinDeployerApiOps on user griffin-bootstrap; inline GriffinWorkerRuntime on role GriffinEC2WorkerRole."
