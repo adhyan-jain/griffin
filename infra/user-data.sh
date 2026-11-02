@@ -49,4 +49,37 @@ fi
 # 9. Verify CLI installation
 su - griffin -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && agy --version" || true
 
+# 10. Configure /etc/griffin and systemd worker service
+mkdir -p /etc/griffin
+chmod 750 /etc/griffin
+chown root:griffin /etc/griffin
+
+cat << 'EOF' > /etc/systemd/system/griffin-worker.service
+[Unit]
+Description=Griffin Autonomous Workforce Worker Service
+After=network.target amazon-ssm-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=griffin
+Group=griffin
+WorkingDirectory=/home/griffin
+Environment="GRIFFIN_MODE=worker"
+Environment="PATH=/home/griffin/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus"
+EnvironmentFile=-/etc/griffin/worker.env
+ExecStart=/usr/local/bin/griffin-server
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+
 echo "Griffin EC2 initialization completed successfully at $(date -u)"
+
