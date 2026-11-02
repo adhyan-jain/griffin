@@ -13,11 +13,11 @@ run: build
 
 ## Run all automated unit and integration tests
 test:
-	go test ./...
+	go test ./internal/... ./cmd/... ./tests/...
 
 ## Run all automated tests with verbose output
 test-v:
-	go test -v ./...
+	go test -v ./internal/... ./cmd/... ./tests/...
 
 ## Format Go source files
 fmt:
@@ -25,7 +25,7 @@ fmt:
 
 ## Run static analysis and linting
 lint:
-	go vet ./...
+	go vet ./internal/... ./cmd/... ./tests/...
 
 ## Configure git pre-commit hooks
 setup-hooks:

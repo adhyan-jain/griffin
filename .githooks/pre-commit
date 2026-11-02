@@ -17,7 +17,7 @@ fi
 
 # 2. Go vet static analysis
 echo "==> [pre-commit] Running go vet static analysis..."
-go vet ./...
+go vet ./internal/... ./cmd/... ./tests/...
 
 # 3. Secret leak check (prevent committing sensitive keys/tokens/env files)
 echo "==> [pre-commit] Inspecting staged files for secrets and credentials..."

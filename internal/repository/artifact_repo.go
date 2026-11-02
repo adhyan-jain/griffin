@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
@@ -180,15 +179,11 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, userID u
 }
 
 func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id uuid.UUID, userID uuid.UUID) error {
-	var tag pgconn.CommandTag
-	var err error
 	if userID == uuid.Nil {
-		query := `DELETE FROM artifacts WHERE id = $1`
-		tag, err = r.pool.Exec(ctx, query, id)
-	} else {
-		query := `DELETE FROM artifacts WHERE id = $1 AND user_id = $2`
-		tag, err = r.pool.Exec(ctx, query, id, userID)
+		return fmt.Errorf("%w: user id is required for artifact deletion", domain.ErrUnauthorized)
 	}
+	query := `DELETE FROM artifacts WHERE id = $1 AND user_id = $2`
+	tag, err := r.pool.Exec(ctx, query, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete artifact: %w", err)
 	}
