@@ -33,9 +33,12 @@ CFG
 } > "$TMP"
 
 # Fail closed: the required secrets must be present before replacing the live file.
-for key in DATABASE_URL SUPABASE_JWT_SECRET WORKER_API_KEY S3_BUCKET; do
+for key in DATABASE_URL WORKER_API_KEY S3_BUCKET; do
   grep -q "^${key}=." "$TMP" || { echo "missing required parameter ${key} under ${PARAM_PATH}" >&2; exit 1; }
 done
+# JWT verification config: a legacy HS256 secret OR (asymmetric Supabase projects) the JWKS URL.
+grep -q "^SUPABASE_JWT_SECRET=." "$TMP" || grep -q "^SUPABASE_JWKS_URL=." "$TMP" || {
+  echo "missing SUPABASE_JWT_SECRET or SUPABASE_JWKS_URL under ${PARAM_PATH}" >&2; exit 1; }
 
 chown root:griffin "$TMP"
 chmod 0640 "$TMP"
