@@ -240,6 +240,7 @@ func main() {
 			Factory:         agentFactory,
 			ManagerRegistry: mgrReg,
 			Wakeup:          wakeupCtrl,
+			InstanceMgr:     instanceMgr,
 		})
 
 		go func() {

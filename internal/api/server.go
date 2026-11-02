@@ -13,6 +13,7 @@ import (
 	"github.com/griffin/core/internal/database"
 	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/runner"
 	"github.com/griffin/core/internal/service"
 	"github.com/griffin/core/internal/storage"
 )
@@ -42,6 +43,7 @@ type ServerDependencies struct {
 	Factory         *service.AgentFactoryService
 	ManagerRegistry *manager.Registry
 	Wakeup          handlers.RunnerWakeup
+	InstanceMgr     runner.InstanceManager
 }
 
 // NewServer initializes and configures the HTTP server.
@@ -66,6 +68,11 @@ func NewServer(deps ServerDependencies) *Server {
 	healthHandler := handlers.NewHealthHandler(deps.DB)
 	mux.HandleFunc("GET /healthz", healthHandler.Healthz)
 	mux.HandleFunc("GET /readyz", healthHandler.Readyz)
+
+	if deps.DB != nil && deps.Config != nil {
+		authHandler := handlers.NewAuthHandler(deps.DB, deps.Config.SupabaseJWTSecret)
+		mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
+	}
 
 	// 2. User-authenticated route groups
 	userAuth := middleware.AuthenticateUser(deps.Config.SupabaseJWTSecret)
@@ -133,10 +140,18 @@ func NewServer(deps ServerDependencies) *Server {
 	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.Wakeup)
 	mux.Handle("POST /api/v1/scheduler/tick", workerAuth(http.HandlerFunc(schedulerHandler.Tick)))
 
-	// 4. Global middleware wrapping
-	handler := middleware.RequestID(
-		middleware.Logger(deps.Logger)(
-			middleware.Recovery(deps.Logger)(mux),
+	// Runner management endpoints
+	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, deps.Wakeup, scaleToZero)
+	mux.HandleFunc("GET /api/v1/runner/status", runnerHandler.GetStatus)
+	mux.Handle("POST /api/v1/runner/wake", userAuth(http.HandlerFunc(runnerHandler.WakeRunner)))
+	mux.Handle("POST /api/v1/runner/sleep", userAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
+
+	// 4. Global middleware wrapping with CORS
+	handler := middleware.CORS()(
+		middleware.RequestID(
+			middleware.Logger(deps.Logger)(
+				middleware.Recovery(deps.Logger)(mux),
+			),
 		),
 	)
 

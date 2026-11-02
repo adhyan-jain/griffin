@@ -13,3 +13,9 @@ bin/
 # OS
 .DS_Store
 *.tmp
+
+# Web / Frontend
+web/node_modules/
+web/.next/
+web/out/
+
