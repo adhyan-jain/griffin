@@ -23,7 +23,7 @@ was read-only (`griffin-bootstrap`). Status vocabulary: VERIFIED · IMPLEMENTED_
 5. IAM drafts replaced by `docs/FINAL_IAM_POLICIES/` (A, B, C, D, E). Earlier drafts had no deployer permissions for Lambda/API Gateway/EventBridge and conflicting "Policy B" definitions.
 
 ## Open decisions for you
-- **`POST /api/v1/runner/sleep` is callable by any authenticated user and stops the shared runner** (`server.go:156`; UI buttons in `RunnerPill.tsx`, settings page). Fine for a single operator with sign-ups disabled; a cross-tenant DoS otherwise. Policy B omits `StopInstances`, so the button would fail in production. Recommended: hide the button / make the route worker-key-only. Not changed without your say-so.
+- ~~`POST /api/v1/runner/sleep` callable by any user~~ **RESOLVED (VERIFIED locally)**: the route now requires the worker key (constant-time compare); the UI sleep buttons and `api.sleepRunner` were removed (the browser must never hold the key). Regression test `TestRunnerSleepIsOperatorOnly` fails on the old behaviour (user JWT → 200, runner stopped) and passes now. Operators stop the runner with `aws ec2 stop-instances` or `curl -H "X-Worker-Key: …"`.
 - Supabase plan tier (backups), asymmetric vs legacy JWT keys, alert email, whether to use a `*.vercel.app` URL (needed before the Lambda `CORS_ALLOWED_ORIGINS` can be set).
 
 ## Blockers

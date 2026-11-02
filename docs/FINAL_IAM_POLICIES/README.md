@@ -25,7 +25,7 @@ before attaching (`aws accessanalyzer validate-policy --policy-type IDENTITY_POL
 - **Pass-role:** only `GriffinEC2WorkerRole` → `ec2.amazonaws.com` (A); only the two new roles → lambda/events (D).
 - **EC2 restrictions (A):** `t4g.medium` only; IMDSv2 required; `Project=Griffin` tag required on create; volume must be encrypted and ≤ 30 GiB.
 - **Lambda scope (B):** `ec2:StartInstances` on the single instance ARN (fill `<INSTANCE_ID>` after launch) with `Project=Griffin` tag; S3 limited to `users/*`.
-  `StopInstances` is deliberately absent — see open decision "runner/sleep" in `CONTROLLED_DEPLOYMENT_REPORT.md`.
+  `StopInstances` is deliberately absent: `POST /runner/sleep` is operator-only (worker key) and the runner powers itself off, so the Lambda role never needs it — a call to that route in production fails with AccessDenied by design.
 
 ## Cannot be scoped to individual resources (AWS limitation)
 `ec2:Describe*`; `ssm:DescribeInstanceInformation/DescribeSessions/GetConnectionStatus/GetCommandInvocation/ListCommandInvocations`;
