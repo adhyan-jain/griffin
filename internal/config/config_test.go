@@ -1,95 +1,195 @@
 package config_test
 
 import (
-	"os"
+	"strings"
 	"testing"
 
 	"github.com/griffin/core/internal/config"
 )
 
-func TestConfigLoadDefaults(t *testing.T) {
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("expected valid default config, got error: %v", err)
-	}
+const (
+	strongJWT    = "k3Jx9fQ2mZp7Vd1sT8wLb4nHc6YgR0uEa5XoI2qWz9A="
+	strongWorker = "Zt8Qm2vL5pRx1NcB7hYd3JfK9sWe4UaG6oTi0VbXn2M="
+	prodDBURL    = "postgres://u:p@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+)
 
-	if cfg.Port != 8080 {
-		t.Errorf("expected port 8080, got %d", cfg.Port)
-	}
-	if cfg.MaxConcurrentWorkers != 2 {
-		t.Errorf("expected max workers 2, got %d", cfg.MaxConcurrentWorkers)
-	}
-	if cfg.LeaseDurationSeconds != 60 {
-		t.Errorf("expected lease duration 60, got %d", cfg.LeaseDurationSeconds)
+// clearEnv blanks every variable Load reads so tests are hermetic.
+func clearEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{
+		"ENVIRONMENT", "PORT", "DATABASE_URL", "SUPABASE_JWT_SECRET", "WORKER_API_KEY", "GRIFFIN_MODE",
+		"STORAGE_PROVIDER", "S3_BUCKET", "S3_REGION", "S3_ENDPOINT", "AWS_PROFILE", "AWS_REGION",
+		"CORS_ALLOWED_ORIGINS", "ENABLE_DEV_LOGIN", "SUPABASE_JWKS_URL", "AI_PROVIDER", "SCALE_TO_ZERO_ENABLED",
+		"EC2_INSTANCE_ID", "S3_PRESIGN_EXPIRY_MINUTES", "MAX_CONCURRENT_WORKERS", "MAX_UPLOAD_BYTES",
+	} {
+		t.Setenv(k, "")
 	}
 }
 
-func TestConfigOverrideEnv(t *testing.T) {
-	os.Setenv("PORT", "9090")
-	os.Setenv("MAX_CONCURRENT_WORKERS", "4")
-	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("MAX_CONCURRENT_WORKERS")
-	}()
+// prodEnv sets a fully valid production environment (API mode).
+func prodEnv(t *testing.T) {
+	t.Helper()
+	clearEnv(t)
+	t.Setenv("ENVIRONMENT", "production")
+	t.Setenv("DATABASE_URL", prodDBURL)
+	t.Setenv("SUPABASE_JWT_SECRET", strongJWT)
+	t.Setenv("WORKER_API_KEY", strongWorker)
+	t.Setenv("S3_BUCKET", "griffin-artifacts-220115213279-ap-south-1")
+	t.Setenv("GRIFFIN_MODE", "api")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com")
+	t.Setenv("EC2_INSTANCE_ID", "i-0123456789abcdef0")
+}
 
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("expected valid config, got error: %v", err)
-	}
+func devEnv(t *testing.T) {
+	t.Helper()
+	clearEnv(t)
+	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/griffin_dev?sslmode=disable")
+	t.Setenv("SUPABASE_JWT_SECRET", "griffin-dev-secret-key-do-not-use-in-prod-minimum32chars")
+	t.Setenv("WORKER_API_KEY", "griffin-worker-secret-key-dev")
+}
 
-	if cfg.Port != 9090 {
-		t.Errorf("expected port 9090, got %d", cfg.Port)
-	}
-	if cfg.MaxConcurrentWorkers != 4 {
-		t.Errorf("expected max workers 4, got %d", cfg.MaxConcurrentWorkers)
+func TestNoSecretFallbackInAnyEnvironment(t *testing.T) {
+	for _, env := range []string{"", "development", "test", "production"} {
+		clearEnv(t)
+		t.Setenv("ENVIRONMENT", env)
+		if _, err := config.Load(); err == nil {
+			t.Fatalf("ENVIRONMENT=%q: Load succeeded with no DATABASE_URL/secrets; a dev fallback exists", env)
+		}
 	}
 }
 
-func TestConfigStorageSettings(t *testing.T) {
-	// Defaults
+func TestUnsetEnvironmentFailsClosedToProduction(t *testing.T) {
+	devEnv(t)
+	t.Setenv("ENVIRONMENT", "") // forgot to set it
+	if _, err := config.Load(); err == nil {
+		t.Fatal("dev secrets + localhost DB must be rejected when ENVIRONMENT is unset (treated as production)")
+	}
+}
+
+func TestInvalidEnvironmentRejected(t *testing.T) {
+	devEnv(t)
+	t.Setenv("ENVIRONMENT", "prod-ish")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("unknown ENVIRONMENT must be rejected")
+	}
+}
+
+func TestDevelopmentLoadsWithExplicitValues(t *testing.T) {
+	devEnv(t)
+	t.Setenv("ENABLE_DEV_LOGIN", "true")
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("expected valid default config, got %v", err)
+		t.Fatalf("development config should load: %v", err)
 	}
-	if cfg.StorageProvider != "s3" {
-		t.Errorf("expected default storage provider s3, got %s", cfg.StorageProvider)
+	if cfg.IsProduction() || !cfg.EnableDevLogin {
+		t.Fatalf("unexpected cfg: prod=%v devlogin=%v", cfg.IsProduction(), cfg.EnableDevLogin)
 	}
-	if cfg.S3Bucket != "griffin-artifacts" {
-		t.Errorf("expected default bucket griffin-artifacts, got %s", cfg.S3Bucket)
+	if cfg.Port != 8080 || cfg.MaxConcurrentWorkers != 2 || cfg.LeaseDurationSeconds != 60 {
+		t.Errorf("defaults changed: %+v", cfg)
 	}
-	if cfg.S3Region != "ap-south-1" {
-		t.Errorf("expected default region ap-south-1, got %s", cfg.S3Region)
-	}
-	if cfg.S3PresignExpiryMinutes != 15 {
-		t.Errorf("expected default presign expiry 15, got %d", cfg.S3PresignExpiryMinutes)
-	}
+}
 
-	// Overrides
-	os.Setenv("STORAGE_PROVIDER", "mock")
-	os.Setenv("S3_BUCKET", "custom-bucket")
-	os.Setenv("S3_REGION", "us-east-1")
-	os.Setenv("S3_PRESIGN_EXPIRY_MINUTES", "30")
-	defer func() {
-		os.Unsetenv("STORAGE_PROVIDER")
-		os.Unsetenv("S3_BUCKET")
-		os.Unsetenv("S3_REGION")
-		os.Unsetenv("S3_PRESIGN_EXPIRY_MINUTES")
-	}()
-
-	cfgOverride, err := config.Load()
+func TestProductionValidConfigLoads(t *testing.T) {
+	prodEnv(t)
+	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("expected valid override config, got %v", err)
+		t.Fatalf("valid production config rejected: %v", err)
 	}
-	if cfgOverride.StorageProvider != "mock" {
-		t.Errorf("expected storage provider mock, got %s", cfgOverride.StorageProvider)
+	if !cfg.IsProduction() || cfg.EnableDevLogin {
+		t.Fatal("expected production without dev login")
 	}
-	if cfgOverride.S3Bucket != "custom-bucket" {
-		t.Errorf("expected bucket custom-bucket, got %s", cfgOverride.S3Bucket)
+	if len(cfg.CORSAllowedOrigins) != 1 || cfg.CORSAllowedOrigins[0] != "https://app.example.com" {
+		t.Errorf("unexpected origins %v", cfg.CORSAllowedOrigins)
 	}
-	if cfgOverride.S3Region != "us-east-1" {
-		t.Errorf("expected region us-east-1, got %s", cfgOverride.S3Region)
+}
+
+func TestProductionRejections(t *testing.T) {
+	cases := map[string]map[string]string{
+		"dev jwt secret":        {"SUPABASE_JWT_SECRET": "griffin-dev-secret-key-do-not-use-in-prod-minimum32chars"},
+		"test jwt secret":       {"SUPABASE_JWT_SECRET": "test-secret-key-32chars-minimum-length-for-hmac!"},
+		"short jwt secret":      {"SUPABASE_JWT_SECRET": "short"},
+		"dev worker key":        {"WORKER_API_KEY": "griffin-worker-secret-key-dev"},
+		"short worker key":      {"WORKER_API_KEY": "abc"},
+		"same secret both":      {"WORKER_API_KEY": strongJWT},
+		"localhost db":          {"DATABASE_URL": "postgres://u:p@localhost:5432/x?sslmode=require"},
+		"sslmode disable":       {"DATABASE_URL": "postgres://u:p@db.example.com:5432/x?sslmode=disable"},
+		"dev login enabled":     {"ENABLE_DEV_LOGIN": "true"},
+		"mock storage":          {"STORAGE_PROVIDER": "mock"},
+		"default bucket":        {"S3_BUCKET": "griffin-artifacts"},
+		"custom s3 endpoint":    {"S3_ENDPOINT": "http://localhost:4566"},
+		"aws profile":           {"AWS_PROFILE": "griffin-bootstrap"},
+		"no cors origins":       {"CORS_ALLOWED_ORIGINS": ""},
+		"wildcard cors":         {"CORS_ALLOWED_ORIGINS": "*"},
+		"wildcard subdomain":    {"CORS_ALLOWED_ORIGINS": "https://*.example.com"},
+		"cors with path":        {"CORS_ALLOWED_ORIGINS": "https://app.example.com/x"},
+		"no instance id":        {"EC2_INSTANCE_ID": ""},
+		"mock ai in worker":     {"GRIFFIN_MODE": "worker", "AI_PROVIDER": "mock"},
+		"bad mode":              {"GRIFFIN_MODE": "everything"},
+		"no jwt secret or jwks": {"SUPABASE_JWT_SECRET": "", "SUPABASE_JWKS_URL": ""},
 	}
-	if cfgOverride.S3PresignExpiryMinutes != 30 {
-		t.Errorf("expected presign expiry 30, got %d", cfgOverride.S3PresignExpiryMinutes)
+	for name, override := range cases {
+		t.Run(name, func(t *testing.T) {
+			prodEnv(t)
+			for k, v := range override {
+				t.Setenv(k, v)
+			}
+			if _, err := config.Load(); err == nil {
+				t.Fatalf("expected production config to be rejected")
+			}
+		})
+	}
+}
+
+func TestProductionWorkerModeNeedsNoCORSOrInstanceID(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("GRIFFIN_MODE", "worker")
+	t.Setenv("AI_PROVIDER", "antigravity")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("EC2_INSTANCE_ID", "")
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("worker-mode production should not require CORS/instance id: %v", err)
+	}
+}
+
+func TestProductionJWKSOnlyAllowed(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("SUPABASE_JWT_SECRET", "")
+	t.Setenv("SUPABASE_JWKS_URL", "https://abc.supabase.co/auth/v1/.well-known/jwks.json")
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("JWKS-only production should load: %v", err)
+	}
+}
+
+func TestStorageAndOverrides(t *testing.T) {
+	devEnv(t)
+	t.Setenv("PORT", "9090")
+	t.Setenv("MAX_CONCURRENT_WORKERS", "4")
+	t.Setenv("STORAGE_PROVIDER", "mock")
+	t.Setenv("S3_BUCKET", "custom-bucket")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_PRESIGN_EXPIRY_MINUTES", "30")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Port != 9090 || cfg.MaxConcurrentWorkers != 4 || cfg.StorageProvider != "mock" ||
+		cfg.S3Bucket != "custom-bucket" || cfg.S3Region != "us-east-1" || cfg.S3PresignExpiryMinutes != 30 {
+		t.Fatalf("overrides not applied: %+v", cfg)
+	}
+}
+
+func TestDefaultsInDev(t *testing.T) {
+	devEnv(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorageProvider != "s3" || cfg.S3Bucket != "griffin-artifacts" || cfg.S3Region != "ap-south-1" ||
+		cfg.S3PresignExpiryMinutes != 15 || cfg.MaxUploadBytes != 5<<20 {
+		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+	if strings.Contains(strings.Join(cfg.CORSAllowedOrigins, ","), "*") {
+		t.Fatal("no wildcard origin by default")
 	}
 }

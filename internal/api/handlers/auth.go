@@ -44,7 +44,7 @@ type UserProfile struct {
 	Role  string `json:"role"`
 }
 
-// Login handles local / dev authentication by verifying or provisioning the user in Supabase auth tables.
+// Login handles local / DEVELOPMENT-ONLY authentication (never registered in production) by verifying or provisioning the user in Supabase auth tables.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -83,6 +83,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"sub":   userID.String(),
 		"email": req.Email,
 		"role":  "authenticated",
+		"aud":   "authenticated",
 		"exp":   time.Now().Add(7 * 24 * time.Hour).Unix(),
 		"iat":   time.Now().Unix(),
 	}
