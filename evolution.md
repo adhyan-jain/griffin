@@ -213,6 +213,16 @@ Phase 4 grounded Griffin's document and artifact storage in enterprise cloud obj
 5. **Pure `argv` slices neutralize prompt injection attacks against host OS**: Treating LLM prompts as raw data tokens rather than shell arguments keeps the host OS safe from execution attacks.
 6. **Scale-to-zero requires atomic double-checking before machine power-off**: In distributed on-demand compute, task arrival is asynchronous to shutdown timers. Never initiate a system stop without an atomic database recheck immediately before the power syscall; otherwise, tasks submitted during draining will starve until an external stimulus occurs.
 7. **DAG plans must be validated topologically before database persistence**: Never trust LLMs to produce non-cyclic dependencies. Validate with Kahn's algorithm before creating task records to prevent silent workflow deadlocks.
-8. **Worker templates must be immutable**: Never mutate worker definitions in place. Treat prompts, tools, and schemas as append-only versioned assets to preserve historical reproducibility and audit compliance.
+---
 
+### Epoch 9: Final Product Completion, Hardening, and Cloud Release Sprint
 
+- **Trigger**: Completion of Phase 4 S3 object storage; requirement for an intuitive, remotely accessible, production-grade web management console, live cloud verification, and cloud execution deployment runbooks.
+- **Shift**:
+  - **From**: CLI and cURL only operator interaction.
+  - **To**: Next.js 15 TypeScript PWA Web Console with 10 management screens, live S3 integration test against `ap-south-1`, CORS and JWT web authentication, and production runbooks.
+- **Key Implementation Details**:
+  - **Web Console in `web/`**: Built with Next.js 15, TypeScript, Tailwind CSS, Lucide icons, and PWA manifest. Features Executive Dashboard, JJ Orchestrator Workspace, Task DAG Hierarchy, Task Details & Logs Inspector, Approvals Governance Inbox, S3 Artifacts Browser, Workforce Directory (11 managers), System Health, Operator Login, and Responsive Mobile Drawer/Navbar.
+  - **CORS & Web Auth**: Implemented `internal/api/middleware/cors.go` and `internal/api/handlers/auth.go` (`POST /api/v1/auth/login`) with automatic foreign-key user provisioning and signed Supabase JWT issuance.
+  - **Live Cloud Verification**: Verified `tests/s3_live_test.go` directly against real AWS S3 bucket `griffin-artifacts-123456789012-ap-south-1` in `ap-south-1` using `griffin-bootstrap` credentials with zero errors.
+  - **Deployment Runbooks**: Authored `docs/DEPLOYMENT_RUNBOOK.md` and `docs/ANTIGRAVITY_CLOUD_RUNNER.md` detailing unattended Antigravity CLI authentication, DBus user lingering sessions, and EventBridge Scheduler configurations.

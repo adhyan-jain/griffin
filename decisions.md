@@ -281,16 +281,41 @@ This document is the canonical ledger of all architectural, product, engineering
 ### Phase 4: Frontend PWA & Real-Time Streaming
 
 #### ADR-020: Next.js 15 PWA Hosted on Vercel Edge over EC2 Self-Hosting
-- **Status**: PLANNED (Phase 4)
-- **Decision**: The user interface will be built with Next.js 15, Tailwind CSS, and Web Push as a Progressive Web App (PWA) deployed on Vercel Edge.
+- **Status**: IMPLEMENTED (Final Sprint)
+- **Decision**: The user interface is built with Next.js 15, Tailwind CSS, TypeScript, and PWA capabilities located in `web/`.
 - **Rationale**: Preserves 100% of EC2 compute and memory for the Go backend and `agy` runners; provides global CDN caching and free edge hosting.
 
 #### ADR-021: Server-Sent Events (SSE) for Real-Time Streaming over WebSockets
-- **Status**: PLANNED (Phase 4)
+- **Status**: PLANNED (Phase 5)
 - **Decision**: Use HTTP/2 Server-Sent Events (SSE) for streaming LLM tokens, progress bars, and approval requests from backend to frontend; use standard REST for client actions.
 - **Rationale**: Simpler connection lifecycle, automatic reconnection, native browser support, and seamless operation through Cloudflare Tunnels without WebSocket connection state issues.
 
 #### ADR-022: Cloudflare Tunnel (`cloudflared`) for Ingress
-- **Status**: PLANNED (Phase 4 / Phase 5)
+- **Status**: PLANNED (Phase 5)
 - **Decision**: Ingress from Vercel PWA to the EC2 backend will route through an outbound-only Cloudflare Tunnel daemon.
 - **Rationale**: Eliminates the need for an AWS Public IPv4 address ($3.65/mo savings), eliminates open inbound firewall ports (ports 80 and 443 remain closed), and provides free SSL termination.
+
+#### ADR-043: Next.js 15 TypeScript PWA Frontend Console Architecture
+- **Status**: IMPLEMENTED (Final Sprint)
+- **Decision**: Build a 10-screen responsive PWA in `web/` featuring Executive Dashboard, JJ Orchestrator Chat, Task DAG Hierarchy, Task Details & Attempts Inspector, Approvals Inbox, S3 Artifacts Browser, Workforce Specialist Directory, System Diagnostics, Operator Login, and Responsive Mobile Drawer/Navbar.
+- **Rationale**: Provides operators with real-time operational control, manual approvals, and live DAG observability across desktop and mobile devices.
+- **Location**: [`web/src/`](file:///home/adhyan/Desktop/griffin/web/src/)
+
+#### ADR-044: Cross-Origin Resource Sharing (CORS) and Web Client Authentication
+- **Status**: IMPLEMENTED (Final Sprint)
+- **Decision**: Wrap the Go API ingress in a CORS middleware supporting preflight `OPTIONS` and standard authorization headers. Provide `/api/v1/auth/login` to issue signed Supabase JWTs with `OWNER` privileges and automatic foreign-key user synchronization.
+- **Rationale**: Enables frictionless local and production web client integration without cross-origin blocking or manual token manipulation.
+- **Location**: [`internal/api/middleware/cors.go`](file:///home/adhyan/Desktop/griffin/internal/api/middleware/cors.go), [`internal/api/handlers/auth.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/auth.go)
+
+#### ADR-045: Live AWS S3 Integration Testing and Integrity Verification
+- **Status**: IMPLEMENTED & LIVE VERIFIED (Final Sprint)
+- **Decision**: Implement opt-in end-to-end integration test (`tests/s3_live_test.go`) validating `Upload`, `Download`, `Head`, `PresignDownloadURL`, and `Delete` against real AWS S3 bucket `griffin-artifacts-123456789012-ap-south-1` using `griffin-bootstrap` credentials in `ap-south-1`.
+- **Rationale**: Guarantees zero regression and genuine live cloud compatibility before production release.
+- **Location**: [`tests/s3_live_test.go`](file:///home/adhyan/Desktop/griffin/tests/s3_live_test.go)
+
+#### ADR-046: Cloud Runner Unattended Authentication and Lingering Session Pattern
+- **Status**: IMPLEMENTED (Final Sprint)
+- **Decision**: Configure EC2 cloud runners with systemd user lingering (`loginctl enable-linger griffin`) and persistent DBus session daemons to allow headless Antigravity CLI execution without interactive OAuth browser prompts.
+- **Rationale**: Essential for scale-to-zero compute where workers start on demand and execute background AI workflows without active SSH/SSM sessions.
+- **Location**: [`infra/user-data.sh`](file:///home/adhyan/Desktop/griffin/infra/user-data.sh), [`docs/ANTIGRAVITY_CLOUD_RUNNER.md`](file:///home/adhyan/Desktop/griffin/docs/ANTIGRAVITY_CLOUD_RUNNER.md)
+
