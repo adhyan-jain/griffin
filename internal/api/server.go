@@ -153,7 +153,9 @@ func NewServer(deps ServerDependencies) *Server {
 	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, deps.Wakeup, scaleToZero)
 	mux.Handle("GET /api/v1/runner/status", userAuth(http.HandlerFunc(runnerHandler.GetStatus)))
 	mux.Handle("POST /api/v1/runner/wake", userAuth(http.HandlerFunc(runnerHandler.WakeRunner)))
-	mux.Handle("POST /api/v1/runner/sleep", userAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
+	// Stopping the shared runner affects every tenant, so it is operator-only: worker key (constant-time
+	// compare in AuthenticateWorker), never a user JWT. The browser must not hold this key.
+	mux.Handle("POST /api/v1/runner/sleep", workerAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
 
 	// 4. Global middleware wrapping with CORS
 	handler := middleware.CORS(deps.Config.CORSAllowedOrigins)(

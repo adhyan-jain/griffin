@@ -16,10 +16,16 @@ import (
 	"github.com/griffin/core/internal/api"
 	"github.com/griffin/core/internal/config"
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/runner"
 	"github.com/griffin/core/internal/storage"
 )
 
 func secServer(t *testing.T, env *TestEnv, mutate func(*config.Config)) *httptest.Server {
+	t.Helper()
+	return secServerWithRunner(t, env, mutate, nil)
+}
+
+func secServerWithRunner(t *testing.T, env *TestEnv, mutate func(*config.Config), mgr runner.InstanceManager) *httptest.Server {
 	t.Helper()
 	cfg := *env.Config
 	cfg.MaxUploadBytes = 1 << 20
@@ -30,7 +36,7 @@ func secServer(t *testing.T, env *TestEnv, mutate func(*config.Config)) *httptes
 		Config: &cfg, DB: env.DB, Engine: env.Engine, TaskRepo: env.TaskRepo, ApprovalRepo: env.ApprovalRepo,
 		AgentRepo: env.AgentRepo, ArtifactRepo: env.ArtifactRepo, StorageService: env.StorageService,
 		WorkerDefRepo: env.WorkerDefRepo, OrchRepo: env.OrchRepo, Orchestrator: env.Orchestrator,
-		Factory: env.AgentFactory, ManagerRegistry: env.ManagerReg,
+		Factory: env.AgentFactory, ManagerRegistry: env.ManagerReg, InstanceMgr: mgr,
 	})
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -310,4 +316,45 @@ func createTaskFor(t *testing.T, env *TestEnv, user uuid.UUID) uuid.UUID {
 		t.Fatalf("create task: %v", err)
 	}
 	return task.ID
+}
+
+// The shared runner serves every tenant: an authenticated ordinary user must not be able to stop it.
+func TestRunnerSleepIsOperatorOnly(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+	mgr := runner.NewMockInstanceManager(runner.RunnerStateRunning)
+	ts := secServerWithRunner(t, env, func(c *config.Config) { c.WorkerAPIKey = "operator-key-0123456789-0123456789-abcdef" }, mgr)
+	u := CreateTestUser(t, env.DB, "sleep@example.com")
+	url := ts.URL + "/api/v1/runner/sleep"
+
+	cases := []struct {
+		name string
+		auth string
+		hdr  map[string]string
+		want int
+	}{
+		{"no credentials", "", nil, http.StatusUnauthorized},
+		{"valid user JWT", GenerateTestJWT(u, "sleep@example.com"), nil, http.StatusUnauthorized},
+		{"user JWT in X-Worker-Key", "", map[string]string{"X-Worker-Key": GenerateTestJWT(u, "sleep@example.com")[len("Bearer "):]}, http.StatusUnauthorized},
+		{"wrong worker key", "", map[string]string{"X-Worker-Key": "operator-key-0123456789-0123456789-abcdeX"}, http.StatusUnauthorized},
+		{"prefix of worker key", "", map[string]string{"X-Worker-Key": "operator-key-0123456789"}, http.StatusUnauthorized},
+	}
+	for _, c := range cases {
+		if code, _, _ := call(t, "POST", url, c.auth, nil, c.hdr); code != c.want {
+			t.Errorf("%s: got %d want %d", c.name, code, c.want)
+		}
+	}
+	if mgr.StopCalls != 0 {
+		t.Fatalf("runner stopped %d time(s) by unauthorized callers", mgr.StopCalls)
+	}
+	if code, _, _ := call(t, "POST", url, "", nil, map[string]string{"X-Worker-Key": "operator-key-0123456789-0123456789-abcdef"}); code != http.StatusOK {
+		t.Fatalf("operator key: got %d want 200", code)
+	}
+	if mgr.StopCalls != 1 {
+		t.Fatalf("operator call should stop runner once, got %d", mgr.StopCalls)
+	}
+	// Ordinary users can still wake the runner (cost-bounded by cooldown) and read status.
+	if code, _, _ := call(t, "GET", ts.URL+"/api/v1/runner/status", GenerateTestJWT(u, "sleep@example.com"), nil, nil); code != http.StatusOK {
+		t.Fatalf("status for user: %d", code)
+	}
 }

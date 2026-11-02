@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api, RunnerStatus } from "@/lib/api";
-import { Power, Play, Square, Loader2 } from "lucide-react";
+import { Power, Play, Loader2 } from "lucide-react";
 
 export function RunnerPill() {
   const [status, setStatus] = useState<RunnerStatus | null>(null);
@@ -43,20 +43,6 @@ export function RunnerPill() {
     }
   };
 
-  const handleSleep = async () => {
-    setLoading(true);
-    setActionMessage(null);
-    try {
-      const res = await api.sleepRunner();
-      setActionMessage(res.message);
-      await refreshStatus();
-    } catch (err: any) {
-      setActionMessage(`Sleep failed: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const state = status?.state || "stopped";
   const isRunning = state === "running";
 
@@ -81,17 +67,7 @@ export function RunnerPill() {
       </div>
 
       <div className="flex items-center gap-1">
-        {isRunning ? (
-          <button
-            onClick={handleSleep}
-            disabled={loading}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-            title="Trigger EC2 scale-to-zero sleep"
-          >
-            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Square className="w-3 h-3 text-amber-400" />}
-            <span>Sleep</span>
-          </button>
-        ) : (
+        {!isRunning && (
           <button
             onClick={handleWake}
             disabled={loading}

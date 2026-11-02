@@ -270,10 +270,6 @@ export const api = {
     return fetchWithAuth("/api/v1/runner/wake", { method: "POST" });
   },
 
-  async sleepRunner(): Promise<{ message: string; status: string }> {
-    return fetchWithAuth("/api/v1/runner/sleep", { method: "POST" });
-  },
-
   // Tasks
   async listTasks(params?: { status?: string; manager?: string }): Promise<Task[]> {
     const query = new URLSearchParams();

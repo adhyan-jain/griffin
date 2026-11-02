@@ -16,7 +16,6 @@ import {
   RefreshCw,
   Power,
   Play,
-  Square,
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
@@ -66,20 +65,6 @@ export default function SettingsPage() {
       await loadDiagnostics();
     } catch (err: any) {
       setActionFeedback(`Wake failed: ${err.message}`);
-    } finally {
-      setRunnerActionLoading(false);
-    }
-  };
-
-  const handleSleep = async () => {
-    setRunnerActionLoading(true);
-    setActionFeedback(null);
-    try {
-      const res = await api.sleepRunner();
-      setActionFeedback(res.message);
-      await loadDiagnostics();
-    } catch (err: any) {
-      setActionFeedback(`Sleep failed: ${err.message}`);
     } finally {
       setRunnerActionLoading(false);
     }
@@ -184,19 +169,6 @@ export default function SettingsPage() {
               <Play className="w-3.5 h-3.5" />
             )}
             <span>Dispatch Wake-Up Signal</span>
-          </button>
-
-          <button
-            onClick={handleSleep}
-            disabled={runnerActionLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 font-medium text-xs transition"
-          >
-            {runnerActionLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Square className="w-3.5 h-3.5 text-amber-400" />
-            )}
-            <span>Trigger Scale-to-Zero Sleep</span>
           </button>
         </div>
       </div>
