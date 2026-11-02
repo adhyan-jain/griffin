@@ -17,52 +17,44 @@ The Griffin worker invokes `agy` headlessly through the Go worker process (`inte
 |         v                                                   |
 |  [AntigravityExecutor (Go)]                                 |
 |         |                                                   |
-|         +---> exec: agy --format json --stream ...          |
+|         +---> exec: agy -p <prompt> --output-format json ...          |
 |         |                                                   |
 |         v                                                   |
 |  [Headless DBus Session Bus] (unix:path=/run/user/1001/bus) |
 |         |                                                   |
 |         v                                                   |
-|  [Credential Store: ~/.gemini/antigravity-cli/]             |
+|  [State dir: ~/.gemini/antigravity-cli/ (+ OS keyring)]             |
 |                                                             |
 +-------------------------------------------------------------+
 ```
 
 ---
 
-## 2. Unattended Authentication & Token Refresh
+## 2. Authentication (documented mechanisms only)
 
-When running in headless cloud environments, interactive OAuth redirect flows (`http://localhost:PORT/oauth/callback`) are unavailable. Antigravity uses persistent credential caching:
+Source: the official Antigravity install documentation (https://antigravity.google/docs/install/),
+re-checked during the 2026-11-02 preflight. Anything not listed here is **not documented** and is
+deliberately not implemented in Griffin.
 
-### 2.1 Credential Location
-- **Configuration Directory**: `/home/griffin/.gemini/antigravity-cli/`
-- **Session Tokens**: Stored encrypted in the user's local keyring or secret store, accessible via the user DBus daemon.
-- **Refresh Flow**: `agy` automatically handles OAuth2 refresh token exchanges in the background before token expiration without requiring browser interaction.
+### 2.1 Documented
+- **Interactive remote login (one time):** run `agy` in the remote terminal; it prints an
+  authorization URL; open it on another device, sign in, paste the code back. A saved token profile
+  (OS keyring, "Linux Secret Service/dbus") lets later runs authenticate silently.
+- **Unattended alternatives (documented as suitable for headless/CI):**
+  `GEMINI_API_KEY` with `~/.gemini/antigravity-cli/settings.json` `{"modelProvider":"gemini"}`
+  (per-token billing), or Application Default Credentials (`AGY_ADC_AUTH=true`).
 
-### 2.2 Pre-Seeding Authentication on Cloud Runners
+### 2.2 Not documented / unverified (treat as risks, test on the instance)
+- Where OAuth tokens are stored on disk and whether they survive reboot without an unlocked keyring.
+- Refresh-token lifetime and any re-verification for cloud IP ranges.
+- Any non-interactive OAuth login. **There is no `agy auth login`, `--no-browser`, `--format` or
+  `--stream`** in `agy --help` (v1.2.0); earlier revisions of this file described them and an
+  SSM-seeded `auth.json` "refresh token". Those were unsupported and have been removed.
 
-For unattended bootstrap, credentials can be securely transferred to the instance profile or SSM Parameter Store:
-
-1. **Option A (Secure SSM Parameter Store)**:
-   Store the initial refresh token in AWS SSM Parameter Store (encrypted with KMS):
-   ```bash
-   aws ssm put-parameter \
-     --name "/griffin/antigravity/refresh_token" \
-     --type "SecureString" \
-     --value "$AGY_REFRESH_TOKEN" \
-     --region ap-south-1 \
-     --profile griffin-bootstrap
-   ```
-   On instance startup, cloud-init retrieves the parameter and writes it into `/home/griffin/.gemini/antigravity-cli/auth.json`.
-
-2. **Option B (One-Time SSM Session Login)**:
-   Connect once to the runner using AWS Systems Manager:
-   ```bash
-   aws ssm start-session --target <INSTANCE_ID> --region ap-south-1 --profile griffin-bootstrap
-   sudo -u griffin -i
-   agy auth login --no-browser
-   ```
-   Follow the CLI instructions to authenticate. The resulting tokens persist across EC2 start/stop cycles because the root EBS volume is configured with `DeleteOnTermination: false`.
+### 2.3 Procedure
+See `docs/DEPLOYMENT_RUNBOOK.md` section 8: authenticate once over SSM as `griffin`, then run the
+reboot and stop/start persistence tests *before* enabling `griffin-worker`. If the login does not
+survive a reboot, fall back to the documented `GEMINI_API_KEY` mode (accepting per-token cost).
 
 ---
 
@@ -106,7 +98,7 @@ sudo -u griffin -i agy --version
 
 ### Test Headless Execution
 ```bash
-sudo -u griffin -i agy "Output a JSON object with status 'ready'" --format json
+sudo -u griffin -i agy -p "Reply with the JSON {\"status\":\"ready\"}" --output-format json
 ```
 
 ### Inspect Worker Logs
