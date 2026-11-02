@@ -2,8 +2,7 @@
 
 Status: gates G1–G8 are closed in code (see `docs/GATE_CLOSURE_REPORT.md`). **Nothing in this
 runbook has been executed against AWS or Supabase.** Run it only after explicit approval. AWS
-account `220115213279`, region `ap-south-1`, profile `griffin-bootstrap`. Required IAM policies and
-live-state evidence are in `DEPLOYMENT_PREFLIGHT_REPORT.md` (sections 5 and 11–20); this file holds
+account `220115213279`, region `ap-south-1`, profile `griffin-bootstrap`. Final IAM policies are in `docs/FINAL_IAM_POLICIES/` (they supersede the drafts in `DEPLOYMENT_PREFLIGHT_REPORT.md` §5); see `docs/CONTROLLED_DEPLOYMENT_REPORT.md` for current status; this file holds
 the commands that changed after hardening.
 
 Conventions: `P="--profile griffin-bootstrap --region ap-south-1"`. Secrets live in
@@ -113,7 +112,7 @@ agy -p 'Reply with {"status":"ready"}' --output-format json
 Then: (1) run the same command with no session attached; (2) `sudo reboot` and repeat via
 `aws ssm send-command`; (3) stop/start the instance and repeat. Only if all pass:
 `sudo systemctl enable --now griffin-worker && journalctl -u griffin-worker -n 50`. If not,
-use the documented `GEMINI_API_KEY` fallback (see `docs/ANTIGRAVITY_CLOUD_RUNNER.md`).
+STOP: do not enable the worker and do not switch to `GEMINI_API_KEY`/ADC (per-usage billing). Report the legitimate alternatives to the user (see `docs/CLOUD_ACCEPTANCE_TESTS.md`, "If it fails").
 Status: persistence across reboot is **NOT VERIFIED** until this is done on the instance.
 
 ## 9. PWA (Vercel)

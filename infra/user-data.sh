@@ -8,11 +8,16 @@ export DEBIAN_FRONTEND=noninteractive
 # 1. Update OS and install prerequisites
 apt-get update -y
 apt-get upgrade -y
-apt-get install -y curl wget git jq unzip ca-certificates dbus libsecret-1-0 libsecret-tools gnome-keyring amazon-ssm-agent
+apt-get install -y curl wget git jq unzip ca-certificates dbus libsecret-1-0 libsecret-tools gnome-keyring
 
 # 2. Ensure Amazon SSM Agent is enabled and active
-systemctl enable amazon-ssm-agent
-systemctl restart amazon-ssm-agent
+# On Ubuntu 24.04 AWS AMIs the agent ships as a snap (there is no apt package); do not install it here.
+if snap list amazon-ssm-agent >/dev/null 2>&1; then
+    systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service
+    systemctl restart snap.amazon-ssm-agent.amazon-ssm-agent.service
+else
+    echo "WARNING: amazon-ssm-agent snap not found; Session Manager will not work" >&2
+fi
 
 # 3. Create dedicated unprivileged 'griffin' user
 if ! id -u griffin >/dev/null 2>&1; then
@@ -49,37 +54,11 @@ fi
 # 9. Verify CLI installation
 su - griffin -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && agy --version" || true
 
-# 10. Configure /etc/griffin and systemd worker service
+# 10. /etc/griffin (env file written by griffin-fetch-env.sh). The systemd unit is installed ONLY by
+# infra/install-worker.sh from infra/systemd/griffin-worker.service (single source of truth).
 mkdir -p /etc/griffin
 chmod 750 /etc/griffin
 chown root:griffin /etc/griffin
-
-cat << 'EOF' > /etc/systemd/system/griffin-worker.service
-[Unit]
-Description=Griffin Autonomous Workforce Worker Service
-After=network.target amazon-ssm-agent.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=griffin
-Group=griffin
-WorkingDirectory=/home/griffin
-Environment="GRIFFIN_MODE=worker"
-Environment="PATH=/home/griffin/.local/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus"
-EnvironmentFile=-/etc/griffin/worker.env
-ExecStart=/usr/local/bin/griffin-server
-Restart=on-failure
-RestartSec=5s
-KillMode=process
-TimeoutStopSec=30s
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
 
 echo "Griffin EC2 initialization completed successfully at $(date -u)"
 

@@ -1,0 +1,44 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WakeGriffinRunnerOnly",
+      "Effect": "Allow",
+      "Action": "ec2:StartInstances",
+      "Resource": "arn:aws:ec2:ap-south-1:220115213279:instance/<INSTANCE_ID>",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Project": "Griffin"
+        }
+      }
+    },
+    {
+      "Sid": "DescribeRunner_NotResourceScopable",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeInstances",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ArtifactObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": "arn:aws:s3:::griffin-artifacts-220115213279-ap-south-1/users/*"
+    },
+    {
+      "Sid": "ArtifactBucketList",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::griffin-artifacts-220115213279-ap-south-1",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "users/*"
+        }
+      }
+    }
+  ]
+}

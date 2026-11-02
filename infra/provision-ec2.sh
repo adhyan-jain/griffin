@@ -11,6 +11,9 @@ PROFILE_NAME="GriffinEC2WorkerProfile"
 SG_NAME="griffin-runner-sg"
 TAG_NAME="griffin-cloud-runner"
 PROFILE_ARG=""
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DRY_RUN_ARG=""
+[ "${GRIFFIN_DRY_RUN:-0}" = "1" ] && DRY_RUN_ARG="--dry-run"
 
 if [ -n "${AWS_PROFILE:-}" ]; then
     PROFILE_ARG="--profile ${AWS_PROFILE}"
@@ -52,58 +55,8 @@ fi
 
 echo "Selected AMI: ${AMI_ID}"
 
-# 2. Create IAM Role and Instance Profile for SSM Session Manager + S3 Object Storage
-echo "[2/5] Configuring IAM Role for SSM Session Manager and S3 Storage..."
-if ! aws iam get-role ${PROFILE_ARG} --role-name "${ROLE_NAME}" >/dev/null 2>&1; then
-    aws iam create-role ${PROFILE_ARG} \
-        --role-name "${ROLE_NAME}" \
-        --assume-role-policy-document '{
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Effect": "Allow",
-                "Principal": {"Service": "ec2.amazonaws.com"},
-                "Action": "sts:AssumeRole"
-            }]
-        }'
-    aws iam attach-role-policy ${PROFILE_ARG} \
-        --role-name "${ROLE_NAME}" \
-        --policy-arn "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-
-    # Attach S3 artifact access
-    aws iam put-role-policy ${PROFILE_ARG} \
-        --role-name "${ROLE_NAME}" \
-        --policy-name "GriffinS3ArtifactAccess" \
-        --policy-document '{
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:PutObject",
-                        "s3:GetObject",
-                        "s3:DeleteObject",
-                        "s3:AbortMultipartUpload"
-                    ],
-                    "Resource": "arn:aws:s3:::griffin-artifacts-220115213279-ap-south-1/*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:ListBucket"
-                    ],
-                    "Resource": "arn:aws:s3:::griffin-artifacts-220115213279-ap-south-1"
-                }
-            ]
-        }'
-fi
-
-if ! aws iam get-instance-profile ${PROFILE_ARG} --instance-profile-name "${PROFILE_NAME}" >/dev/null 2>&1; then
-    aws iam create-instance-profile ${PROFILE_ARG} --instance-profile-name "${PROFILE_NAME}" || true
-    aws iam add-role-to-instance-profile ${PROFILE_ARG} \
-        --instance-profile-name "${PROFILE_NAME}" \
-        --role-name "${ROLE_NAME}" || true
-    sleep 10 # Wait for IAM propagation
-fi
+# 2. The worker role and instance profile already exist and are NOT created or modified here.
+echo "[2/5] Using existing instance profile ${PROFILE_NAME} (role ${ROLE_NAME}); no IAM changes."
 
 # 3. Create Security Group (ZERO INBOUND PORTS)
 echo "[3/5] Configuring Security Group (Inbound Port 22 CLOSED)..."
@@ -113,6 +66,10 @@ if [ -n "${VPC_ID}" ] && [ "${VPC_ID}" != "None" ]; then
     SG_ID=$(aws ec2 describe-security-groups ${PROFILE_ARG} --region "${REGION}" --filters "Name=group-name,Values=${SG_NAME}" "Name=vpc-id,Values=${VPC_ID}" --query "SecurityGroups[0].GroupId" --output text 2>/dev/null || true)
 
     if [ "${SG_ID}" == "None" ] || [ -z "${SG_ID}" ]; then
+        if [ -n "${DRY_RUN_ARG}" ]; then
+            echo "DRY RUN: security group ${SG_NAME} does not exist yet; it would be created (zero inbound). Stopping before any mutation."
+            exit 0
+        fi
         SG_ID=$(aws ec2 create-security-group ${PROFILE_ARG} \
             --region "${REGION}" \
             --group-name "${SG_NAME}" \
@@ -132,7 +89,7 @@ echo "Selected Subnet ID: ${SUBNET_ID:-default}"
 
 # 4. Launch EC2 Instance with encrypted 30 GiB gp3 root volume
 echo "[4/5] Launching EC2 ${INSTANCE_TYPE} instance..."
-if ! INSTANCE_ID=$(aws ec2 run-instances ${PROFILE_ARG} \
+if ! INSTANCE_ID=$(aws ec2 run-instances ${PROFILE_ARG} ${DRY_RUN_ARG} \
     --region "${REGION}" \
     --image-id "${AMI_ID}" \
     --instance-type "${INSTANCE_TYPE}" \
@@ -150,12 +107,15 @@ if ! INSTANCE_ID=$(aws ec2 run-instances ${PROFILE_ARG} \
             "DeleteOnTermination": false
         }
     }]' \
-    --user-data file://infra/user-data.sh \
+    --user-data "file://${REPO_ROOT}/infra/user-data.sh" \
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${TAG_NAME}},{Key=Project,Value=Griffin}]" \
     --query "Instances[0].InstanceId" \
     --output text 2>&1); then
     echo "EC2 run-instances output: ${INSTANCE_ID}"
-    echo "NOTE: If UnauthorizedOperation occurred, please attach the EC2 provisioning policy from docs/DEPLOYMENT_RUNBOOK.md to griffin-bootstrap."
+    if [ -n "${DRY_RUN_ARG}" ] && echo "${INSTANCE_ID}" | grep -q DryRunOperation; then
+        echo "DRY RUN OK: permissions and parameters accepted; nothing was launched."; exit 0
+    fi
+    echo "NOTE: If UnauthorizedOperation occurred, please attach Policy A from docs/FINAL_IAM_POLICIES/ to griffin-bootstrap."
     exit 1
 fi
 
