@@ -24,16 +24,21 @@ type Agent struct {
 }
 
 type Artifact struct {
-	ID            uuid.UUID       `json:"id"`
-	UserID        uuid.UUID       `json:"user_id"`
-	TaskID        *uuid.UUID      `json:"task_id,omitempty"`
-	Title         string          `json:"title"`
-	ArtifactType  string          `json:"artifact_type"` // 'GOOGLE_DOC', 'PDF', 'MARKDOWN', 'CODE_DIFF', 'JSON'
-	StorageURI    string          `json:"storage_uri"`
-	FileSizeBytes *int64          `json:"file_size_bytes,omitempty"`
-	MimeType      *string         `json:"mime_type,omitempty"`
-	Metadata      json.RawMessage `json:"metadata"`
-	CreatedAt     time.Time       `json:"created_at"`
+	ID              uuid.UUID       `json:"id"`
+	UserID          uuid.UUID       `json:"user_id"`
+	TaskID          *uuid.UUID      `json:"task_id,omitempty"`
+	Title           string          `json:"title"`
+	ArtifactType    string          `json:"artifact_type"` // 'GOOGLE_DOC', 'PDF', 'MARKDOWN', 'CODE_DIFF', 'JSON', 'FILE'
+	StorageURI      string          `json:"storage_uri"`
+	StorageProvider string          `json:"storage_provider"` // 'S3', 'MOCK'
+	Bucket          *string         `json:"bucket,omitempty"`
+	ObjectKey       *string         `json:"object_key,omitempty"`
+	Filename        *string         `json:"filename,omitempty"`
+	FileSizeBytes   *int64          `json:"file_size_bytes,omitempty"`
+	MimeType        *string         `json:"mime_type,omitempty"`
+	Checksum        *string         `json:"checksum,omitempty"`
+	Metadata        json.RawMessage `json:"metadata"`
+	CreatedAt       time.Time       `json:"created_at"`
 }
 
 type Notification struct {

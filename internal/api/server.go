@@ -14,6 +14,7 @@ import (
 	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
+	"github.com/griffin/core/internal/storage"
 )
 
 // Server coordinates HTTP routing, middleware chains, and lifecycle.
@@ -34,6 +35,7 @@ type ServerDependencies struct {
 	ApprovalRepo    repository.ApprovalRepository
 	AgentRepo       repository.AgentRepository
 	ArtifactRepo    repository.ArtifactRepository
+	StorageService  *storage.StorageService
 	WorkerDefRepo   repository.WorkerDefinitionRepository
 	OrchRepo        repository.OrchestrationRepository
 	Orchestrator    *service.JJOrchestrator
@@ -89,10 +91,14 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.ListAgents)))
 	mux.Handle("POST /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.RegisterAgent)))
 
-	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo)
+	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo, deps.StorageService)
 	mux.Handle("GET /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.ListArtifacts)))
 	mux.Handle("GET /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
 	mux.Handle("POST /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.CreateArtifact)))
+	mux.Handle("POST /api/v1/artifacts/upload", userAuth(http.HandlerFunc(artifactHandler.UploadArtifact)))
+	mux.Handle("GET /api/v1/artifacts/{id}/download", userAuth(http.HandlerFunc(artifactHandler.DownloadArtifact)))
+	mux.Handle("GET /api/v1/artifacts/{id}/presign", userAuth(http.HandlerFunc(artifactHandler.PresignArtifact)))
+	mux.Handle("DELETE /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.DeleteArtifact)))
 
 	// JJ Orchestrator & Manager routes
 	if deps.Orchestrator != nil && deps.ManagerRegistry != nil {

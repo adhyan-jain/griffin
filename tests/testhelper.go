@@ -16,6 +16,7 @@ import (
 	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
+	"github.com/griffin/core/internal/storage"
 )
 
 const (
@@ -25,18 +26,20 @@ const (
 )
 
 type TestEnv struct {
-	DB            *database.DB
-	TaskRepo      repository.TaskRepository
-	ApprovalRepo  repository.ApprovalRepository
-	AgentRepo     repository.AgentRepository
-	ArtifactRepo  repository.ArtifactRepository
-	WorkerDefRepo repository.WorkerDefinitionRepository
-	OrchRepo      repository.OrchestrationRepository
-	ManagerReg    *manager.Registry
-	AgentFactory  *service.AgentFactoryService
-	Orchestrator  *service.JJOrchestrator
-	Engine        *service.TaskEngine
-	Config        *config.Config
+	DB              *database.DB
+	TaskRepo        repository.TaskRepository
+	ApprovalRepo    repository.ApprovalRepository
+	AgentRepo       repository.AgentRepository
+	ArtifactRepo    repository.ArtifactRepository
+	StorageProvider storage.Provider
+	StorageService  *storage.StorageService
+	WorkerDefRepo   repository.WorkerDefinitionRepository
+	OrchRepo        repository.OrchestrationRepository
+	ManagerReg      *manager.Registry
+	AgentFactory    *service.AgentFactoryService
+	Orchestrator    *service.JJOrchestrator
+	Engine          *service.TaskEngine
+	Config          *config.Config
 }
 
 func SetupTestEnv(t *testing.T) *TestEnv {
@@ -93,19 +96,24 @@ func SetupTestEnv(t *testing.T) *TestEnv {
 	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, nil)
 	orchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, nil, nil)
 
+	mockStorage := storage.NewMockStorageProvider()
+	storageSvc := storage.NewStorageService(mockStorage, artifactRepo, "griffin-test-artifacts", nil)
+
 	return &TestEnv{
-		DB:            db,
-		TaskRepo:      taskRepo,
-		ApprovalRepo:  approvalRepo,
-		AgentRepo:     agentRepo,
-		ArtifactRepo:  artifactRepo,
-		WorkerDefRepo: workerDefRepo,
-		OrchRepo:      orchRepo,
-		ManagerReg:    mgrReg,
-		AgentFactory:  agentFactory,
-		Orchestrator:  orchestrator,
-		Engine:        engine,
-		Config:        cfg,
+		DB:              db,
+		TaskRepo:        taskRepo,
+		ApprovalRepo:    approvalRepo,
+		AgentRepo:       agentRepo,
+		ArtifactRepo:    artifactRepo,
+		StorageProvider: mockStorage,
+		StorageService:  storageSvc,
+		WorkerDefRepo:   workerDefRepo,
+		OrchRepo:        orchRepo,
+		ManagerReg:      mgrReg,
+		AgentFactory:    agentFactory,
+		Orchestrator:    orchestrator,
+		Engine:          engine,
+		Config:          cfg,
 	}
 }
 

@@ -73,8 +73,9 @@ Every agent working on Griffin must consult and update these two living ledgers:
 | **Phase 2** | Antigravity Primary Execution Provider & Subprocess Containment | **COMPLETE (37/37 Tests PASS)** |
 | **Scale-to-Zero** | On-Demand EC2 Scale-to-Zero, Wake-up Controller, Idle Shutdown, EventBridge Tick | **IMPLEMENTED (42/42 Tests PASS)** |
 | **Phase 3** | JJ Orchestration Engine, 11 Specialist Managers, Agent Factory & Capability Taxonomy | **COMPLETE (62/62 Tests PASS)** |
-| **Phase 4** | Next.js 15 PWA Interface & Real-Time SSE Streaming | NEXT (Ready for Execution) |
-| **Phase 5** | Production Hardening, Cloud Activation & 30-Day Longevity | PLANNED |
+| **Phase 4** | AWS S3 Object Storage Integration & Dual-Persistence (Presigned URLs, Multipart, Compensating Saga) | **COMPLETE (76/76 Tests PASS)** |
+| **Phase 5** | Next.js 15 PWA Interface & Real-Time SSE Streaming | NEXT (Ready for Execution) |
+| **Phase 6** | Production Hardening, Cloud Activation & 30-Day Longevity | PLANNED |
 
 ---
 
@@ -89,26 +90,31 @@ griffin/
 │   │   ├── handlers/        # Tasks, Approvals, Agents, Artifacts, Workers, Orchestrator, WorkerDefs, Health
 │   │   ├── httputil/        # Standard JSON envelopes & error mapping
 │   │   └── middleware/      # Supabase JWT Auth, Worker Auth, Logger, Recovery, RequestID
-│   ├── config/              # Environment-driven configuration
+│   ├── config/              # Environment-driven configuration (S3, runner, AGY, database)
 │   ├── database/            # pgxpool connection pool, migrations runner, tx helpers
 │   ├── domain/              # Task state machine, capabilities, orchestrations, worker definitions, sentinel errors
 │   ├── manager/             # 11 Specialist managers, Registry, deliverable verification
 │   ├── provider/            # AI execution providers (Antigravity subprocess, mock)
-│   ├── repository/          # PostgreSQL repositories (SKIP LOCKED, RLS, orchestrations, worker definitions)
+│   ├── repository/          # PostgreSQL repositories (SKIP LOCKED, RLS, artifacts, orchestrations, worker defs)
 │   ├── runner/              # Scale-to-zero instance manager, wakeup controller, idle shutdown monitor
 │   ├── service/             # TaskEngine, JJOrchestrator, AgentFactory, Planner
+│   ├── storage/             # Neutral storage provider (AWS S3, Mock, StorageService, compensating saga)
 │   └── worker/              # Worker runner, TaskExecutor interface, MockExecutor, Reaper, PlanAdapter
 ├── migrations/              # Version-controlled idempotent SQL migrations & rollbacks
 │   ├── 000001_init_schema.up.sql / down.sql
 │   ├── 000002_rls_policies.up.sql / down.sql
-│   └── 000003_orchestration_and_agent_factory.up.sql / down.sql
-├── tests/                   # Full integration test suite (Engine, RLS, API, Worker, Orchestration, AgentFactory)
+│   ├── 000003_orchestration_and_agent_factory.up.sql / down.sql
+│   └── 000004_s3_storage_artifacts.up.sql / down.sql
+├── tests/                   # Full integration test suite (Engine, RLS, API, Worker, Orchestration, Storage)
 ├── infra/                   # Automated AWS EC2 launch & cloud-init provisioning scripts
 ├── docs/                    # Architecture blueprints, implementation specs, and test reports
 │   ├── JJ_ORCHESTRATOR.md
 │   ├── MANAGER_FRAMEWORK.md
 │   ├── AGENT_FACTORY.md
 │   ├── CAPABILITY_AND_APPROVAL_POLICIES.md
+│   ├── STORAGE_ARCHITECTURE.md
+│   ├── S3_STORAGE_CONFIGURATION.md
+│   ├── PHASE_4_S3_IMPLEMENTATION_REPORT.md
 │   └── PHASE_3_TEST_REPORT.md
 ├── decisions.md             # Canonical record of all decisions made & planned
 ├── evolution.md             # Chronicle of product pivots and lessons learned

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
@@ -18,7 +19,10 @@ import (
 type ArtifactRepository interface {
 	CreateArtifact(ctx context.Context, artifact *domain.Artifact) (*domain.Artifact, error)
 	GetArtifactByID(ctx context.Context, id uuid.UUID) (*domain.Artifact, error)
+	GetArtifactByIDAndUser(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*domain.Artifact, error)
+	GetArtifactByObjectKey(ctx context.Context, bucket, objectKey string) (*domain.Artifact, error)
 	ListArtifacts(ctx context.Context, userID uuid.UUID, taskID *uuid.UUID) ([]*domain.Artifact, error)
+	DeleteArtifact(ctx context.Context, id uuid.UUID, userID uuid.UUID) error
 }
 
 // PostgresArtifactRepository implements ArtifactRepository.
@@ -36,25 +40,36 @@ func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, a *doma
 	}
 	now := time.Now().UTC()
 	a.CreatedAt = now
+	if a.StorageProvider == "" {
+		a.StorageProvider = "S3"
+	}
 	if a.Metadata == nil {
 		a.Metadata = json.RawMessage("{}")
 	}
 
 	query := `
 		INSERT INTO artifacts (
-			id, user_id, task_id, title, artifact_type, storage_uri, file_size_bytes, mime_type, metadata, created_at
+			id, user_id, task_id, title, artifact_type, storage_uri,
+			storage_provider, bucket, object_key, filename, file_size_bytes,
+			mime_type, checksum, metadata, created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-		) RETURNING id, user_id, task_id, title, artifact_type, storage_uri, file_size_bytes, mime_type, metadata, created_at
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+		) RETURNING id, user_id, task_id, title, artifact_type, storage_uri,
+		            storage_provider, bucket, object_key, filename, file_size_bytes,
+		            mime_type, checksum, metadata, created_at
 	`
 	row := r.pool.QueryRow(ctx, query,
-		a.ID, a.UserID, a.TaskID, a.Title, a.ArtifactType, a.StorageURI, a.FileSizeBytes, a.MimeType, a.Metadata, a.CreatedAt,
+		a.ID, a.UserID, a.TaskID, a.Title, a.ArtifactType, a.StorageURI,
+		a.StorageProvider, a.Bucket, a.ObjectKey, a.Filename, a.FileSizeBytes,
+		a.MimeType, a.Checksum, a.Metadata, a.CreatedAt,
 	)
 
 	var created domain.Artifact
 	err := row.Scan(
 		&created.ID, &created.UserID, &created.TaskID, &created.Title, &created.ArtifactType,
-		&created.StorageURI, &created.FileSizeBytes, &created.MimeType, &created.Metadata, &created.CreatedAt,
+		&created.StorageURI, &created.StorageProvider, &created.Bucket, &created.ObjectKey,
+		&created.Filename, &created.FileSizeBytes, &created.MimeType, &created.Checksum,
+		&created.Metadata, &created.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create artifact: %w", err)
@@ -64,7 +79,9 @@ func (r *PostgresArtifactRepository) CreateArtifact(ctx context.Context, a *doma
 
 func (r *PostgresArtifactRepository) GetArtifactByID(ctx context.Context, id uuid.UUID) (*domain.Artifact, error) {
 	query := `
-		SELECT id, user_id, task_id, title, artifact_type, storage_uri, file_size_bytes, mime_type, metadata, created_at
+		SELECT id, user_id, task_id, title, artifact_type, storage_uri,
+		       storage_provider, bucket, object_key, filename, file_size_bytes,
+		       mime_type, checksum, metadata, created_at
 		FROM artifacts
 		WHERE id = $1
 	`
@@ -72,7 +89,8 @@ func (r *PostgresArtifactRepository) GetArtifactByID(ctx context.Context, id uui
 	var a domain.Artifact
 	err := row.Scan(
 		&a.ID, &a.UserID, &a.TaskID, &a.Title, &a.ArtifactType,
-		&a.StorageURI, &a.FileSizeBytes, &a.MimeType, &a.Metadata, &a.CreatedAt,
+		&a.StorageURI, &a.StorageProvider, &a.Bucket, &a.ObjectKey, &a.Filename,
+		&a.FileSizeBytes, &a.MimeType, &a.Checksum, &a.Metadata, &a.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -83,9 +101,59 @@ func (r *PostgresArtifactRepository) GetArtifactByID(ctx context.Context, id uui
 	return &a, nil
 }
 
+func (r *PostgresArtifactRepository) GetArtifactByIDAndUser(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*domain.Artifact, error) {
+	query := `
+		SELECT id, user_id, task_id, title, artifact_type, storage_uri,
+		       storage_provider, bucket, object_key, filename, file_size_bytes,
+		       mime_type, checksum, metadata, created_at
+		FROM artifacts
+		WHERE id = $1 AND user_id = $2
+	`
+	row := r.pool.QueryRow(ctx, query, id, userID)
+	var a domain.Artifact
+	err := row.Scan(
+		&a.ID, &a.UserID, &a.TaskID, &a.Title, &a.ArtifactType,
+		&a.StorageURI, &a.StorageProvider, &a.Bucket, &a.ObjectKey, &a.Filename,
+		&a.FileSizeBytes, &a.MimeType, &a.Checksum, &a.Metadata, &a.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("get artifact by id and user: %w", err)
+	}
+	return &a, nil
+}
+
+func (r *PostgresArtifactRepository) GetArtifactByObjectKey(ctx context.Context, bucket, objectKey string) (*domain.Artifact, error) {
+	query := `
+		SELECT id, user_id, task_id, title, artifact_type, storage_uri,
+		       storage_provider, bucket, object_key, filename, file_size_bytes,
+		       mime_type, checksum, metadata, created_at
+		FROM artifacts
+		WHERE bucket = $1 AND object_key = $2
+	`
+	row := r.pool.QueryRow(ctx, query, bucket, objectKey)
+	var a domain.Artifact
+	err := row.Scan(
+		&a.ID, &a.UserID, &a.TaskID, &a.Title, &a.ArtifactType,
+		&a.StorageURI, &a.StorageProvider, &a.Bucket, &a.ObjectKey, &a.Filename,
+		&a.FileSizeBytes, &a.MimeType, &a.Checksum, &a.Metadata, &a.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("get artifact by object key: %w", err)
+	}
+	return &a, nil
+}
+
 func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, userID uuid.UUID, taskID *uuid.UUID) ([]*domain.Artifact, error) {
 	query := `
-		SELECT id, user_id, task_id, title, artifact_type, storage_uri, file_size_bytes, mime_type, metadata, created_at
+		SELECT id, user_id, task_id, title, artifact_type, storage_uri,
+		       storage_provider, bucket, object_key, filename, file_size_bytes,
+		       mime_type, checksum, metadata, created_at
 		FROM artifacts
 		WHERE user_id = $1 AND ($2::uuid IS NULL OR task_id = $2)
 		ORDER BY created_at DESC
@@ -101,11 +169,31 @@ func (r *PostgresArtifactRepository) ListArtifacts(ctx context.Context, userID u
 		var a domain.Artifact
 		if err := rows.Scan(
 			&a.ID, &a.UserID, &a.TaskID, &a.Title, &a.ArtifactType,
-			&a.StorageURI, &a.FileSizeBytes, &a.MimeType, &a.Metadata, &a.CreatedAt,
+			&a.StorageURI, &a.StorageProvider, &a.Bucket, &a.ObjectKey, &a.Filename,
+			&a.FileSizeBytes, &a.MimeType, &a.Checksum, &a.Metadata, &a.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
 		list = append(list, &a)
 	}
 	return list, nil
+}
+
+func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id uuid.UUID, userID uuid.UUID) error {
+	var tag pgconn.CommandTag
+	var err error
+	if userID == uuid.Nil {
+		query := `DELETE FROM artifacts WHERE id = $1`
+		tag, err = r.pool.Exec(ctx, query, id)
+	} else {
+		query := `DELETE FROM artifacts WHERE id = $1 AND user_id = $2`
+		tag, err = r.pool.Exec(ctx, query, id, userID)
+	}
+	if err != nil {
+		return fmt.Errorf("delete artifact: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

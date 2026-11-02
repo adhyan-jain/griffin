@@ -250,9 +250,31 @@ This document is the canonical ledger of all architectural, product, engineering
 ### Phase 3 Integrations
 
 #### ADR-019: Asynchronous Google Drive Inbox/Outbox for Claude Cowork
-- **Status**: PLANNED (Phase 3 Integration / Phase 5)
-- **Decision**: Claude Cowork integration operates asynchronously via a synchronized Google Drive folder (`/Griffin/Cowork/Inbox/` and `/Outbox/`).
-- **Rationale**: Leverages Cowork's deep reasoning and document capabilities without requiring fragile UI automation or continuous desktop presence.
+- **Status**: SUPERSEDED & ABANDONED (Phase 4)
+- **Decision**: Replaced by direct AWS S3 Object Storage Integration (ADR-040). Google Drive is explicitly not part of Griffin's architecture.
+- **Rationale**: Direct S3 API integration provides deterministic programmatic access, IAM role authentication, presigned secure URLs, and removes fragile sync clients.
+
+---
+
+### Phase 4: AWS S3 Object Storage Integration
+
+#### ADR-040: AWS S3 as Griffin's Primary Object Storage Backend
+- **Status**: IMPLEMENTED (Phase 4)
+- **Decision**: AWS S3 is designated as Griffin's primary object and file storage backend. Operational metadata, ownership, checksums, and tenant isolation policies remain stored in Supabase PostgreSQL, while file payloads (reports, generated documents, logs, diffs, images, and data exports) reside in private S3 buckets.
+- **Rationale**: Eliminates local disk coupling, provides unlimited durable storage, supports automatic multipart streaming, and leverages EC2 IAM instance profiles (`GriffinEC2WorkerRole`) for zero-secret cloud security.
+- **Location**: [`internal/storage/`](file:///home/adhyan/Desktop/griffin/internal/storage/), [`docs/S3_STORAGE_CONFIGURATION.md`](file:///home/adhyan/Desktop/griffin/docs/S3_STORAGE_CONFIGURATION.md), [`docs/STORAGE_ARCHITECTURE.md`](file:///home/adhyan/Desktop/griffin/docs/STORAGE_ARCHITECTURE.md)
+
+#### ADR-041: Task-Scoped Object Hierarchy & Strict Private Access via Presigned URLs
+- **Status**: IMPLEMENTED (Phase 4)
+- **Decision**: All objects are stored under predictable hierarchical paths: `tasks/{task_id}/outputs/{sanitized_filename}` (or `artifacts/{uuid}/{sanitized_filename}`). S3 buckets block all public access. Client downloads are authenticated via short-lived presigned GET URLs (default 15 minutes) or authenticated streaming endpoints.
+- **Rationale**: Guarantees strict multi-tenant isolation, protects sensitive agent outputs, prevents directory traversal attacks, and offloads heavy file download bandwidth directly to S3.
+- **Location**: [`internal/storage/service.go`](file:///home/adhyan/Desktop/griffin/internal/storage/service.go), [`internal/api/handlers/artifacts.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/artifacts.go)
+
+#### ADR-042: Compensating Saga Pattern for S3 and PostgreSQL Consistency
+- **Status**: IMPLEMENTED (Phase 4)
+- **Decision**: To handle partial failures across AWS S3 and Supabase PostgreSQL without false distributed transaction claims, Griffin uses a Compensating Saga Pattern: payloads are uploaded to S3 first; if the PostgreSQL metadata insert fails, `StorageService` immediately executes a compensating `DeleteObject` against S3 using a detached background context.
+- **Rationale**: Eliminates orphaned object accumulation in S3 during database transient errors or constraint failures while keeping both systems decoupled.
+- **Location**: [`internal/storage/service.go`](file:///home/adhyan/Desktop/griffin/internal/storage/service.go), [`tests/storage_test.go`](file:///home/adhyan/Desktop/griffin/tests/storage_test.go)
 
 ---
 

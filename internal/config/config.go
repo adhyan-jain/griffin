@@ -36,6 +36,15 @@ type Config struct {
 	EC2InstanceID                   string // e.g. "i-0123456789abcdef0"
 	AWSRegion                       string // default "ap-south-1"
 	RunnerWakeupCooldownSeconds     int    // default 30
+
+	// Object Storage settings (Phase 4)
+	StorageProvider        string // "s3" (default) or "mock"
+	S3Bucket               string // default "griffin-artifacts"
+	S3Region               string // default "ap-south-1" (or AWS_REGION)
+	S3Endpoint             string // optional custom endpoint (for LocalStack/MinIO)
+	S3ForcePathStyle       bool   // default false
+	AWSProfile             string // optional named AWS CLI profile for local dev
+	S3PresignExpiryMinutes int    // default 15 minutes
 }
 
 // Load reads configuration from environment variables, applying secure defaults.
@@ -65,6 +74,13 @@ func Load() (*Config, error) {
 		EC2InstanceID:                   getEnv("EC2_INSTANCE_ID", ""),
 		AWSRegion:                       getEnv("AWS_REGION", "ap-south-1"),
 		RunnerWakeupCooldownSeconds:     getEnvAsInt("RUNNER_WAKEUP_COOLDOWN_SECONDS", 30),
+		StorageProvider:                 getEnv("STORAGE_PROVIDER", "s3"),
+		S3Bucket:                        getEnv("S3_BUCKET", "griffin-artifacts"),
+		S3Region:                        getEnv("S3_REGION", getEnv("AWS_REGION", "ap-south-1")),
+		S3Endpoint:                      getEnv("S3_ENDPOINT", ""),
+		S3ForcePathStyle:                getEnvAsBool("S3_FORCE_PATH_STYLE", false),
+		AWSProfile:                      getEnv("AWS_PROFILE", ""),
+		S3PresignExpiryMinutes:          getEnvAsInt("S3_PRESIGN_EXPIRY_MINUTES", 15),
 	}
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {
@@ -78,6 +94,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.WorkerAPIKey == "" {
 		return nil, fmt.Errorf("WORKER_API_KEY is required")
+	}
+	if cfg.S3PresignExpiryMinutes <= 0 {
+		cfg.S3PresignExpiryMinutes = 15
+	}
+	if cfg.StorageProvider == "s3" && cfg.S3Bucket == "" {
+		return nil, fmt.Errorf("S3_BUCKET is required when STORAGE_PROVIDER is s3")
 	}
 	if cfg.MaxConcurrentAntigravity <= 0 {
 		cfg.MaxConcurrentAntigravity = 1

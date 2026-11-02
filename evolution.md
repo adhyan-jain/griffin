@@ -165,23 +165,42 @@ Implementing the multi-agent orchestration layer surfaced key distributed system
 - *The Issue*: The JJ planner needed to invoke `worker.TaskExecutor` to prompt AI models for plans, while `worker` imported `service.TaskEngine`. This created a Go import cycle (`service` $\rightarrow$ `worker` $\rightarrow$ `service`).
 - *The Evolution*: Defined a consumer-side `PlanExecutor` interface inside `internal/service/planner.go` and implemented an adapter in `internal/worker/plan_adapter.go`, eliminating the circular package dependency.
 
+### Epoch 8: Phase 4 AWS S3 Object Storage Integration (The Realities of Cloud File Persistence)
+Phase 4 grounded Griffin's document and artifact storage in enterprise cloud object storage:
+
+#### 1. Abandoning Google Drive for Direct AWS S3
+- *The Issue*: Initial blueprints contemplated using Google Drive folders for file exchange. In practice, third-party desktop sync daemons are fragile, lack programmatic transaction boundaries, cannot provide signed URLs, and require interactive desktop sessions.
+- *The Evolution*: Explicitly eliminated Google Drive from the architecture in favor of native AWS S3. S3 integrates directly with EC2 IAM instance profiles (`GriffinEC2WorkerRole`), requires zero permanent credentials, and supports instant presigned access.
+
+#### 2. Dual-Persistence Architecture & Compensating Saga
+- *The Issue*: Storing file blobs directly in PostgreSQL degrades database performance and bloats backups. However, storing files in S3 and metadata in PostgreSQL risks inconsistent split-brain states if the database write fails after the S3 upload finishes.
+- *The Evolution*: Griffin implemented a Dual-Persistence model governed by a Compensating Saga: the payload streams to S3 first; if the subsequent PostgreSQL metadata insert fails, `StorageService` issues an immediate compensating `DeleteObject` against S3 in a detached background context, preventing orphaned cloud data.
+
+#### 3. Task-Scoped Hierarchy & Directory Traversal Sanitation
+- *The Issue*: Ad-hoc object keys risk name collisions, unauthorized overwrites, and directory traversal vulnerabilities if filenames contain `../../`.
+- *The Evolution*: Enforced deterministic partitioning: `tasks/{task_id}/outputs/{sanitized_filename}`. All filenames are sanitized with `filepath.Base` and space-normalized.
+
+#### 4. Fail-Fast Credential Verification
+- *The Issue*: The default AWS SDK credentials chain can silently fall back to anonymous requests if local profiles or IAM roles are misconfigured, leading to confusing runtime 403 errors or unintended public writes.
+- *The Evolution*: `storage.LoadAWSConfig` calls `Credentials.Retrieve()` and checks `creds.HasKeys()`. If credentials cannot be loaded, the system immediately returns `ErrAuthenticationFailed` on initialization.
+
 ---
 
 ## 3. Product Vision & Architecture Comparison
 
-| Architectural Dimension | Initial Concept (Day 1) | Phase 1 (Engine Core) | Phase 2 (Antigravity Primary) | Scale-to-Zero (Epoch 6) | Phase 3 (Multi-Agent Workforce) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Compute Model** | Local Laptop or Cloud | Dedicated 24/7 EC2 VM | Dedicated 24/7 EC2 VM | On-Demand Scale-to-Zero EC2 | **On-Demand Scale-to-Zero EC2** |
-| **Ingress Availability** | Coupled to host | Coupled to host | Coupled to host | Decoupled Serverless Ingress | **Decoupled Serverless Ingress** |
-| **Orchestration Layer** | Single monolithic prompt | None (Raw Tasks) | None (Raw Tasks) | Task engine queue | **JJ Orchestrator (8-stage lifecycle)** |
-| **Domain Delegation** | Flat agent list | Static domain tags | Static domain tags | Static domain tags | **11 Specialist Managers + Registry** |
-| **Worker Definitions** | None | Ad-hoc task payloads | Ad-hoc task payloads | Ad-hoc task payloads | **Agent Factory (Immutable Versions)** |
-| **DAG Validation** | None | Runtime dependency check | Runtime dependency check | Runtime dependency check | **Kahn's Algorithm Cycle Rejection** |
-| **Capability Governance**| Unbounded | Ad-hoc approval flag | Ad-hoc approval flag | Ad-hoc approval flag | **11 Typed Capabilities + Gating** |
-| **Process Crash Recovery**| Lost on crash | Lease Reaper recovery | Lease Reaper recovery | Pre-shutdown verification | **`ReconcileInFlight` Startup Sync** |
-| **AI Execution Engine** | Commercial Model API Keys | MockExecutor in Go | Antigravity CLI (`agy`) | Antigravity CLI (`agy`) Primary | **Antigravity Primary + AI Planner** |
-| **API Token Cost** | Pay-per-token ($$$/month) | $0.00 (Mock Engine) | $0.00 model token cost | $0.00 model token cost | **$0.00 model token cost (Personal Sub)** |
-| **EC2 Compute Cost** | N/A | ~$16.35/mo (always-on) | ~$16.35/mo (always-on) | ~$1.34/mo (91.8% savings) | **~$1.34/mo (91.8% savings)** |
+| Architectural Dimension | Initial Concept (Day 1) | Phase 1 (Engine Core) | Phase 2 (Antigravity Primary) | Scale-to-Zero (Epoch 6) | Phase 3 (Multi-Agent Workforce) | Phase 4 (S3 Storage Integration) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Compute Model** | Local Laptop or Cloud | Dedicated 24/7 EC2 VM | Dedicated 24/7 EC2 VM | On-Demand Scale-to-Zero EC2 | On-Demand Scale-to-Zero EC2 | **On-Demand Scale-to-Zero EC2** |
+| **Ingress Availability** | Coupled to host | Coupled to host | Coupled to host | Decoupled Serverless Ingress | Decoupled Serverless Ingress | **Decoupled Serverless Ingress** |
+| **File / Object Storage**| Google Drive Sync Folder | Ephemeral local disk | Isolated scratch directories | Ephemeral scratchpads | Ephemeral scratchpads | **AWS S3 + PostgreSQL Dual-Persistence** |
+| **Object Access Control**| Google Drive permissions | None | Local permissions (`0700`) | Local permissions (`0700`) | Local permissions (`0700`) | **Private Buckets + Presigned URLs (15m)** |
+| **Cross-System Saga** | None | N/A | N/A | N/A | N/A | **Compensating Delete Pattern** |
+| **Orchestration Layer** | Single monolithic prompt | None (Raw Tasks) | None (Raw Tasks) | Task engine queue | JJ Orchestrator (8 stages) | **JJ Orchestrator (8 stages)** |
+| **Domain Delegation** | Flat agent list | Static domain tags | Static domain tags | Static domain tags | 11 Specialist Managers | **11 Specialist Managers** |
+| **Worker Definitions** | None | Ad-hoc task payloads | Ad-hoc task payloads | Ad-hoc task payloads | Agent Factory (Immutable) | **Agent Factory (Immutable)** |
+| **AI Execution Engine** | Commercial Model API Keys | MockExecutor in Go | Antigravity CLI (`agy`) | Antigravity CLI (`agy`) Primary | Antigravity Primary + AI Planner | **Antigravity Primary + AI Planner** |
+| **API Token Cost** | Pay-per-token ($$$/month) | $0.00 (Mock Engine) | $0.00 model token cost | $0.00 model token cost | $0.00 model token cost | **$0.00 model token cost (Personal Sub)** |
+| **EC2 Compute Cost** | N/A | ~$16.35/mo (always-on) | ~$16.35/mo (always-on) | ~$1.34/mo (91.8% savings) | ~$1.34/mo (91.8% savings) | **~$1.34/mo (91.8% savings)** |
 
 ---
 

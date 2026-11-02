@@ -38,9 +38,11 @@ migrate:
 	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000001_init_schema.up.sql
 	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000002_rls_policies.up.sql
 	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000003_orchestration_and_agent_factory.up.sql
+	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000004_s3_storage_artifacts.up.sql
 
 ## Roll back database migrations on griffin_dev
 migrate-down:
+	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000004_s3_storage_artifacts.down.sql
 	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000003_orchestration_and_agent_factory.down.sql
 	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000002_rls_policies.down.sql
 	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000001_init_schema.down.sql

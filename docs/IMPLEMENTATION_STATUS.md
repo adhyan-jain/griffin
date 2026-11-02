@@ -1,13 +1,27 @@
 # Griffin Implementation Status Tracker (Antigravity Primary)
 
 ## 1. Project Phase
-- **Current Phase**: **Phase 3 — JJ Orchestrator, Agent Factory & Manager Framework (COMPLETED & VERIFIED)**
-- **Status**: JJ Orchestrator (8-stage lifecycle `REQUEST` -> `PLAN` -> `VALIDATE` -> `DELEGATE` -> `MONITOR` -> `COLLECT` -> `VERIFY` -> `RESPOND`), Kahn's algorithm DAG cycle detection, 11 Specialist Domain Managers (`career`, `research`, `engineering`, `hackathon`, `freelance`, `networking`, `tech_intelligence`, `learning`, `personal_ops`, `finance`, `product_ideas`) with deliverable verification and anti-rogue governance, Agent Factory with immutable versioning (`version + 1`) and audit logging, centralized capability taxonomy with automated approval gates, and process restart recovery (`ReconcileInFlight`) fully implemented and verified with 100% passing automated tests (62/62 tests passing across all packages).
-- **Next Phase**: **Phase 4 — Next.js 15 PWA Interface & Real-Time SSE Streaming** (or **Phase 0.5 EC2 Cloud Runner Activation** upon user authorization).
+- **Current Phase**: **Phase 4 — AWS S3 Object Storage Integration & Dual-Persistence (COMPLETED & VERIFIED)**
+- **Status**: Dual-persistence architecture connecting Supabase PostgreSQL metadata with AWS S3 private object storage. Includes provider-neutral `storage.Provider` interface, production `S3StorageProvider` via AWS SDK for Go v2 with automatic EC2 instance profile (`GriffinEC2WorkerRole`) and local AWS CLI profile support, fail-fast credential validation, task-scoped object hierarchies (`tasks/{task_id}/outputs/{filename}`), path traversal defense, streaming multipart uploads via `manager.Uploader`, secure presigned download URLs, Compensating Saga pattern for cross-system atomic consistency without orphaned storage, extended database schema (migration 000004), and full REST API endpoints (`/api/v1/artifacts/upload`, `/download`, `/presign`, `DELETE`). 100% automated tests passing across all packages (76/76 tests passing).
+- **Next Phase**: **Phase 5 — Next.js 15 PWA Interface & Real-Time SSE Streaming** (or **Phase 0.5 EC2 Cloud Runner Activation** upon user authorization).
 
 ---
 
 ## 2. Completed Implementation Deliverables
+
+### Phase 4: AWS S3 Object Storage Integration & Dual-Persistence (`internal/storage/`, `migrations/000004_`)
+- **Neutral Storage Provider Interface**: [`internal/storage/provider.go`](file:///home/adhyan/Desktop/griffin/internal/storage/provider.go) — `Provider` contract (`Upload`, `Download`, `Delete`, `Head`, `List`, `PresignDownloadURL`).
+- **AWS S3 Provider Implementation**: [`internal/storage/s3_provider.go`](file:///home/adhyan/Desktop/griffin/internal/storage/s3_provider.go) — AWS SDK for Go v2 integration (`service/s3`), error normalization (`types.NoSuchKey`, `types.NoSuchBucket`, `types.NotFound`, `smithy.APIError`, `awshttp.ResponseError`), and multipart chunked streaming with automatic abort on failure.
+- **AWS Config & Credential Validation**: [`internal/storage/s3_client.go`](file:///home/adhyan/Desktop/griffin/internal/storage/s3_client.go) — Automatic retrieval via EC2 instance profile `GriffinEC2WorkerRole` (IMDSv2) or local `AWS_PROFILE`. Enforces fail-fast credential verification (`creds.HasKeys()`), completely banning silent anonymous fallback.
+- **Thread-Safe Mock Storage Provider**: [`internal/storage/mock_provider.go`](file:///home/adhyan/Desktop/griffin/internal/storage/mock_provider.go) — In-memory provider supporting isolated testing and failure injection hooks.
+- **Storage Coordination Service & Compensating Saga**: [`internal/storage/service.go`](file:///home/adhyan/Desktop/griffin/internal/storage/service.go) — Coordinates S3 upload and PostgreSQL metadata persistence. Generates deterministic task-scoped object keys (`tasks/{task_id}/outputs/{filename}`), computes SHA-256 checksums and MIME types, and triggers automatic compensating delete against S3 if database metadata insert fails.
+- **Database Schema Extension**: [`migrations/000004_s3_storage_artifacts.up.sql`](file:///home/adhyan/Desktop/griffin/migrations/000004_s3_storage_artifacts.up.sql) — Extended `artifacts` table with `storage_provider`, `bucket`, `object_key`, `filename`, `checksum` and composite index `idx_artifacts_object_key`.
+- **Extended Artifact Repository**: [`internal/repository/artifact_repo.go`](file:///home/adhyan/Desktop/griffin/internal/repository/artifact_repo.go) — Support for 15 columns, `GetArtifactByIDAndUser`, `GetArtifactByObjectKey`, and `DeleteArtifact`.
+- **REST API Handlers & Routes**: [`internal/api/handlers/artifacts.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/artifacts.go), [`internal/api/server.go`](file:///home/adhyan/Desktop/griffin/internal/api/server.go) — Multipart upload (`POST /api/v1/artifacts/upload`), direct streaming download (`GET /api/v1/artifacts/{id}/download`), presigned URL generator (`GET /api/v1/artifacts/{id}/presign`), and deletion (`DELETE /api/v1/artifacts/{id}`).
+- **Phase 4 Documentation**:
+  - [`docs/STORAGE_ARCHITECTURE.md`](file:///home/adhyan/Desktop/griffin/docs/STORAGE_ARCHITECTURE.md)
+  - [`docs/S3_STORAGE_CONFIGURATION.md`](file:///home/adhyan/Desktop/griffin/docs/S3_STORAGE_CONFIGURATION.md)
+  - [`docs/PHASE_4_S3_IMPLEMENTATION_REPORT.md`](file:///home/adhyan/Desktop/griffin/docs/PHASE_4_S3_IMPLEMENTATION_REPORT.md)
 
 ### Phase 3: JJ Orchestrator, Agent Factory & Manager Framework (`internal/service/`, `internal/manager/`, `internal/domain/`)
 - **JJ Orchestrator Core Service**: [`internal/service/orchestrator.go`](file:///home/adhyan/Desktop/griffin/internal/service/orchestrator.go) — Full 8-stage lifecycle (`REQUEST` -> `PLAN` -> `VALIDATE` -> `DELEGATE` -> `MONITOR` -> `COLLECT` -> `VERIFY` -> `RESPOND`), root task creation (`manager_domain = 'JJ'`), DAG dependency linking, sensitive capability approval gating, deliverable collection, manager output verification, and process restart recovery (`ReconcileInFlight`).

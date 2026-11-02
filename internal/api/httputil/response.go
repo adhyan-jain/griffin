@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/storage"
 )
 
 // Response represents a standard JSON API envelope.
@@ -87,6 +88,31 @@ func ErrorJSON(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 		code = "TASK_ALREADY_TERMINAL"
 		msg = "Task is already in a terminal state (COMPLETED, FAILED, or CANCELLED)"
+
+	case errors.Is(err, storage.ErrObjectNotFound):
+		status = http.StatusNotFound
+		code = "NOT_FOUND"
+		msg = err.Error()
+
+	case errors.Is(err, storage.ErrPermissionDenied):
+		status = http.StatusForbidden
+		code = "FORBIDDEN"
+		msg = err.Error()
+
+	case errors.Is(err, storage.ErrInvalidKey):
+		status = http.StatusBadRequest
+		code = "VALIDATION_ERROR"
+		msg = err.Error()
+
+	case errors.Is(err, storage.ErrBucketNotFound):
+		status = http.StatusNotFound
+		code = "NOT_FOUND"
+		msg = err.Error()
+
+	case errors.Is(err, storage.ErrAuthenticationFailed):
+		status = http.StatusServiceUnavailable
+		code = "SERVICE_UNAVAILABLE"
+		msg = "Storage provider authentication failed"
 
 	default:
 		if err != nil {

@@ -19,6 +19,7 @@ import (
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/runner"
 	"github.com/griffin/core/internal/service"
+	"github.com/griffin/core/internal/storage"
 	"github.com/griffin/core/internal/worker"
 )
 
@@ -80,6 +81,33 @@ func main() {
 	artifactRepo := repository.NewPostgresArtifactRepository(db.Pool)
 	workerDefRepo := repository.NewPostgresWorkerDefinitionRepository(db.Pool)
 	orchRepo := repository.NewPostgresOrchestrationRepository(db.Pool)
+
+	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
+	var storageProvider storage.Provider
+	switch cfg.StorageProvider {
+	case "s3":
+		s3Prov, err := storage.NewS3StorageProvider(ctx, storage.S3ClientOptions{
+			Region:         cfg.S3Region,
+			Bucket:         cfg.S3Bucket,
+			AWSProfile:     cfg.AWSProfile,
+			Endpoint:       cfg.S3Endpoint,
+			ForcePathStyle: cfg.S3ForcePathStyle,
+		})
+		if err != nil {
+			logger.Error("Failed to initialize AWS S3 storage provider", "error", err)
+			os.Exit(1)
+		}
+		storageProvider = s3Prov
+		logger.Info("Initialized AWS S3 object storage provider",
+			"bucket", cfg.S3Bucket,
+			"region", cfg.S3Region,
+			"profile", cfg.AWSProfile,
+		)
+	default:
+		storageProvider = storage.NewMockStorageProvider()
+		logger.Info("Initialized Mock in-memory storage provider")
+	}
+	storageService := storage.NewStorageService(storageProvider, artifactRepo, cfg.S3Bucket, logger)
 
 	// 6. Initialize Task Engine, Manager Registry & Agent Factory
 	engine := service.NewTaskEngine(taskRepo, approvalRepo, logger)
@@ -205,6 +233,7 @@ func main() {
 			ApprovalRepo:    approvalRepo,
 			AgentRepo:       agentRepo,
 			ArtifactRepo:    artifactRepo,
+			StorageService:  storageService,
 			WorkerDefRepo:   workerDefRepo,
 			OrchRepo:        orchRepo,
 			Orchestrator:    jjOrchestrator,
