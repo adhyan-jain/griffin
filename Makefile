@@ -1,4 +1,4 @@
-.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-down clean help
+.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help
 
 # Default target
 all: build
@@ -9,7 +9,7 @@ build:
 
 ## Run the server locally
 run: build
-	./bin/griffin-server
+	set -a; . ./.env; set +a; ./bin/griffin-server
 
 ## Run all automated unit and integration tests
 test:
@@ -33,19 +33,23 @@ setup-hooks:
 	chmod +x .githooks/pre-commit
 	@echo "Git hooks configured to .githooks/"
 
-## Apply database migrations using psql to griffin_dev
+## Apply migrations explicitly. LOCAL plain PostgreSQL only (creates a minimal auth shim).
+## Requires DATABASE_URL (or MIGRATION_DATABASE_URL). For Supabase run: go run ./cmd/griffin-migrate up
 migrate:
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000001_init_schema.up.sql
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000002_rls_policies.up.sql
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000003_orchestration_and_agent_factory.up.sql
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000004_s3_storage_artifacts.up.sql
+	go run ./cmd/griffin-migrate -local-auth-shim up
 
-## Roll back database migrations on griffin_dev
+## Show applied/pending migrations
+migrate-status:
+	go run ./cmd/griffin-migrate status
+
+## Roll back local migrations manually (destructive; local dev databases only)
 migrate-down:
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000004_s3_storage_artifacts.down.sql
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000003_orchestration_and_agent_factory.down.sql
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000002_rls_policies.down.sql
-	PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d griffin_dev -f migrations/000001_init_schema.down.sql
+	@echo "Down migrations are manual and destructive: apply migrations/*.down.sql in reverse order with psql against a LOCAL database."
+
+## Build offline deployment bundles (Lambda zip + EC2 worker tarball) into build/
+package:
+	bash scripts/package-lambda.sh
+	bash scripts/package-worker.sh
 
 ## Clean build artifacts
 clean:
@@ -61,6 +65,7 @@ help:
 	@echo "  make fmt          - Format Go files using gofmt"
 	@echo "  make lint         - Run static analysis with go vet"
 	@echo "  make setup-hooks  - Configure git pre-commit hooks"
-	@echo "  make migrate      - Apply SQL migrations to local griffin_dev db"
+	@echo "  make migrate      - Apply SQL migrations to a LOCAL Postgres (with auth shim)"
+	@echo "  make package      - Build Lambda zip and EC2 worker bundle (offline)"
 	@echo "  make migrate-down - Rollback migrations on local griffin_dev db"
 	@echo "  make clean        - Remove compiled binaries"
