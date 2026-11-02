@@ -12,7 +12,18 @@ CREATE ROLE griffin_app    LOGIN PASSWORD :'app_pw'    NOSUPERUSER NOBYPASSRLS N
 CREATE ROLE griffin_system LOGIN PASSWORD :'system_pw' NOSUPERUSER BYPASSRLS   NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
 
 -- Needed so RLS policies can call auth.uid() as the querying role (schema name resolution only; no table grants).
+-- On plain Postgres (tests) this grant works. On Supabase the `auth` schema is owned by supabase_admin, so `postgres`
+-- cannot grant USAGE on it (the GRANT only warns). There, membership in the platform role `authenticated` (which
+-- `postgres` holds WITH ADMIN OPTION and which already has `auth` access) provides exactly that access, and nothing
+-- on public tables (those grants were revoked by harden-public-schema.sql).
 GRANT USAGE ON SCHEMA auth   TO griffin_app, griffin_system;
+DO $$ BEGIN
+    IF NOT has_schema_privilege('griffin_app', 'auth', 'USAGE')
+       AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        GRANT authenticated TO griffin_app;
+        ALTER ROLE griffin_app INHERIT;
+    END IF;
+END $$;
 GRANT USAGE ON SCHEMA public TO griffin_app, griffin_system;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO griffin_app, griffin_system;
