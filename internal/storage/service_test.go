@@ -152,7 +152,7 @@ func TestStorageService_SaveArtifact_TaskScoped(t *testing.T) {
 	}
 
 	// Verify task-scoped key format: tasks/{task_id}/outputs/{filename}
-	expectedPrefix := fmt.Sprintf("tasks/%s/outputs/%s", taskID.String(), filename)
+	expectedPrefix := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/%s", taskID.String(), filename)
 	if art.ObjectKey == nil || *art.ObjectKey != expectedPrefix {
 		t.Fatalf("expected key %s, got %v", expectedPrefix, art.ObjectKey)
 	}
@@ -200,7 +200,7 @@ func TestStorageService_CompensatingDeleteOnDBFailure(t *testing.T) {
 	}
 
 	// Verify that the object was cleaned up from storage via compensating delete
-	expectedKey := fmt.Sprintf("tasks/%s/outputs/%s", taskID.String(), filename)
+	expectedKey := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/%s", taskID.String(), filename)
 	_, headErr := provider.Head(ctx, storage.HeadInput{
 		Bucket: bucket,
 		Key:    expectedKey,
