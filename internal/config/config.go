@@ -58,6 +58,9 @@ type Config struct {
 	// Database pool (Supabase pooler friendly)
 	DBMaxConns int // default 25 (use 2 on Lambda)
 	DBMinConns int // default 2 (use 0 on Lambda)
+	// UserDatabaseURL: RLS-enforced role (NOSUPERUSER, NOBYPASSRLS) used for user requests in API
+	// mode. DATABASE_URL is then the system role, used only by worker-key/system paths.
+	UserDatabaseURL string
 }
 
 // Environment names. Anything unset or unknown is treated as production (fail closed).
@@ -126,6 +129,7 @@ func Load() (*Config, error) {
 		MaxUploadBytes:                  int64(getEnvAsInt("MAX_UPLOAD_BYTES", 5<<20)),
 		DBMaxConns:                      getEnvAsInt("DB_MAX_CONNS", 25),
 		DBMinConns:                      getEnvAsInt("DB_MIN_CONNS", 2),
+		UserDatabaseURL:                 getEnv("USER_DATABASE_URL", ""),
 	}
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {
@@ -207,6 +211,24 @@ func (c *Config) validateProduction() error {
 	}
 	if m := u.Query().Get("sslmode"); m == "disable" || m == "allow" || m == "prefer" {
 		return fmt.Errorf("DATABASE_URL sslmode %q is not allowed in production", m)
+	}
+	if mode := c.GriffinMode; mode == "all" || mode == "api" {
+		if c.UserDatabaseURL == "" {
+			return fmt.Errorf("USER_DATABASE_URL (RLS-enforced role) is required in production for API mode")
+		}
+		if c.UserDatabaseURL == c.DatabaseURL {
+			return fmt.Errorf("USER_DATABASE_URL must use a different role than DATABASE_URL (the system role)")
+		}
+		uu, err := url.Parse(c.UserDatabaseURL)
+		if err != nil || uu.Host == "" {
+			return fmt.Errorf("USER_DATABASE_URL is not a valid URL")
+		}
+		if h := uu.Hostname(); h == "localhost" || h == "127.0.0.1" || h == "::1" {
+			return fmt.Errorf("USER_DATABASE_URL must not point at localhost in production")
+		}
+		if m := uu.Query().Get("sslmode"); m == "disable" || m == "allow" || m == "prefer" {
+			return fmt.Errorf("USER_DATABASE_URL sslmode %q is not allowed in production", m)
+		}
 	}
 	if c.StorageProvider != "s3" {
 		return fmt.Errorf("STORAGE_PROVIDER must be s3 in production")

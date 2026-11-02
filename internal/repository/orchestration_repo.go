@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/database"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
 )
@@ -35,10 +35,10 @@ type OrchestrationRepository interface {
 
 // PostgresOrchestrationRepository implements OrchestrationRepository using pgxpool.
 type PostgresOrchestrationRepository struct {
-	pool *pgxpool.Pool
+	pool database.Querier
 }
 
-func NewPostgresOrchestrationRepository(pool *pgxpool.Pool) *PostgresOrchestrationRepository {
+func NewPostgresOrchestrationRepository(pool database.Querier) *PostgresOrchestrationRepository {
 	return &PostgresOrchestrationRepository{pool: pool}
 }
 

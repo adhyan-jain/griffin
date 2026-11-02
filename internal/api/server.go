@@ -44,6 +44,9 @@ type ServerDependencies struct {
 	ManagerRegistry *manager.Registry
 	Wakeup          handlers.RunnerWakeup
 	InstanceMgr     runner.InstanceManager
+	// UserTx opens RLS-enforced per-request transactions. Required in production; when nil outside
+	// production, repositories use whatever connection they were built with (tests/dev).
+	UserTx *database.UserTxManager
 }
 
 // NewServer initializes and configures the HTTP server.
@@ -84,7 +87,18 @@ func NewServer(deps ServerDependencies) *Server {
 	if deps.Config.SupabaseJWKSURL != "" {
 		authOpts.JWKS = middleware.NewJWKSCache(deps.Config.SupabaseJWKSURL, nil)
 	}
-	userAuth := middleware.AuthenticateUser(authOpts)
+	authenticate := middleware.AuthenticateUser(authOpts)
+	// User routes: authenticate, then (when configured) run in an RLS-enforced transaction.
+	var userScope func(http.Handler) http.Handler
+	switch {
+	case deps.UserTx != nil:
+		userScope = middleware.RLSTransaction(deps.UserTx, deps.Logger)
+	case deps.Config != nil && deps.Config.IsProduction():
+		userScope = middleware.RLSTransaction(nil, deps.Logger) // fail closed: refuses every request
+	default:
+		userScope = func(h http.Handler) http.Handler { return h }
+	}
+	userAuth := func(h http.Handler) http.Handler { return authenticate(userScope(h)) }
 
 	scaleToZero := false
 	if deps.Config != nil {
@@ -138,7 +152,9 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 
 	// 3. Worker-authenticated route group & Scheduler route
-	workerAuth := middleware.AuthenticateWorker(deps.Config.WorkerAPIKey)
+	authenticateWorker := middleware.AuthenticateWorker(deps.Config.WorkerAPIKey)
+	// Worker-key routes are the explicit system path (cross-tenant claim/heartbeat/tick).
+	workerAuth := func(h http.Handler) http.Handler { return authenticateWorker(middleware.SystemScope()(h)) }
 	workerHandler := handlers.NewWorkerHandler(deps.Engine, time.Duration(deps.Config.LeaseDurationSeconds)*time.Second)
 
 	mux.Handle("POST /api/v1/workers/claim", workerAuth(http.HandlerFunc(workerHandler.ClaimTask)))
