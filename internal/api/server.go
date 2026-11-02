@@ -87,6 +87,9 @@ func NewServer(deps ServerDependencies) *Server {
 	if deps.Config.SupabaseJWKSURL != "" {
 		authOpts.JWKS = middleware.NewJWKSCache(deps.Config.SupabaseJWKSURL, nil)
 	}
+	if deps.Config != nil {
+		authOpts.AllowedEmails = deps.Config.AllowedUserEmails
+	}
 	authenticate := middleware.AuthenticateUser(authOpts)
 	// User routes: authenticate, then (when configured) run in an RLS-enforced transaction.
 	var userScope func(http.Handler) http.Handler

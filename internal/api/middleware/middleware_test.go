@@ -244,3 +244,26 @@ func TestCORSNeverWildcard(t *testing.T) {
 		}
 	}
 }
+
+// With open Supabase sign-ups a stranger can obtain a perfectly valid token. The operator
+// allow-list must still reject them (403), case-insensitively accept the operator, and an empty
+// list must keep the previous behaviour (used by tests/dev only; production requires the list).
+func TestAuthenticateUserOperatorAllowList(t *testing.T) {
+	h := middleware.AuthenticateUser(middleware.AuthOptions{HMACSecret: hmacSecret, AllowedEmails: []string{"Operator@Example.com"}})(okHandler)
+	if got := do(h, hs(t, claims(map[string]any{"email": "operator@example.com"}), hmacSecret)); got != 200 {
+		t.Fatalf("operator (case-insensitive): got %d", got)
+	}
+	if got := do(h, hs(t, claims(map[string]any{"email": "stranger@evil.example"}), hmacSecret)); got != 403 {
+		t.Fatalf("stranger with a valid token: got %d, want 403", got)
+	}
+	if got := do(h, hs(t, claims(map[string]any{"email": ""}), hmacSecret)); got != 403 {
+		t.Fatalf("token without email: got %d, want 403", got)
+	}
+	if got := do(h, hs(t, claims(nil), "wrong-secret-0123456789-abcdefghijklmnop")); got != 401 {
+		t.Fatalf("forged token must stay 401: got %d", got)
+	}
+	open := middleware.AuthenticateUser(middleware.AuthOptions{HMACSecret: hmacSecret})(okHandler)
+	if got := do(open, hs(t, claims(map[string]any{"email": "anyone@example.com"}), hmacSecret)); got != 200 {
+		t.Fatalf("no allow-list configured: got %d", got)
+	}
+}

@@ -31,6 +31,10 @@ type AuthOptions struct {
 	HMACSecret string     // legacy HS256 JWT secret (optional if JWKS set)
 	JWKS       *JWKSCache // asymmetric signing keys (optional if HMACSecret set)
 	Issuer     string     // expected "iss" (optional)
+	// AllowedEmails, when non-empty, restricts API access to these (case-insensitive) emails even if
+	// the token is otherwise valid. Protects against open Supabase sign-ups: a stranger can register
+	// an account but every API call returns 403.
+	AllowedEmails []string
 }
 
 // AuthenticateUser verifies Supabase JWTs and populates the authenticated user ID in context.
@@ -63,6 +67,11 @@ func AuthenticateUser(opts AuthOptions) func(http.Handler) http.Handler {
 	}
 	if opts.Issuer != "" {
 		parserOpts = append(parserOpts, jwt.WithIssuer(opts.Issuer))
+	}
+
+	allowed := make(map[string]bool, len(opts.AllowedEmails))
+	for _, e := range opts.AllowedEmails {
+		allowed[strings.ToLower(strings.TrimSpace(e))] = true
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -99,6 +108,11 @@ func AuthenticateUser(opts AuthOptions) func(http.Handler) http.Handler {
 			userID, err := uuid.Parse(sub)
 			if err != nil {
 				unauthorizedResponse(w, "Invalid user ID format in token")
+				return
+			}
+
+			if len(allowed) > 0 && !allowed[strings.ToLower(strings.TrimSpace(claims.Email))] {
+				forbiddenResponse(w, "This account is not authorized to use this deployment")
 				return
 			}
 
@@ -174,6 +188,18 @@ func unauthorizedResponse(w http.ResponseWriter, message string) {
 		"success": false,
 		"error": map[string]string{
 			"code":    "UNAUTHORIZED",
+			"message": message,
+		},
+	})
+}
+
+func forbiddenResponse(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": false,
+		"error": map[string]string{
+			"code":    "FORBIDDEN",
 			"message": message,
 		},
 	})

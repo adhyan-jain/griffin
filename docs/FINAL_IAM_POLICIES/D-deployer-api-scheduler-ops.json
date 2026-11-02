@@ -94,7 +94,7 @@
       "Resource": "arn:aws:ssm:ap-south-1:123456789012:parameter/griffin/prod/*"
     },
     {
-      "Sid": "ListParams_NotResourceScopable",
+      "Sid": "ListParamsNotResourceScopable",
       "Effect": "Allow",
       "Action": "ssm:DescribeParameters",
       "Resource": "*"
@@ -136,7 +136,7 @@
       "Resource": "arn:aws:secretsmanager:ap-south-1:123456789012:secret:events!connection/griffin-*"
     },
     {
-      "Sid": "HttpApi_NotFinerScopable",
+      "Sid": "HttpApiNotFinerScopable",
       "Effect": "Allow",
       "Action": [
         "apigateway:GET",
@@ -187,7 +187,7 @@
       ]
     },
     {
-      "Sid": "CostVisibility_NotResourceScopable",
+      "Sid": "CostVisibilityNotResourceScopable",
       "Effect": "Allow",
       "Action": [
         "ce:GetCostAndUsage",
