@@ -54,3 +54,14 @@ migration plan → **your approval** → `pg_dump` + `griffin-migrate up` + RLS/
 
 ## Sign-ups
 Open sign-ups are an accepted risk for now. The API enforces `ALLOWED_USER_EMAILS` (required in production API mode): a stranger can register but every API call returns 403. Prefer also disabling sign-ups in the dashboard.
+
+## Deployed 2026-11-02 (verified live)
+| Component | Status | Evidence |
+|---|---|---|
+| API (Lambda `griffin-api` + HTTP API `fq322jvjt4`) | **LIVE** `https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com` | `/healthz` 200, `/readyz` DB connected, unauth 401, dev-login 404, evil-origin CORS 403 |
+| PWA (Vercel project `griffin-pwa`) | **LIVE** `https://griffin-pwa.vercel.app` | login page 200, manifest + icons 200, 0 dev-login strings in bundle |
+| Runner EC2 `i-0123456789abcdef0` | running (t4g.medium, 30 GiB encrypted, IMDSv2, 0 inbound) | worker NOT installed/enabled yet |
+| Antigravity unattended auth | NOT TESTED | needs worker install + interactive login |
+| Scheduler tick (EventBridge) | NOT CREATED | needs admin: `aws iam create-service-linked-role --aws-service-name apidestinations.events.amazonaws.com` |
+| Budgets $10/$20, S3 lifecycle | applied | verified by name |
+| Login / tasks | NOT VERIFIED | operator user must exist in Supabase |
