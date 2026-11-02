@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/database"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
 )
@@ -29,10 +29,10 @@ type WorkerDefinitionRepository interface {
 
 // PostgresWorkerDefinitionRepository implements WorkerDefinitionRepository using pgxpool.
 type PostgresWorkerDefinitionRepository struct {
-	pool *pgxpool.Pool
+	pool database.Querier
 }
 
-func NewPostgresWorkerDefinitionRepository(pool *pgxpool.Pool) *PostgresWorkerDefinitionRepository {
+func NewPostgresWorkerDefinitionRepository(pool database.Querier) *PostgresWorkerDefinitionRepository {
 	return &PostgresWorkerDefinitionRepository{pool: pool}
 }
 

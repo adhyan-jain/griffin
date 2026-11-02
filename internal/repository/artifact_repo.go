@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/database"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
 )
@@ -26,10 +26,10 @@ type ArtifactRepository interface {
 
 // PostgresArtifactRepository implements ArtifactRepository.
 type PostgresArtifactRepository struct {
-	pool *pgxpool.Pool
+	pool database.Querier
 }
 
-func NewPostgresArtifactRepository(pool *pgxpool.Pool) *PostgresArtifactRepository {
+func NewPostgresArtifactRepository(pool database.Querier) *PostgresArtifactRepository {
 	return &PostgresArtifactRepository{pool: pool}
 }
 

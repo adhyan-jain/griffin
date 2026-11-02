@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/database"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
 )
@@ -22,10 +22,10 @@ type AgentRepository interface {
 
 // PostgresAgentRepository implements AgentRepository.
 type PostgresAgentRepository struct {
-	pool *pgxpool.Pool
+	pool database.Querier
 }
 
-func NewPostgresAgentRepository(pool *pgxpool.Pool) *PostgresAgentRepository {
+func NewPostgresAgentRepository(pool database.Querier) *PostgresAgentRepository {
 	return &PostgresAgentRepository{pool: pool}
 }
 

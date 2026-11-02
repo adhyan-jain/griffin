@@ -59,6 +59,9 @@ func main() {
 	// 3. Database connection
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// Everything started from main (workers, reaper, idle monitor, startup reconcile) is an explicit
+	// system path. HTTP request contexts do NOT derive from this ctx, so user requests never inherit it.
+	ctx = database.WithSystem(ctx)
 
 	db, err := database.ConnectWithOptions(ctx, cfg.DatabaseURL, database.PoolOptions{
 		MaxConns: int32(cfg.DBMaxConns),
@@ -80,12 +83,39 @@ func main() {
 	logger.Info("Database schema verified up to date")
 
 	// 5. Initialize Repositories
-	taskRepo := repository.NewPostgresTaskRepository(db.Pool)
-	approvalRepo := repository.NewPostgresApprovalRepository(db.Pool)
-	agentRepo := repository.NewPostgresAgentRepository(db.Pool)
-	artifactRepo := repository.NewPostgresArtifactRepository(db.Pool)
-	workerDefRepo := repository.NewPostgresWorkerDefinitionRepository(db.Pool)
-	orchRepo := repository.NewPostgresOrchestrationRepository(db.Pool)
+	// Repositories resolve their connection per context: user transaction (RLS) or explicit system
+	// scope, never an implicit privileged default. Outside production, with no USER_DATABASE_URL,
+	// they use the single development connection.
+	var repoDB database.Querier = db.Pool
+	if cfg.IsProduction() || cfg.UserDatabaseURL != "" {
+		repoDB = database.NewScoped(db.Pool)
+	} else {
+		logger.Warn("USER_DATABASE_URL not set: row-level security is NOT enforced for user requests (development only)")
+	}
+	var userTx *database.UserTxManager
+	if cfg.UserDatabaseURL != "" && (cfg.GriffinMode == "all" || cfg.GriffinMode == "api") {
+		userDB, err := database.ConnectWithOptions(ctx, cfg.UserDatabaseURL, database.PoolOptions{
+			MaxConns: int32(cfg.DBMaxConns),
+			MinConns: int32(cfg.DBMinConns),
+		})
+		if err != nil {
+			logger.Error("Failed to connect user (RLS) database pool", "error", err)
+			os.Exit(1)
+		}
+		defer userDB.Close()
+		if err := database.AssertRoleIsolation(ctx, userDB.Pool); err != nil {
+			logger.Error("Refusing to serve user traffic", "error", err)
+			os.Exit(1)
+		}
+		userTx = &database.UserTxManager{Pool: userDB.Pool}
+		logger.Info("User database pool verified: NOSUPERUSER, NOBYPASSRLS")
+	}
+	taskRepo := repository.NewPostgresTaskRepository(repoDB)
+	approvalRepo := repository.NewPostgresApprovalRepository(repoDB)
+	agentRepo := repository.NewPostgresAgentRepository(repoDB)
+	artifactRepo := repository.NewPostgresArtifactRepository(repoDB)
+	workerDefRepo := repository.NewPostgresWorkerDefinitionRepository(repoDB)
+	orchRepo := repository.NewPostgresOrchestrationRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
 	var storageProvider storage.Provider
@@ -252,6 +282,7 @@ func main() {
 			ManagerRegistry: mgrReg,
 			Wakeup:          wakeupCtrl,
 			InstanceMgr:     instanceMgr,
+			UserTx:          userTx,
 		})
 
 		go func() {

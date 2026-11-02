@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/database"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
 )
@@ -22,10 +22,10 @@ type ApprovalRepository interface {
 
 // PostgresApprovalRepository implements ApprovalRepository.
 type PostgresApprovalRepository struct {
-	pool *pgxpool.Pool
+	pool database.Querier
 }
 
-func NewPostgresApprovalRepository(pool *pgxpool.Pool) *PostgresApprovalRepository {
+func NewPostgresApprovalRepository(pool database.Querier) *PostgresApprovalRepository {
 	return &PostgresApprovalRepository{pool: pool}
 }
 

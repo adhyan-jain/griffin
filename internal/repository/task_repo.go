@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/database"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/griffin/core/internal/domain"
 )
@@ -57,11 +57,11 @@ type TaskRepository interface {
 
 // PostgresTaskRepository implements TaskRepository on top of pgxpool.Pool.
 type PostgresTaskRepository struct {
-	pool *pgxpool.Pool
+	pool database.Querier
 }
 
 // NewPostgresTaskRepository constructs a new PostgresTaskRepository.
-func NewPostgresTaskRepository(pool *pgxpool.Pool) *PostgresTaskRepository {
+func NewPostgresTaskRepository(pool database.Querier) *PostgresTaskRepository {
 	return &PostgresTaskRepository{pool: pool}
 }
 
