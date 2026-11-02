@@ -1,198 +1,141 @@
 # Griffin Cloud Deployment & Operations Runbook
 
-This document details the end-to-end production deployment, cloud provisioning, and operational procedures for Griffin across **AWS Account C** (`220115213279`), **Supabase PostgreSQL**, and the **Next.js 15 PWA Web Console**.
+Status: gates G1–G8 are closed in code (see `docs/GATE_CLOSURE_REPORT.md`). **Nothing in this
+runbook has been executed against AWS or Supabase.** Run it only after explicit approval. AWS
+account `220115213279`, region `ap-south-1`, profile `griffin-bootstrap`. Required IAM policies and
+live-state evidence are in `DEPLOYMENT_PREFLIGHT_REPORT.md` (sections 5 and 11–20); this file holds
+the commands that changed after hardening.
 
----
+Conventions: `P="--profile griffin-bootstrap --region ap-south-1"`. Secrets live in
+`~/.griffin-prod.env` (`chmod 600`, outside the repo); never echo them.
 
-## 1. Cloud Architecture Topology
+## 1. Topology
 
-Griffin is designed around **Scale-to-Zero Cloud Execution**:
+- **Supabase**: Postgres + Auth (source of truth, RLS on every tenant table).
+- **API**: the same Go binary with `GRIFFIN_MODE=api` on Lambda (arm64, `provided.al2023`, Lambda
+  Web Adapter) behind API Gateway HTTP API. Reachable while EC2 is stopped.
+- **Runner**: EC2 `t4g.medium` running `GRIFFIN_MODE=worker` + `agy`, started by the API
+  (`ec2:StartInstances`) and powering itself off after 300 s idle.
+- **Scheduler**: EventBridge rule `rate(1 minute)` → API destination → `POST /api/v1/scheduler/tick`.
+- **PWA**: Vercel. **Artifacts**: S3 `griffin-artifacts-220115213279-ap-south-1`
+  (objects under `users/<user_id>/…`).
 
-```
-                                  +------------------------------------+
-                                  |      Next.js 15 PWA Console        |
-                                  |   (All 10 Management Screens)      |
-                                  +-----------------+------------------+
-                                                    | HTTP / JWT
-                                                    v
-+------------------------+        +-----------------+------------------+
-| EventBridge Scheduler  |------->|      Griffin API Ingress Server    |
-| (POST /scheduler/tick) |        |      (Lightweight HTTP / Systemd)  |
-+------------------------+        +--------+------------------+--------+
-                                           |                  |
-                       +-------------------+                  +--------------------+
-                       | SQL (Pooler)                         | Wake / Sleep       |
-                       v                                      v                    v
-         +-------------+-------------+          +-------------+-------+    +-------+--------------+
-         |    Supabase PostgreSQL    |          | AWS EC2 Scale-to-0  |    | AWS S3 Bucket        |
-         | (Durable Queue & RLS)     |          | Runner (t4g.medium) |    | griffin-artifacts-   |
-         |                           |          | Antigravity (agy)   |    | 220115213279-        |
-         |                           |          | Zero Inbound Ports  |    | ap-south-1           |
-         +---------------------------+          +---------------------+    +----------------------+
-```
+## 2. Security model (enforced in code)
 
-1. **Supabase PostgreSQL**: Operational source of truth, durable task state machine, task leases, and RLS tenant boundaries.
-2. **AWS S3 Object Storage**: Immutable, encrypted private file storage (`griffin-artifacts-220115213279-ap-south-1` in `ap-south-1`).
-3. **API Ingress**: Always-on lightweight Go binary handling user requests, orchestrator submissions, approvals, and runner wake-up.
-4. **EC2 Scale-to-Zero Cloud Runner**: On-demand compute (`t4g.medium` Graviton2) executing tasks via Google Antigravity CLI (`agy`), shutting down after 10 minutes of complete queue idleness.
-5. **EventBridge Scheduler**: Invokes `POST /api/v1/scheduler/tick` every minute to trigger scheduled work and evaluate due tasks.
-6. **Next.js 15 PWA Console**: Modern responsive web app in `web/` with 10 dedicated management screens.
+| Control | Behavior |
+|---|---|
+| Environment | `ENVIRONMENT` unset ⇒ production. Production refuses dev secrets, `ENABLE_DEV_LOGIN`, localhost/non-TLS DB, `mock` storage/AI, default bucket, `S3_ENDPOINT`/`AWS_PROFILE`, missing CORS origins, missing `EC2_INSTANCE_ID`. |
+| Dev login | `POST /api/v1/auth/login` is only registered when `ENABLE_DEV_LOGIN=true` **and** not production. The PWA strips the dev-login code from production bundles. |
+| JWT | HS256 (`SUPABASE_JWT_SECRET`) and/or ES256/RS256 via `SUPABASE_JWKS_URL`; requires `exp`, `aud=authenticated`, `role=authenticated`, optional `SUPABASE_JWT_ISSUER`; `none`/other algorithms rejected. |
+| CORS | Exact allowlist (`CORS_ALLOWED_ORIGINS`), no wildcard, never credentials. |
+| Artifacts | Keys are `users/<user_id>/…`; register/download/presign/delete re-verify bucket + prefix; `task_id` ownership verified; uploads capped (`MAX_UPLOAD_BYTES`). |
+| Migrations | Explicit `griffin-migrate`; server only runs a read-only schema check. |
 
----
+## 3. Pre-deploy gate (local, offline)
 
-## 2. Infrastructure Configuration & Verification
-
-### 2.1 AWS Account C Identity
-- **AWS Account ID**: `220115213279`
-- **Primary Region**: `ap-south-1` (Mumbai)
-- **Local AWS CLI Profile**: `griffin-bootstrap`
-- **S3 Bucket**: `griffin-artifacts-220115213279-ap-south-1` (Encrypted AES256, BlockPublicAccess Enabled, BucketOwnerEnforced)
-
-### 2.2 IAM Permissions Required for `griffin-bootstrap`
-
-To provision and launch EC2 instances on Account C, the following IAM policy statement must be attached to the `griffin-bootstrap` IAM user / role in the AWS Management Console:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "GriffinEC2LifecycleManagement",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:RunInstances",
-        "ec2:DescribeInstances",
-        "ec2:DescribeImages",
-        "ec2:DescribeSecurityGroups",
-        "ec2:DescribeVpcs",
-        "ec2:CreateSecurityGroup",
-        "ec2:CreateTags",
-        "ec2:StartInstances",
-        "ec2:StopInstances",
-        "ec2:TerminateInstances"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "GriffinPassWorkerRole",
-      "Effect": "Allow",
-      "Action": [
-        "iam:PassRole"
-      ],
-      "Resource": "arn:aws:iam::220115213279:role/GriffinEC2*"
-    }
-  ]
-}
-```
-
----
-
-## 3. Database Migration Runbook
-
-All database migrations must be applied in sequential order.
-
-### Using Make:
 ```bash
-# Target local or remote Supabase instance
-make migrate
+gofmt -l cmd internal tests migrations          # must print nothing
+go vet ./...
+GRIFFIN_TEST_DB_URL=<throwaway local postgres> go test -count=1 ./...
+(cd web && npm ci && npm run lint && npx tsc --noEmit && npm run build)
+make package                                    # build/griffin-api.zip + build/griffin-worker.tar.gz (arm64)
+gh run list --limit 1                           # CI green for this SHA
 ```
 
-### Manual psql execution against Supabase:
+## 4. Database (Supabase)
+
+Use the **session pooler (5432)** or direct connection for migrations; the tool refuses port 6543.
 ```bash
-PGPASSWORD="$SUPABASE_DB_PASSWORD" psql -h "$SUPABASE_DB_HOST" -p 5432 -U postgres -d postgres -f migrations/000001_init_schema.up.sql
-PGPASSWORD="$SUPABASE_DB_PASSWORD" psql -h "$SUPABASE_DB_HOST" -p 5432 -U postgres -d postgres -f migrations/000002_rls_policies.up.sql
-PGPASSWORD="$SUPABASE_DB_PASSWORD" psql -h "$SUPABASE_DB_HOST" -p 5432 -U postgres -d postgres -f migrations/000003_orchestration_and_agent_factory.up.sql
-PGPASSWORD="$SUPABASE_DB_PASSWORD" psql -h "$SUPABASE_DB_HOST" -p 5432 -U postgres -d postgres -f migrations/000004_s3_storage_artifacts.up.sql
+set -a; . ~/.griffin-prod.env; set +a            # MIGRATION_DATABASE_URL = session pooler URL
+pg_dump --schema-only "$MIGRATION_DATABASE_URL" > pre-migration-schema.sql
+go run ./cmd/griffin-migrate status
+go run ./cmd/griffin-migrate up                  # NO -local-auth-shim: Supabase owns auth.users / auth.uid()
+go run ./cmd/griffin-migrate status              # pending must be empty
 ```
+`up` is idempotent, serialized with an advisory lock, records checksums in `schema_migrations`, and
+fails if an applied file changes or if `auth.users`/`auth.uid()` are missing. Rollback = restore
+from backup (down files are manual and destructive).
+Runtime URLs: worker → session pooler (5432); Lambda → transaction pooler (6543); the server
+detects port 6543 and switches pgx to the simple protocol automatically (use `DB_MAX_CONNS=2`,
+`DB_MIN_CONNS=0` on Lambda). In Supabase: disable public sign-ups, create the operator user, and
+record whether the project uses the legacy HS256 secret or asymmetric keys (then set
+`SUPABASE_JWKS_URL`).
 
----
+## 5. Secrets (SSM Parameter Store, SecureString)
 
-## 4. EC2 Cloud Runner Provisioning
-
-1. Run the provisioning script:
-   ```bash
-   AWS_PROFILE=griffin-bootstrap ./infra/provision-ec2.sh
-   ```
-2. The script executes the following:
-   - Resolves the official Ubuntu 24.04 ARM64 AMI (`ami-0d8b4e4e9a59cf861`).
-   - Creates IAM Role `GriffinEC2WorkerRole` with `AmazonSSMManagedInstanceCore` and S3 artifact read/write permissions.
-   - Configures Security Group `griffin-runner-sg` with **zero inbound ports** (port 22 closed).
-   - Launches `t4g.medium` instance with 30 GiB encrypted root volume.
-   - Executes cloud-init (`infra/user-data.sh`) creating the `griffin` system user, lingering DBus session, and installing the Antigravity CLI.
-
-3. Connect securely via AWS SSM (no bastion or SSH keys required):
-   ```bash
-   aws ssm start-session --target <INSTANCE_ID> --region ap-south-1 --profile griffin-bootstrap
-   ```
-
----
-
-## 5. EventBridge Scheduler Configuration
-
-To invoke the background scheduler tick:
-
-1. Create an EventBridge Schedule targeting the API server:
-   ```bash
-   aws scheduler create-schedule \
-     --name "griffin-scheduler-tick" \
-     --schedule-expression "rate(1 minute)" \
-     --target '{
-       "Arn": "arn:aws:scheduler:::aws-sdk:http:invoke",
-       "Input": "{\"method\": \"POST\", \"url\": \"https://api.griffin.workforce/api/v1/scheduler/tick\", \"headers\": {\"X-Worker-Key\": \"'$GRIFFIN_WORKER_API_KEY'\"}}",
-       "RoleArn": "arn:aws:iam::220115213279:role/GriffinSchedulerRole"
-     }' \
-     --region ap-south-1 \
-     --profile griffin-bootstrap
-   ```
-
----
-
-## 6. Next.js 15 PWA Frontend Deployment
-
-The Next.js 15 TypeScript PWA in `web/` can be built and deployed via Docker or standard Node.js hosting:
-
-### Local / Production Build:
 ```bash
-cd web
-npm install --ignore-scripts
-npm run build
-npm start -p 3000
+put() { aws ssm put-parameter $P --type SecureString --overwrite --name "$1" --value "$2" >/dev/null && echo "stored $1"; }
+put /griffin/prod/worker/DATABASE_URL        "$DATABASE_URL_SESSION"
+put /griffin/prod/worker/SUPABASE_JWT_SECRET "$SUPABASE_JWT_SECRET"
+put /griffin/prod/worker/WORKER_API_KEY      "$WORKER_API_KEY"      # openssl rand -base64 36
+put /griffin/prod/worker/S3_BUCKET           griffin-artifacts-220115213279-ap-south-1
 ```
 
-### Environment Variables (`web/.env.production`):
-```env
-NEXT_PUBLIC_API_URL=https://api.griffin.workforce
+## 6. EC2 runner
+
+1. Pre-check there is no existing runner (the script now refuses to launch a second one).
+2. `AWS_PROFILE=griffin-bootstrap ./infra/provision-ec2.sh` — resolves the AMI from the public
+   Canonical SSM parameter (no hard-coded fallback), requires IMDSv2, `stop` on OS shutdown, an
+   explicit security group (zero inbound), encrypted 30 GiB gp3. Tighten the role policy to the
+   bucket ARN (script now does) and add `ssm:GetParameter(s)ByPath` on `/griffin/prod/worker*`.
+3. Ship and install the worker bundle (arm64), via SSM:
+   ```bash
+   bash scripts/package-worker.sh                                   # build/griffin-worker.tar.gz
+   aws s3 cp build/griffin-worker.tar.gz s3://<bucket>/releases/<sha>/ $P
+   # on the instance (aws ssm start-session): download, untar, then
+   sudo bash install-worker.sh      # installs unit, sudoers (validated by visudo), env loader, AWS CLI
+   sudo /usr/local/bin/griffin-fetch-env.sh   # fails closed if a required parameter is missing
+   ```
+4. Do **not** enable the service until Antigravity auth is verified (next section).
+
+## 7. API (Lambda) — build offline, deploy after approval
+
+```bash
+bash scripts/package-lambda.sh        # build/griffin-api.zip containing bootstrap (arm64); migrations not shipped
+```
+Lambda env: `ENVIRONMENT=production GRIFFIN_MODE=api DATABASE_URL=<transaction pooler URL> DB_MAX_CONNS=2
+DB_MIN_CONNS=0 SUPABASE_JWT_SECRET|SUPABASE_JWKS_URL WORKER_API_KEY STORAGE_PROVIDER=s3 S3_BUCKET S3_REGION
+SCALE_TO_ZERO_ENABLED=true EC2_INSTANCE_ID CORS_ALLOWED_ORIGINS=https://<web-domain> PORT=8080
+AWS_LWA_PORT=8080 AWS_LAMBDA_EXEC_WRAPPER=/opt/bootstrap` (build the JSON with `jq` from the 600 env
+file). Create function / HTTP API / ACM / custom domain / EventBridge API destination with the
+commands in `DEPLOYMENT_PREFLIGHT_REPORT.md` §15 after verifying the Lambda Web Adapter layer ARN.
+Task creation and approvals now call `TriggerWakeup` synchronously (≤ 8 s) so the wake completes
+before Lambda freezes; the 1-minute tick is the backstop.
+
+## 8. Antigravity authentication (one time, interactive)
+
+```bash
+aws ssm start-session --target $INSTANCE_ID $P ; sudo -i -u griffin
+export XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus
+agy                                   # URL → sign in elsewhere → paste code
+agy -p 'Reply with {"status":"ready"}' --output-format json
+```
+Then: (1) run the same command with no session attached; (2) `sudo reboot` and repeat via
+`aws ssm send-command`; (3) stop/start the instance and repeat. Only if all pass:
+`sudo systemctl enable --now griffin-worker && journalctl -u griffin-worker -n 50`. If not,
+use the documented `GEMINI_API_KEY` fallback (see `docs/ANTIGRAVITY_CLOUD_RUNNER.md`).
+Status: persistence across reboot is **NOT VERIFIED** until this is done on the instance.
+
+## 9. PWA (Vercel)
+
+```bash
+cd web && vercel link
+vercel env add NEXT_PUBLIC_API_URL production
+vercel env add NEXT_PUBLIC_SUPABASE_URL production
+vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production     # anon key only, never service_role
+vercel deploy --prod                                         # do NOT set NEXT_PUBLIC_ENABLE_DEV_LOGIN
 ```
 
-### Running with Docker:
-```dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --ignore-scripts
-COPY . .
-RUN npm run build
+## 10. Rollback
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+PWA: `vercel rollback`. API: previous Lambda version/alias; emergency stop
+`aws events disable-rule --name griffin-tick` and reserved concurrency 0. Worker:
+`systemctl disable --now griffin-worker`, `aws ec2 stop-instances`. DB: restore backup. Rotate
+`WORKER_API_KEY`/`SUPABASE_JWT_SECRET` in SSM + Lambda + EventBridge connection together.
 
-EXPOSE 3000
-CMD ["npm", "start"]
-```
+## 11. Verification checklist
 
----
-
-## 7. Verification Checklist
-
-| Component | Verification Command | Expected Result |
-| :--- | :--- | :--- |
-| **API Health** | `curl -f http://localhost:8080/healthz` | `{"status":"ok", ...}` |
-| **Database Ping** | `curl -f http://localhost:8080/readyz` | `{"database":"connected", ...}` |
-| **Runner State** | `curl -f http://localhost:8080/api/v1/runner/status` | `{"state":"running", ...}` |
-| **Live AWS S3** | `GRIFFIN_ENABLE_LIVE_S3_TEST=true go test -v ./tests -run TestS3_LiveAWSVerification` | `PASS` in ~0.8s |
-| **Web Build** | `cd web && npm run build` | 10 screens compiled with 0 errors |
+See `DEPLOYMENT_PREFLIGHT_REPORT.md` §20 (20 live checks). Highest value after deploy: dev login
+route returns 404; evil `Origin` gets no CORS headers; user B gets 404/403 on user A's artifact;
+a stopped instance starts within ~60 s of a new task; instance returns to `stopped` ~5 min after the
+queue empties.
