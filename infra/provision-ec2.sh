@@ -23,9 +23,21 @@ echo "Target Region: ${REGION}"
 echo "Instance Type: ${INSTANCE_TYPE}"
 echo "AWS Profile:   ${PROFILE_ARG:-default}"
 
+# 0. Idempotency guard: refuse to launch a second runner.
+EXISTING=$(aws ec2 describe-instances ${PROFILE_ARG} --region "${REGION}" \
+    --filters "Name=tag:Name,Values=${TAG_NAME}" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    --query "Reservations[].Instances[].InstanceId" --output text)
+if [ -n "${EXISTING}" ]; then
+    echo "A runner instance already exists (${EXISTING}); refusing to launch another." >&2
+    exit 1
+fi
+
 # 1. Resolve latest official Ubuntu 24.04 ARM64 AMI
 echo "[1/5] Resolving official Ubuntu 24.04 ARM64 AMI..."
-AMI_ID=$(aws ec2 describe-images ${PROFILE_ARG} \
+AMI_ID=$(aws ssm get-parameter ${PROFILE_ARG} --region "${REGION}" \
+    --name /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id \
+    --query "Parameter.Value" --output text 2>/dev/null || true)
+[ -n "${AMI_ID}" ] && [ "${AMI_ID}" != "None" ] || AMI_ID=$(aws ec2 describe-images ${PROFILE_ARG} \
     --region "${REGION}" \
     --owners 099720109477 \
     --filters "Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*" \
@@ -34,8 +46,8 @@ AMI_ID=$(aws ec2 describe-images ${PROFILE_ARG} \
     --output text 2>/dev/null || true)
 
 if [ -z "${AMI_ID}" ] || [ "${AMI_ID}" == "None" ]; then
-    echo "Notice: Could not dynamically describe images (IAM permission required). Using verified Ubuntu 24.04 ARM64 AMI for ap-south-1: ami-0d8b4e4e9a59cf861"
-    AMI_ID="ami-0d8b4e4e9a59cf861"
+    echo "Could not resolve the Ubuntu 24.04 arm64 AMI (need ssm:GetParameter on the public Canonical parameter or ec2:DescribeImages). Refusing to use an unverified hard-coded AMI." >&2
+    exit 1
 fi
 
 echo "Selected AMI: ${AMI_ID}"
@@ -70,16 +82,16 @@ if ! aws iam get-role ${PROFILE_ARG} --role-name "${ROLE_NAME}" >/dev/null 2>&1;
                         "s3:PutObject",
                         "s3:GetObject",
                         "s3:DeleteObject",
-                        "s3:HeadObject"
+                        "s3:AbortMultipartUpload"
                     ],
-                    "Resource": "arn:aws:s3:::griffin-artifacts-*/*"
+                    "Resource": "arn:aws:s3:::griffin-artifacts-220115213279-ap-south-1/*"
                 },
                 {
                     "Effect": "Allow",
                     "Action": [
                         "s3:ListBucket"
                     ],
-                    "Resource": "arn:aws:s3:::griffin-artifacts-*"
+                    "Resource": "arn:aws:s3:::griffin-artifacts-220115213279-ap-south-1"
                 }
             ]
         }'
@@ -110,6 +122,10 @@ if [ -n "${VPC_ID}" ] && [ "${VPC_ID}" != "None" ]; then
     fi
     echo "Security Group ID: ${SG_ID}"
 fi
+if [ -z "${SG_ID:-}" ] || [ "${SG_ID}" == "None" ] || [[ "${SG_ID}" != sg-* ]]; then
+    echo "Security group could not be resolved or created; refusing to launch into the default SG." >&2
+    exit 1
+fi
 
 # 4. Launch EC2 Instance with encrypted 30 GiB gp3 root volume
 echo "[4/5] Launching EC2 ${INSTANCE_TYPE} instance..."
@@ -118,6 +134,8 @@ if ! INSTANCE_ID=$(aws ec2 run-instances ${PROFILE_ARG} \
     --image-id "${AMI_ID}" \
     --instance-type "${INSTANCE_TYPE}" \
     --iam-instance-profile Name="${PROFILE_NAME}" \
+    --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
+    --instance-initiated-shutdown-behavior stop \
     ${SG_ID:+--security-group-ids "${SG_ID}"} \
     --block-device-mappings '[{
         "DeviceName": "/dev/sda1",

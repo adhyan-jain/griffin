@@ -1,0 +1,27 @@
+[Unit]
+Description=Griffin worker (scale-to-zero cloud runner)
+After=network-online.target local-fs.target user@1001.service
+Wants=network-online.target
+Requires=user@1001.service
+
+[Service]
+Type=simple
+User=griffin
+Group=griffin
+WorkingDirectory=/opt/griffin
+Environment=HOME=/home/griffin
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
+Environment=PATH=/home/griffin/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Refresh /etc/griffin/worker.env from SSM Parameter Store as root ("+" prefix) before every start.
+ExecStartPre=+/usr/local/bin/griffin-fetch-env.sh
+EnvironmentFile=/etc/griffin/worker.env
+ExecStart=/opt/griffin/griffin-server
+Restart=on-failure
+RestartSec=5
+# The worker needs sudo for exactly one command (shutdown), so NoNewPrivileges must stay off.
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

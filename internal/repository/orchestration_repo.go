@@ -204,8 +204,8 @@ func (r *PostgresOrchestrationRepository) CreatePlan(ctx context.Context, plan *
 	`
 	row := r.pool.QueryRow(ctx, query,
 		plan.ID, plan.OrchestrationID, plan.UserID, plan.Objective, plan.InterpretedRequest,
-		plan.ManagerID, plan.TaskType, plan.Priority, payloadJSON, plan.Status,
-		valErrorsJSON, plan.CreatedAt, plan.UpdatedAt,
+		plan.ManagerID, plan.TaskType, plan.Priority, string(payloadJSON), plan.Status,
+		string(valErrorsJSON), plan.CreatedAt, plan.UpdatedAt,
 	)
 
 	var created domain.OrchestrationPlan
@@ -255,7 +255,7 @@ func (r *PostgresOrchestrationRepository) UpdatePlanStatus(ctx context.Context, 
 		SET status = $1, validation_errors = $2, updated_at = $3
 		WHERE id = $4
 	`
-	tag, err := r.pool.Exec(ctx, query, status, errsJSON, now, id)
+	tag, err := r.pool.Exec(ctx, query, status, string(errsJSON), now, id)
 	if err != nil {
 		return fmt.Errorf("update plan status: %w", err)
 	}

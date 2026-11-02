@@ -2,7 +2,19 @@
  * Griffin API Client and TypeScript Domain Models
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+import { getSupabase, getSupabaseAccessToken } from "@/lib/supabase";
+
+// Production builds must set NEXT_PUBLIC_API_URL; the localhost fallback exists for `next dev` only.
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:8080");
+
+/**
+ * Development-only login (POST /api/v1/auth/login). The flag is inlined at build time and is
+ * absent from production builds, so the dev login UI and call path are dead code there. The
+ * backend additionally refuses to register that route in production.
+ */
+export const DEV_LOGIN_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === "true";
 
 export interface Task {
   id: string;
@@ -122,13 +134,25 @@ const TOKEN_KEY = "griffin_auth_token";
 const USER_KEY = "griffin_user_profile";
 
 export function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null;
+  // Only the dev-login token lives in localStorage, and only when dev login is enabled.
+  if (!DEV_LOGIN_ENABLED || typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
 }
 
+/** Resolves the bearer token: Supabase session first, then (dev builds only) the dev token. */
+export async function resolveAuthToken(): Promise<string | null> {
+  return (await getSupabaseAccessToken()) ?? getAuthToken();
+}
+
 export function setAuthToken(token: string, user: UserProfile): void {
-  if (typeof window === "undefined") return;
+  if (!DEV_LOGIN_ENABLED || typeof window === "undefined") return;
   localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+/** Caches the signed-in profile for display (never a credential). */
+export function setCurrentUser(user: UserProfile): void {
+  if (typeof window === "undefined") return;
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
@@ -136,6 +160,7 @@ export function clearAuthToken(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  void getSupabase()?.auth.signOut();
 }
 
 export function getCurrentUser(): UserProfile | null {
@@ -154,7 +179,7 @@ async function fetchWithAuth<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getAuthToken();
+  const token = await resolveAuthToken();
   const headers = new Headers(options.headers || {});
 
   if (token) {
@@ -173,9 +198,10 @@ async function fetchWithAuth<T>(
     let errMessage = `HTTP error ${res.status}: ${res.statusText}`;
     try {
       const errBody = await res.json();
-      if (errBody && (errBody.error || errBody.message)) {
-        errMessage = errBody.error || errBody.message;
-      }
+      const detail = errBody?.error;
+      if (typeof detail === "string") errMessage = detail;
+      else if (detail?.message) errMessage = detail.message;
+      else if (errBody?.message) errMessage = errBody.message;
     } catch {
       // ignore json parse error
     }
@@ -186,12 +212,30 @@ async function fetchWithAuth<T>(
     return {} as T;
   }
 
-  return res.json() as Promise<T>;
+  // The API wraps payloads as { success, data }; unwrap so callers receive the data itself.
+  const body = await res.json();
+  if (body && typeof body === "object" && "success" in body && "data" in body) {
+    return body.data as T;
+  }
+  return body as T;
 }
 
 export const api = {
   // Auth
+  /** Supabase email/password sign-in (the production path). */
+  async signIn(email: string, password: string): Promise<UserProfile> {
+    const sb = getSupabase();
+    if (!sb) throw new Error("Supabase is not configured (NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY).");
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error || !data.user) throw new Error(error?.message || "Sign-in failed.");
+    const user: UserProfile = { id: data.user.id, email: data.user.email ?? email, role: "OPERATOR" };
+    setCurrentUser(user);
+    return user;
+  },
+
+  /** DEVELOPMENT ONLY: refuses to run unless NEXT_PUBLIC_ENABLE_DEV_LOGIN=true at build time. */
   async login(email?: string): Promise<{ token: string; user: UserProfile }> {
+    if (process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN !== "true") throw new Error("Dev login is disabled.");
     const res = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -200,7 +244,8 @@ export const api = {
     if (!res.ok) {
       throw new Error(`Login failed with status ${res.status}`);
     }
-    const data = await res.json();
+    const body = await res.json();
+    const data = (body.data ?? body) as { token: string; user: UserProfile };
     setAuthToken(data.token, data.user);
     return data;
   },
@@ -317,7 +362,7 @@ export const api = {
     formData.append("task_id", taskId);
     formData.append("file", file);
 
-    const token = getAuthToken();
+    const token = await resolveAuthToken();
     const headers: Record<string, string> = {};
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
