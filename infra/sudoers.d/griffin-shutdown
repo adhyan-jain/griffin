@@ -1,0 +1,3 @@
+# Allows the unprivileged `griffin` service user to power the host off (scale-to-zero idle shutdown),
+# and nothing else. Path and arguments must match internal/runner/shutdown.go (ShutdownCommand).
+griffin ALL=(root) NOPASSWD: /usr/sbin/shutdown -h now

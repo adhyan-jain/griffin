@@ -381,7 +381,7 @@ func (r *PostgresTaskRepository) CancelTask(ctx context.Context, taskID uuid.UUI
 		SET 
 			status = 'CANCELLED',
 			failure_reason = $1,
-			completed_at = COALESCE(completed_at, $2),
+			completed_at = COALESCE(completed_at, $2::timestamptz),
 			leased_by = NULL,
 			lease_expires_at = NULL,
 			updated_at = $2
@@ -408,16 +408,16 @@ func (r *PostgresTaskRepository) ReapExpiredLeases(ctx context.Context) (int64, 
 			END,
 			retry_count = retry_count + 1,
 			failure_reason = 'lease expired without heartbeat',
-			scheduled_for = $1,
+			scheduled_for = $1::timestamptz,
 			completed_at = CASE 
-				WHEN retry_count + 1 >= max_retries THEN $1 
+				WHEN retry_count + 1 >= max_retries THEN $1::timestamptz 
 				ELSE NULL 
 			END,
 			leased_by = NULL,
 			lease_expires_at = NULL,
-			updated_at = $1
+			updated_at = $1::timestamptz
 		WHERE status = 'RUNNING' 
-		  AND lease_expires_at < $1
+		  AND lease_expires_at < $1::timestamptz
 	`
 	cmd, err := r.pool.Exec(ctx, query, now)
 	if err != nil {
@@ -679,7 +679,7 @@ func (r *PostgresTaskRepository) TransitionToApproval(ctx context.Context, taskI
 		VALUES ($1, 'STATUS_CHANGE', 'Task entered AWAITING_APPROVAL', $2, $3)
 	`
 	meta, _ := json.Marshal(map[string]any{"approval_id": app.ID, "risk_level": app.RiskLevel})
-	if _, err := tx.Exec(ctx, eventQuery, taskID, meta, now); err != nil {
+	if _, err := tx.Exec(ctx, eventQuery, taskID, string(meta), now); err != nil {
 		return fmt.Errorf("log approval event: %w", err)
 	}
 

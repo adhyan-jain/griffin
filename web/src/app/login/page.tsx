@@ -2,13 +2,19 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api, getCurrentUser, setAuthToken, clearAuthToken, UserProfile } from "@/lib/api";
-import { Bot, Key, User, ShieldCheck, LogIn, LogOut, CheckCircle2, AlertCircle } from "lucide-react";
+import { api, getCurrentUser, clearAuthToken, setAuthToken, UserProfile } from "@/lib/api";
+import { supabaseConfigured } from "@/lib/supabase";
+import { Bot, Key, User, Lock, ShieldCheck, LogIn, LogOut, CheckCircle2, AlertCircle } from "lucide-react";
+
+// Inlined at build time (NEXT_PUBLIC_*): `false` in production builds, so the dev-login code and
+// strings below are removed from the bundle entirely, not merely hidden.
+const DEV_LOGIN_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === "true";
 
 export default function LoginPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [email, setEmail] = useState("admin@griffin.internal");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [customToken, setCustomToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -17,33 +23,43 @@ export default function LoginPage() {
     setCurrentUser(getCurrentUser());
   }, []);
 
-  const handleLogin = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleSupabaseLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoading(true);
     setStatusMessage(null);
-
     try {
-      if (customToken.trim()) {
-        // If user manually pasted a Supabase JWT
-        const userObj: UserProfile = {
-          id: "custom-user",
-          email: email || "operator@griffin.cloud",
-          role: "OPERATOR",
-        };
-        setAuthToken(customToken.trim(), userObj);
+      const user = await api.signIn(email.trim(), password);
+      setPassword("");
+      setCurrentUser(user);
+      setStatusMessage({ type: "success", text: `Signed in as ${user.email}` });
+      setTimeout(() => router.push("/"), 500);
+    } catch (err) {
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Authentication failed." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Development builds only (NEXT_PUBLIC_ENABLE_DEV_LOGIN=true); unreachable in production builds.
+  const handleDevLogin = async (devEmail: string, token?: string) => {
+    if (!DEV_LOGIN_ENABLED) return;
+    setLoading(true);
+    setStatusMessage(null);
+    try {
+      if (token && token.trim()) {
+        const userObj: UserProfile = { id: "custom-user", email: devEmail || "operator@griffin.cloud", role: "OPERATOR" };
+        setAuthToken(token.trim(), userObj);
         setCurrentUser(userObj);
-        setStatusMessage({ type: "success", text: "Custom session token saved successfully." });
+        setStatusMessage({ type: "success", text: "Custom session token saved (dev only)." });
         setTimeout(() => router.push("/"), 500);
         return;
       }
-
-      // Dev login endpoint
-      const result = await api.login(email);
+      const result = await api.login(devEmail);
       setCurrentUser(result.user);
-      setStatusMessage({ type: "success", text: `Authenticated as ${result.user.email} (Role: ${result.user.role})` });
+      setStatusMessage({ type: "success", text: `Dev session as ${result.user.email}` });
       setTimeout(() => router.push("/"), 700);
-    } catch (err: any) {
-      setStatusMessage({ type: "error", text: err.message || "Authentication failed." });
+    } catch (err) {
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Authentication failed." });
     } finally {
       setLoading(false);
     }
@@ -64,7 +80,7 @@ export default function LoginPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight">Griffin Access Control</h1>
-            <p className="text-xs text-slate-400">Supabase JWT Authenticated Workspace</p>
+            <p className="text-xs text-slate-400">Supabase Authenticated Workspace</p>
           </div>
         </div>
 
@@ -105,10 +121,6 @@ export default function LoginPage() {
                     {currentUser.id}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Role:</span>
-                  <span className="font-semibold text-blue-400">{currentUser.role}</span>
-                </div>
               </div>
             </div>
 
@@ -129,66 +141,82 @@ export default function LoginPage() {
             </div>
           </div>
         ) : (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Operator Email
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@griffin.internal"
-                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Enter your registered Supabase email or use default admin.
+          <div className="space-y-6">
+            {supabaseConfigured ? (
+              <form onSubmit={handleSupabaseLogin} className="space-y-4">
+                <div>
+                  <label htmlFor="email" className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                    <input
+                      id="email"
+                      type="email"
+                      required
+                      autoComplete="username"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="password" className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                    <input
+                      id="password"
+                      type="password"
+                      required
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition shadow-sm"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{loading ? "Signing in..." : "Sign In"}</span>
+                </button>
+              </form>
+            ) : (
+              <p className="text-xs text-rose-300">
+                Authentication is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
               </p>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Optional: Custom Supabase Bearer JWT
-              </label>
-              <div className="relative">
-                <Key className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="password"
-                  value={customToken}
-                  onChange={(e) => setCustomToken(e.target.value)}
-                  placeholder="Paste raw Supabase JWT (optional)..."
-                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
+            {DEV_LOGIN_ENABLED && (
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <p className="text-[11px] text-amber-300">Development only — disabled in production builds.</p>
+                <div className="relative">
+                  <Key className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                  <input
+                    type="password"
+                    value={customToken}
+                    onChange={(e) => setCustomToken(e.target.value)}
+                    placeholder="Paste a Supabase JWT (dev only)..."
+                    className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDevLogin(email || "admin@griffin.internal", customToken)}
+                  disabled={loading}
+                  className="w-full py-1.5 px-3 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition border border-slate-800"
+                >
+                  Use dev login
+                </button>
               </div>
-            </div>
-
-            <div className="pt-2 flex flex-col gap-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition shadow-sm"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>{loading ? "Authenticating..." : "Sign In with Operator Credentials"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail("admin@griffin.internal");
-                  setCustomToken("");
-                  handleLogin();
-                }}
-                disabled={loading}
-                className="w-full py-1.5 px-3 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition border border-transparent hover:border-slate-800"
-              >
-                Use Quick Dev Login (admin@griffin.internal)
-              </button>
-            </div>
-          </form>
+            )}
+          </div>
         )}
       </div>
     </div>

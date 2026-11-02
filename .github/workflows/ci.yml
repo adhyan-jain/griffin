@@ -65,7 +65,44 @@ jobs:
       - name: Build server binary
         run: go build -v -o bin/griffin-server ./cmd/griffin-server
 
+      - name: Cross-compile linux/arm64 (Lambda + EC2 worker)
+        run: |
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/griffin-server-arm64 ./cmd/griffin-server
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/griffin-migrate-arm64 ./cmd/griffin-migrate
+
       - name: Run automated test suite
         env:
           GRIFFIN_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/griffin_test?sslmode=disable
         run: go test -v -count=1 ./...
+
+  web:
+    name: Web (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - name: Production build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.example.invalid
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+        run: npm run build
+      - name: Dev login must be stripped from the production bundle
+        run: |
+          if grep -rl -e "Use dev login" -e "/api/v1/auth/login" .next/static; then
+            echo "dev-login code leaked into the production bundle" >&2; exit 1
+          fi
