@@ -96,11 +96,10 @@ func (h *ApprovalHandler) RespondApproval(w http.ResponseWriter, r *http.Request
 	}
 
 	if approved && h.wakeup != nil {
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			_ = h.wakeup.TriggerWakeup(bgCtx)
-		}()
+		// Synchronous (bounded) for Lambda; best-effort, the scheduler tick retries.
+		wakeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		_ = h.wakeup.TriggerWakeup(wakeCtx)
+		cancel()
 	}
 
 	httputil.JSON(w, http.StatusOK, app)
