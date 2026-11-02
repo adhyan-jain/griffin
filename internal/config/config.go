@@ -61,6 +61,8 @@ type Config struct {
 	// UserDatabaseURL: RLS-enforced role (NOSUPERUSER, NOBYPASSRLS) used for user requests in API
 	// mode. DATABASE_URL is then the system role, used only by worker-key/system paths.
 	UserDatabaseURL string
+	// AllowedUserEmails restricts API access to the operator account(s); required in production API mode.
+	AllowedUserEmails []string
 }
 
 // Environment names. Anything unset or unknown is treated as production (fail closed).
@@ -130,6 +132,7 @@ func Load() (*Config, error) {
 		DBMaxConns:                      getEnvAsInt("DB_MAX_CONNS", 25),
 		DBMinConns:                      getEnvAsInt("DB_MIN_CONNS", 2),
 		UserDatabaseURL:                 getEnv("USER_DATABASE_URL", ""),
+		AllowedUserEmails:               splitCSV(getEnv("ALLOWED_USER_EMAILS", "")),
 	}
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {
@@ -213,6 +216,9 @@ func (c *Config) validateProduction() error {
 		return fmt.Errorf("DATABASE_URL sslmode %q is not allowed in production", m)
 	}
 	if mode := c.GriffinMode; mode == "all" || mode == "api" {
+		if len(c.AllowedUserEmails) == 0 {
+			return fmt.Errorf("ALLOWED_USER_EMAILS is required in production (operator allow-list; sign-ups may be open)")
+		}
 		if c.UserDatabaseURL == "" {
 			return fmt.Errorf("USER_DATABASE_URL (RLS-enforced role) is required in production for API mode")
 		}

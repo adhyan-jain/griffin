@@ -51,3 +51,6 @@ Policy D (Lambda/API/EventBridge/SSM-put/budgets/alarms) is attached later, with
 
 ## What happens the moment those two are done (I proceed in this order, asking at each gate)
 migration plan → **your approval** → `pg_dump` + `griffin-migrate up` + RLS/auth checks → `GRIFFIN_DRY_RUN=1` EC2 → **your approval** + cost → launch → Antigravity login (you complete the URL/code step on the instance) and reboot / stop-start tests → Lambda + HTTP API + EventBridge (disabled) → Vercel deploy → acceptance tests.
+
+## Sign-ups
+Open sign-ups are an accepted risk for now. The API enforces `ALLOWED_USER_EMAILS` (required in production API mode): a stranger can register but every API call returns 403. Prefer also disabling sign-ups in the dashboard.
