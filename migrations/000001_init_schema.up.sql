@@ -5,20 +5,9 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Compatibility shim for auth schema when running on local/test Postgres
-CREATE SCHEMA IF NOT EXISTS auth;
-CREATE TABLE IF NOT EXISTS auth.users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE,
-    raw_user_meta_data JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE OR REPLACE FUNCTION auth.uid() 
-RETURNS UUID AS $$
-    SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::UUID;
-$$ LANGUAGE SQL STABLE;
+-- NOTE: this migration requires the Supabase `auth` schema (auth.users, auth.uid()).
+-- On plain PostgreSQL (local/CI) apply migrations/local/auth_shim.sql first via
+-- `griffin-migrate -local-auth-shim`. It must never redefine auth.uid() on Supabase.
 
 -- -----------------------------------------------------------------------------
 -- ENUMS

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
 	"github.com/griffin/core/internal/storage"
+	"github.com/griffin/core/migrations"
 )
 
 const (
@@ -58,13 +58,8 @@ func SetupTestEnv(t *testing.T) *TestEnv {
 		t.Fatalf("failed to connect to test database: %v", err)
 	}
 
-	// Resolve path to migrations directory
-	migDir := filepath.Join("..", "migrations")
-	if _, err := os.Stat(migDir); os.IsNotExist(err) {
-		migDir = "migrations"
-	}
-
-	if err := database.RunMigrations(ctx, db, migDir); err != nil {
+	// Plain Postgres in tests: use the explicit migrator with the local auth shim.
+	if _, err := database.Migrate(ctx, db, migrations.FS, database.MigrateOptions{LocalAuthShim: true}); err != nil {
 		t.Fatalf("failed to run migrations on test db: %v", err)
 	}
 
@@ -177,6 +172,7 @@ func GenerateTestJWT(userID uuid.UUID, email string) string {
 		"sub":   userID.String(),
 		"email": email,
 		"role":  "authenticated",
+		"aud":   "authenticated",
 		"exp":   time.Now().Add(1 * time.Hour).Unix(),
 		"iat":   time.Now().Unix(),
 	}

@@ -14,17 +14,40 @@ type DB struct {
 	Pool *pgxpool.Pool
 }
 
-// Connect establishes a connection pool to PostgreSQL.
+// PoolOptions tunes the connection pool (use small values on Lambda).
+type PoolOptions struct {
+	MaxConns int32
+	MinConns int32
+}
+
+// Connect establishes a connection pool with default pool sizing.
 func Connect(ctx context.Context, connString string) (*DB, error) {
+	return ConnectWithOptions(ctx, connString, PoolOptions{MaxConns: 25, MinConns: 2})
+}
+
+// IsTransactionPooler reports whether the URL targets a PgBouncer/Supavisor transaction-mode
+// pooler (port 6543), which does not support prepared statements.
+func IsTransactionPooler(cfg *pgxpool.Config) bool {
+	return cfg.ConnConfig.Port == 6543
+}
+
+// ConnectWithOptions establishes a pool. Behind a transaction-mode pooler (Supabase port 6543)
+// it switches pgx to the simple protocol with no statement cache, which is required there.
+func ConnectWithOptions(ctx context.Context, connString string, opts PoolOptions) (*DB, error) {
 	cfg, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database conn string: %w", err)
 	}
 
-	cfg.MaxConns = 25
-	cfg.MinConns = 2
+	cfg.MaxConns = opts.MaxConns
+	cfg.MinConns = opts.MinConns
 	cfg.MaxConnLifetime = 1 * time.Hour
 	cfg.MaxConnIdleTime = 15 * time.Minute
+	if IsTransactionPooler(cfg) {
+		cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+		cfg.ConnConfig.StatementCacheCapacity = 0
+		cfg.ConnConfig.DescriptionCacheCapacity = 0
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
