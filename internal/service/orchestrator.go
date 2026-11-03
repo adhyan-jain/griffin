@@ -192,6 +192,19 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 		return orch, nil // Already in terminal state
 	}
 
+	// Root cancelled by the user (children are cascade-cancelled by the engine): reflect that
+	// on the orchestration instead of reporting it as a child failure.
+	if root, err := o.taskRepo.GetTaskByID(ctx, orch.RootTaskID); err == nil && root.Status == domain.TaskStatusCancelled {
+		reason := "Orchestration cancelled by user"
+		if root.FailureReason != nil {
+			reason = *root.FailureReason
+		}
+		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusCancelled, nil, &reason)
+		orch.Status = domain.OrchestrationStatusCancelled
+		orch.ErrorMessage = &reason
+		return orch, nil
+	}
+
 	delegations, err := o.orchRepo.GetDelegationsByOrchestrationID(ctx, orch.ID, uuid.Nil)
 	if err != nil {
 		return nil, fmt.Errorf("jj: get delegations: %w", err)
