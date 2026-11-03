@@ -40,7 +40,7 @@ export const PRIORITIES: { value: TaskPriority; label: string }[] = [
   { value: "CRITICAL_P0", label: "Critical" },
   { value: "HIGH_P1", label: "High" },
   { value: "NORMAL_P2", label: "Normal" },
-  { value: "BACKGROUND_P3", label: "Background" },
+  { value: "BACKGROUND_P3", label: "Low" },
 ];
 
 export interface Task {

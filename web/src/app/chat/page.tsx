@@ -1,274 +1,141 @@
 "use client";
 
-import React, { useState } from "react";
 import Link from "next/link";
-import { api, OrchestrationRequestResponse } from "@/lib/api";
-import {
-  Bot,
-  Send,
-  Loader2,
-  Sparkles,
-  GitBranch,
-  ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
-  HelpCircle,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Loader2, Sparkles } from "lucide-react";
+import { api, type SubmitResult } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { ErrorNote } from "@/components/page";
 
-interface ChatMessage {
-  id: string;
-  sender: "user" | "jj";
-  content: string;
-  response?: OrchestrationRequestResponse;
-  timestamp: string;
-}
+type Msg =
+  | { id: number; role: "user"; text: string }
+  | { id: number; role: "jj"; result: SubmitResult }
+  | { id: number; role: "error"; text: string };
 
-const SAMPLE_PROMPTS = [
-  "Implement automated AWS S3 lifecycle and archival policies for older task artifacts",
-  "Audit repository dependencies for CVE security vulnerabilities and unpinned packages",
-  "Refactor task engine lease recovery query to eliminate lock contention under 100 concurrent workers",
-  "Design a domain model and database migration for multi-tenant webhook event subscriptions",
-];
+const SUGGESTIONS = ["Plan a weekly status report", "Review this repo for security issues", "Draft a launch checklist for next week"];
 
-export default function JJChatWorkspacePage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      sender: "jj",
-      content:
-        "Hello. I am JJ, top-level orchestrator of the Griffin AI Workforce. Give me an objective, feature request, or operational goal, and I will analyze the intent, select the appropriate specialist manager, formulate an execution DAG, and dispatch persisted durable tasks.",
-      timestamp: "Ready",
-    },
-  ]);
-  const [inputGoal, setInputGoal] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default function ChatPage() {
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  const nextId = useRef(1);
 
-  const handleSubmit = async (goalToSubmit?: string) => {
-    const goal = (goalToSubmit || inputGoal).trim();
-    if (!goal || loading) return;
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, busy]);
 
-    setError(null);
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      sender: "user",
-      content: goal,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setInputGoal("");
-    setLoading(true);
-
+  const send = async (raw: string) => {
+    const goal = raw.trim();
+    if (!goal || busy) return;
+    setText("");
+    setBusy(true);
+    setMessages((m) => [...m, { id: nextId.current++, role: "user", text: goal }]);
     try {
-      // Dispatch to JJ Orchestrator API
-      let res: OrchestrationRequestResponse;
-      try {
-        res = await api.submitOrchestratorRequest(goal);
-      } catch (orchErr) {
-        // Fallback: create task directly via task engine if orchestrator handler returns unpopulated
-        const createdTask = await api.createTask({
-          goal,
-          assigned_manager: "mgr-jj",
-          assigned_specialist: "DAG Architect",
-          priority: 1,
-        });
-        res = {
-          orchestration_id: createdTask.id,
-          status: "dispatched",
-          manager: "mgr-jj",
-          goal: createdTask.goal,
-          created_task_ids: [createdTask.id],
-        };
-      }
-
-      const jjMsg: ChatMessage = {
-        id: `jj-${Date.now()}`,
-        sender: "jj",
-        content: `Objective received. I have delegated this to the **${res.manager.toUpperCase()}** with priority execution. ${
-          res.created_task_ids.length
-        } durable task(s) have been generated in the Supabase queue and are ready for worker claiming.`,
-        response: res,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
-
-      setMessages((prev) => [...prev, jjMsg]);
-    } catch (err: any) {
-      setError(err.message || "Failed to communicate with JJ Orchestrator.");
+      const result = await api.submitOrchestratorRequest(goal);
+      setMessages((m) => [...m, { id: nextId.current++, role: "jj", result }]);
+    } catch (e) {
+      setMessages((m) => [...m, { id: nextId.current++, role: "error", text: e instanceof Error ? e.message : "JJ could not take that request." }]);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 flex flex-col h-[calc(100vh-8rem)]">
-      {/* Workspace Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
-            <Bot className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-white tracking-tight">JJ Orchestrator Workspace</h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                ACTIVE
-              </span>
+    <div className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-3xl flex-col px-4 md:h-dvh md:px-8">
+      <div className="flex-1 space-y-4 overflow-y-auto py-5" aria-live="polite">
+        {messages.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
+              <Sparkles className="size-5" />
             </div>
-            <p className="text-xs text-slate-400">
-              Natural Language Intent Formulation • Specialist Delegation • DAG Synthesis
-            </p>
-          </div>
-        </div>
-
-        <Link
-          href="/tasks"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition"
-        >
-          <GitBranch className="w-3.5 h-3.5 text-blue-400" />
-          <span>Active Task DAGs</span>
-        </Link>
-      </div>
-
-      {/* Chat Messages Scroll Container */}
-      <div className="flex-1 overflow-y-auto py-6 space-y-4 pr-1">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex gap-3 max-w-3xl ${
-              msg.sender === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
-            }`}
-          >
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold border ${
-                msg.sender === "user"
-                  ? "bg-blue-600 text-white border-blue-500"
-                  : "bg-slate-900 text-blue-400 border-slate-700"
-              }`}
-            >
-              {msg.sender === "user" ? "OP" : <Bot className="w-4 h-4" />}
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">What should JJ take care of?</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Describe the outcome. JJ plans the steps and hands them to your team.</p>
             </div>
+            <div className="flex w-full flex-col gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => void send(s)}
+                  className="min-h-12 rounded-xl border bg-card px-4 text-left text-sm transition-colors active:bg-muted md:hover:bg-muted"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-            <div className="space-y-2 max-w-[85%]">
-              <div
-                className={`p-4 rounded-2xl text-xs leading-relaxed ${
-                  msg.sender === "user"
-                    ? "bg-blue-600 text-white rounded-tr-none shadow-md"
-                    : "bg-slate-900/90 text-slate-200 border border-slate-800 rounded-tl-none shadow-lg"
-                }`}
-              >
-                <div className="whitespace-pre-wrap">{msg.content}</div>
-
-                {/* Structured Breakdown if provided by JJ */}
-                {msg.response && (
-                  <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-2 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-[11px]">Assigned Manager:</span>
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-blue-300 font-mono text-[10px] border border-slate-700">
-                        {msg.response.manager}
+        {messages.map((m) =>
+          m.role === "user" ? (
+            <div key={m.id} className="flex justify-end">
+              <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">{m.text}</p>
+            </div>
+          ) : m.role === "error" ? (
+            <ErrorNote key={m.id} message={m.text} />
+          ) : (
+            <div key={m.id} className="max-w-[92%] space-y-3 rounded-2xl rounded-bl-md border bg-card px-4 py-3">
+              <p className="text-sm">
+                Planned as {m.result.plan.plan_payload.child_tasks.length || 1} step
+                {m.result.plan.plan_payload.child_tasks.length === 1 ? "" : "s"}, led by{" "}
+                <span className="font-medium">{m.result.plan.manager_id.replaceAll("_", " ")}</span>.
+              </p>
+              {m.result.plan.plan_payload.child_tasks.length > 0 && (
+                <ul className="space-y-1.5 text-sm text-muted-foreground">
+                  {m.result.plan.plan_payload.child_tasks.map((c) => (
+                    <li key={c.key} className="flex gap-2">
+                      <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                      <span>
+                        {c.title}
+                        {c.approval_required && <span className="ml-1.5 text-xs text-accent-foreground">needs your OK</span>}
                       </span>
-                    </div>
-
-                    {msg.response.created_task_ids && msg.response.created_task_ids.length > 0 && (
-                      <div className="space-y-1.5">
-                        <span className="text-slate-400 text-[11px]">Generated Tasks in DAG:</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {msg.response.created_task_ids.map((tid) => (
-                            <Link
-                              key={tid}
-                              href={`/tasks/${tid}`}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 text-blue-400 border border-slate-800 text-[11px] font-mono transition"
-                            >
-                              <span>Task {tid.slice(0, 8)}...</span>
-                              <ArrowRight className="w-3 h-3" />
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div
-                className={`text-[10px] text-slate-500 ${
-                  msg.sender === "user" ? "text-right" : "text-left"
-                }`}
-              >
-                {msg.timestamp}
-              </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Button asChild variant="outline" size="sm" className="h-9">
+                <Link href={`/tasks/${m.result.orchestration.root_task_id}`}>Open task</Link>
+              </Button>
             </div>
-          </div>
-        ))}
-
-        {loading && (
-          <div className="flex gap-3 max-w-xl mr-auto">
-            <div className="w-8 h-8 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center text-blue-400">
-              <Bot className="w-4 h-4 animate-spin" />
-            </div>
-            <div className="p-4 rounded-2xl rounded-tl-none bg-slate-900/90 border border-slate-800 text-xs text-slate-300 flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-              <span>JJ is decomposing the objective and synthesizing workforce tasks...</span>
-            </div>
-          </div>
+          ),
         )}
 
-        {error && (
-          <div className="p-3 rounded-lg bg-rose-950/40 text-rose-300 border border-rose-800 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+        {busy && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> JJ is planning
           </div>
         )}
+        <div ref={endRef} />
       </div>
 
-      {/* Suggested Prompts Banner */}
-      <div className="pt-2 pb-3 shrink-0">
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Quick Objectives for JJ:</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {SAMPLE_PROMPTS.map((p, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSubmit(p)}
-              disabled={loading}
-              className="text-[11px] px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 truncate max-w-sm transition"
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Prompt Input Form */}
-      <div className="pt-2 shrink-0">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSubmit();
+      <form
+        className="flex items-end gap-2 border-t bg-background py-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(text);
+        }}
+      >
+        <Textarea
+          aria-label="Message JJ"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && window.matchMedia("(min-width: 768px)").matches) {
+              e.preventDefault();
+              void send(text);
+            }
           }}
-          className="relative flex items-center"
-        >
-          <input
-            type="text"
-            value={inputGoal}
-            onChange={(e) => setInputGoal(e.target.value)}
-            placeholder="Instruct JJ with an objective (e.g., 'Deploy new microservice with S3 backup and QA tests')..."
-            disabled={loading}
-            className="w-full pl-4 pr-12 py-3 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 shadow-inner"
-          />
-          <button
-            type="submit"
-            disabled={loading || !inputGoal.trim()}
-            className="absolute right-2 p-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition shadow-sm"
-            title="Dispatch objective to JJ"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
+          placeholder="Message JJ"
+          rows={1}
+          className="max-h-32 min-h-11 resize-none"
+        />
+        <Button type="submit" size="icon" className="size-11 shrink-0 rounded-full" disabled={busy || !text.trim()} aria-label="Send">
+          <ArrowUp />
+        </Button>
+      </form>
     </div>
   );
 }
