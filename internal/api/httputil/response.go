@@ -3,6 +3,8 @@ package httputil
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/griffin/core/internal/domain"
@@ -38,7 +40,14 @@ func ErrorJSON(w http.ResponseWriter, err error) {
 	code := "INTERNAL_ERROR"
 	msg := "An unexpected internal server error occurred"
 
+	var tooLarge *http.MaxBytesError
+
 	switch {
+	case errors.As(err, &tooLarge):
+		status = http.StatusRequestEntityTooLarge
+		code = "PAYLOAD_TOO_LARGE"
+		msg = fmt.Sprintf("Request body too large: the limit is %d bytes", tooLarge.Limit)
+
 	case errors.Is(err, domain.ErrNotFound):
 		status = http.StatusNotFound
 		code = "NOT_FOUND"
@@ -95,9 +104,10 @@ func ErrorJSON(w http.ResponseWriter, err error) {
 		msg = err.Error()
 
 	case errors.Is(err, storage.ErrPermissionDenied):
-		status = http.StatusForbidden
-		code = "FORBIDDEN"
-		msg = err.Error()
+		// Access denied by S3 is a server-side IAM problem; do not present it as the caller's fault.
+		status = http.StatusBadGateway
+		code = "STORAGE_ERROR"
+		msg = "Artifact storage access failed"
 
 	case errors.Is(err, storage.ErrInvalidKey):
 		status = http.StatusBadRequest
@@ -105,9 +115,15 @@ func ErrorJSON(w http.ResponseWriter, err error) {
 		msg = err.Error()
 
 	case errors.Is(err, storage.ErrBucketNotFound):
-		status = http.StatusNotFound
-		code = "NOT_FOUND"
-		msg = err.Error()
+		// A missing bucket is a server misconfiguration, not a missing client resource.
+		status = http.StatusServiceUnavailable
+		code = "SERVICE_UNAVAILABLE"
+		msg = "Artifact storage is not available"
+
+	case errors.Is(err, storage.ErrDeleteFailed), errors.Is(err, storage.ErrDownloadFailed), errors.Is(err, storage.ErrUploadFailed):
+		status = http.StatusBadGateway
+		code = "STORAGE_ERROR"
+		msg = "Artifact storage operation failed"
 
 	case errors.Is(err, storage.ErrAuthenticationFailed):
 		status = http.StatusServiceUnavailable
@@ -115,8 +131,9 @@ func ErrorJSON(w http.ResponseWriter, err error) {
 		msg = "Storage provider authentication failed"
 
 	default:
+		// Unclassified errors (e.g. raw AWS SDK or database errors) are never echoed to clients.
 		if err != nil {
-			msg = err.Error()
+			slog.Error("unclassified API error", "error", err)
 		}
 	}
 

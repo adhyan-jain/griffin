@@ -242,7 +242,7 @@ func (r *PostgresTaskRepository) ClaimNextTask(ctx context.Context, workerID str
 		WHERE id = (
 			SELECT id
 			FROM tasks
-			WHERE status = 'QUEUED'
+			WHERE status IN ('QUEUED', 'RETRYING')
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
 			ORDER BY priority DESC, created_at ASC
 			LIMIT 1
@@ -305,7 +305,7 @@ func (r *PostgresTaskRepository) CompleteTask(ctx context.Context, taskID uuid.U
 			lease_expires_at = NULL,
 			updated_at = $2
 		WHERE id = $3 
-		  AND (leased_by = $4 OR manager_domain = 'JJ') 
+		  AND (leased_by = $4 OR $4 = 'JJ_ORCHESTRATOR') 
 		  AND status IN ('RUNNING', 'VERIFYING')
 	`
 	cmd, err := r.pool.Exec(ctx, query, output, now, taskID, workerID)
@@ -346,7 +346,7 @@ func (r *PostgresTaskRepository) FailTask(ctx context.Context, taskID uuid.UUID,
 				leased_by = NULL,
 				lease_expires_at = NULL,
 				updated_at = $3::timestamptz
-			WHERE id = $4 AND (leased_by = $5 OR manager_domain = 'JJ') AND status IN ('RUNNING', 'VERIFYING')
+			WHERE id = $4 AND (leased_by = $5 OR $5 = 'JJ_ORCHESTRATOR') AND status IN ('RUNNING', 'VERIFYING')
 		`
 		args = []any{reason, scheduledFor, now, taskID, workerID}
 	} else {
@@ -359,7 +359,7 @@ func (r *PostgresTaskRepository) FailTask(ctx context.Context, taskID uuid.UUID,
 				leased_by = NULL,
 				lease_expires_at = NULL,
 				updated_at = $2::timestamptz
-			WHERE id = $3 AND (leased_by = $4 OR manager_domain = 'JJ') AND status IN ('RUNNING', 'VERIFYING')
+			WHERE id = $3 AND (leased_by = $4 OR $4 = 'JJ_ORCHESTRATOR') AND status IN ('RUNNING', 'VERIFYING')
 		`
 		args = []any{reason, now, taskID, workerID}
 	}
@@ -691,7 +691,8 @@ func (r *PostgresTaskRepository) CountRunnableTasks(ctx context.Context) (int64,
 	query := `
 		SELECT COUNT(*)
 		FROM tasks t
-		WHERE t.status IN ('RUNNING', 'QUEUED', 'ROUTED')
+		WHERE t.status IN ('RUNNING', 'ROUTED')
+		   OR (t.status = 'QUEUED' AND (t.scheduled_for IS NULL OR t.scheduled_for <= NOW()))
 		   OR (t.status = 'WAITING_FOR_DEPENDENCY' AND NOT EXISTS (
 		       SELECT 1 FROM task_dependencies td
 		       JOIN tasks parent ON parent.id = td.depends_on_task_id

@@ -45,7 +45,11 @@ func (h *OrchestratorHandler) SubmitRequest(w http.ResponseWriter, r *http.Reque
 
 	var req SubmitRequestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, err))
+		httputil.ErrorJSON(w, badRequestFromDecode(err))
+		return
+	}
+	if err := domain.ValidatePriority(req.Priority); err != nil {
+		httputil.ErrorJSON(w, err)
 		return
 	}
 

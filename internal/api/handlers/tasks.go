@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +18,20 @@ import (
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
 )
+
+// badRequestFromDecode turns a JSON decode failure into a validation error a client can act on.
+// The common mistake is a wrongly typed priority (a number instead of the enum string), which
+// otherwise surfaces as a Go-internal "cannot unmarshal number into Go struct field" message.
+func badRequestFromDecode(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		if strings.HasSuffix(typeErr.Field, "priority") {
+			return fmt.Errorf("%w: priority must be a string, one of %s", domain.ErrValidation, domain.PriorityList())
+		}
+		return fmt.Errorf("%w: field %q has the wrong type (expected %s)", domain.ErrValidation, typeErr.Field, typeErr.Type)
+	}
+	return errors.Join(domain.ErrValidation, err)
+}
 
 // RunnerWakeup defines the interface for triggering an on-demand runner startup.
 type RunnerWakeup interface {
@@ -60,7 +76,11 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, err))
+		httputil.ErrorJSON(w, badRequestFromDecode(err))
+		return
+	}
+	if err := domain.ValidatePriority(req.Priority); err != nil {
+		httputil.ErrorJSON(w, err)
 		return
 	}
 

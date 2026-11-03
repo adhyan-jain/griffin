@@ -159,19 +159,40 @@ func (s *StorageService) RegisterArtifact(ctx context.Context, in RegisterInput)
 	return s.artifactRepo.CreateArtifact(ctx, art)
 }
 
-// GenerateObjectKey produces a task-scoped or artifact-scoped object key.
+// SanitizeFilename reduces a client-supplied filename to a safe single path segment: directory
+// components (both / and \\) are dropped, control characters, quotes and spaces are replaced, and
+// "", "." and ".." fall back to a generated name.
+func SanitizeFilename(filename string) string {
+	name := filename
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		name = name[i+1:]
+	}
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20 || r == 0x7f, r == '"', r == ' ':
+			return '_'
+		}
+		return r
+	}, name)
+	if len(name) > 200 {
+		name = name[:200]
+	}
+	if name == "" || name == "." || name == ".." {
+		name = fmt.Sprintf("artifact-%d.dat", time.Now().UnixNano())
+	}
+	return name
+}
+
+// GenerateObjectKey produces a task-scoped or artifact-scoped object key. A fresh UUID segment
+// keeps two uploads with the same filename from sharing (and overwriting/deleting) one object.
 // Path structure:
-//   - Task-scoped: tasks/{task_id}/outputs/{filename}
+//   - Task-scoped: tasks/{task_id}/outputs/{uuid}/{filename}
 //   - Unscoped:    artifacts/{uuid}/{filename}
 func GenerateObjectKey(taskID *uuid.UUID, filename string) string {
-	cleanName := filepath.Base(filename)
-	cleanName = strings.ReplaceAll(cleanName, " ", "_")
-	if cleanName == "." || cleanName == "/" || cleanName == "" {
-		cleanName = fmt.Sprintf("artifact-%d.dat", time.Now().UnixNano())
-	}
+	cleanName := SanitizeFilename(filename)
 
 	if taskID != nil && *taskID != uuid.Nil {
-		return fmt.Sprintf("tasks/%s/outputs/%s", taskID.String(), cleanName)
+		return fmt.Sprintf("tasks/%s/outputs/%s/%s", taskID.String(), uuid.New().String(), cleanName)
 	}
 	return fmt.Sprintf("artifacts/%s/%s", uuid.New().String(), cleanName)
 }
@@ -225,7 +246,7 @@ func (s *StorageService) SaveArtifact(ctx context.Context, input SaveArtifactInp
 		return nil, fmt.Errorf("%w: body reader is required", domain.ErrValidation)
 	}
 
-	cleanFilename := filepath.Base(input.Filename)
+	cleanFilename := SanitizeFilename(input.Filename)
 	objectKey := UserKeyPrefix(input.UserID) + GenerateObjectKey(input.TaskID, cleanFilename)
 
 	// Stream and compute SHA-256 checksum and size
@@ -234,7 +255,7 @@ func (s *StorageService) SaveArtifact(ctx context.Context, input SaveArtifactInp
 	tee := io.TeeReader(input.Body, hasher)
 	size, err := io.Copy(&buf, tee)
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed reading artifact body: %v", ErrUploadFailed, err)
+		return nil, fmt.Errorf("%w: failed reading artifact body: %w", ErrUploadFailed, err)
 	}
 	checksum := hex.EncodeToString(hasher.Sum(nil))
 
@@ -368,11 +389,13 @@ func (s *StorageService) DeleteArtifact(ctx context.Context, id uuid.UUID, userI
 			Bucket: *art.Bucket,
 			Key:    *art.ObjectKey,
 		}); delErr != nil && !errors.Is(delErr, ErrObjectNotFound) {
-			s.logger.Warn("Failed to delete object from storage provider",
+			// Keep the metadata row so the delete can be retried instead of orphaning the object.
+			s.logger.Error("Failed to delete object from storage provider",
 				"bucket", *art.Bucket,
 				"key", *art.ObjectKey,
 				"error", delErr,
 			)
+			return fmt.Errorf("%w: %w", ErrDeleteFailed, delErr)
 		}
 	}
 
