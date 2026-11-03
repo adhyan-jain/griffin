@@ -21,7 +21,7 @@ func clearEnv(t *testing.T) {
 		"ENVIRONMENT", "PORT", "DATABASE_URL", "SUPABASE_JWT_SECRET", "WORKER_API_KEY", "GRIFFIN_MODE",
 		"STORAGE_PROVIDER", "S3_BUCKET", "S3_REGION", "S3_ENDPOINT", "AWS_PROFILE", "AWS_REGION",
 		"CORS_ALLOWED_ORIGINS", "ENABLE_DEV_LOGIN", "SUPABASE_JWKS_URL", "AI_PROVIDER", "SCALE_TO_ZERO_ENABLED",
-		"EC2_INSTANCE_ID", "S3_PRESIGN_EXPIRY_MINUTES", "MAX_CONCURRENT_WORKERS", "MAX_UPLOAD_BYTES", "USER_DATABASE_URL", "ALLOWED_USER_EMAILS",
+		"EC2_INSTANCE_ID", "S3_PRESIGN_EXPIRY_MINUTES", "MAX_CONCURRENT_WORKERS", "MAX_UPLOAD_BYTES", "USER_DATABASE_URL", "ALLOWED_USER_EMAILS", "ALLOWED_USER_IDS",
 	} {
 		t.Setenv(k, "")
 	}
@@ -167,6 +167,47 @@ func TestProductionJWKSOnlyAllowed(t *testing.T) {
 	t.Setenv("SUPABASE_JWKS_URL", "https://abc.supabase.co/auth/v1/.well-known/jwks.json")
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("JWKS-only production should load: %v", err)
+	}
+}
+
+func TestAllowedUserIDs(t *testing.T) {
+	const a = "11111111-1111-4111-8111-111111111111"
+	const b = "22222222-2222-4222-8222-222222222222"
+	cases := []struct {
+		name, val string
+		want      []string
+		wantErr   bool
+	}{
+		{"empty", "", nil, false},
+		{"whitespace only", "  ,  ", nil, false},
+		{"single", a, []string{a}, false},
+		{"multiple with whitespace", " " + a + " , " + strings.ToUpper(b) + " ", []string{a, b}, false},
+		{"invalid", "not-a-uuid", nil, true},
+		{"one invalid", a + ",nope", nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			devEnv(t)
+			t.Setenv("ALLOWED_USER_IDS", tc.val)
+			cfg, err := config.Load()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected startup error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(cfg.AllowedUserIDs) != len(tc.want) {
+				t.Fatalf("got %v want %v", cfg.AllowedUserIDs, tc.want)
+			}
+			for i, w := range tc.want {
+				if cfg.AllowedUserIDs[i].String() != w {
+					t.Fatalf("got %v want %v", cfg.AllowedUserIDs, tc.want)
+				}
+			}
+		})
 	}
 }
 
