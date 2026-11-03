@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { usePolling } from "@/lib/use-polling";
 import { useRouter } from "next/navigation";
 import { ListChecks, Plus, Search } from "lucide-react";
 import { api, type Task } from "@/lib/api";
@@ -35,21 +36,19 @@ export default function TasksPage() {
   const [query, setQuery] = useState("");
   const [newOpen, setNewOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      setTasks(await api.listTasks({ limit: 200 }));
+  usePolling(
+    async (signal) => {
+      setTasks(await api.listTasks({ limit: 200 }, { signal }));
       setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load tasks.");
-      setTasks((prev) => prev ?? []);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-    const id = setInterval(load, 10000);
-    return () => clearInterval(id);
-  }, [load]);
+    },
+    {
+      intervalMs: 10000,
+      onError: (e) => {
+        setError(e instanceof Error ? e.message : "Could not load tasks.");
+        setTasks((prev) => prev ?? []);
+      },
+    },
+  );
 
   const { rows, subtaskCount } = useMemo(() => {
     const all = tasks ?? [];

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { usePolling } from "@/lib/use-polling";
 import { ListChecks, ShieldCheck } from "lucide-react";
 import { api, type ChildTaskPlan, type SubmitResult, type Task } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -35,25 +36,17 @@ export function PlanCard({ result }: { result: SubmitResult }) {
   const active = total === 0 ? false : finished.length < total;
   const awaiting = children.filter((c) => c.status === "AWAITING_APPROVAL").length;
 
-  useEffect(() => {
-    if (!active && children.length > 0) return;
-    let stop = false;
-    const tick = () =>
-      api
-        .listTasks({ parent_id: rootId, limit: 100 })
-        .then((c) => {
-          if (stop) return;
-          setChildren(c);
-          setPollError(false);
-        })
-        .catch(() => !stop && setPollError(true));
-    void tick();
-    const t = setInterval(tick, POLL_MS);
-    return () => {
-      stop = true;
-      clearInterval(t);
-    };
-  }, [rootId, active, children.length]);
+  // One bounded loop per card: fetch once, keep polling only while steps are unfinished.
+  const [loaded, setLoaded] = useState(false);
+  usePolling(
+    async (signal) => {
+      const c = await api.listTasks({ parent_id: rootId, limit: 100 }, { signal });
+      setChildren(c);
+      setPollError(false);
+      setLoaded(true);
+    },
+    { intervalMs: POLL_MS, enabled: active || !loaded, onError: () => setPollError(true) },
+  );
 
   const statusFor = (s: ChildTaskPlan) => children.find((c) => c.title === s.title)?.status;
   const pct = total ? Math.round((done / total) * 100) : 0;

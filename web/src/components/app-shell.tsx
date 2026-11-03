@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { api, clearAuthToken, getCurrentUser, resolveAuthToken, type RunnerStatus, type UserProfile } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { usePolling } from "@/lib/use-polling";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SystemStatusDot } from "@/components/system-status";
@@ -45,22 +46,17 @@ const isActive = (pathname: string, href: string) => (href === "/" ? pathname ==
 function useShellData(enabled: boolean) {
   const [runner, setRunner] = useState<RunnerStatus | null>(null);
   const [pending, setPending] = useState(0);
-  useEffect(() => {
-    if (!enabled) return;
-    let alive = true;
-    const tick = async () => {
-      const [r, a] = await Promise.allSettled([api.getRunnerStatus(), api.listApprovals("PENDING")]);
-      if (!alive) return;
+  usePolling(
+    async (signal) => {
+      const [r, a] = await Promise.allSettled([api.getRunnerStatus({ signal }), api.listApprovals("PENDING", { signal })]);
+      if (signal.aborted) return;
       if (r.status === "fulfilled") setRunner(r.value);
       if (a.status === "fulfilled") setPending(a.value.length);
-    };
-    void tick();
-    const id = setInterval(tick, 15000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, [enabled]);
+      // Both failed: let the poller back off instead of hammering a struggling API.
+      if (r.status === "rejected" && a.status === "rejected") throw r.reason;
+    },
+    { intervalMs: 15000, enabled },
+  );
   return { runner, pending };
 }
 

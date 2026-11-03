@@ -2,7 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { usePolling } from "@/lib/use-polling";
 import { useRouter } from "next/navigation";
 import { ChevronRight, MessageSquare, Plus, ShieldCheck } from "lucide-react";
 import { api, type Task } from "@/lib/api";
@@ -22,23 +23,21 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [t, a] = await Promise.all([api.listTasks({ limit: 100 }), api.listApprovals("PENDING")]);
+  usePolling(
+    async (signal) => {
+      const [t, a] = await Promise.all([api.listTasks({ limit: 100 }, { signal }), api.listApprovals("PENDING", { signal })]);
       setTasks(t);
       setPending(a.length);
       setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load tasks.");
-      setTasks((prev) => prev ?? []);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-    const id = setInterval(load, 10000);
-    return () => clearInterval(id);
-  }, [load]);
+    },
+    {
+      intervalMs: 10000,
+      onError: (e) => {
+        setError(e instanceof Error ? e.message : "Could not load tasks.");
+        setTasks((prev) => prev ?? []);
+      },
+    },
+  );
 
   const list = tasks ?? [];
   const running = list.filter((t) => ACTIVE_STATUSES.includes(t.status)).length;

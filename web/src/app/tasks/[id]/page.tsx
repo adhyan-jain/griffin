@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Download, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,11 @@ import { EmptyState, ErrorNote, PageContainer, formatBytes, timeAgo } from "@/co
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
 import { deriveNow } from "@/lib/task-now";
+import { usePolling } from "@/lib/use-polling";
+
+/** Refresh cadence while a task is active. Terminal tasks are not polled at all. */
+const SUMMARY_POLL_MS = 4000;
+const DETAIL_POLL_MS = 12000;
 
 const hasJSON = (v: unknown) => v != null && !(typeof v === "object" && Object.keys(v as object).length === 0);
 
@@ -35,33 +40,70 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [t, a, e, f, all] = await Promise.all([
-        api.getTask(id),
-        api.getTaskAttempts(id).catch(() => []),
-        api.getTaskEvents(id).catch(() => []),
-        api.listArtifacts(id).catch(() => []),
-        api.listTasks({ parent_id: id, limit: 200 }).catch(() => []),
+  const [tab, setTab] = useState("overview");
+
+  const terminal = task !== null && isDone(task.status);
+
+  // Three bounded loops, each created once per (task id, active/terminal) and never restarted by
+  // the data they fetch. Each stops by itself when the task reaches a terminal state.
+
+  // 1. Summary: the task and its subtasks.
+  const { refresh: refreshSummary } = usePolling(
+    async (signal) => {
+      const [t, kids] = await Promise.all([
+        api.getTask(id, { signal }),
+        api.listTasks({ parent_id: id, limit: 200 }, { signal }),
       ]);
       setTask(t);
+      setChildren(kids);
+      setError(null);
+    },
+    {
+      intervalMs: SUMMARY_POLL_MS,
+      enabled: !terminal,
+      onError: (err) => setError(err instanceof Error ? err.message : "Could not load this task."),
+    },
+  );
+
+  // 2. Attempts and events (the "Now" card and Activity/Attempts tabs): slower while active.
+  const { refresh: refreshDetail } = usePolling(
+    async (signal) => {
+      const [a, e] = await Promise.all([api.getTaskAttempts(id, { signal }), api.getTaskEvents(id, { signal })]);
       setAttempts(a);
       setEvents(e);
-      setFiles(f);
-      setChildren(all);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load this task.");
-    }
-  }, [id]);
-
+    },
+    { intervalMs: DETAIL_POLL_MS, enabled: !terminal },
+  );
+  const status = task?.status;
   useEffect(() => {
-    void load();
-    const timer = setInterval(() => {
-      if (!task || !isDone(task.status)) void load();
-    }, 8000);
-    return () => clearInterval(timer);
-  }, [load, task]);
+    if (status) refreshDetail(); // a status change is the moment new events/attempts exist
+  }, [status, refreshDetail]);
+
+  // 3. Files: only while that tab is open on an active task.
+  usePolling(
+    async (signal) => {
+      setFiles(await api.listArtifacts(id, { signal }));
+    },
+    { intervalMs: DETAIL_POLL_MS, enabled: tab === "files" && !terminal },
+  );
+
+  // Once the task is terminal nothing polls; fetch the final attempts, events and files exactly once.
+  useEffect(() => {
+    if (!terminal) return;
+    const c = new AbortController();
+    Promise.all([
+      api.getTaskAttempts(id, { signal: c.signal }),
+      api.getTaskEvents(id, { signal: c.signal }),
+      api.listArtifacts(id, { signal: c.signal }),
+    ])
+      .then(([a, e, f]) => {
+        setAttempts(a);
+        setEvents(e);
+        setFiles(f);
+      })
+      .catch(() => {});
+    return () => c.abort();
+  }, [id, terminal]);
 
   const cancel = async () => {
     setCancelling(true);
@@ -69,7 +111,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       await api.cancelTask(id);
       toast.success("Task cancelled");
       setCancelOpen(false);
-      await load();
+      refreshSummary();
+      refreshDetail();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not cancel the task.");
     } finally {
@@ -107,7 +150,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   const count = (n: number) => (n > 0 ? ` (${n})` : "");
-  const now = deriveNow(task, events, attempts);
+  const now = deriveNow(task, events, attempts, children);
 
   return (
     <PageContainer>
@@ -158,7 +201,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         )}
       </section>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto bg-transparent px-0 py-1">
           {[
             ["overview", "Overview"],
