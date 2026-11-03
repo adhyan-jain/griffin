@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/griffin/core/internal/domain"
@@ -267,29 +268,34 @@ func (p *AIPlanner) GeneratePlan(ctx context.Context, req *domain.UserRequest, m
 	return p.fallback.GeneratePlan(ctx, req, mgrReg)
 }
 
+// intentRule routes a request to a manager when any of its keywords appears as a whole word.
+// Matching whole words (with simple inflections) matters: substring matching routed "report"
+// to engineering because it contains "repo", and "latest" because it contains "test".
+type intentRule struct {
+	manager string
+	re      *regexp.Regexp
+}
+
+// intentRules are evaluated in order; the first match wins. Requests that match nothing go to
+// the general research manager.
+var intentRules = []intentRule{
+	{"career", regexp.MustCompile(`\b(jobs?|resumes?|interview\w*|recruiters?|career\w*)\b`)},
+	{"engineering", regexp.MustCompile(`\b(code|codes|coding|codebase|bugs?|bugfix\w*|debug\w*|refactor\w*|tests?|testing|git|github|repos?|repositor(y|ies))\b`)},
+	{"hackathon", regexp.MustCompile(`\b(hackathons?|bount(y|ies)|grants?)\b`)},
+	{"freelance", regexp.MustCompile(`\b(freelanc\w*|gigs?|proposals?|contracts?)\b`)},
+	{"networking", regexp.MustCompile(`\b(networking|crm|outreach|meetings?)\b`)},
+	{"tech_intelligence", regexp.MustCompile(`\b(news|ai releases?|models?|benchmarks?)\b`)},
+	{"learning", regexp.MustCompile(`\b(learn\w*|stud(y|ies|ying)|curricul(um|a)|quiz(zes)?)\b`)},
+	{"personal_ops", regexp.MustCompile(`\b(calendars?|agenda|schedul\w*|travel\w*)\b`)},
+	{"finance", regexp.MustCompile(`\b(credits?|aws bills?|financ\w*|subscriptions?)\b`)},
+	{"product_ideas", regexp.MustCompile(`\b(prds?|features?|ideas?|products?)\b`)},
+}
+
 func classifyIntent(text string) string {
-	switch {
-	case strings.Contains(text, "job") || strings.Contains(text, "resume") || strings.Contains(text, "interview") || strings.Contains(text, "recruiter") || strings.Contains(text, "career"):
-		return "career"
-	case strings.Contains(text, "code") || strings.Contains(text, "bug") || strings.Contains(text, "refactor") || strings.Contains(text, "test") || strings.Contains(text, "git") || strings.Contains(text, "repo"):
-		return "engineering"
-	case strings.Contains(text, "hackathon") || strings.Contains(text, "bounty") || strings.Contains(text, "grant"):
-		return "hackathon"
-	case strings.Contains(text, "freelance") || strings.Contains(text, "gig") || strings.Contains(text, "proposal") || strings.Contains(text, "contract"):
-		return "freelance"
-	case strings.Contains(text, "networking") || strings.Contains(text, "crm") || strings.Contains(text, "outreach") || strings.Contains(text, "meeting"):
-		return "networking"
-	case strings.Contains(text, "news") || strings.Contains(text, "ai release") || strings.Contains(text, "model") || strings.Contains(text, "benchmark"):
-		return "tech_intelligence"
-	case strings.Contains(text, "learn") || strings.Contains(text, "study") || strings.Contains(text, "curriculum") || strings.Contains(text, "quiz"):
-		return "learning"
-	case strings.Contains(text, "calendar") || strings.Contains(text, "agenda") || strings.Contains(text, "schedule") || strings.Contains(text, "travel"):
-		return "personal_ops"
-	case strings.Contains(text, "credit") || strings.Contains(text, "aws bill") || strings.Contains(text, "finance") || strings.Contains(text, "subscription"):
-		return "finance"
-	case strings.Contains(text, "prd") || strings.Contains(text, "feature") || strings.Contains(text, "idea") || strings.Contains(text, "product"):
-		return "product_ideas"
-	default:
-		return "research"
+	for _, rule := range intentRules {
+		if rule.re.MatchString(text) {
+			return rule.manager
+		}
 	}
+	return "research"
 }
