@@ -16,6 +16,12 @@ const API_BASE_URL =
  */
 export const DEV_LOGIN_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === "true";
 
+// UI priority tiers (0-3) -> backend domain.TaskPriority string enum.
+const PRIORITY_WIRE = ["CRITICAL_P0", "HIGH_P1", "NORMAL_P2", "BACKGROUND_P3"] as const;
+export function priorityToWire(p?: number): (typeof PRIORITY_WIRE)[number] {
+  return PRIORITY_WIRE[p ?? 2] ?? "NORMAL_P2";
+}
+
 export interface Task {
   id: string;
   user_id: string;
@@ -25,7 +31,7 @@ export interface Task {
   assigned_specialist: string;
   step_index: number;
   status: "queued" | "running" | "waiting_approval" | "succeeded" | "failed" | "blocked" | "cancelled";
-  priority: number;
+  priority: number | string;
   input_payload: Record<string, any>;
   output_payload?: Record<string, any>;
   retry_count: number;
@@ -292,9 +298,18 @@ export const api = {
     input_payload?: Record<string, any>;
     max_retries?: number;
   }): Promise<Task> {
+    // The backend expects a string priority enum, a title and manager_domain.
+    const body = {
+      title: payload.goal.trim().slice(0, 80),
+      goal: payload.goal,
+      manager_domain: payload.assigned_manager ?? "JJ",
+      priority: priorityToWire(payload.priority),
+      parent_id: payload.parent_task_id,
+      input_payload: payload.input_payload ?? {},
+    };
     return fetchWithAuth<Task>("/api/v1/tasks", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
   },
 
