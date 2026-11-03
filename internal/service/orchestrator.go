@@ -396,6 +396,7 @@ func (o *JJOrchestrator) delegatePlan(
 				Goal:          ct.Goal,
 				InputPayload:  ct.InputPayload,
 				Priority:      ct.Priority,
+				MaxRetries:    domain.DefaultMaxRetries,
 			}
 		}
 

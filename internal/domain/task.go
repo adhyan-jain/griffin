@@ -36,6 +36,10 @@ const (
 	TaskPriorityBackground TaskPriority = "BACKGROUND_P3"
 )
 
+// DefaultMaxRetries is the attempt budget for tasks a worker will execute (POST /tasks and
+// orchestrated children). Coordination-only records (the JJ root task) keep 0.
+const DefaultMaxRetries = 3
+
 // TaskPriorities lists every accepted priority, most urgent first.
 var TaskPriorities = []TaskPriority{
 	TaskPriorityCriticalP0,
