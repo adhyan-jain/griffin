@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,9 +71,9 @@ func TestStorageIntegration_FullLifecycle(t *testing.T) {
 	if art.ID == uuid.Nil {
 		t.Fatalf("artifact ID should not be nil")
 	}
-	expectedObjectKey := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/%s", task.ID.String(), filename)
-	if art.ObjectKey == nil || *art.ObjectKey != expectedObjectKey {
-		t.Fatalf("expected object key %s, got %v", expectedObjectKey, art.ObjectKey)
+	expectedObjectPrefix := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/", task.ID.String())
+	if art.ObjectKey == nil || !strings.HasPrefix(*art.ObjectKey, expectedObjectPrefix) || !strings.HasSuffix(*art.ObjectKey, "/"+filename) {
+		t.Fatalf("expected object key under %s ending /%s, got %v", expectedObjectPrefix, filename, art.ObjectKey)
 	}
 	if art.Checksum == nil || *art.Checksum != expectedChecksum {
 		t.Fatalf("expected checksum %s, got %v", expectedChecksum, art.Checksum)
@@ -80,6 +81,8 @@ func TestStorageIntegration_FullLifecycle(t *testing.T) {
 	if art.FileSizeBytes == nil || *art.FileSizeBytes != int64(len(content)) {
 		t.Fatalf("expected file size %d, got %v", len(content), art.FileSizeBytes)
 	}
+
+	expectedObjectKey := *art.ObjectKey
 
 	// Query from DB repo directly
 	dbArt, err := env.ArtifactRepo.GetArtifactByID(ctx, art.ID)

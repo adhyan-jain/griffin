@@ -124,7 +124,8 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.ListAgents)))
 	mux.Handle("POST /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.RegisterAgent)))
 
-	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo, deps.StorageService, deps.TaskRepo, deps.Config.MaxUploadBytes)
+	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo, deps.StorageService, deps.TaskRepo, deps.Config.MaxUploadBytes).
+		WithPresignExpiry(time.Duration(deps.Config.S3PresignExpiryMinutes) * time.Minute)
 	mux.Handle("GET /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.ListArtifacts)))
 	mux.Handle("GET /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
 	mux.Handle("POST /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.CreateArtifact)))
