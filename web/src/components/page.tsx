@@ -58,6 +58,13 @@ export function ErrorNote({ message }: { message: string }) {
   );
 }
 
+export function formatBytes(n?: number | null): string {
+  if (n == null) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export function timeAgo(iso?: string | null): string {
   if (!iso) return "";
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);

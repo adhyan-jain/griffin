@@ -1,58 +1,39 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Suspense } from "react";
+import { ThemeProvider } from "next-themes";
+import { AppShell } from "@/components/app-shell";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
-import { Navigation } from "@/components/Navigation";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Griffin — Autonomous AI Workforce & Orchestration Console",
-  description: "Next-generation personal AI workforce orchestrating Antigravity CLI and scale-to-zero cloud workers.",
+  title: "Griffin",
+  description: "Your personal AI workforce: hand work to JJ, approve what matters, collect the results.",
   manifest: "/manifest.json",
-  icons: {
-    icon: "/favicon.ico",
-    apple: "/icons/apple-touch-icon.png",
-  },
-  appleWebApp: {
-    capable: true,
-    title: "Griffin",
-    statusBarStyle: "black-translucent",
-  },
+  icons: { icon: "/favicon.ico", apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Griffin", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#14161c" },
+    { media: "(prefers-color-scheme: light)", color: "#fbfaf7" },
+  ],
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full dark antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white">
-        <Suspense fallback={<div className="h-16 border-b border-slate-800 bg-slate-950" />}>
-          <Navigation />
-        </Suspense>
-        <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">Loading workspace...</div>}>
-          <main className="flex-1 pb-20 md:pb-8">{children}</main>
-        </Suspense>
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className="min-h-dvh">
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <AppShell>{children}</AppShell>
+          <Toaster position="top-center" />
+        </ThemeProvider>
       </body>
     </html>
   );
