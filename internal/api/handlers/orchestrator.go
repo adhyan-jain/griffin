@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -18,13 +21,18 @@ import (
 type OrchestratorHandler struct {
 	orchestrator *service.JJOrchestrator
 	mgrReg       *manager.Registry
+
+	wakeup             RunnerWakeup
+	scaleToZeroEnabled bool
 }
 
 // NewOrchestratorHandler constructs a new OrchestratorHandler.
-func NewOrchestratorHandler(orchestrator *service.JJOrchestrator, mgrReg *manager.Registry) *OrchestratorHandler {
+func NewOrchestratorHandler(orchestrator *service.JJOrchestrator, mgrReg *manager.Registry, wakeup RunnerWakeup, scaleToZeroEnabled bool) *OrchestratorHandler {
 	return &OrchestratorHandler{
-		orchestrator: orchestrator,
-		mgrReg:       mgrReg,
+		orchestrator:       orchestrator,
+		mgrReg:             mgrReg,
+		wakeup:             wakeup,
+		scaleToZeroEnabled: scaleToZeroEnabled,
 	}
 }
 
@@ -71,10 +79,34 @@ func (h *OrchestratorHandler) SubmitRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	h.wakeRunnerIfRunnable(r.Context(), orch.ID)
+
 	httputil.JSON(w, http.StatusCreated, map[string]any{
 		"orchestration": orch,
 		"plan":          plan,
 	})
+}
+
+// wakeRunnerIfRunnable wakes a scale-to-zero runner when the orchestration produced at least one
+// QUEUED child. Synchronous and bounded (Lambda freezes right after the response). Best-effort:
+// the orchestration is durably persisted and the scheduler tick retries, so a failure is only logged.
+func (h *OrchestratorHandler) wakeRunnerIfRunnable(ctx context.Context, orchID uuid.UUID) {
+	if !h.scaleToZeroEnabled || h.wakeup == nil {
+		return
+	}
+	n, err := h.orchestrator.RunnableChildCount(ctx, orchID)
+	if err != nil {
+		slog.Warn("orchestrator: could not determine runnable children; skipping wake", "orchestration_id", orchID, "error", err)
+		return
+	}
+	if n == 0 {
+		return
+	}
+	wakeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if err := h.wakeup.TriggerWakeup(wakeCtx); err != nil {
+		slog.Error("orchestrator: runner wake failed; scheduler tick will retry", "orchestration_id", orchID, "runnable_children", n, "error", err)
+	}
 }
 
 // GetRequest handles GET /api/v1/orchestrator/requests/{id}.
