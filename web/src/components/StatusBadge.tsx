@@ -1,73 +1,62 @@
-import React from "react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import type { Approval, TaskPriority, TaskStatus } from "@/lib/api";
 
-export function StatusBadge({ status }: { status: string }) {
-  const normalized = status.toLowerCase();
+const STATUS: Record<string, { label: string; className: string; pulse?: boolean }> = {
+  COMPLETED: { label: "Completed", className: "bg-success/15 text-success" },
+  RUNNING: { label: "Running", className: "bg-info/15 text-info", pulse: true },
+  VERIFYING: { label: "Verifying", className: "bg-info/15 text-info", pulse: true },
+  QUEUED: { label: "Queued", className: "bg-warning/15 text-warning" },
+  CREATED: { label: "Created", className: "bg-warning/15 text-warning" },
+  ROUTED: { label: "Routed", className: "bg-warning/15 text-warning" },
+  RETRYING: { label: "Retrying", className: "bg-warning/15 text-warning", pulse: true },
+  WAITING_FOR_DEPENDENCY: { label: "Waiting", className: "bg-muted text-muted-foreground" },
+  AWAITING_APPROVAL: { label: "Needs approval", className: "bg-primary/20 text-accent-foreground" },
+  FAILED: { label: "Failed", className: "bg-destructive/15 text-destructive" },
+  CANCELLED: { label: "Cancelled", className: "bg-muted text-muted-foreground" },
+  PENDING: { label: "Pending", className: "bg-primary/20 text-accent-foreground" },
+  APPROVED: { label: "Approved", className: "bg-success/15 text-success" },
+  REJECTED: { label: "Rejected", className: "bg-destructive/15 text-destructive" },
+  EXPIRED: { label: "Expired", className: "bg-muted text-muted-foreground" },
+};
 
-  const getStyle = () => {
-    switch (normalized) {
-      case "succeeded":
-      case "completed":
-        return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-      case "running":
-        return "bg-blue-500/15 text-blue-400 border-blue-500/30 animate-pulse";
-      case "queued":
-        return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-      case "waiting_approval":
-        return "bg-purple-500/15 text-purple-400 border-purple-500/30 font-semibold";
-      case "failed":
-        return "bg-rose-500/15 text-rose-400 border-rose-500/30";
-      case "blocked":
-        return "bg-slate-700/40 text-slate-400 border-slate-600/30";
-      case "cancelled":
-        return "bg-neutral-800 text-neutral-400 border-neutral-700";
-      default:
-        return "bg-slate-800 text-slate-300 border-slate-700";
-    }
-  };
-
-  const getLabel = () => {
-    switch (normalized) {
-      case "waiting_approval":
-        return "Needs Approval";
-      default:
-        return normalized.toUpperCase();
-    }
-  };
-
+export function StatusBadge({ status }: { status: TaskStatus | Approval["status"] | string }) {
+  const s = STATUS[status] ?? { label: status, className: "bg-muted text-muted-foreground" };
   return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium border ${getStyle()}`}
-    >
-      {getLabel()}
-    </span>
+    <Badge variant="outline" className={cn("border-transparent font-medium", s.className)}>
+      {s.pulse && <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden />}
+      {s.label}
+    </Badge>
   );
 }
 
-export function PriorityBadge({ priority }: { priority: number }) {
-  switch (priority) {
-    case 0:
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-950 text-red-400 border border-red-800">
-          P0 CRITICAL
-        </span>
-      );
-    case 1:
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-950 text-amber-300 border border-amber-800">
-          P1 HIGH
-        </span>
-      );
-    case 2:
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
-          P2 NORMAL
-        </span>
-      );
-    default:
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-900 border border-slate-800">
-          P3 LOW
-        </span>
-      );
-  }
+const PRIORITY: Record<TaskPriority, { label: string; className: string }> = {
+  CRITICAL_P0: { label: "Critical", className: "text-destructive" },
+  HIGH_P1: { label: "High", className: "text-warning" },
+  NORMAL_P2: { label: "Normal", className: "text-muted-foreground" },
+  BACKGROUND_P3: { label: "Background", className: "text-muted-foreground/70" },
+};
+
+export function PriorityBadge({ priority }: { priority: TaskPriority }) {
+  const p = PRIORITY[priority] ?? PRIORITY.NORMAL_P2;
+  return <span className={cn("text-xs font-medium", p.className)}>{p.label}</span>;
 }
+
+const RISK: Record<string, string> = {
+  LOW: "bg-success/15 text-success",
+  MEDIUM: "bg-warning/15 text-warning",
+  HIGH: "bg-destructive/15 text-destructive",
+  CRITICAL: "bg-destructive text-white",
+};
+
+export function RiskBadge({ risk }: { risk: Approval["risk_level"] }) {
+  return (
+    <Badge variant="outline" className={cn("border-transparent font-medium", RISK[risk])}>
+      {risk.charAt(0) + risk.slice(1).toLowerCase()} risk
+    </Badge>
+  );
+}
+
+export const ACTIVE_STATUSES: string[] = ["RUNNING", "VERIFYING", "RETRYING"];
+export const WAITING_STATUSES: string[] = ["QUEUED", "CREATED", "ROUTED", "WAITING_FOR_DEPENDENCY"];
+export const isDone = (s: string) => s === "COMPLETED" || s === "FAILED" || s === "CANCELLED";
