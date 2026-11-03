@@ -151,10 +151,10 @@ func TestStorageService_SaveArtifact_TaskScoped(t *testing.T) {
 		t.Fatalf("unexpected save error: %v", err)
 	}
 
-	// Verify task-scoped key format: tasks/{task_id}/outputs/{filename}
-	expectedPrefix := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/%s", taskID.String(), filename)
-	if art.ObjectKey == nil || *art.ObjectKey != expectedPrefix {
-		t.Fatalf("expected key %s, got %v", expectedPrefix, art.ObjectKey)
+	// Verify task-scoped key format: tasks/{task_id}/outputs/{uuid}/{filename}
+	expectedPrefix := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/", taskID.String())
+	if art.ObjectKey == nil || !strings.HasPrefix(*art.ObjectKey, expectedPrefix) || !strings.HasSuffix(*art.ObjectKey, "/"+filename) {
+		t.Fatalf("expected key under %s ending /%s, got %v", expectedPrefix, filename, art.ObjectKey)
 	}
 	if art.Bucket == nil || *art.Bucket != bucket {
 		t.Fatalf("expected bucket %s, got %v", bucket, art.Bucket)
@@ -200,13 +200,12 @@ func TestStorageService_CompensatingDeleteOnDBFailure(t *testing.T) {
 	}
 
 	// Verify that the object was cleaned up from storage via compensating delete
-	expectedKey := storage.UserKeyPrefix(userID) + fmt.Sprintf("tasks/%s/outputs/%s", taskID.String(), filename)
-	_, headErr := provider.Head(ctx, storage.HeadInput{
-		Bucket: bucket,
-		Key:    expectedKey,
-	})
-	if !errors.Is(headErr, storage.ErrObjectNotFound) {
-		t.Fatalf("expected ErrObjectNotFound after compensating delete, got %v", headErr)
+	listed, listErr := provider.List(ctx, storage.ListInput{Bucket: bucket, Prefix: storage.UserKeyPrefix(userID)})
+	if listErr != nil {
+		t.Fatalf("list: %v", listErr)
+	}
+	if len(listed.Objects) != 0 {
+		t.Fatalf("expected no orphaned objects after compensating delete, got %d", len(listed.Objects))
 	}
 }
 
