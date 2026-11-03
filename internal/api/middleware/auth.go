@@ -35,6 +35,9 @@ type AuthOptions struct {
 	// the token is otherwise valid. Protects against open Supabase sign-ups: a stranger can register
 	// an account but every API call returns 403.
 	AllowedEmails []string
+	// AllowedUserIDs, when non-empty, additionally pins the JWT subject to these Supabase user IDs
+	// (the email check still applies).
+	AllowedUserIDs []uuid.UUID
 }
 
 // AuthenticateUser verifies Supabase JWTs and populates the authenticated user ID in context.
@@ -72,6 +75,11 @@ func AuthenticateUser(opts AuthOptions) func(http.Handler) http.Handler {
 	allowed := make(map[string]bool, len(opts.AllowedEmails))
 	for _, e := range opts.AllowedEmails {
 		allowed[strings.ToLower(strings.TrimSpace(e))] = true
+	}
+
+	allowedIDs := make(map[uuid.UUID]bool, len(opts.AllowedUserIDs))
+	for _, id := range opts.AllowedUserIDs {
+		allowedIDs[id] = true
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -112,6 +120,11 @@ func AuthenticateUser(opts AuthOptions) func(http.Handler) http.Handler {
 			}
 
 			if len(allowed) > 0 && !allowed[strings.ToLower(strings.TrimSpace(claims.Email))] {
+				forbiddenResponse(w, "This account is not authorized to use this deployment")
+				return
+			}
+
+			if len(allowedIDs) > 0 && !allowedIDs[userID] {
 				forbiddenResponse(w, "This account is not authorized to use this deployment")
 				return
 			}

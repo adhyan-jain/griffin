@@ -89,6 +89,10 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	if deps.Config != nil {
 		authOpts.AllowedEmails = deps.Config.AllowedUserEmails
+		authOpts.AllowedUserIDs = deps.Config.AllowedUserIDs
+		if len(deps.Config.AllowedUserIDs) == 0 {
+			deps.Logger.Warn("ALLOWED_USER_IDS not set: operator is identified by email claim only")
+		}
 	}
 	authenticate := middleware.AuthenticateUser(authOpts)
 	// User routes: authenticate, then (when configured) run in an RLS-enforced transaction.

@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // Config holds environment-driven settings for the Griffin engine and API server.
@@ -63,6 +65,9 @@ type Config struct {
 	UserDatabaseURL string
 	// AllowedUserEmails restricts API access to the operator account(s); required in production API mode.
 	AllowedUserEmails []string
+	// AllowedUserIDs optionally pins the operator to Supabase user UUID(s) (JWT sub) in addition to
+	// the email allow-list. Empty = identified by email claim only.
+	AllowedUserIDs []uuid.UUID
 }
 
 // Environment names. Anything unset or unknown is treated as production (fail closed).
@@ -178,6 +183,13 @@ func Load() (*Config, error) {
 		if err := validateOrigin(o); err != nil {
 			return nil, err
 		}
+	}
+	for _, s := range splitCSV(getEnv("ALLOWED_USER_IDS", "")) {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, fmt.Errorf("ALLOWED_USER_IDS contains an invalid UUID %q", s)
+		}
+		cfg.AllowedUserIDs = append(cfg.AllowedUserIDs, id)
 	}
 	if cfg.EnableDevLogin && cfg.IsProduction() {
 		return nil, fmt.Errorf("ENABLE_DEV_LOGIN must not be set in production")
