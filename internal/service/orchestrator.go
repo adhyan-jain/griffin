@@ -277,7 +277,9 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 	}
 
 	if hasAwaitingApproval {
-		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusAwaitingApproval, nil, nil)
+		if orch.Status != domain.OrchestrationStatusAwaitingApproval { // GET-driven: only write on a real transition
+			_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusAwaitingApproval, nil, nil)
+		}
 		orch.Status = domain.OrchestrationStatusAwaitingApproval
 		return orch, nil
 	}
@@ -299,7 +301,9 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 	}
 
 	// Still in flight
-	_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusRunning, nil, nil)
+	if orch.Status != domain.OrchestrationStatusRunning { // GET-driven: only write on a real transition
+		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusRunning, nil, nil)
+	}
 	orch.Status = domain.OrchestrationStatusRunning
 	return orch, nil
 }
