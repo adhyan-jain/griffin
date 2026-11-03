@@ -12,6 +12,7 @@ import { PriorityBadge, StatusBadge, isDone } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, formatBytes, timeAgo } from "@/components/page";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
+import { deriveNow } from "@/lib/task-now";
 
 const hasJSON = (v: unknown) => v != null && !(typeof v === "object" && Object.keys(v as object).length === 0);
 
@@ -41,13 +42,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         api.getTaskAttempts(id).catch(() => []),
         api.getTaskEvents(id).catch(() => []),
         api.listArtifacts(id).catch(() => []),
-        api.listTasks({ limit: 200 }).catch(() => []),
+        api.listTasks({ parent_id: id, limit: 200 }).catch(() => []),
       ]);
       setTask(t);
       setAttempts(a);
       setEvents(e);
       setFiles(f);
-      setChildren(all.filter((x) => x.parent_id === id));
+      setChildren(all);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load this task.");
@@ -106,6 +107,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   const count = (n: number) => (n > 0 ? ` (${n})` : "");
+  const now = deriveNow(task, events, attempts);
 
   return (
     <PageContainer>
@@ -129,6 +131,32 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           </Button>
         )}
       </header>
+
+      <section data-testid="task-now" aria-label="Now" className="mb-5 rounded-xl border bg-card p-4">
+        <h2 className="text-xs font-medium text-muted-foreground">Now</h2>
+        <p className="mt-1 text-base font-medium">{now.stage}</p>
+        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">Last activity</dt>
+            <dd>{timeAgo(now.lastActivityAt)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Manager</dt>
+            <dd className="break-words">{now.manager}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Worker</dt>
+            <dd className="break-words">{now.worker ?? "Not assigned yet"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Retries</dt>
+            <dd className="tabular-nums">{now.retry ? `${now.retry.count} of ${now.retry.max}` : `None (up to ${task.max_retries})`}</dd>
+          </div>
+        </dl>
+        {now.failureReason && (
+          <p className="mt-3 break-words rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{now.failureReason}</p>
+        )}
+      </section>
 
       <Tabs defaultValue="overview">
         <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto bg-transparent px-0 py-1">
