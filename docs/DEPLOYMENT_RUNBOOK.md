@@ -26,6 +26,8 @@ Conventions: `P="--profile griffin-bootstrap --region ap-south-1"`. Secrets live
 | Environment | `ENVIRONMENT` unset ⇒ production. Production refuses dev secrets, `ENABLE_DEV_LOGIN`, localhost/non-TLS DB, `mock` storage/AI, default bucket, `S3_ENDPOINT`/`AWS_PROFILE`, missing CORS origins, missing `EC2_INSTANCE_ID`. |
 | Dev login | `POST /api/v1/auth/login` is only registered when `ENABLE_DEV_LOGIN=true` **and** not production. The PWA strips the dev-login code from production bundles. |
 | JWT | HS256 (`SUPABASE_JWT_SECRET`) and/or ES256/RS256 via `SUPABASE_JWKS_URL`; requires `exp`, `aud=authenticated`, `role=authenticated`, optional `SUPABASE_JWT_ISSUER`; `none`/other algorithms rejected. |
+| Operator pin (optional) | `ALLOWED_USER_IDS` (comma-separated Supabase user UUIDs). When set, the JWT `sub` must also be in the list, in addition to `ALLOWED_USER_EMAILS`. Find the UUID in the Supabase dashboard under Authentication > Users (the `User UID` column). Setting it pins the operator to that exact account, so a re-registered or changed email cannot gain access. Unset: email claim only (a startup WARN is logged). Invalid UUIDs fail startup. |
+| Request bodies | JSON bodies are capped at 1 MiB (413 above that); artifact create/upload routes enforce `MAX_UPLOAD_BYTES` instead. |
 | CORS | Exact allowlist (`CORS_ALLOWED_ORIGINS`), no wildcard, never credentials. |
 | Artifacts | Keys are `users/<user_id>/…`; register/download/presign/delete re-verify bucket + prefix; `task_id` ownership verified; uploads capped (`MAX_UPLOAD_BYTES`). |
 | Migrations | Explicit `griffin-migrate`; server only runs a read-only schema check. |

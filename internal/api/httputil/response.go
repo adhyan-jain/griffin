@@ -46,7 +46,7 @@ func ErrorJSON(w http.ResponseWriter, err error) {
 	case errors.As(err, &tooLarge):
 		status = http.StatusRequestEntityTooLarge
 		code = "PAYLOAD_TOO_LARGE"
-		msg = fmt.Sprintf("Request body exceeds the %d byte upload limit", tooLarge.Limit)
+		msg = fmt.Sprintf("Request body too large: the limit is %d bytes", tooLarge.Limit)
 
 	case errors.Is(err, domain.ErrNotFound):
 		status = http.StatusNotFound

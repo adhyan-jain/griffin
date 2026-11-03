@@ -89,6 +89,10 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	if deps.Config != nil {
 		authOpts.AllowedEmails = deps.Config.AllowedUserEmails
+		authOpts.AllowedUserIDs = deps.Config.AllowedUserIDs
+		if len(deps.Config.AllowedUserIDs) == 0 {
+			deps.Logger.Warn("ALLOWED_USER_IDS not set: operator is identified by email claim only")
+		}
 	}
 	authenticate := middleware.AuthenticateUser(authOpts)
 	// User routes: authenticate, then (when configured) run in an RLS-enforced transaction.
@@ -198,10 +202,13 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("POST /api/v1/runner/sleep", workerAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
 
 	// 4. Global middleware wrapping with CORS
+	// Cap JSON bodies at 1 MiB; artifact routes enforce MaxUploadBytes themselves.
 	handler := middleware.CORS(deps.Config.CORSAllowedOrigins)(
-		middleware.RequestID(
-			middleware.Logger(deps.Logger)(
-				middleware.Recovery(deps.Logger)(mux),
+		middleware.BodyLimit(middleware.DefaultMaxBodyBytes, middleware.IsArtifactUploadRoute)(
+			middleware.RequestID(
+				middleware.Logger(deps.Logger)(
+					middleware.Recovery(deps.Logger)(mux),
+				),
 			),
 		),
 	)
