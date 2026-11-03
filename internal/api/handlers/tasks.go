@@ -100,7 +100,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		Priority:       req.Priority,
 		IdempotencyKey: req.IdempotencyKey,
 		ScheduledFor:   req.ScheduledFor,
-		MaxRetries:     3,
+		MaxRetries:     domain.DefaultMaxRetries,
 	}
 
 	created, err := h.engine.CreateTask(r.Context(), task, req.Dependencies)

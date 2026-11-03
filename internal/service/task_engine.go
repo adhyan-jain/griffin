@@ -225,7 +225,32 @@ func (e *TaskEngine) CancelTask(ctx context.Context, taskID uuid.UUID, reason st
 	// Cascade cancellation to dependent children
 	e.cascadeCancelDownstream(ctx, taskID, fmt.Sprintf("Prerequisite task %s was cancelled", taskID))
 
+	// Cancelling a parent (e.g. the JJ orchestration root) must not leave its children runnable.
+	e.cascadeCancelChildren(ctx, taskID, fmt.Sprintf("Parent task %s was cancelled", taskID))
+
 	return nil
+}
+
+// cascadeCancelChildren cancels every non-terminal child (parent_id link) of a cancelled task.
+func (e *TaskEngine) cascadeCancelChildren(ctx context.Context, parentID uuid.UUID, reason string) {
+	children, err := e.taskRepo.ListTasks(ctx, repository.TaskFilter{ParentID: &parentID, Limit: 1000})
+	if err != nil {
+		e.logger.Warn("task_engine: list children for cancel cascade failed", "parent_id", parentID, "error", err)
+		return
+	}
+	for _, child := range children {
+		if err := e.taskRepo.CancelTask(ctx, child.ID, reason); err != nil {
+			continue // already terminal
+		}
+		_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+			TaskID:    child.ID,
+			EventType: "STATUS_CHANGE",
+			Message:   fmt.Sprintf("Cascaded cancellation: %s", reason),
+			Metadata:  json.RawMessage("{}"),
+		})
+		e.cascadeCancelDownstream(ctx, child.ID, reason)
+		e.cascadeCancelChildren(ctx, child.ID, reason)
+	}
 }
 
 // RequestApproval pauses task execution and registers an approval gate requiring human sign-off.

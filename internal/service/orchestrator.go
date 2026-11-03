@@ -192,6 +192,19 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 		return orch, nil // Already in terminal state
 	}
 
+	// Root cancelled by the user (children are cascade-cancelled by the engine): reflect that
+	// on the orchestration instead of reporting it as a child failure.
+	if root, err := o.taskRepo.GetTaskByID(ctx, orch.RootTaskID); err == nil && root.Status == domain.TaskStatusCancelled {
+		reason := "Orchestration cancelled by user"
+		if root.FailureReason != nil {
+			reason = *root.FailureReason
+		}
+		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusCancelled, nil, &reason)
+		orch.Status = domain.OrchestrationStatusCancelled
+		orch.ErrorMessage = &reason
+		return orch, nil
+	}
+
 	delegations, err := o.orchRepo.GetDelegationsByOrchestrationID(ctx, orch.ID, uuid.Nil)
 	if err != nil {
 		return nil, fmt.Errorf("jj: get delegations: %w", err)
@@ -264,7 +277,9 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 	}
 
 	if hasAwaitingApproval {
-		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusAwaitingApproval, nil, nil)
+		if orch.Status != domain.OrchestrationStatusAwaitingApproval { // GET-driven: only write on a real transition
+			_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusAwaitingApproval, nil, nil)
+		}
 		orch.Status = domain.OrchestrationStatusAwaitingApproval
 		return orch, nil
 	}
@@ -286,7 +301,9 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 	}
 
 	// Still in flight
-	_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusRunning, nil, nil)
+	if orch.Status != domain.OrchestrationStatusRunning { // GET-driven: only write on a real transition
+		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusRunning, nil, nil)
+	}
 	orch.Status = domain.OrchestrationStatusRunning
 	return orch, nil
 }
@@ -318,6 +335,26 @@ func (o *JJOrchestrator) GetOrchestration(ctx context.Context, id uuid.UUID, use
 		return nil, nil, err
 	}
 	return orch, dels, nil
+}
+
+// RunnableChildCount returns how many child tasks of an orchestration are currently QUEUED
+// (i.e. a runner must pick them up).
+func (o *JJOrchestrator) RunnableChildCount(ctx context.Context, orchID uuid.UUID) (int, error) {
+	dels, err := o.orchRepo.GetDelegationsByOrchestrationID(ctx, orchID, uuid.Nil)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, d := range dels {
+		task, err := o.taskRepo.GetTaskByID(ctx, d.ChildTaskID)
+		if err != nil {
+			return 0, err
+		}
+		if task.Status == domain.TaskStatusQueued {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // GetPlan retrieves an execution plan by ID.
@@ -376,6 +413,7 @@ func (o *JJOrchestrator) delegatePlan(
 				Goal:          ct.Goal,
 				InputPayload:  ct.InputPayload,
 				Priority:      ct.Priority,
+				MaxRetries:    domain.DefaultMaxRetries,
 			}
 		}
 
