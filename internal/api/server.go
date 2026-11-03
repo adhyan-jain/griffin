@@ -177,10 +177,13 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("POST /api/v1/runner/sleep", workerAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
 
 	// 4. Global middleware wrapping with CORS
+	// Cap JSON bodies at 1 MiB; artifact routes enforce MaxUploadBytes themselves.
 	handler := middleware.CORS(deps.Config.CORSAllowedOrigins)(
-		middleware.RequestID(
-			middleware.Logger(deps.Logger)(
-				middleware.Recovery(deps.Logger)(mux),
+		middleware.BodyLimit(middleware.DefaultMaxBodyBytes, middleware.IsArtifactUploadRoute)(
+			middleware.RequestID(
+				middleware.Logger(deps.Logger)(
+					middleware.Recovery(deps.Logger)(mux),
+				),
 			),
 		),
 	)

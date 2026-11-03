@@ -38,7 +38,13 @@ func ErrorJSON(w http.ResponseWriter, err error) {
 	code := "INTERNAL_ERROR"
 	msg := "An unexpected internal server error occurred"
 
+	var tooBig *http.MaxBytesError
 	switch {
+	case errors.As(err, &tooBig):
+		status = http.StatusRequestEntityTooLarge
+		code = "PAYLOAD_TOO_LARGE"
+		msg = "Request body too large"
+
 	case errors.Is(err, domain.ErrNotFound):
 		status = http.StatusNotFound
 		code = "NOT_FOUND"
