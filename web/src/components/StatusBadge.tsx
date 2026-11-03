@@ -43,8 +43,10 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function PriorityBadge({ priority }: { priority: number }) {
-  switch (priority) {
+export function PriorityBadge({ priority }: { priority: number | string }) {
+  // Backend sends "CRITICAL_P0" | "HIGH_P1" | "NORMAL_P2" | "BACKGROUND_P3".
+  const tier = typeof priority === "string" ? Number(priority.match(/P(\d)$/)?.[1] ?? 3) : priority;
+  switch (tier) {
     case 0:
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-950 text-red-400 border border-red-800">
