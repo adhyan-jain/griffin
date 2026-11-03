@@ -36,6 +36,43 @@ const (
 	TaskPriorityBackground TaskPriority = "BACKGROUND_P3"
 )
 
+// TaskPriorities lists every accepted priority, most urgent first.
+var TaskPriorities = []TaskPriority{
+	TaskPriorityCriticalP0,
+	TaskPriorityHighP1,
+	TaskPriorityNormalP2,
+	TaskPriorityBackground,
+}
+
+// Valid reports whether p is a known priority. The empty value is not valid on its own; callers
+// default it to NORMAL_P2 (see ValidatePriority).
+func (p TaskPriority) Valid() bool {
+	for _, known := range TaskPriorities {
+		if p == known {
+			return true
+		}
+	}
+	return false
+}
+
+// PriorityList renders the accepted priorities for error messages.
+func PriorityList() string {
+	allowed := make([]string, len(TaskPriorities))
+	for i, known := range TaskPriorities {
+		allowed[i] = string(known)
+	}
+	return strings.Join(allowed, ", ")
+}
+
+// ValidatePriority accepts an empty priority (it is defaulted later) or a known value, and
+// otherwise returns a validation error that lists the allowed values.
+func ValidatePriority(p TaskPriority) error {
+	if p == "" || p.Valid() {
+		return nil
+	}
+	return fmt.Errorf("%w: priority %q is not valid; use one of %s", ErrValidation, string(p), PriorityList())
+}
+
 // Task represents a persistent unit of work managed by Griffin.
 type Task struct {
 	ID              uuid.UUID       `json:"id"`
@@ -79,6 +116,9 @@ func (t *Task) Validate() error {
 	}
 	if strings.TrimSpace(t.ManagerDomain) == "" {
 		t.ManagerDomain = "JJ"
+	}
+	if err := ValidatePriority(t.Priority); err != nil {
+		return err
 	}
 	if t.Priority == "" {
 		t.Priority = TaskPriorityNormalP2

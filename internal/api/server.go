@@ -89,6 +89,10 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	if deps.Config != nil {
 		authOpts.AllowedEmails = deps.Config.AllowedUserEmails
+		authOpts.AllowedUserIDs = deps.Config.AllowedUserIDs
+		if len(deps.Config.AllowedUserIDs) == 0 {
+			deps.Logger.Warn("ALLOWED_USER_IDS not set: operator is identified by email claim only")
+		}
 	}
 	authenticate := middleware.AuthenticateUser(authOpts)
 	// User routes: authenticate, then (when configured) run in an RLS-enforced transaction.
@@ -124,7 +128,8 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.ListAgents)))
 	mux.Handle("POST /api/v1/agents", userAuth(http.HandlerFunc(agentHandler.RegisterAgent)))
 
-	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo, deps.StorageService, deps.TaskRepo, deps.Config.MaxUploadBytes)
+	artifactHandler := handlers.NewArtifactHandler(deps.ArtifactRepo, deps.StorageService, deps.TaskRepo, deps.Config.MaxUploadBytes).
+		WithPresignExpiry(time.Duration(deps.Config.S3PresignExpiryMinutes) * time.Minute)
 	mux.Handle("GET /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.ListArtifacts)))
 	mux.Handle("GET /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
 	mux.Handle("POST /api/v1/artifacts", userAuth(http.HandlerFunc(artifactHandler.CreateArtifact)))
@@ -172,15 +177,38 @@ func NewServer(deps ServerDependencies) *Server {
 	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, deps.Wakeup, scaleToZero)
 	mux.Handle("GET /api/v1/runner/status", userAuth(http.HandlerFunc(runnerHandler.GetStatus)))
 	mux.Handle("POST /api/v1/runner/wake", userAuth(http.HandlerFunc(runnerHandler.WakeRunner)))
+	// System status: evidence-derived component health for the authenticated user.
+	var statusDB handlers.DBPinger
+	var statusStore handlers.SystemStatusStore
+	if deps.DB != nil {
+		statusDB = deps.DB
+		var q database.Querier = deps.DB.Pool
+		if deps.UserTx != nil || (deps.Config != nil && deps.Config.IsProduction()) {
+			q = database.NewScoped(deps.DB.Pool) // resolves to the request's RLS tx; denied otherwise
+		}
+		statusStore = handlers.NewPostgresSystemStatusStore(q)
+	}
+	var statusStorage handlers.StorageProber
+	statusBucket := ""
+	if deps.StorageService != nil && deps.StorageService.Provider() != nil {
+		statusStorage = deps.StorageService.Provider()
+		statusBucket = deps.StorageService.Bucket()
+	}
+	systemHandler := handlers.NewSystemHandler(statusDB, statusStore, statusStorage, statusBucket, deps.InstanceMgr, scaleToZero)
+	mux.Handle("GET /api/v1/system/status", userAuth(http.HandlerFunc(systemHandler.GetStatus)))
+
 	// Stopping the shared runner affects every tenant, so it is operator-only: worker key (constant-time
 	// compare in AuthenticateWorker), never a user JWT. The browser must not hold this key.
 	mux.Handle("POST /api/v1/runner/sleep", workerAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
 
 	// 4. Global middleware wrapping with CORS
+	// Cap JSON bodies at 1 MiB; artifact routes enforce MaxUploadBytes themselves.
 	handler := middleware.CORS(deps.Config.CORSAllowedOrigins)(
-		middleware.RequestID(
-			middleware.Logger(deps.Logger)(
-				middleware.Recovery(deps.Logger)(mux),
+		middleware.BodyLimit(middleware.DefaultMaxBodyBytes, middleware.IsArtifactUploadRoute)(
+			middleware.RequestID(
+				middleware.Logger(deps.Logger)(
+					middleware.Recovery(deps.Logger)(mux),
+				),
 			),
 		),
 	)

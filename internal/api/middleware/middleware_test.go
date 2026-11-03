@@ -105,6 +105,31 @@ func TestAuthenticateUserIssuer(t *testing.T) {
 	}
 }
 
+func TestAuthenticateUserIDPin(t *testing.T) {
+	pinned := uuid.New()
+	email := "op@example.com"
+	opts := func(ids ...uuid.UUID) middleware.AuthOptions {
+		return middleware.AuthOptions{HMACSecret: hmacSecret, AllowedEmails: []string{email}, AllowedUserIDs: ids}
+	}
+	good := hs(t, claims(map[string]any{"sub": pinned.String(), "email": email}), hmacSecret)
+	other := hs(t, claims(map[string]any{"email": email}), hmacSecret) // random sub
+
+	if got := do(middleware.AuthenticateUser(opts(pinned))(okHandler), good); got != 200 {
+		t.Fatalf("email ok + sub ok: got %d", got)
+	}
+	if got := do(middleware.AuthenticateUser(opts(pinned))(okHandler), other); got != 403 {
+		t.Fatalf("email ok + sub wrong: got %d", got)
+	}
+	if got := do(middleware.AuthenticateUser(opts())(okHandler), other); got != 200 {
+		t.Fatalf("no pin: got %d", got)
+	}
+	// The pin never replaces the email check.
+	badEmail := hs(t, claims(map[string]any{"sub": pinned.String(), "email": "evil@example.com"}), hmacSecret)
+	if got := do(middleware.AuthenticateUser(opts(pinned))(okHandler), badEmail); got != 403 {
+		t.Fatalf("sub ok + email wrong: got %d", got)
+	}
+}
+
 func jwksServer(t *testing.T, key *ecdsa.PublicKey, kid string) *httptest.Server {
 	t.Helper()
 	enc := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }

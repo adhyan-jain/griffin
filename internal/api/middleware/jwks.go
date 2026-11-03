@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+// jwksFailureBackoff is how long after a failed refresh we refuse to hit the
+// JWKS endpoint again, so unknown-kid tokens cannot amplify into outbound fetches.
+const jwksFailureBackoff = 30 * time.Second
+
 // JWKSCache fetches and caches Supabase asymmetric (ES256/RS256) public keys.
 type JWKSCache struct {
 	url    string
@@ -24,6 +28,8 @@ type JWKSCache struct {
 	mu        sync.Mutex
 	keys      map[string]any
 	fetchedAt time.Time
+	failedAt  time.Time
+	now       func() time.Time
 }
 
 // NewJWKSCache creates a cache for the given JWKS URL.
@@ -31,7 +37,7 @@ func NewJWKSCache(url string, client *http.Client) *JWKSCache {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
-	return &JWKSCache{url: url, client: client, ttl: 10 * time.Minute}
+	return &JWKSCache{url: url, client: client, ttl: 10 * time.Minute, now: time.Now}
 }
 
 type jwk struct {
@@ -58,7 +64,14 @@ func (c *JWKSCache) Key(kid string) (any, error) {
 		}
 		return nil, fmt.Errorf("unknown signing key id %q", kid)
 	}
+	if !c.failedAt.IsZero() && c.now().Sub(c.failedAt) < jwksFailureBackoff {
+		if k, ok := c.keys[kid]; ok { // stale key still usable during backoff
+			return k, nil
+		}
+		return nil, fmt.Errorf("jwks refresh suppressed after recent failure; unknown signing key id %q", kid)
+	}
 	if err := c.refreshLocked(); err != nil {
+		c.failedAt = c.now()
 		if k, ok := c.keys[kid]; ok { // serve stale key if refresh fails
 			return k, nil
 		}
@@ -96,6 +109,7 @@ func (c *JWKSCache) refreshLocked() error {
 	}
 	c.keys = keys
 	c.fetchedAt = time.Now()
+	c.failedAt = time.Time{}
 	return nil
 }
 

@@ -62,6 +62,9 @@ func (o *JJOrchestrator) SubmitRequest(ctx context.Context, req *domain.UserRequ
 	if req == nil || strings.TrimSpace(req.RequestText) == "" {
 		return nil, nil, fmt.Errorf("%w: request_text cannot be empty", domain.ErrValidation)
 	}
+	if err := domain.ValidatePriority(req.Priority); err != nil {
+		return nil, nil, err
+	}
 	if req.Priority == "" {
 		req.Priority = domain.TaskPriorityNormalP2
 	}
