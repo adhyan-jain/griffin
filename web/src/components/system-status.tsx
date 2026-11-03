@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { RefreshCw } from "lucide-react";
+import { createPoller, type Poller } from "@/lib/poll";
 import { api, SYSTEM_COMPONENTS, type ComponentState, type SystemStatus } from "@/lib/api";
 import { overallState, STATE_LABEL, type OverallState } from "@/lib/system-status";
 import { cn } from "@/lib/utils";
@@ -26,26 +27,52 @@ const NAME: Record<(typeof SYSTEM_COMPONENTS)[number], string> = {
   runner: "Runner",
 };
 
-/** Loads GET /system/status. Any failure (including 404 while the endpoint is not deployed) is "unavailable". */
-export function useSystemStatus(enabled = true, intervalMs = 30000) {
-  const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const refresh = useCallback(async () => {
-    try {
-      setStatus(await api.getSystemStatus());
-    } catch {
-      setStatus(null);
-    } finally {
-      setLoading(false);
+const STATUS_POLL_MS = 30000;
+type StatusSnapshot = { status: SystemStatus | null; loading: boolean };
+const INITIAL: StatusSnapshot = { status: null, loading: true };
+
+// ONE shared loop for every consumer (the shell mounts a dot per breakpoint, Settings mounts the
+// list): the first subscriber starts it, the last one stops it. Any failure (including a 404 while
+// the endpoint is not deployed) is "unavailable", never a fake green.
+let snapshot: StatusSnapshot = INITIAL;
+let poller: Poller | null = null;
+const listeners = new Set<() => void>();
+const emit = (next: StatusSnapshot) => {
+  snapshot = next;
+  listeners.forEach((l) => l());
+};
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  if (!poller) {
+    poller = createPoller({
+      intervalMs: STATUS_POLL_MS,
+      run: async (signal) => {
+        try {
+          emit({ status: await api.getSystemStatus({ signal }), loading: false });
+        } catch (e) {
+          if ((e as { name?: string })?.name !== "AbortError") emit({ status: null, loading: false });
+          throw e;
+        }
+      },
+    });
+    poller.start();
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      poller?.stop();
+      poller = null;
     }
-  }, []);
-  useEffect(() => {
-    if (!enabled) return;
-    void refresh();
-    const t = setInterval(refresh, intervalMs);
-    return () => clearInterval(t);
-  }, [enabled, intervalMs, refresh]);
-  return { status, loading, refresh };
+  };
+}
+const noopSubscribe = () => () => {};
+const refreshShared = () => poller?.refresh();
+
+/** Loads GET /system/status through the shared loop. */
+export function useSystemStatus(enabled = true) {
+  const { status, loading } = useSyncExternalStore(enabled ? subscribe : noopSubscribe, () => snapshot, () => INITIAL);
+  return { status, loading, refresh: refreshShared };
 }
 
 export function StatusDot({ state, className }: { state: OverallState | ComponentState; className?: string }) {

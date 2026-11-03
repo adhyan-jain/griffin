@@ -56,6 +56,8 @@ export interface Task {
   output_payload?: unknown;
   status: TaskStatus;
   priority: TaskPriority;
+  /** The worker (or "JJ_ORCHESTRATOR" for a coordinating parent) holding the task's lease. */
+  leased_by?: string | null;
   retry_count: number;
   max_retries: number;
   failure_reason?: string | null;
@@ -284,7 +286,12 @@ async function unwrap<T>(res: Response): Promise<T> {
   return body as T;
 }
 
-async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promise<T> {
+/** Optional per-call options; pass a signal so an obsolete request can be cancelled. */
+export interface ReqOpts {
+  signal?: AbortSignal;
+}
+
+async function doFetch<T>(path: string, options: RequestInit): Promise<T> {
   const token = await resolveAuthToken();
   const headers = new Headers(options.headers || {});
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -296,9 +303,70 @@ async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promis
   return unwrap<T>(res);
 }
 
+interface SharedGet {
+  promise: Promise<unknown>;
+  controller: AbortController;
+  refs: number;
+}
+const inflightGets = new Map<string, SharedGet>();
+
+const abortError = () => new DOMException("The request was aborted", "AbortError");
+
+/**
+ * GETs for the same URL that overlap in time share ONE network request. It is reference-counted:
+ * the underlying request is aborted only once every caller has aborted. Nothing is cached after
+ * the request settles, and writes are never shared.
+ */
+async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
+  if (method !== "GET") return doFetch<T>(path, options);
+
+  const { signal, ...rest } = options;
+  if (signal?.aborted) throw abortError();
+
+  let shared = inflightGets.get(path);
+  if (!shared) {
+    const controller = new AbortController();
+    const created: SharedGet = { controller, refs: 0, promise: Promise.resolve() };
+    created.promise = doFetch<unknown>(path, { ...rest, signal: controller.signal }).finally(() => {
+      if (inflightGets.get(path) === created) inflightGets.delete(path);
+    });
+    inflightGets.set(path, created);
+    shared = created;
+  }
+  const entry = shared;
+  entry.refs += 1;
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      entry.refs -= 1;
+      if (entry.refs <= 0) entry.controller.abort();
+      reject(abortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    entry.promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener("abort", onAbort);
+        resolve(value as T);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** Lists come back as `null` when empty on some endpoints; always hand pages an array. */
-async function fetchList<T>(path: string): Promise<T[]> {
-  return (await fetchWithAuth<T[] | null>(path)) ?? [];
+async function fetchList<T>(path: string, opts?: ReqOpts): Promise<T[]> {
+  return (await fetchWithAuth<T[] | null>(path, opts)) ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -340,22 +408,22 @@ export const api = {
   },
 
   /** Component health; the endpoint may not exist yet (404), callers must render "unavailable". */
-  getSystemStatus: () => fetchWithAuth<SystemStatus>("/api/v1/system/status"),
+  getSystemStatus: (opts?: ReqOpts) => fetchWithAuth<SystemStatus>("/api/v1/system/status", opts),
 
   // Runner
-  getRunnerStatus: () => fetchWithAuth<RunnerStatus>("/api/v1/runner/status"),
+  getRunnerStatus: (opts?: ReqOpts) => fetchWithAuth<RunnerStatus>("/api/v1/runner/status", opts),
   wakeRunner: () => fetchWithAuth<{ message?: string; status?: string }>("/api/v1/runner/wake", { method: "POST" }),
 
   // Tasks
-  listTasks(params?: { status?: TaskStatus; limit?: number; parent_id?: string }) {
+  listTasks(params?: { status?: TaskStatus; limit?: number; parent_id?: string }, opts?: ReqOpts) {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);
     if (params?.parent_id) q.set("parent_id", params.parent_id);
     if (params?.limit) q.set("limit", String(params.limit));
     const qs = q.toString();
-    return fetchList<Task>(`/api/v1/tasks${qs ? `?${qs}` : ""}`);
+    return fetchList<Task>(`/api/v1/tasks${qs ? `?${qs}` : ""}`, opts);
   },
-  getTask: (id: string) => fetchWithAuth<Task>(`/api/v1/tasks/${id}`),
+  getTask: (id: string, opts?: ReqOpts) => fetchWithAuth<Task>(`/api/v1/tasks/${id}`, opts),
   createTask(payload: {
     goal: string;
     title?: string;
@@ -376,8 +444,8 @@ export const api = {
     });
   },
   cancelTask: (id: string) => fetchWithAuth<unknown>(`/api/v1/tasks/${id}/cancel`, { method: "POST" }),
-  getTaskEvents: (id: string) => fetchList<TaskEvent>(`/api/v1/tasks/${id}/events`),
-  getTaskAttempts: (id: string) => fetchList<TaskAttempt>(`/api/v1/tasks/${id}/attempts`),
+  getTaskEvents: (id: string, opts?: ReqOpts) => fetchList<TaskEvent>(`/api/v1/tasks/${id}/events`, opts),
+  getTaskAttempts: (id: string, opts?: ReqOpts) => fetchList<TaskAttempt>(`/api/v1/tasks/${id}/attempts`, opts),
 
   // Orchestrator
   submitOrchestratorRequest: (requestText: string, priority?: TaskPriority) =>
@@ -388,8 +456,8 @@ export const api = {
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
 
   // Approvals
-  listApprovals: (status?: ApprovalStatus) =>
-    fetchList<Approval>(`/api/v1/approvals${status ? `?status=${status}` : ""}`),
+  listApprovals: (status?: ApprovalStatus, opts?: ReqOpts) =>
+    fetchList<Approval>(`/api/v1/approvals${status ? `?status=${status}` : ""}`, opts),
   respondApproval: (id: string, approve: boolean, reason?: string) =>
     fetchWithAuth<unknown>(`/api/v1/approvals/${id}/respond`, {
       method: "POST",
@@ -397,7 +465,8 @@ export const api = {
     }),
 
   // Artifacts
-  listArtifacts: (taskId?: string) => fetchList<Artifact>(`/api/v1/artifacts${taskId ? `?task_id=${taskId}` : ""}`),
+  listArtifacts: (taskId?: string, opts?: ReqOpts) =>
+    fetchList<Artifact>(`/api/v1/artifacts${taskId ? `?task_id=${taskId}` : ""}`, opts),
   getPresignedUrl: (id: string) => fetchWithAuth<{ url: string; expires_at: string }>(`/api/v1/artifacts/${id}/presign`),
   deleteArtifact: (id: string) => fetchWithAuth<unknown>(`/api/v1/artifacts/${id}`, { method: "DELETE" }),
   async uploadArtifact(file: File, taskId?: string): Promise<Artifact> {

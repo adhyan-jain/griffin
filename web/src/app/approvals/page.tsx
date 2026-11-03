@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { usePolling } from "@/lib/use-polling";
 import { Check, Loader2, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Approval } from "@/lib/api";
@@ -19,29 +20,33 @@ export default function ApprovalsPage() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setItems(await api.listApprovals(tab === "pending" ? "PENDING" : undefined));
+  const { refresh } = usePolling(
+    async (signal) => {
+      setItems(await api.listApprovals(tab === "pending" ? "PENDING" : undefined, { signal }));
       setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load approvals.");
-      setItems((prev) => prev ?? []);
-    }
-  }, [tab]);
+    },
+    {
+      intervalMs: 10000,
+      onError: (e) => {
+        setError(e instanceof Error ? e.message : "Could not load approvals.");
+        setItems((prev) => prev ?? []);
+      },
+    },
+  );
 
+  // Switching the tab changes what to fetch: show the skeleton and fetch now. The loop itself
+  // keeps running; it is not restarted.
   useEffect(() => {
     setItems(null);
-    void load();
-    const id = setInterval(load, 10000);
-    return () => clearInterval(id);
-  }, [load]);
+    refresh();
+  }, [tab, refresh]);
 
   const respond = async (a: Approval, approve: boolean) => {
     setBusyId(a.id);
     try {
       await api.respondApproval(a.id, approve, notes[a.id]);
       toast.success(approve ? "Approved" : "Rejected");
-      await load();
+      refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not record your decision.");
     } finally {

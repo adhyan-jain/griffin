@@ -27,14 +27,35 @@ const STAGE: Record<TaskStatus, string> = {
  * Summarises where a task is from its status, events and attempts. Only structured fields are used:
  * event messages and model output are never surfaced here.
  */
-export function deriveNow(task: Task, events: TaskEvent[], attempts: TaskAttempt[]): TaskNow {
+const ORCHESTRATOR_LEASE = "JJ_ORCHESTRATOR";
+const EXECUTING: TaskStatus[] = ["RUNNING", "VERIFYING"];
+
+export function deriveNow(task: Task, events: TaskEvent[], attempts: TaskAttempt[], children: Task[] = []): TaskNow {
   const stamps = [task.updated_at, ...events.map((e) => e.created_at), ...attempts.map((a) => a.completed_at ?? a.started_at)];
   const lastActivityAt = stamps.reduce((a, b) => (new Date(b).getTime() > new Date(a).getTime() ? b : a));
   const latest = [...attempts].sort((a, b) => b.attempt_number - a.attempt_number)[0];
   const payload = task.input_payload as { worker_key?: unknown } | null | undefined;
-  const worker = typeof payload?.worker_key === "string" ? payload.worker_key : (latest?.worker_id ?? null);
+
+  // A JJ parent is not executed by a worker: it coordinates its steps. Say that, and name the worker
+  // that is actually running a step, instead of claiming "not assigned".
+  const coordinating = children.length > 0 && !["COMPLETED", "FAILED", "CANCELLED"].includes(task.status);
+  let worker: string | null;
+  let stage = STAGE[task.status] ?? task.status;
+  if (coordinating) {
+    const running = children.find((c) => EXECUTING.includes(c.status) && c.leased_by && c.leased_by !== ORCHESTRATOR_LEASE);
+    worker = running ? `JJ coordinating · ${running.leased_by}` : "JJ coordinating";
+    if (task.status === "RUNNING") {
+      const done = children.filter((c) => c.status === "COMPLETED").length;
+      const idle = !children.some((c) => EXECUTING.includes(c.status) || c.status === "RETRYING");
+      const queued = children.some((c) => c.status === "QUEUED" || c.status === "CREATED" || c.status === "ROUTED");
+      stage = `Coordinating: ${done} of ${children.length} steps done${idle && queued ? ", waiting for a worker" : ""}`;
+    }
+  } else {
+    const lease = EXECUTING.includes(task.status) && task.leased_by && task.leased_by !== ORCHESTRATOR_LEASE ? task.leased_by : null;
+    worker = lease ?? latest?.worker_id ?? (typeof payload?.worker_key === "string" ? payload.worker_key : null);
+  }
   return {
-    stage: STAGE[task.status] ?? task.status,
+    stage,
     lastActivityAt,
     manager: task.manager_domain,
     worker,
