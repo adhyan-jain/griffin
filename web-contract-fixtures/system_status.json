@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "data": {
+    "generated_at": "2026-01-01T12:00:00Z",
+    "components": {
+      "api": { "state": "ok", "evidence": "this API process answered the request", "observed_at": "2026-01-01T12:00:00Z" },
+      "database": { "state": "ok", "evidence": "pool ping 12ms", "observed_at": "2026-01-01T12:00:00Z" },
+      "worker": { "state": "unknown", "evidence": "idle; last worker activity 3h12m0s ago", "observed_at": "2026-01-01T08:48:00Z" },
+      "provider": { "state": "down", "evidence": "latest attempt failed with an authentication error; last success 2025-12-31T18:02:11Z", "observed_at": "2026-01-01T09:30:00Z" },
+      "scheduler": { "state": "unknown", "evidence": "no tick record (needs system_heartbeats migration, not applied)", "observed_at": null },
+      "storage": { "state": "ok", "evidence": "s3: bucket probe answered in 41ms", "observed_at": "2026-01-01T12:00:00Z" },
+      "runner": { "state": "ok", "evidence": "instance state: stopped (scale-to-zero idle; wakes on demand)", "observed_at": "2026-01-01T12:00:00Z" }
+    }
+  }
+}
