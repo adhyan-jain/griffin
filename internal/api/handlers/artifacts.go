@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -24,6 +25,7 @@ type ArtifactHandler struct {
 	storageSvc   *storage.StorageService
 	taskRepo     repository.TaskRepository
 	maxUpload    int64
+	presignTTL   time.Duration
 }
 
 // NewArtifactHandler builds the artifact handler. taskRepo is used to verify that any task_id a
@@ -37,7 +39,16 @@ func NewArtifactHandler(artifactRepo repository.ArtifactRepository, storageSvc *
 		storageSvc:   storageSvc,
 		taskRepo:     taskRepo,
 		maxUpload:    maxUpload,
+		presignTTL:   15 * time.Minute,
 	}
+}
+
+// WithPresignExpiry sets the default (and maximum) presigned URL lifetime; <=0 is ignored.
+func (h *ArtifactHandler) WithPresignExpiry(d time.Duration) *ArtifactHandler {
+	if d > 0 {
+		h.presignTTL = d
+	}
+	return h
 }
 
 // ownsTask verifies a caller-supplied task id belongs to the user. Unknown and foreign tasks are
@@ -55,6 +66,15 @@ func (h *ArtifactHandler) ownsTask(r *http.Request, taskID *uuid.UUID, userID uu
 	return nil
 }
 
+// multipartParseError keeps an over-limit body distinguishable (413) from a malformed form (400).
+func multipartParseError(err error) error {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return err
+	}
+	return errors.Join(domain.ErrValidation, fmt.Errorf("failed parsing multipart form: %w", err))
+}
+
 func (h *ArtifactHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r.Context())
 	if err != nil {
@@ -64,9 +84,12 @@ func (h *ArtifactHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) 
 
 	var taskID *uuid.UUID
 	if tIDStr := r.URL.Query().Get("task_id"); tIDStr != "" {
-		if tid, err := uuid.Parse(tIDStr); err == nil {
-			taskID = &tid
+		tid, err := uuid.Parse(tIDStr)
+		if err != nil {
+			httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid task_id format")))
+			return
 		}
+		taskID = &tid
 	}
 
 	artifacts, err := h.artifactRepo.ListArtifacts(r.Context(), userID, taskID)
@@ -189,7 +212,7 @@ func (h *ArtifactHandler) UploadArtifact(w http.ResponseWriter, r *http.Request)
 	if len(contentTypeHeader) >= 19 && contentTypeHeader[:19] == "multipart/form-data" {
 		// Max memory 32MB for form parsing
 		if err := r.ParseMultipartForm(h.maxUpload); err != nil {
-			httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, fmt.Errorf("failed parsing multipart form: %w", err)))
+			httputil.ErrorJSON(w, multipartParseError(err))
 			return
 		}
 
@@ -207,9 +230,12 @@ func (h *ArtifactHandler) UploadArtifact(w http.ResponseWriter, r *http.Request)
 		title = r.FormValue("title")
 		artifactType = r.FormValue("artifact_type")
 		if tIDStr := r.FormValue("task_id"); tIDStr != "" {
-			if tid, err := uuid.Parse(tIDStr); err == nil {
-				taskID = &tid
+			tid, err := uuid.Parse(tIDStr)
+			if err != nil {
+				httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid task_id format")))
+				return
 			}
+			taskID = &tid
 		}
 	} else {
 		// Raw stream upload
@@ -233,9 +259,12 @@ func (h *ArtifactHandler) UploadArtifact(w http.ResponseWriter, r *http.Request)
 			tIDStr = r.URL.Query().Get("task_id")
 		}
 		if tIDStr != "" {
-			if tid, err := uuid.Parse(tIDStr); err == nil {
-				taskID = &tid
+			tid, err := uuid.Parse(tIDStr)
+			if err != nil {
+				httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid task_id format")))
+				return
 			}
+			taskID = &tid
 		}
 	}
 
@@ -310,7 +339,7 @@ func (h *ArtifactHandler) DownloadArtifact(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(fn)))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": storage.SanitizeFilename(fn)}))
 	if downOut.ContentLength > 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(downOut.ContentLength, 10))
 	} else if art.FileSizeBytes != nil && *art.FileSizeBytes > 0 {
@@ -343,9 +372,10 @@ func (h *ArtifactHandler) PresignArtifact(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	expiry := 15 * time.Minute
+	// expires_in may only shorten the configured lifetime, never extend it.
+	expiry := h.presignTTL
 	if expStr := r.URL.Query().Get("expires_in"); expStr != "" {
-		if dur, err := time.ParseDuration(expStr); err == nil && dur > 0 {
+		if dur, err := time.ParseDuration(expStr); err == nil && dur > 0 && dur < expiry {
 			expiry = dur
 		}
 	}
