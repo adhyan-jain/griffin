@@ -172,6 +172,26 @@ func NewServer(deps ServerDependencies) *Server {
 	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, deps.Wakeup, scaleToZero)
 	mux.Handle("GET /api/v1/runner/status", userAuth(http.HandlerFunc(runnerHandler.GetStatus)))
 	mux.Handle("POST /api/v1/runner/wake", userAuth(http.HandlerFunc(runnerHandler.WakeRunner)))
+	// System status: evidence-derived component health for the authenticated user.
+	var statusDB handlers.DBPinger
+	var statusStore handlers.SystemStatusStore
+	if deps.DB != nil {
+		statusDB = deps.DB
+		var q database.Querier = deps.DB.Pool
+		if deps.UserTx != nil || (deps.Config != nil && deps.Config.IsProduction()) {
+			q = database.NewScoped(deps.DB.Pool) // resolves to the request's RLS tx; denied otherwise
+		}
+		statusStore = handlers.NewPostgresSystemStatusStore(q)
+	}
+	var statusStorage handlers.StorageProber
+	statusBucket := ""
+	if deps.StorageService != nil && deps.StorageService.Provider() != nil {
+		statusStorage = deps.StorageService.Provider()
+		statusBucket = deps.StorageService.Bucket()
+	}
+	systemHandler := handlers.NewSystemHandler(statusDB, statusStore, statusStorage, statusBucket, deps.InstanceMgr, scaleToZero)
+	mux.Handle("GET /api/v1/system/status", userAuth(http.HandlerFunc(systemHandler.GetStatus)))
+
 	// Stopping the shared runner affects every tenant, so it is operator-only: worker key (constant-time
 	// compare in AuthenticateWorker), never a user JWT. The browser must not hold this key.
 	mux.Handle("POST /api/v1/runner/sleep", workerAuth(http.HandlerFunc(runnerHandler.SleepRunner)))
