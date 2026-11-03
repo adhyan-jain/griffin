@@ -14,9 +14,14 @@ const arg = (name, dflt) => {
 };
 const SECONDS = Number(arg("seconds", 60));
 const SCENARIO = arg("scenario", "active");
-const BASE = arg("base", "http://localhost:3300");
+const BASE = arg("base", process.argv.includes("--prod") ? "https://griffin-pwa.vercel.app" : "http://localhost:3300");
 const BUDGET = Number(arg("budget", 150)); // max total API requests allowed in the window
-const API = "http://localhost:9999";
+// --prod measures the DEPLOYED bundle (base defaults to the production PWA). Every API request is
+// still intercepted and answered by the mock below, so no request ever reaches the real API, and
+// a fake Supabase session is injected so the app treats the browser as signed in. No credentials.
+const PROD = process.argv.includes("--prod");
+const API = PROD ? "https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com" : "http://localhost:9999";
+const SUPABASE_REF = "dtsrkpuohnxorxaqeqwr"; // from the public NEXT_PUBLIC_SUPABASE_URL in the bundle
 const LATENCY_MS = 40;
 
 const ROOT = "6947c6e0-0000-4000-8000-000000000001";
@@ -63,10 +68,21 @@ const normalize = (url) => new URL(url).pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{
 
 const browser = await chromium.launch({ executablePath: "/usr/bin/chromium", args: ["--no-sandbox"] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
-await ctx.addInitScript(() => {
-  localStorage.setItem("griffin_auth_token", "mock.jwt.token");
+await ctx.addInitScript(({ prod, ref }) => {
+  localStorage.setItem("griffin_auth_token", "mock.jwt.token"); // honoured by dev-login builds only
   localStorage.setItem("griffin_user_profile", JSON.stringify({ id: "u1", email: "operator@example.com", role: "OPERATOR" }));
-});
+  if (prod) {
+    // supabase-js reads its session from localStorage; a far-future expiry avoids any refresh call.
+    const now = Math.floor(Date.now() / 1000);
+    localStorage.setItem(
+      `sb-${ref}-auth-token`,
+      JSON.stringify({
+        access_token: "mock.jwt.token", refresh_token: "mock-refresh", token_type: "bearer", expires_in: 86400, expires_at: now + 86400,
+        user: { id: "u1", aud: "authenticated", role: "authenticated", email: "operator@example.com", app_metadata: {}, user_metadata: {}, created_at: "2026-01-01T00:00:00Z" },
+      }),
+    );
+  }
+}, { prod: PROD, ref: SUPABASE_REF });
 const page = await ctx.newPage();
 
 const calls = []; // { at, key }
