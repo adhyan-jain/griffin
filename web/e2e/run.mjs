@@ -117,6 +117,7 @@ async function runViewport(browser, vp) {
     await page.getByRole("button", { name: "View plan" }).click();
     const sheet = page.getByRole("dialog");
     check(vp.name, "View plan opens a sheet", await sheet.waitFor({ timeout: 4000 }).then(() => true, () => false));
+    await page.waitForTimeout(600);
     await shot("plan-sheet");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(400);
@@ -135,6 +136,10 @@ async function runViewport(browser, vp) {
   await page.waitForLoadState("networkidle").catch(() => {});
   check(vp.name, "settings has a System section", (await page.getByText("System", { exact: true }).count()) > 0);
 
+  check(vp.name, "no console errors", consoleErrors.length === 0, JSON.stringify([...new Set(consoleErrors)]));
+  check(vp.name, "no failed requests", failedRequests.length === 0, JSON.stringify([...new Set(failedRequests)]));
+
+  // Offline is exercised last: the induced failures are expected and excluded from the checks above.
   // 9. offline state disables the composer
   await page.goto(`${BASE}/chat`);
   await ctx.setOffline(true);
@@ -143,8 +148,6 @@ async function runViewport(browser, vp) {
   check(vp.name, "composer disabled while offline", await page.getByLabel("Message JJ").isDisabled());
   await ctx.setOffline(false);
 
-  check(vp.name, "no console errors", consoleErrors.length === 0, JSON.stringify([...new Set(consoleErrors)]));
-  check(vp.name, "no failed requests", failedRequests.length === 0, JSON.stringify([...new Set(failedRequests)]));
   await ctx.close();
 }
 
