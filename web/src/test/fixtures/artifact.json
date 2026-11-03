@@ -1,0 +1,11 @@
+{
+  "id": "6f1c2b0e-0000-4000-8000-0000000000c1",
+  "task_id": "6f1c2b0e-0000-4000-8000-000000000001",
+  "title": "report.md",
+  "artifact_type": "DOCUMENT",
+  "storage_provider": "mock",
+  "filename": "report.md",
+  "file_size_bytes": 1024,
+  "mime_type": "text/markdown",
+  "created_at": "2026-11-01T10:04:00Z"
+}

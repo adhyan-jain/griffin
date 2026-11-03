@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-11-01T10:00:00Z",
+  "components": {
+    "api": { "state": "ok", "evidence": "serving requests", "observed_at": "2026-11-01T10:00:00Z" },
+    "database": { "state": "ok", "evidence": "ping 3ms", "observed_at": "2026-11-01T10:00:00Z" },
+    "worker": { "state": "degraded", "evidence": "last heartbeat 4m ago", "observed_at": "2026-11-01T09:56:00Z" },
+    "provider": { "state": "unknown", "evidence": "no recent calls", "observed_at": null },
+    "scheduler": { "state": "ok", "evidence": "tick 10s ago", "observed_at": "2026-11-01T09:59:50Z" },
+    "storage": { "state": "ok", "evidence": "mock", "observed_at": "2026-11-01T10:00:00Z" },
+    "runner": { "state": "down", "evidence": "instance stopped", "observed_at": "2026-11-01T10:00:00Z" }
+  }
+}

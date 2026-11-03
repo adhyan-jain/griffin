@@ -144,14 +144,62 @@ export interface Orchestration {
   created_at: string;
 }
 
+/** internal/domain.ChildTaskPlan */
+export interface ChildTaskPlan {
+  key: string;
+  title: string;
+  goal?: string;
+  manager_domain: string;
+  worker_key?: string;
+  priority?: TaskPriority;
+  capabilities_required?: string[] | null;
+  approval_required: boolean;
+  action_type?: string;
+  risk_level?: Approval["risk_level"];
+}
+
+/** internal/domain.PlanDependency: task_key waits for depends_on_key. */
+export interface PlanDependency {
+  task_key: string;
+  depends_on_key: string;
+}
+
+/** internal/domain.PlanPayload */
+export interface PlanPayload {
+  objective?: string;
+  interpreted_request?: string;
+  manager_id?: string;
+  task_type?: string;
+  priority?: TaskPriority;
+  child_tasks: ChildTaskPlan[] | null;
+  dependencies?: PlanDependency[] | null;
+  expected_outputs?: string[] | null;
+  verification_criteria?: string[] | null;
+}
+
 export interface OrchestrationPlan {
   id: string;
+  orchestration_id?: string;
   objective: string;
   manager_id: string;
   status: string;
-  plan_payload: {
-    child_tasks: { key: string; title: string; manager_domain: string; approval_required: boolean }[];
-  };
+  plan_payload: PlanPayload;
+}
+
+export type ComponentState = "ok" | "degraded" | "down" | "unknown";
+export const SYSTEM_COMPONENTS = ["api", "database", "worker", "provider", "scheduler", "storage", "runner"] as const;
+export type SystemComponentName = (typeof SYSTEM_COMPONENTS)[number];
+
+export interface ComponentStatus {
+  state: ComponentState;
+  evidence: string;
+  observed_at: string | null;
+}
+
+/** GET /api/v1/system/status */
+export interface SystemStatus {
+  generated_at: string;
+  components: Partial<Record<SystemComponentName, ComponentStatus>>;
 }
 
 export interface SubmitResult {
@@ -291,14 +339,18 @@ export const api = {
     return unwrap(await fetch(`${API_BASE_URL}/readyz`));
   },
 
+  /** Component health; the endpoint may not exist yet (404), callers must render "unavailable". */
+  getSystemStatus: () => fetchWithAuth<SystemStatus>("/api/v1/system/status"),
+
   // Runner
   getRunnerStatus: () => fetchWithAuth<RunnerStatus>("/api/v1/runner/status"),
   wakeRunner: () => fetchWithAuth<{ message?: string; status?: string }>("/api/v1/runner/wake", { method: "POST" }),
 
   // Tasks
-  listTasks(params?: { status?: TaskStatus; limit?: number }) {
+  listTasks(params?: { status?: TaskStatus; limit?: number; parent_id?: string }) {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);
+    if (params?.parent_id) q.set("parent_id", params.parent_id);
     if (params?.limit) q.set("limit", String(params.limit));
     const qs = q.toString();
     return fetchList<Task>(`/api/v1/tasks${qs ? `?${qs}` : ""}`);
