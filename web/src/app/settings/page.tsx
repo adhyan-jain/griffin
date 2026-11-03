@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { api, clearAuthToken, getCurrentUser, type RunnerStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SystemStatusList, useSystemStatus } from "@/components/system-status";
 import { PageContainer, PageHeader } from "@/components/page";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   const [runner, setRunner] = useState<RunnerStatus | null>(null);
   const [db, setDb] = useState<string>("checking");
   const [api_, setApi] = useState<string>("checking");
+  const sys = useSystemStatus(true, 30000);
   const [waking, setWaking] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -102,6 +104,7 @@ export default function SettingsPage() {
         <Section title="System">
           <Row label="API" value={api_} />
           <Row label="Database" value={db} />
+          <SystemStatusList status={sys.status} loading={sys.loading} onRefresh={sys.refresh} />
         </Section>
       </div>
     </PageContainer>
