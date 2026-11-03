@@ -23,6 +23,7 @@ import { api, clearAuthToken, getCurrentUser, resolveAuthToken, type RunnerStatu
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SystemStatusDot } from "@/components/system-status";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -212,7 +213,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="space-y-3 border-t pt-4">
-          <RunnerPill runner={runner} />
+          <div className="flex items-center justify-between gap-2">
+            <RunnerPill runner={runner} />
+            <SystemStatusDot />
+          </div>
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-xs text-muted-foreground" title={user?.email}>
               {user?.email ?? "Signed in"}
@@ -231,7 +235,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* Mobile top bar */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b bg-background/85 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur md:hidden">
           <Brand />
-          <RunnerPill runner={runner} />
+          <div className="flex items-center gap-1">
+            <RunnerPill runner={runner} />
+            <SystemStatusDot />
+          </div>
         </header>
 
         <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
