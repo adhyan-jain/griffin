@@ -33,8 +33,8 @@ wait_for() { # url, label, tries
 
 echo "==> postgres on :$PG_PORT"
 docker run -d --rm --name "$PG_NAME" -e POSTGRES_PASSWORD=e2e -e POSTGRES_DB=griffin -p "127.0.0.1:${PG_PORT}:5432" postgres:16-alpine >/dev/null || exit 1
-for _ in $(seq 1 40); do docker exec "$PG_NAME" pg_isready -U postgres -d griffin >/dev/null 2>&1 && break; sleep 1; done
-sleep 1
+for _ in $(seq 1 40); do docker exec "$PG_NAME" pg_isready -h 127.0.0.1 -U postgres -d griffin >/dev/null 2>&1 && break; sleep 1; done
+sleep 2
 export DATABASE_URL="postgres://postgres:e2e@127.0.0.1:${PG_PORT}/griffin?sslmode=disable"
 
 echo "==> migrations"
