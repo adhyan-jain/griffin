@@ -46,7 +46,11 @@ func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 	// 2. If runnable work exists and wakeup controller is configured, signal wake-up
 	wakeupTriggered := false
 	if count > 0 && h.wakeup != nil {
-		_ = h.wakeup.TriggerWakeup(ctx)
+		if err := h.wakeup.TriggerWakeup(ctx); err != nil {
+			// Surface failure so EventBridge/alarms see it; the next tick retries.
+			httputil.ErrorJSON(w, err)
+			return
+		}
 		wakeupTriggered = true
 	}
 
