@@ -320,6 +320,26 @@ func (o *JJOrchestrator) GetOrchestration(ctx context.Context, id uuid.UUID, use
 	return orch, dels, nil
 }
 
+// RunnableChildCount returns how many child tasks of an orchestration are currently QUEUED
+// (i.e. a runner must pick them up).
+func (o *JJOrchestrator) RunnableChildCount(ctx context.Context, orchID uuid.UUID) (int, error) {
+	dels, err := o.orchRepo.GetDelegationsByOrchestrationID(ctx, orchID, uuid.Nil)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, d := range dels {
+		task, err := o.taskRepo.GetTaskByID(ctx, d.ChildTaskID)
+		if err != nil {
+			return 0, err
+		}
+		if task.Status == domain.TaskStatusQueued {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // GetPlan retrieves an execution plan by ID.
 func (o *JJOrchestrator) GetPlan(ctx context.Context, planID uuid.UUID, userID uuid.UUID) (*domain.OrchestrationPlan, error) {
 	return o.orchRepo.GetPlanByID(ctx, planID, userID)
