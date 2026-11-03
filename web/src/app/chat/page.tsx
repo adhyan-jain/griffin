@@ -79,13 +79,13 @@ export default function ChatPage() {
           ) : (
             <div key={m.id} className="max-w-[92%] space-y-3 rounded-2xl rounded-bl-md border bg-card px-4 py-3">
               <p className="text-sm">
-                Planned as {m.result.plan.plan_payload.child_tasks.length || 1} step
-                {m.result.plan.plan_payload.child_tasks.length === 1 ? "" : "s"}, led by{" "}
+                Planned as {(m.result.plan.plan_payload.child_tasks ?? []).length || 1} step
+                {(m.result.plan.plan_payload.child_tasks ?? []).length === 1 ? "" : "s"}, led by{" "}
                 <span className="font-medium">{m.result.plan.manager_id.replaceAll("_", " ")}</span>.
               </p>
-              {m.result.plan.plan_payload.child_tasks.length > 0 && (
+              {(m.result.plan.plan_payload.child_tasks ?? []).length > 0 && (
                 <ul className="space-y-1.5 text-sm text-muted-foreground">
-                  {m.result.plan.plan_payload.child_tasks.map((c) => (
+                  {(m.result.plan.plan_payload.child_tasks ?? []).map((c) => (
                     <li key={c.key} className="flex gap-2">
                       <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
                       <span>
