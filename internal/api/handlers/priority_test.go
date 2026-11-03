@@ -38,7 +38,7 @@ func postJSON(t *testing.T, handler http.HandlerFunc, path, body string) (int, a
 // caller what is allowed. The engine is nil on purpose: validation must happen before it is used.
 func TestPriorityValidationOnEntryPoints(t *testing.T) {
 	task := NewTaskHandler(nil, nil, nil, false)
-	orch := NewOrchestratorHandler(nil, nil)
+	orch := NewOrchestratorHandler(nil, nil, nil, false)
 
 	entry := []struct {
 		name    string

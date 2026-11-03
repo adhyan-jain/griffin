@@ -140,7 +140,7 @@ func NewServer(deps ServerDependencies) *Server {
 
 	// JJ Orchestrator & Manager routes
 	if deps.Orchestrator != nil && deps.ManagerRegistry != nil {
-		orchHandler := handlers.NewOrchestratorHandler(deps.Orchestrator, deps.ManagerRegistry)
+		orchHandler := handlers.NewOrchestratorHandler(deps.Orchestrator, deps.ManagerRegistry, deps.Wakeup, scaleToZero)
 		mux.Handle("POST /api/v1/orchestrator/requests", userAuth(http.HandlerFunc(orchHandler.SubmitRequest)))
 		mux.Handle("GET /api/v1/orchestrator/requests/{id}", userAuth(http.HandlerFunc(orchHandler.GetRequest)))
 		mux.Handle("GET /api/v1/orchestrator/plans/{id}", userAuth(http.HandlerFunc(orchHandler.GetPlan)))

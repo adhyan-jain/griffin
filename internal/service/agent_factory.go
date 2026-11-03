@@ -292,6 +292,11 @@ func (f *AgentFactoryService) InstantiateTask(
 		assembledInput = json.RawMessage("{}")
 	}
 
+	maxRetries := def.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = domain.DefaultMaxRetries
+	}
+
 	task := &domain.Task{
 		UserID:        def.UserID,
 		ParentID:      parentTaskID,
@@ -301,7 +306,7 @@ func (f *AgentFactoryService) InstantiateTask(
 		Goal:          goal,
 		InputPayload:  assembledInput,
 		Priority:      priority,
-		MaxRetries:    def.MaxRetries,
+		MaxRetries:    maxRetries,
 	}
 
 	return task, nil
