@@ -727,7 +727,7 @@ func (r *PostgresTaskRepository) CountRunnableTasks(ctx context.Context) (int64,
 	query := `
 		SELECT COUNT(*)
 		FROM tasks t
-		WHERE t.status IN ('RUNNING', 'ROUTED')
+		WHERE (t.status IN ('RUNNING', 'ROUTED') AND t.leased_by IS DISTINCT FROM 'JJ_ORCHESTRATOR') -- orchestration roots are coordination-only; their children count themselves
 		   OR (t.status = 'QUEUED' AND (t.scheduled_for IS NULL OR t.scheduled_for <= NOW()))
 		   OR (t.status = 'WAITING_FOR_DEPENDENCY' AND NOT EXISTS (
 		       SELECT 1 FROM task_dependencies td
