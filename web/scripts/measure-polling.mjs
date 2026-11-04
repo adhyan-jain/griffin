@@ -30,7 +30,10 @@ const C2 = "18505a74-0000-4000-8000-000000000003";
 const T0 = new Date().toISOString();
 const t = Date.now();
 const elapsed = () => (Date.now() - t) / 1000;
-const completed = () => SCENARIO === "completes" && elapsed() > 20;
+// terminal / terminal-partial: the task is ALREADY finished when the page opens and the mock holds
+// real attempts and events. The page must show them (the 2026-11-04 "Activity 0, Attempts 0" bug).
+const TERMINAL = SCENARIO === "terminal" || SCENARIO === "terminal-partial";
+const completed = () => TERMINAL || (SCENARIO === "completes" && elapsed() > 20);
 
 const task = (id, over = {}) => ({
   id, user_id: "u1", manager_domain: "research", title: `task ${id.slice(0, 8)}`, goal: "goal",
@@ -51,9 +54,20 @@ function respond(url, method) {
   if (p === `/api/v1/tasks/${ROOT}`) return ok(root());
   if (/^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(p)) return ok(kids().find((k) => p.endsWith(k.id)) ?? root());
   if (p === "/api/v1/tasks") return ok(u.searchParams.get("parent_id") === ROOT ? kids() : [root(), ...kids()]);
-  if (p.endsWith("/attempts")) return ok([]);
-  if (p.endsWith("/events")) return ok([{ id: 1, task_id: ROOT, event_type: "STATUS_CHANGE", message: "created", created_at: T0 }]);
-  if (p === "/api/v1/artifacts") return ok([]);
+  if (p.endsWith("/attempts"))
+    return ok(
+      TERMINAL
+        ? [{ id: "a1", task_id: ROOT, worker_id: "griffin-worker-1", attempt_number: 1, status: "COMPLETED", prompt_tokens: 5000, completion_tokens: 2029, duration_ms: 13891, started_at: T0, completed_at: T0 }]
+        : [],
+    );
+  if (p.endsWith("/events")) {
+    const ev = (id, msg) => ({ id, task_id: ROOT, event_type: "STATUS_CHANGE", message: msg, created_at: T0 });
+    return ok(TERMINAL ? [ev(1, "created"), ev(2, "unblocked"), ev(3, "claimed by worker griffin-worker-1"), ev(4, "completed")] : [ev(1, "created")]);
+  }
+  if (p === "/api/v1/artifacts") {
+    if (SCENARIO === "terminal-partial") return { status: 500, body: { success: false, error: { code: "INTERNAL_ERROR", message: "boom" } } };
+    return ok([]);
+  }
   if (p === "/api/v1/approvals") return ok([]);
   if (p === "/api/v1/runner/status") return ok({ state: "running", scale_to_zero_enabled: true, timestamp: T0 });
   if (p === "/api/v1/managers") return ok([]);
@@ -105,7 +119,10 @@ page.on("requestfailed", done);
 
 await page.route(`${API}/**`, async (route) => {
   const req = route.request();
-  await new Promise((r) => setTimeout(r, LATENCY_MS));
+  // In the terminal scenarios the summary answers fast and the detail endpoints slowly, so the task
+  // flips to terminal while attempts/events are still in flight (the window the bug lived in).
+  const slowDetail = TERMINAL && /\/(attempts|events)$|\/artifacts$/.test(new URL(req.url()).pathname);
+  await new Promise((r) => setTimeout(r, TERMINAL ? (slowDetail ? 200 : 15) : LATENCY_MS));
   const { status, body } = respond(req.url(), req.method());
   await route.fulfill({ status, contentType: "application/json", headers: { "access-control-allow-origin": BASE }, body: JSON.stringify(body) });
 });
@@ -123,6 +140,7 @@ if (SCENARIO === "hidden") {
 const startedAt = elapsed();
 await page.waitForTimeout(SECONDS * 1000);
 const endedAt = elapsed();
+const tabLabels = TERMINAL ? await page.locator('[role="tab"]').allInnerTexts() : [];
 await browser.close();
 
 const windowCalls = calls.filter((c) => c.at >= startedAt && c.at <= endedAt);
@@ -139,8 +157,17 @@ for (const [k, v] of Object.entries(byEndpoint).sort((a, b) => b[1] - a[1])) con
 if (SCENARIO === "completes") console.log(`requests after the task reached a terminal state (t>26s): ${after.length}`);
 
 let failed = false;
+if (TERMINAL) {
+  const clean = tabLabels.map((s) => s.replace(/\s+/g, " ").trim());
+  console.log(`tab labels: ${clean.join(" | ")}`);
+  for (const want of ["Activity (4)", "Attempts (1)"]) {
+    if (!clean.includes(want)) { console.error(`FAIL: the page did not show "${want}" although the API returned that data`); failed = true; }
+  }
+}
 if (windowCalls.length > BUDGET) { console.error(`FAIL: ${windowCalls.length} requests exceeds budget ${BUDGET}`); failed = true; }
-if (maxIdentical > 1) { console.error(`FAIL: ${maxIdentical} identical requests were in flight at once`); failed = true; }
+// Terminal scenarios deliberately abort the stopped poller's requests and re-issue them once; the
+// aborted request stays "in flight" in this harness until the mock's timer fires, so skip the check.
+if (maxIdentical > 1 && !TERMINAL) { console.error(`FAIL: ${maxIdentical} identical requests were in flight at once`); failed = true; }
 if (SCENARIO === "completes" && after.length > 4) { console.error(`FAIL: polling continued after a terminal state (${after.length} requests)`); failed = true; }
 if (!failed) console.log("PASS");
 process.exit(failed ? 1 : 0);

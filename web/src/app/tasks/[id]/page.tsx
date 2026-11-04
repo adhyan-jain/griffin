@@ -68,9 +68,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   // 2. Attempts and events (the "Now" card and Activity/Attempts tabs): slower while active.
   const { refresh: refreshDetail } = usePolling(
     async (signal) => {
-      const [a, e] = await Promise.all([api.getTaskAttempts(id, { signal }), api.getTaskEvents(id, { signal })]);
-      setAttempts(a);
-      setEvents(e);
+      // Apply each result independently: one failing endpoint must not hide the other's data.
+      const [a, e] = await Promise.allSettled([api.getTaskAttempts(id, { signal }), api.getTaskEvents(id, { signal })]);
+      if (a.status === "fulfilled") setAttempts(a.value);
+      if (e.status === "fulfilled") setEvents(e.value);
+      if (a.status === "rejected" && e.status === "rejected") throw a.reason; // let the poller back off
     },
     { intervalMs: DETAIL_POLL_MS, enabled: !terminal },
   );
@@ -91,17 +93,16 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   useEffect(() => {
     if (!terminal) return;
     const c = new AbortController();
-    Promise.all([
+    Promise.allSettled([
       api.getTaskAttempts(id, { signal: c.signal }),
       api.getTaskEvents(id, { signal: c.signal }),
       api.listArtifacts(id, { signal: c.signal }),
-    ])
-      .then(([a, e, f]) => {
-        setAttempts(a);
-        setEvents(e);
-        setFiles(f);
-      })
-      .catch(() => {});
+    ]).then(([a, e, f]) => {
+      // Each result stands alone: a failure in one must never blank the others.
+      if (a.status === "fulfilled") setAttempts(a.value);
+      if (e.status === "fulfilled") setEvents(e.value);
+      if (f.status === "fulfilled") setFiles(f.value);
+    });
     return () => c.abort();
   }, [id, terminal]);
 

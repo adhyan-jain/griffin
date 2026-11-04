@@ -111,4 +111,25 @@ describe("abort signals", () => {
     c.abort();
     await expect(mod.api.getTask("t1", { signal: c.signal })).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  // Production 2026-11-04: a COMPLETED subtask showed Activity 0 / Attempts 0 / Worker "not assigned"
+  // although the database had 4 events and 1 attempt. Stopping a poller aborts its in-flight request;
+  // the one-shot "final fetch" for the same URL then joined that aborted shared request and failed.
+  it("a GET issued right after every earlier caller aborted starts a FRESH request, not the aborted one", async () => {
+    const p = pendingFetch();
+    const poller = new AbortController();
+    const stopped = mod.api.getTaskEvents("t1", { signal: poller.signal });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    // React runs a stopped poller's cleanup and the next effect in the SAME synchronous commit:
+    // there is no microtask gap between the abort and the new request for the same URL.
+    poller.abort(); // the poller is stopped (task reached a terminal state)
+    const finalFetch = mod.api.getTaskEvents("t1");
+    expect(p.signals[0]?.aborted).toBe(true);
+
+    await expect(stopped).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    p.release();
+    await expect(finalFetch).resolves.toBeTruthy();
+  });
 });
