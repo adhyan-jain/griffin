@@ -25,6 +25,12 @@ type TaskFilter struct {
 	Offset        int
 }
 
+// DependencyOutput is the result of a completed prerequisite task.
+type DependencyOutput struct {
+	Title  string
+	Output json.RawMessage
+}
+
 // TaskRepository defines the persistence contract for Griffin tasks.
 type TaskRepository interface {
 	CreateTask(ctx context.Context, task *domain.Task) (*domain.Task, error)
@@ -42,6 +48,7 @@ type TaskRepository interface {
 	AddDependency(ctx context.Context, taskID, dependsOnID uuid.UUID) error
 	GetDependencies(ctx context.Context, taskID uuid.UUID) ([]uuid.UUID, error)
 	CheckDependenciesCompleted(ctx context.Context, taskID uuid.UUID) (bool, error)
+	GetDependencyOutputs(ctx context.Context, taskID uuid.UUID) ([]DependencyOutput, error)
 	GetDependentTasks(ctx context.Context, prerequisiteTaskID uuid.UUID) ([]uuid.UUID, error)
 	UnblockTaskIfEligible(ctx context.Context, taskID uuid.UUID) (bool, error)
 
@@ -460,6 +467,35 @@ func (r *PostgresTaskRepository) GetDependencies(ctx context.Context, taskID uui
 		deps = append(deps, id)
 	}
 	return deps, nil
+}
+
+// GetDependencyOutputs returns the title and output of each COMPLETED prerequisite of a task,
+// oldest first.
+func (r *PostgresTaskRepository) GetDependencyOutputs(ctx context.Context, taskID uuid.UUID) ([]DependencyOutput, error) {
+	query := `
+		SELECT parent.title, parent.output_payload
+		FROM task_dependencies td
+		JOIN tasks parent ON parent.id = td.depends_on_task_id
+		WHERE td.task_id = $1 AND parent.status = 'COMPLETED'
+		ORDER BY parent.created_at, parent.id
+	`
+	rows, err := r.pool.Query(ctx, query, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("get dependency outputs: %w", err)
+	}
+	defer rows.Close()
+
+	var outs []DependencyOutput
+	for rows.Next() {
+		var d DependencyOutput
+		var payload []byte
+		if err := rows.Scan(&d.Title, &payload); err != nil {
+			return nil, fmt.Errorf("scan dependency output: %w", err)
+		}
+		d.Output = json.RawMessage(payload)
+		outs = append(outs, d)
+	}
+	return outs, rows.Err()
 }
 
 func (r *PostgresTaskRepository) CheckDependenciesCompleted(ctx context.Context, taskID uuid.UUID) (bool, error) {

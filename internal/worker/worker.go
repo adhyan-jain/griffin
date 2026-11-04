@@ -151,7 +151,18 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		_ = w.taskRepo.RecordAttempt(ctx, attempt)
 	}
 
-	res, execErr := w.executor.Execute(taskCtx, task)
+	// Give a dependent task the results of its prerequisites, for this run only (nothing is persisted).
+	execTask := task
+	if w.taskRepo != nil {
+		deps, depErr := w.taskRepo.GetDependencyOutputs(ctx, task.ID)
+		if depErr != nil {
+			w.logger.Warn("Could not load dependency outputs; running with the task goal only", "worker_id", w.ID, "task_id", task.ID, "error", depErr)
+		} else {
+			execTask = withDependencyOutputs(task, deps, 0)
+		}
+	}
+
+	res, execErr := w.executor.Execute(taskCtx, execTask)
 	durationMs := int(time.Since(start).Milliseconds())
 
 	// Provider-agnostic guard: a "successful" run with no result must never become COMPLETED.
