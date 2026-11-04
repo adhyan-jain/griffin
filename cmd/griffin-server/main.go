@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/griffin/core/internal/api"
 	"github.com/griffin/core/internal/config"
 	"github.com/griffin/core/internal/database"
@@ -227,6 +229,11 @@ func main() {
 				HeartbeatInterval: time.Duration(cfg.HeartbeatIntervalSeconds) * time.Second,
 				PollInterval:      1 * time.Second,
 				Logger:            logger,
+				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
+					if err := jjOrchestrator.ReconcileByChildTask(hookCtx, taskID); err != nil {
+						logger.Warn("Orchestration reconcile after task finish failed", "task_id", taskID, "error", err)
+					}
+				},
 			})
 			workerPool.Add(w)
 			go func(workerInstance *worker.Worker) {
