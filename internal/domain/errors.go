@@ -1,6 +1,20 @@
 package domain
 
-import "errors"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+)
+
+// IsEmptyOutput reports whether a task output carries no result: nil, blank,
+// `{}`, `null` or `""` (after trimming whitespace).
+func IsEmptyOutput(output json.RawMessage) bool {
+	switch string(bytes.TrimSpace(output)) {
+	case "", "{}", "null", `""`:
+		return true
+	}
+	return false
+}
 
 var (
 	ErrNotFound               = errors.New("resource not found")
