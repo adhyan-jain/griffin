@@ -343,7 +343,12 @@ async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promis
       if (settled) return;
       settled = true;
       entry.refs -= 1;
-      if (entry.refs <= 0) entry.controller.abort();
+      if (entry.refs <= 0) {
+        entry.controller.abort();
+        // Never let a later caller join a request we just aborted: React runs a stopped poller's
+        // cleanup and the next effect in one synchronous commit, so the entry must leave the map now.
+        if (inflightGets.get(path) === entry) inflightGets.delete(path);
+      }
       reject(abortError());
     };
     signal?.addEventListener("abort", onAbort, { once: true });
