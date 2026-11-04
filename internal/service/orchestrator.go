@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -306,6 +307,21 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 	}
 	orch.Status = domain.OrchestrationStatusRunning
 	return orch, nil
+}
+
+// ReconcileByChildTask reconciles the orchestration that owns the given child task, if any.
+// Safe to call repeatedly and concurrently: ReconcileOrchestration is a no-op once the
+// orchestration is terminal. A task that is not an orchestration child is ignored.
+func (o *JJOrchestrator) ReconcileByChildTask(ctx context.Context, childTaskID uuid.UUID) error {
+	del, err := o.orchRepo.GetDelegationByChildTaskID(ctx, childTaskID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("jj: find orchestration for child task: %w", err)
+	}
+	_, err = o.ReconcileOrchestration(ctx, del.OrchestrationID)
+	return err
 }
 
 // ReconcileInFlight recovers and reconciles all active orchestrations across system restarts.

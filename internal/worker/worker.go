@@ -30,6 +30,7 @@ type Worker struct {
 	heartbeatInterval time.Duration
 	pollInterval      time.Duration
 	logger            *slog.Logger
+	onTaskFinished    func(ctx context.Context, taskID uuid.UUID)
 
 	paused   atomic.Bool
 	inFlight atomic.Int32
@@ -45,6 +46,10 @@ type Config struct {
 	HeartbeatInterval time.Duration
 	PollInterval      time.Duration
 	Logger            *slog.Logger
+
+	// OnTaskFinished, if set, is called after this worker wrote a task's final state (completed,
+	// or failed; retryable failures included, so the hook must tolerate non-terminal states).
+	OnTaskFinished func(ctx context.Context, taskID uuid.UUID)
 }
 
 // NewWorker initializes a Worker.
@@ -78,7 +83,21 @@ func NewWorker(cfg Config) *Worker {
 		heartbeatInterval: cfg.HeartbeatInterval,
 		pollInterval:      cfg.PollInterval,
 		logger:            cfg.Logger,
+		onTaskFinished:    cfg.OnTaskFinished,
 	}
+}
+
+// notifyFinished invokes the optional OnTaskFinished hook, never letting it break the worker loop.
+func (w *Worker) notifyFinished(ctx context.Context, taskID uuid.UUID) {
+	if w.onTaskFinished == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			w.logger.Error("OnTaskFinished hook panicked", "worker_id", w.ID, "task_id", taskID, "panic", r)
+		}
+	}()
+	w.onTaskFinished(ctx, taskID)
 }
 
 // recordAttempt persists an attempt record; a failure is logged, never fatal to the run.
@@ -212,6 +231,8 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 
 		if err := w.engine.FailTask(ctx, task.ID, w.ID, errMsg, retryable); err != nil {
 			w.logger.Error("engine.FailTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+		} else {
+			w.notifyFinished(ctx, task.ID)
 		}
 
 		if isAuthErr && w.taskRepo != nil {
@@ -243,6 +264,8 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	w.logger.Info("Task execution completed successfully", "worker_id", w.ID, "task_id", task.ID)
 	if err := w.engine.CompleteTask(ctx, task.ID, w.ID, res.Output); err != nil {
 		w.logger.Error("engine.CompleteTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+	} else {
+		w.notifyFinished(ctx, task.ID)
 	}
 
 	attempt.Status = "COMPLETED"
