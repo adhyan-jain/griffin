@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -371,9 +372,21 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	var outPayload json.RawMessage
 	if len(parsed.StructuredOutput) > 0 {
 		outPayload = parsed.StructuredOutput
-	} else if parsed.ResponseText != "" {
+	} else if strings.TrimSpace(parsed.ResponseText) != "" {
 		encoded, _ := json.Marshal(map[string]string{"response": parsed.ResponseText})
 		outPayload = encoded
+	}
+
+	if len(outPayload) == 0 {
+		e.logger.Error("Antigravity exited 0 but returned no result", "task_id", task.ID, "exec_id", execID, "duration", duration)
+		return &worker.ExecutionResult{
+			ExecutionID:  execID,
+			ProviderName: "antigravity",
+			Status:       "FAILED",
+			Duration:     duration,
+			Error:        ErrEmptyResult,
+			Retryable:    true,
+		}, ErrEmptyResult
 	}
 
 	var convID *string

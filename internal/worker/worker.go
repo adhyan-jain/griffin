@@ -17,6 +17,9 @@ import (
 	"github.com/griffin/core/internal/service"
 )
 
+// ErrEmptyOutput marks an execution that reported success but produced no result.
+var ErrEmptyOutput = errors.New("execution reported success but produced no result")
+
 // Worker polls the task engine, leases tasks, maintains heartbeats, and drives execution.
 type Worker struct {
 	ID                string
@@ -150,6 +153,15 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 
 	res, execErr := w.executor.Execute(taskCtx, task)
 	durationMs := int(time.Since(start).Milliseconds())
+
+	// Provider-agnostic guard: a "successful" run with no result must never become COMPLETED.
+	if execErr == nil && (res == nil || (res.Error == nil && res.RequiresApproval == nil && domain.IsEmptyOutput(res.Output))) {
+		if res == nil {
+			res = &ExecutionResult{}
+		}
+		res.Error = ErrEmptyOutput
+		res.Retryable = true
+	}
 
 	if execErr != nil || (res != nil && res.Error != nil) {
 		var failErr error = execErr
