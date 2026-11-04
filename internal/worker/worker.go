@@ -65,6 +65,10 @@ func NewWorker(cfg Config) *Worker {
 		cfg.Logger = slog.Default()
 	}
 
+	if cfg.TaskRepo == nil {
+		cfg.Logger.Warn("Worker constructed with no TaskRepo: attempts, events and dependency outputs will not be recorded or loaded", "worker_id", cfg.ID)
+	}
+
 	return &Worker{
 		ID:                cfg.ID,
 		engine:            cfg.Engine,
@@ -74,6 +78,16 @@ func NewWorker(cfg Config) *Worker {
 		heartbeatInterval: cfg.HeartbeatInterval,
 		pollInterval:      cfg.PollInterval,
 		logger:            cfg.Logger,
+	}
+}
+
+// recordAttempt persists an attempt record; a failure is logged, never fatal to the run.
+func (w *Worker) recordAttempt(ctx context.Context, attempt *domain.TaskAttempt) {
+	if w.taskRepo == nil {
+		return
+	}
+	if err := w.taskRepo.RecordAttempt(ctx, attempt); err != nil {
+		w.logger.Error("RecordAttempt failed", "worker_id", w.ID, "task_id", attempt.TaskID, "attempt_status", attempt.Status, "error", err)
 	}
 }
 
@@ -148,7 +162,7 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		StartedAt:     start,
 	}
 	if w.taskRepo != nil {
-		_ = w.taskRepo.RecordAttempt(ctx, attempt)
+		w.recordAttempt(ctx, attempt)
 	}
 
 	// Give a dependent task the results of its prerequisites, for this run only (nothing is persisted).
@@ -215,7 +229,7 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		now := time.Now().UTC()
 		attempt.CompletedAt = &now
 		if w.taskRepo != nil {
-			_ = w.taskRepo.RecordAttempt(ctx, attempt)
+			w.recordAttempt(ctx, attempt)
 		}
 		return true, nil
 	}
@@ -238,7 +252,7 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	now := time.Now().UTC()
 	attempt.CompletedAt = &now
 	if w.taskRepo != nil {
-		_ = w.taskRepo.RecordAttempt(ctx, attempt)
+		w.recordAttempt(ctx, attempt)
 	}
 
 	return true, nil
