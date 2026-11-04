@@ -17,6 +17,9 @@ import (
 	"github.com/griffin/core/internal/service"
 )
 
+// ErrEmptyOutput marks an execution that reported success but produced no result.
+var ErrEmptyOutput = errors.New("execution reported success but produced no result")
+
 // Worker polls the task engine, leases tasks, maintains heartbeats, and drives execution.
 type Worker struct {
 	ID                string
@@ -27,6 +30,7 @@ type Worker struct {
 	heartbeatInterval time.Duration
 	pollInterval      time.Duration
 	logger            *slog.Logger
+	onTaskFinished    func(ctx context.Context, taskID uuid.UUID)
 
 	paused   atomic.Bool
 	inFlight atomic.Int32
@@ -42,6 +46,10 @@ type Config struct {
 	HeartbeatInterval time.Duration
 	PollInterval      time.Duration
 	Logger            *slog.Logger
+
+	// OnTaskFinished, if set, is called after this worker wrote a task's final state (completed,
+	// or failed; retryable failures included, so the hook must tolerate non-terminal states).
+	OnTaskFinished func(ctx context.Context, taskID uuid.UUID)
 }
 
 // NewWorker initializes a Worker.
@@ -62,6 +70,10 @@ func NewWorker(cfg Config) *Worker {
 		cfg.Logger = slog.Default()
 	}
 
+	if cfg.TaskRepo == nil {
+		cfg.Logger.Warn("Worker constructed with no TaskRepo: attempts, events and dependency outputs will not be recorded or loaded", "worker_id", cfg.ID)
+	}
+
 	return &Worker{
 		ID:                cfg.ID,
 		engine:            cfg.Engine,
@@ -71,6 +83,30 @@ func NewWorker(cfg Config) *Worker {
 		heartbeatInterval: cfg.HeartbeatInterval,
 		pollInterval:      cfg.PollInterval,
 		logger:            cfg.Logger,
+		onTaskFinished:    cfg.OnTaskFinished,
+	}
+}
+
+// notifyFinished invokes the optional OnTaskFinished hook, never letting it break the worker loop.
+func (w *Worker) notifyFinished(ctx context.Context, taskID uuid.UUID) {
+	if w.onTaskFinished == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			w.logger.Error("OnTaskFinished hook panicked", "worker_id", w.ID, "task_id", taskID, "panic", r)
+		}
+	}()
+	w.onTaskFinished(ctx, taskID)
+}
+
+// recordAttempt persists an attempt record; a failure is logged, never fatal to the run.
+func (w *Worker) recordAttempt(ctx context.Context, attempt *domain.TaskAttempt) {
+	if w.taskRepo == nil {
+		return
+	}
+	if err := w.taskRepo.RecordAttempt(ctx, attempt); err != nil {
+		w.logger.Error("RecordAttempt failed", "worker_id", w.ID, "task_id", attempt.TaskID, "attempt_status", attempt.Status, "error", err)
 	}
 }
 
@@ -145,11 +181,31 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		StartedAt:     start,
 	}
 	if w.taskRepo != nil {
-		_ = w.taskRepo.RecordAttempt(ctx, attempt)
+		w.recordAttempt(ctx, attempt)
 	}
 
-	res, execErr := w.executor.Execute(taskCtx, task)
+	// Give a dependent task the results of its prerequisites, for this run only (nothing is persisted).
+	execTask := task
+	if w.taskRepo != nil {
+		deps, depErr := w.taskRepo.GetDependencyOutputs(ctx, task.ID)
+		if depErr != nil {
+			w.logger.Warn("Could not load dependency outputs; running with the task goal only", "worker_id", w.ID, "task_id", task.ID, "error", depErr)
+		} else {
+			execTask = withDependencyOutputs(task, deps, 0)
+		}
+	}
+
+	res, execErr := w.executor.Execute(taskCtx, execTask)
 	durationMs := int(time.Since(start).Milliseconds())
+
+	// Provider-agnostic guard: a "successful" run with no result must never become COMPLETED.
+	if execErr == nil && (res == nil || (res.Error == nil && res.RequiresApproval == nil && domain.IsEmptyOutput(res.Output))) {
+		if res == nil {
+			res = &ExecutionResult{}
+		}
+		res.Error = ErrEmptyOutput
+		res.Retryable = true
+	}
 
 	if execErr != nil || (res != nil && res.Error != nil) {
 		var failErr error = execErr
@@ -175,6 +231,8 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 
 		if err := w.engine.FailTask(ctx, task.ID, w.ID, errMsg, retryable); err != nil {
 			w.logger.Error("engine.FailTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+		} else {
+			w.notifyFinished(ctx, task.ID)
 		}
 
 		if isAuthErr && w.taskRepo != nil {
@@ -192,7 +250,7 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		now := time.Now().UTC()
 		attempt.CompletedAt = &now
 		if w.taskRepo != nil {
-			_ = w.taskRepo.RecordAttempt(ctx, attempt)
+			w.recordAttempt(ctx, attempt)
 		}
 		return true, nil
 	}
@@ -206,6 +264,8 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	w.logger.Info("Task execution completed successfully", "worker_id", w.ID, "task_id", task.ID)
 	if err := w.engine.CompleteTask(ctx, task.ID, w.ID, res.Output); err != nil {
 		w.logger.Error("engine.CompleteTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+	} else {
+		w.notifyFinished(ctx, task.ID)
 	}
 
 	attempt.Status = "COMPLETED"
@@ -215,7 +275,7 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	now := time.Now().UTC()
 	attempt.CompletedAt = &now
 	if w.taskRepo != nil {
-		_ = w.taskRepo.RecordAttempt(ctx, attempt)
+		w.recordAttempt(ctx, attempt)
 	}
 
 	return true, nil

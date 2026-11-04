@@ -16,6 +16,9 @@ import (
 	"github.com/griffin/core/internal/repository"
 )
 
+// orchestratorWorkerID is the synthetic lease holder the JJ orchestrator uses for root tasks.
+const orchestratorWorkerID = "JJ_ORCHESTRATOR"
+
 // TaskEngine coordinates task lifecycle, dependencies, execution leases, and approvals.
 type TaskEngine struct {
 	taskRepo     repository.TaskRepository
@@ -141,6 +144,9 @@ func (e *TaskEngine) Heartbeat(ctx context.Context, taskID uuid.UUID, workerID s
 
 // CompleteTask marks a task as COMPLETED and unblocks any eligible downstream dependent tasks.
 func (e *TaskEngine) CompleteTask(ctx context.Context, taskID uuid.UUID, workerID string, output json.RawMessage) error {
+	if workerID != orchestratorWorkerID && domain.IsEmptyOutput(output) {
+		return errors.Join(domain.ErrValidation, errors.New("task output is empty: a task cannot be completed without a result"))
+	}
 	err := e.taskRepo.CompleteTask(ctx, taskID, workerID, output)
 	if err != nil {
 		return fmt.Errorf("task_engine: complete task: %w", err)
