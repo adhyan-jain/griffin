@@ -419,3 +419,65 @@ func (s *StorageService) GetPresignedDownloadURL(ctx context.Context, id uuid.UU
 		ExpiresIn: lifetime,
 	})
 }
+
+// ListKind is the metadata kind that marks a Markdown artifact as an editable, growing list.
+const ListKind = "list"
+
+// UpdateText rewrites a Markdown artifact's content: replacing it, or appending a new section to the
+// end. It exists for living lists (a tracker a task keeps adding to). Only text artifacts the user
+// owns can be edited; the object is rewritten in place so the file keeps its identity and link.
+func (s *StorageService) UpdateText(ctx context.Context, id, userID uuid.UUID, text string, appendMode bool, maxBytes int64) (*domain.Artifact, error) {
+	if userID == uuid.Nil {
+		return nil, domain.ErrUnauthorized
+	}
+	art, err := s.artifactRepo.GetArtifactByIDAndUser(ctx, id, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !s.ownsObject(art, userID) {
+		return nil, domain.ErrNotFound
+	}
+	if art.ArtifactType != "MARKDOWN" {
+		return nil, fmt.Errorf("%w: only text files can be edited", domain.ErrValidation)
+	}
+
+	next := text
+	if appendMode {
+		down, err := s.provider.Download(ctx, DownloadInput{Bucket: *art.Bucket, Key: *art.ObjectKey})
+		if err != nil {
+			return nil, fmt.Errorf("storage download: %w", err)
+		}
+		defer down.Body.Close()
+		if maxBytes <= 0 {
+			maxBytes = 5 << 20
+		}
+		existing, err := io.ReadAll(io.LimitReader(down.Body, maxBytes+1))
+		if err != nil {
+			return nil, fmt.Errorf("read existing list: %w", err)
+		}
+		cur := strings.TrimRight(string(existing), "\n ")
+		if cur == "" {
+			next = text
+		} else {
+			next = cur + "\n\n" + strings.TrimLeft(text, "\n")
+		}
+	}
+	next = strings.TrimRight(next, "\n ") + "\n"
+	if maxBytes > 0 && int64(len(next)) > maxBytes {
+		return nil, fmt.Errorf("%w: the list would exceed the %d byte limit", domain.ErrValidation, maxBytes)
+	}
+
+	sum := sha256.Sum256([]byte(next))
+	checksum := hex.EncodeToString(sum[:])
+	if _, err := s.provider.Upload(ctx, UploadInput{
+		Bucket:      *art.Bucket,
+		Key:         *art.ObjectKey,
+		Body:        strings.NewReader(next),
+		ContentType: "text/markdown; charset=utf-8",
+		Size:        int64(len(next)),
+		Metadata:    map[string]string{"griffin-user-id": userID.String(), "griffin-checksum": checksum},
+	}); err != nil {
+		return nil, fmt.Errorf("storage upload: %w", err)
+	}
+	return s.artifactRepo.UpdateArtifactContentInfo(ctx, id, userID, int64(len(next)), checksum)
+}

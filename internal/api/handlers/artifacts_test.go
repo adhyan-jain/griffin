@@ -446,3 +446,103 @@ func TestArtifacts_StorageErrorMapping(t *testing.T) {
 		}
 	}
 }
+
+func (m *memArtifactRepo) UpdateArtifactContentInfo(_ context.Context, id uuid.UUID, userID uuid.UUID, size int64, checksum string) (*domain.Artifact, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.arts[id]
+	if !ok || a.UserID != userID {
+		return nil, domain.ErrNotFound
+	}
+	a.FileSizeBytes = &size
+	a.Checksum = &checksum
+	return a, nil
+}
+
+func jsonReq(method, body string) *http.Request {
+	r := httptest.NewRequest(method, "/", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	return r
+}
+
+// A living list can be created, grown by appending, replaced, and only its owner can touch it.
+func TestLists_CreateAppendReplaceAndOwnership(t *testing.T) {
+	e := newEnv(1 << 20)
+	owner, other := uuid.New(), uuid.New()
+
+	rec := e.do(owner, e.h.CreateList, jsonReq(http.MethodPost, `{"title":"Internship tracker","content":"# Internship tracker\n| Company | Status |\n|---|---|"}`), "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var created struct{ Data domain.Artifact }
+	var raw map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &raw)
+	id := ""
+	if d, ok := raw["data"].(map[string]any); ok {
+		id, _ = d["id"].(string)
+		_ = created
+		if !strings.Contains(string(rec.Body.Bytes()), `"kind":"list"`) && !strings.Contains(rec.Body.String(), `\"kind\":\"list\"`) && !strings.Contains(rec.Body.String(), `"kind": "list"`) {
+			t.Fatalf("list is not marked as a list: %s", rec.Body.String())
+		}
+	} else if v, ok := raw["id"].(string); ok {
+		id = v
+	}
+	if id == "" {
+		t.Fatalf("no id in response: %s", rec.Body.String())
+	}
+
+	body := func(user uuid.UUID) string {
+		d := e.do(user, e.h.DownloadArtifact, get(), id)
+		return d.Body.String()
+	}
+
+	if rec := e.do(owner, e.h.UpdateArtifactText, jsonReq(http.MethodPut, `{"text":"| Acme | Applied |","mode":"append"}`), id); rec.Code != http.StatusOK {
+		t.Fatalf("append: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := e.do(owner, e.h.UpdateArtifactText, jsonReq(http.MethodPut, `{"text":"| Globex | Interview |","mode":"append"}`), id); rec.Code != http.StatusOK {
+		t.Fatalf("second append: %d", rec.Code)
+	}
+	got := body(owner)
+	if !strings.Contains(got, "| Acme | Applied |") || !strings.Contains(got, "| Globex | Interview |") || !strings.HasPrefix(got, "# Internship tracker") {
+		t.Fatalf("appends must keep earlier content and add new rows:\n%s", got)
+	}
+
+	if rec := e.do(owner, e.h.UpdateArtifactText, jsonReq(http.MethodPut, `{"text":"# Fresh start"}`), id); rec.Code != http.StatusOK {
+		t.Fatalf("replace: %d", rec.Code)
+	}
+	if got := body(owner); strings.TrimSpace(got) != "# Fresh start" {
+		t.Fatalf("replace must overwrite: %q", got)
+	}
+
+	// Another user can neither read nor change it.
+	if rec := e.do(other, e.h.UpdateArtifactText, jsonReq(http.MethodPut, `{"text":"hijack","mode":"append"}`), id); rec.Code != http.StatusNotFound {
+		t.Fatalf("other user must get 404, got %d", rec.Code)
+	}
+	if got := body(owner); strings.Contains(got, "hijack") {
+		t.Fatal("another user's edit leaked into the list")
+	}
+
+	// Validation: bad mode, empty append, missing title, oversize.
+	for name, req := range map[string]*http.Request{
+		"bad mode":     jsonReq(http.MethodPut, `{"text":"x","mode":"merge"}`),
+		"empty append": jsonReq(http.MethodPut, `{"text":"  ","mode":"append"}`),
+	} {
+		if rec := e.do(owner, e.h.UpdateArtifactText, req, id); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: want 400, got %d", name, rec.Code)
+		}
+	}
+	if rec := e.do(owner, e.h.CreateList, jsonReq(http.MethodPost, `{"title":"  "}`), ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("missing title: want 400, got %d", rec.Code)
+	}
+	small := newEnv(64)
+	rec = small.do(owner, small.h.CreateList, jsonReq(http.MethodPost, `{"title":"Tiny","content":"ok"}`), "")
+	var rr map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &rr)
+	sid, _ := rr["id"].(string)
+	if d, ok := rr["data"].(map[string]any); ok {
+		sid, _ = d["id"].(string)
+	}
+	if rec := small.do(owner, small.h.UpdateArtifactText, jsonReq(http.MethodPut, `{"text":"`+strings.Repeat("a", 200)+`","mode":"append"}`), sid); rec.Code == http.StatusOK {
+		t.Error("an append past the size limit must be rejected")
+	}
+}
