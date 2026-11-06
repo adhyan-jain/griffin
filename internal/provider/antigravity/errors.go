@@ -15,4 +15,6 @@ var (
 	ErrWorkspacePathTraversal = errors.New("workspace path traversal attempt detected")
 	ErrRateLimitExceeded      = errors.New("antigravity provider rate limit or quota exceeded")
 	ErrExecutionFailed        = errors.New("antigravity execution returned an error")
+	ErrEmptyResult            = errors.New("antigravity returned an empty result")
+	ErrToolPermissionDenied   = errors.New("antigravity model attempted a tool the headless runner cannot approve")
 )
