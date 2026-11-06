@@ -454,3 +454,18 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Files were saved but could only be downloaded, so they were invisible in practice. Old tasks piled up long text nobody reads again, while the file already holds the full answer.
 - **Limit**: There is no per-task "keep forever" flag yet; a result worth reusing should be saved to a list (or become a playbook), which are separate files that trimming never touches.
 - **Location**: `web/src/app/artifacts/[id]/page.tsx`, `web/src/lib/result-text.ts`, `internal/repository/task_repo.go` (`CompactFinishedTasks`), `cmd/griffin-server/main.go`, `tests/task_lifecycle_test.go`
+
+#### ADR-067: The owner is the authority; trust follows the source
+- **Status**: PLANNED (PRD 2, 7.8); supersedes the earlier "approval gates stay on" framing in ADR-059/063 where they read as vetoes.
+- **Trigger**: The owner asked Griffin to message a friend with strong language. It answered that it had no WhatsApp access and would not send the wording. The owner's position: an assistant should listen and advise only when necessary, and must not have the authority to deny their wishes.
+- **Decision**: (1) Instructions from the owner are never second-guessed or refused by Griffin. (2) Every confirmation before an action (send, submit, buy, delete) is the owner's setting: ask, auto or off per action class and per contact, including auto for everything; it is not a veto. (3) Anything Griffin *reads from outside* (web pages, emails, other people's messages, files) is untrusted data and can never by itself trigger an action; this is what keeps full access safe against hijacking, and it never applies to the owner's own instructions. (4) A hosted model's own refusals cannot be changed from inside Griffin, so wording a hosted engine declines is routed to a voice engine that does not refuse (a self-hosted model), and the owner is told which engine ran.
+- **What the refusal actually was**: two causes. The agent has no tools, so it truly could not reach WhatsApp. And the hosted model's own policy declined the wording. Griffin controls the first (tools) and can only route around the second.
+- **Boundary kept**: nothing built here targets mass harassment of third parties; the owner's own messages to their own contacts are theirs to write.
+- **Not built yet**: the trust settings screen (plan 3.7), the voice engine (2.8) and the refusal fallback (2.9).
+- **Location**: `docs/PRD.md` sections 2 and 7.8
+
+#### ADR-068: Parallel sub-agents, network-safe tools and reusable app skills (planned)
+- **Status**: PLANNED (PRD 7.10 to 7.12, plan 2.7, 2.10, 2.11).
+- **Decision**: JJ chooses per task how many parallel sub-agents to run (bounded by runner capacity, extra ones queue) and joins their results with a visible list of who did what. Web search and an HTTP fetch tool are read-tier tools and ship only with network safety (private and link-local addresses, including the instance metadata service, are refused; scheme, size and time limits), because the worker's cloud identity would otherwise be reachable from a malicious page. App skills extend playbooks: the first run explores and saves how the app works (never what was said or any credential); later runs replay it and re-explore only when a step stops matching, marking the skill stale and updating it in place.
+- **Unknown, to measure first**: how `agy`'s own sub-agents behave under our workspace isolation (capture one real run before deciding to use them).
+- **Location**: `docs/PRD.md` sections 7.10 to 7.12

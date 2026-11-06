@@ -18,6 +18,8 @@ The only maintained docs are this PRD, `decisions.md` (why each decision was mad
 4. **Readable:** every result is a clean document; long-lived work is kept as files and lists you own.
 5. **Remembers how:** a repeated task type is faster the second time (playbooks).
 6. **Cheap:** scale to zero when idle; no paid-API fallback.
+7. **Listens:** it does what the owner says. It advises only when it matters and never refuses the owner's own words or wishes.
+8. **Scales itself:** every task uses as many sub-agents and tools as it needs, in parallel.
 
 **Non-goals for now:** multiple users or teams, a public product, phone calls on your behalf, payments above a set limit, anything that risks your accounts under a platform's terms without your explicit opt-in.
 
@@ -32,7 +34,9 @@ The only maintained docs are this PRD, `decisions.md` (why each decision was mad
 - No broad IAM changes, no extra infrastructure, no additional EC2 instances; keep scale-to-zero.
 - If blocked by permissions, say exactly where.
 - Docs: maintain only this PRD, `decisions.md` and `evolution.md`.
-- Frontend: product grade, phone first; use the design skills and existing libraries (shadcn/ui, Radix, Tailwind).
+- Frontend: product grade, phone first, cute and minimal, nothing overlapping or off-screen at 320-412 px; use the design skills and existing libraries (shadcn/ui, Radix, Tailwind).
+- **The assistant listens.** The owner is the authority. Griffin follows the owner's instructions, gives advice only when it is genuinely useful, and does not veto the content of the owner's own messages or wishes. Where a safety check exists it is a *confirmation the owner controls* (on or off per action class and contact), not a refusal.
+- **Trust follows the source, not the model.** Instructions from the owner are never second-guessed. Text that Griffin *reads from outside* (a web page, an email, someone's message, a file) is untrusted data: it can inform an answer but can never, on its own, trigger an action. This is what keeps full access safe.
 
 ---
 
@@ -73,6 +77,7 @@ Status as of 2026-11-06 14:20 UTC, after the last ship.
 - **File viewer in the app:** every file (results, lists, playbooks, uploads) opens in the app: Markdown formatted, JSON and text readable, images and PDFs inline, anything else a download button; reachable from Files and from a task's Files tab (previously files could only be downloaded).
 - **Empty answers say so:** a run that comes back with nothing shows "No information was found for this", and the agent prompts ask it to say so in a sentence instead of returning nothing.
 - **Old tasks stay lean:** finished tasks older than 7 days lose their activity and attempt history, and a long answer is shortened to ~600 characters *only when the full answer is saved as a file*; title, goal, status and playbooks stay. Runs on the worker at start and every 6 hours (`TASK_COMPACT_AFTER_DAYS`, 0 turns it off). The task page tells you when an answer was shortened.
+- **Phone fixes:** the select-all action bar fits at 320-412 px (it pushed Delete off screen at 360 and below); task tab counts sit inline on one line; Activity, Attempts and Subtasks checked for overlap at four phone widths (none); the UI harness now checks the bar at 320, 360 and 390 px.
 - **Login screen** restyled to match the app; **deploy scripts** no longer print the Lambda environment; **docs** cleaned up to the PRD, `decisions.md` and `evolution.md`; credential-rotation runbook.
 
 ### 4.3 Built, but waiting for the worker to be replaced
@@ -102,6 +107,7 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 |---|---|
 | Slow answers | Each step cold-starts `agy` in a fresh workspace: 12-16 s for short steps, 99-111 s and ~100k tokens for research. Only one `agy` runs at a time, so steps queue. Simple asks were split into two steps (gather, then synthesize); the fast path fixes this once shipped. If the runner is asleep, the EC2 boot comes first. |
 | Can't do complex tasks | `agy` is text-only by design today ("You have NO tools"), after earlier hangs and fake completions. It answers from memory: no browsing, logging in, forms or apps. Tool tiers are built but off and unvalidated. |
+| "It said it has no WhatsApp access and wouldn't send the message" | Two separate causes. (1) **No tools:** the agent is text-only, so it truly cannot reach WhatsApp. (2) **The hosted model's own policy** declined the wording. Griffin cannot change a vendor's refusals; it can route drafting to a model that does not refuse (7.8). |
 | Tasks stuck in Queued | The runner sometimes did not wake; the cause is unknown because the API's logs are not readable with current permissions. |
 | Plans stuck in Running | The stale worker could not finish plans; a restart cleared the six stuck ones, the worker still needs replacing. |
 
@@ -136,6 +142,12 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 | Access my mobile apps | Planned (sections 7.4 and 9, Phase 4); not built |
 | View saved files in the app, no placeholders, say so when there is no information, trim old finished tasks | Built, not shipped (4.2) |
 | Phone access, use my own Claude, no guardrails, a self-hosted model | Answered in 7.8 and 7.9; decisions in section 11 |
+| Every task uses as many sub-agents as it needs | Designed (7.10); the worker already runs plan steps in parallel up to its capacity; not built beyond that |
+| Access all my apps, with permissions the owner sets; learn an app once and reuse it | Designed (7.4, 7.11, 7.12); not built |
+| Tools through the phone, web search and curl-style requests | Designed (7.11); not built |
+| Check Activity and Subtasks don't overlap; cute and minimal | Checked at four phone widths: no overlap; counts made inline (built, not shipped) |
+| Select-all action bar was off screen on my phone | Fixed and covered by a test (built, not shipped) |
+| The assistant must not deny what I ask for | Principle added (section 2) and design in 7.8; the refusal you hit came from a hosted model, so a no-refusal drafting engine is planned (Phase 2) |
 | Only maintain decisions, evolution and the PRD | Done (other Markdown docs removed; recoverable from git) |
 
 ---
@@ -181,9 +193,10 @@ Use the official API or the web version first; drive the real app only when ther
 - **All layers:** approval per outward action (send, submit, buy, delete); allow-lists of accounts and contacts; a one-tap "pause all automation"; an audit log with screenshots.
 
 ### 7.5 Safety
-- **P0** Risk level on every action; high and critical always need approval; the approval shows exactly what will happen.
+- **P0** Every action has a risk level. By default high and critical ones *ask* first, and the question shows exactly what will happen. The owner can change any action class or contact to *auto* or *off* (7.8); a confirmation is the owner's setting, never a veto.
+- **P0** Text read from outside (pages, emails, messages, files) can never trigger an action by itself (7.8).
 - **P0** Rotate the credentials exposed on 2026-11-06 (section 8.3).
-- **P1** Allow-lists, spending caps, quiet hours, kill switch, audit log.
+- **P1** Spending caps, quiet hours, a one-tap pause-all switch, and an audit log. Allow-lists are the owner's way of granting more trust, not a restriction imposed on the owner.
 
 ### 7.6 Reliability and operations
 - **P0** Replace the worker; add the worker step to `ship.sh`.
@@ -197,34 +210,62 @@ Use the official API or the web version first; drive the real app only when ther
 - **P1** Confirm smoothness on a real mid-range phone (60 fps Full, 30 fps Lite).
 - **P2** One home view: what is running, what needs you, what finished.
 
-### 7.8 Models, guardrails and "all access"
-"Guardrails" means three different things, and they should not be treated the same:
+### 7.8 Authority, trust and models (the assistant listens)
+**The rule:** the owner decides; Griffin executes and advises. It does not refuse the owner's content and it does not act on anyone else's say-so.
 
-| Kind | Who sets it | Can we remove it? | Should we? |
-|---|---|---|---|
-| **Model refusals** (a hosted model declines some wording or topics) | The model vendor | Only by using a model that does not refuse (self-hosted open weights) | Yes for *drafting your own messages*, in your own voice |
-| **Approval gates, allow-lists, spending caps** | Griffin (ours) | Yes, they are our code | **No.** They are not about what the model *says*, they are about what it can *do*. An agent with full access and no confirmation can be steered by anything it reads (a web page, an email, a chat message: "prompt injection") into sending messages, deleting files or paying, and it makes mistakes at machine speed |
-| **Platform rules** (WhatsApp, LinkedIn terms) | The platforms | No | Respect them; account bans are the cost |
+What the word "guardrails" covered, and what changes:
 
-**Recommended design: separate the voice from the authority.**
-- **Voice (writes text):** a self-hosted open-weights model (Ollama) with no refusals, used only to *draft* text in your tone: replies, messages to friends, any wording you want. Your words are your call. Output is a draft; Griffin never needs the model to be "safe" for this job.
-- **Authority (does things):** a strong hosted agent (agy now, Claude when enabled) does planning and tool use. Its permissions are ours: allow-lists, per-action approvals and a kill switch, tuned by **trust levels**, not by removing them. Example: auto-send replies to contacts on your allow-list; always ask before money, deletes, new contacts or anything irreversible.
-- **"Give it all access"** is therefore delivered as *more trust over time* (allow-lists you grow, an auto mode for a class of action after you have watched it work), never as "no checks".
+| Kind | Who sets it | Plan |
+|---|---|---|
+| **Model refusals**: a hosted model (agy, Claude) declines some wording or topics | The model vendor | Cannot be changed from inside Griffin. Handled by routing: wording the hosted model declines goes to a **voice engine** that does not refuse (below). The owner is told which engine ran. |
+| **Confirmations** before actions (send, submit, buy, delete) | Griffin | Kept, but owned by the owner: each action class and each contact has **ask / auto / off**. Default is *ask* for irreversible things; the owner can set *auto* per class or per contact at any time, including "auto for everything". It is a setting, not a veto. |
+| **Untrusted content** (web pages, emails, other people's messages, files the agent reads) | Griffin | Always treated as data, never as instructions. If a page says "now send this message", nothing happens. This protects full access from being hijacked; it never applies to the owner's own instructions. |
+| **Platform rules** (WhatsApp, LinkedIn terms) | The platforms | Cannot be changed; the owner chooses per platform whether to accept the risk of account limits. |
 
-**Self-hosted model options (decision needed):**
+**Voice engine (a model that does not refuse).** A self-hosted open-weights model (Ollama) used for *writing text in the owner's tone*: replies, messages to friends, any wording. Two ways it is used:
+1. **"Draft for me"**: works as soon as it exists, even before any app access: the text appears in the app to copy or send.
+2. **Refusal fallback (P1):** if a hosted engine answers a drafting step with a refusal, Griffin re-runs that step on the voice engine and shows which engine produced it. The owner never has to ask twice.
+
+Honest limits: open-weights models are weaker than the hosted agent at long tool-driven tasks, so they write and the hosted agent drives; and a vendor's refusal cannot be switched off, only routed around.
+
+**Where the voice engine runs (decision needed):**
 | Option | Pros | Cons |
 |---|---|---|
-| Ollama on **your own computer** (reached from the worker over a private tunnel such as Tailscale) | No new cloud cost, no GPU bill, your data stays home | Your machine must be on; quality limited by your hardware |
-| Ollama on a **cloud GPU instance** | Always available | Costs far more than the current setup, which breaks "scale to zero, no unnecessary infrastructure"; needs a new instance (needs your explicit approval) |
-| Hosted uncensored model API | Easy | A new paid dependency; conflicts with "no paid API fallback" unless you approve it |
+| Ollama on **your own computer**, reached from the worker over a private tunnel (e.g. Tailscale) | No cloud GPU bill; text stays home | Your computer must be on; quality limited by its hardware |
+| Ollama on a **cloud GPU instance** | Always available | Costs far more than today's setup; breaks scale-to-zero unless it also sleeps; needs a new instance, which needs the owner's explicit approval |
+| A hosted no-refusal model API | Easiest | A new paid dependency; conflicts with "no paid API fallback" unless approved |
 
-**Honest limits:** open-weights models are weaker than the hosted agent at following long tool instructions, so they are a poor choice for *driving* complex tasks and a good choice for *writing*. The routing built in ADR-059 already separates steps by what they need; the voice model would be a third engine for "draft" steps. Not building anything aimed at harassing or abusing people at scale; your own messages to your own contacts are yours.
+**"Give it all access" is delivered as trust the owner turns up**, per app and per contact: start with *ask*, move to *auto* for what has proved reliable. Not built yet: the settings screen for it (3.7) and the voice engine (2.8, 2.9).
 
 ### 7.9 Using it from your phone
 - **Front end:** `https://griffin-pwa.vercel.app`. It is an installable PWA: open it in Chrome (Android) or Safari (iPhone) and choose **Add to Home Screen**; it then opens full screen like an app. Sign in with your Supabase account.
 - **"Use my Claude from my phone":** the Claude app on your phone cannot be driven by Griffin, and a phone cannot lend its logged-in session to a server. What *is* possible: sign the Claude CLI in **once on the worker** (device login with your own account, no API key), after which Griffin uses that login for language steps. That is a credential living on the worker (as sensitive as a password; encrypted disk, no remote access except the platform's session manager). Check the Claude terms for automated use of a consumer subscription before relying on it.
 - **Your apps from the phone:** see section 7.4: Layer 2 (web versions) and Layer 3 (an Android bridge) are how Griffin operates apps; iOS only supports Shortcuts into Griffin.
 - **Credentials on the worker are unavoidable** for anything that logs in for you; the design choice is to store them in the cloud parameter store (encrypted) or as saved browser sessions, never in prompts, files or logs.
+
+### 7.10 Sub-agents: as many as the task needs
+- **What exists:** a plan is already a set of steps with dependencies; independent steps can run on separate workers, up to the agent concurrency cap (2 today, on a ~3.8 GB instance).
+- **P1 Fan-out planning:** JJ decides per task how many parallel sub-agents help (research five sources at once, check ten job boards, draft several replies), not a fixed two steps. Each sub-agent gets one narrow goal, its own isolated workspace and its own tool tier.
+- **P1 Join step:** a synthesizer combines the sub-agents' results into one answer, with a visible list of who did what.
+- **P1 Capacity-aware:** fan-out is bounded by what the runner can hold; extra sub-agents queue rather than overload it. Raising capacity (a larger instance, or a second) is a cost decision for the owner.
+- **P2 agy's own sub-agents:** `agy` has agent and sub-agent features (`--agent`, `agy agents`). How they behave under our isolation is unknown; capture one real run first (step 1.4) before deciding whether to use them or keep orchestrating from Griffin.
+- **Done when:** a "compare five products" task runs five sub-agents at once and finishes in about the time of one.
+
+### 7.11 Tools: web search, HTTP requests, browser, phone
+- **P1 Web search** and **HTTP fetch (curl-style)** as first-class read-tier tools, with sources recorded on the task.
+- **P0 for the HTTP tool: network safety.** The worker runs on a cloud instance, so the fetch tool must refuse private and link-local addresses (including the instance metadata service at 169.254.169.254, which can hand out the instance's own cloud credentials), refuse non-HTTP schemes, cap response size and time, and follow redirects only to allowed destinations. Without this, a malicious page could make the agent leak the machine's credentials.
+- **P1 Browser** (headless Chromium, per-task profile, screenshots).
+- **P2 Phone as a tool:** the Android bridge (7.4) and the iOS Shortcut "Send to JJ" give the agent hands on the phone; every action there is logged with screenshots.
+- **Permissions per app and per tool**, set by the owner (ask / auto / off), shown in Settings.
+
+### 7.12 App skills: learn an app once, reuse it
+The first time Griffin does something in an app it has to work out how: where to tap, what the page looks like, what breaks. Whatever worked should not be rediscovered.
+- **P1 Skill documents:** a successful run in an app writes a short, ordered "how to" for that app and action (for example, WhatsApp Web: open a chat, find a contact, send a message). Skills are the same files as playbooks, keyed by app and action, visible in Files.
+- **P1 Exploration then replay:** the first attempt explores (with screenshots); once it succeeds, the steps are saved; later tasks start from the skill and only re-explore when a step no longer matches.
+- **P1 Staleness:** when a saved step fails, the skill is marked stale, re-explored, and updated in place; apps change their screens, and a stale skill must not be trusted blindly.
+- **P1 Safety:** skills never contain credentials, contact lists or message content (the credential filter in ADR-064 applies); they describe *how*, never *what was said*.
+- **P2 Sharing a skill across tasks:** a skill learned for one task type is offered to related ones (keyword overlap today, semantic matching later).
+- **Done when:** the second "send a WhatsApp message" is measurably faster than the first and makes no exploratory steps.
 
 ---
 
@@ -289,6 +330,11 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 | 2.4 | Browser automation: headless Chromium (Playwright) with a per-task profile on the worker; screenshots attached to the task | L | 2.1 | A task opens a site, reads a page and attaches a screenshot |
 | 2.5 | Credentials vault: SecureString parameters, worker fetches at use time, never in prompts or logs | M | 2.4 | A login works with the secret absent from every log |
 | 2.6 | Code sandbox for data tasks | M | 2.1 | A CSV task runs isolated and returns a file |
+| 2.7 | Web search and HTTP fetch tools, **with network safety first** (block private and metadata addresses, scheme and size limits) | M | 2.1 | A task cites search results; a request to the metadata address is refused (tested) |
+| 2.8 | Voice engine: Ollama on your computer over a private tunnel; "Draft for me" returns text in the app | M | You choose where it runs (7.8) | A drafting step the hosted model would decline comes back as a draft |
+| 2.9 | Refusal fallback: detect a refusal on a drafting step, re-run on the voice engine, show which engine ran | M | 2.8 | The WhatsApp-style message is drafted without asking twice |
+| 2.10 | Sub-agent fan-out and a join step (7.10) | L | 1.3, 2.1 | A five-way comparison runs five sub-agents at once |
+| 2.11 | App skills: skill documents keyed by app and action, replay, staleness handling (7.12) | M | 2.3, 2.4 | The second run of an app action is faster with no exploration |
 
 ### Phase 3: Acts for you
 | # | Work | Effort | Needs | Done when |
@@ -299,7 +345,7 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 | 3.4 | Web Push for "needs approval" and "finished" | M | VAPID keys and a subscription table (migration) | Phone notification arrives |
 | 3.5 | Gmail and Calendar connectors (OAuth): read and draft; send with approval | L | You create a Google Cloud OAuth client | Summary of today's mail; a drafted reply waiting for approval |
 | 3.6 | The internship journey end to end (acceptance journey 1) | M | 2.4, 3.1 to 3.3 | Shortlist, drafts, approved submissions, screenshots, tracker rows |
-| 3.7 | Trust levels: allow-lists and an auto mode per action class; kill switch; audit log | M | none | You can pause everything in one tap; every action is logged |
+| 3.7 | Trust settings: ask / auto / off per action class and per contact (including auto for everything); untrusted-content rule enforced in the worker; kill switch; audit log | M | none | You set a class to auto and it stops asking; text read from a web page cannot trigger an action (tested); one tap pauses everything |
 
 ### Phase 4: Your apps
 | # | Work | Effort | Needs | Done when |
@@ -312,7 +358,7 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 | # | Work | Effort | Needs | Done when |
 |---|---|---|---|---|
 | 5.1 | Claude on the worker for language steps (one-time CLI sign-in; `CLAUDE_ENABLED=true`) | S | You sign in | A drafting step runs on Claude; falls back to agy if signed out |
-| 5.2 | Voice model: Ollama on your own machine over a private tunnel, used only for drafting text in your tone | M | You choose where it runs (section 7.8) | A "draft my reply" step uses it and returns a draft |
+| 5.2 | Voice engine used inside plans (a step type "draft in my tone"), built on 2.8 and 2.9 | S | 2.8 | A plan's drafting step records the voice engine as the one that ran |
 | 5.3 | Engine policy per step: tool steps to agy, hard writing to Claude, tone drafts to the voice model | M | 5.1, 5.2 | The router records which engine ran each step |
 | 5.4 | Search across results, files, lists, playbooks | M | none | One search box finds anything |
 
@@ -356,5 +402,7 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 3. Android: a spare phone, your phone in developer mode, or a cloud emulator.
 4. A monthly compute ceiling.
 5. Whether Claude (signed-in, no API billing) is in scope.
-6. Where a self-hosted voice model would run (your own computer over a tunnel, a cloud GPU instance, or not at all) and whether the trust-level design in 7.8 is what you want in place of "no guardrails".
-7. A narrow read-only grant for the API's logs (0.5), so failures can be diagnosed.
+6. Where the voice engine runs: your own computer over a tunnel, a cloud GPU instance, or a hosted no-refusal API.
+7. Confirm the trust model in 7.8: your instructions are never second-guessed, outside content can never trigger an action, and each confirmation is ask / auto / off per action class and contact (including auto for everything).
+8. A narrow read-only grant for the API's logs (0.5), so failures can be diagnosed.
+9. Capacity for sub-agents: stay at 2 agents on the current instance, or approve a larger instance (a cost decision).
