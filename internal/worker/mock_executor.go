@@ -34,6 +34,11 @@ func (m *MockExecutor) Name() string {
 	return "mock"
 }
 
+// RuntimeFacts reports deterministic mock runtime facts.
+func (m *MockExecutor) RuntimeFacts() RuntimeFacts {
+	return RuntimeFacts{Name: "mock", Version: "mock", Model: "mock"}
+}
+
 func (m *MockExecutor) IsHealthy(ctx context.Context) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

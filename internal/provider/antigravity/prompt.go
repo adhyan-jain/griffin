@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/worker"
 )
 
 const (
@@ -20,11 +21,7 @@ const (
 
 // RuntimeFacts describes the provider runtime so the model can answer
 // "what are you running on" questions from facts instead of guessing.
-type RuntimeFacts struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Model   string `json:"model"`
-}
+type RuntimeFacts = worker.RuntimeFacts
 
 const preamble = `You are JJ, the orchestrator of Griffin, an AI workforce.
 Answer directly in plain text (Markdown is allowed).
