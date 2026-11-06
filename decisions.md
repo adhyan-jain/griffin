@@ -380,3 +380,45 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Gotcha found by testing**: R3F copies a `uniforms` prop, so mutating the original object never reached the GPU (the field ignored the theme and did not animate). Live values are written through material refs. File-level `react-hooks/immutability` disables on the two three.js files are deliberate for the same reason (per-frame writes are outside React state).
 - **Not measured**: real-GPU and phone frame rates. Verification used software WebGL (SwiftShader) screenshots at 390 and 1280 px in both themes, with Off and Lite paths; no console errors.
 - **Location**: `web/src/lib/fx.ts`, `web/src/components/fx/`, `web/src/components/hero-3d.tsx`
+
+#### ADR-057: Identical running requests are refused, on the server
+- **Status**: IMPLEMENTED (not yet deployed)
+- **Decision**: `JJOrchestrator.SubmitRequest` returns a 409 with a plain message when the same user already has an active orchestration with exactly the same request text, and reserves each (user, text) pair in memory while it is being planned so simultaneous submits cannot both pass the check. Finished and cancelled runs do not count, so Run again keeps working. The UI also ignores a second tap while the first submit is pending.
+- **Why**: A double tap on Run again queued the same paid plan several times (six running plans from two requests, 2026-11-06). Every plan costs agent time on a worker that runs one task at a time.
+- **Limit**: The in-memory reservation covers one process; across Lambda instances only the database check applies, which leaves a very small window. A partial unique index would close it but needs a migration, which is held for approval.
+- **Location**: `internal/service/orchestrator.go`, `internal/repository/orchestration_repo.go`, `tests/orchestration_test.go`
+
+#### ADR-058: Plans finish when the task list is read, because the deployed worker is stale
+- **Status**: IMPLEMENTED (not yet deployed); the worker replacement is still required
+- **Finding**: Six plans stayed Running for 45+ minutes with every subtask completed. The EC2 worker binary dates from 2 Nov 17:00 UTC; the hook that finalizes a plan when its last subtask finishes (`cc1aa91`) landed on 4 Nov, and the old build's idle check counts a running plan root as work, so the runner also never reached its idle shutdown (it stayed up for 46+ minutes, all subtasks done).
+- **Decision**: `GET /api/v1/tasks` reconciles the caller's active plans (throttled to once per 10 s per process, idempotent, bounded to 3 s, never fails the read). A plan whose subtasks are all done is finished whenever the user opens Tasks or Home, whichever worker is running.
+- **Not a substitute**: Replacing the worker (`infra/ops/deploy-backend.sh worker`) is still the real fix, because only the new build stops counting plan roots as work and can reach its idle shutdown. A service restart finishes stuck plans on the old build too (it reconciles in-flight plans on startup). Both were left to the operator: the automation permission layer blocked remote writes and production deploys.
+- **Location**: `internal/service/orchestrator.go` (`ReconcileActiveForUser`), `internal/api/handlers/tasks.go`, `tests/orchestration_test.go`
+
+#### ADR-059: Steps are routed to a provider by what they need; Claude is wired in but off
+- **Status**: IMPLEMENTED (not yet deployed); Claude disabled by default
+- **Decision**: Each plan step carries `provider_hint` (`agy` or `claude`) inside `input_payload` (no schema change), chosen from the step text by capability, not difficulty: anything that touches the outside world (browse, log in, files, apps, commands) stays on agy; clearly language-only work (draft, summarise, compare, review) is planned for Claude; unclear defaults to agy; chat is always agy. A router in front of the worker honours the hint and runs the step on agy when Claude is disabled, unhealthy or not signed in. Claude runs through the signed-in `claude` CLI only, with every `ANTHROPIC_*` and cloud-provider variable stripped from the child process, so it can never bill an API key. `CLAUDE_ENABLED=true` and a signed-in CLI on the worker are both required.
+- **Constraint kept**: no paid API fallback. Claude is not a production provider until the operator signs in and enables it.
+- **Open**: agy's prompt currently says it has no tools (a deliberate earlier fix for hangs and fake completions), so both providers are text-only. Tool use (browse, apply, message) needs its own approval-gated design.
+- **Location**: `internal/domain/providerhint.go`, `internal/provider/router/`, `internal/provider/claudecli/`, `cmd/griffin-server/main.go`
+
+#### ADR-060: Finished answers are kept as files; living lists
+- **Status**: IMPLEMENTED (not yet deployed)
+- **Decision**: The worker saves every finished task's answer through the existing storage service as a Markdown (or JSON) artifact linked to the task; a failed save is logged and never fails the task. A living list is a Markdown artifact with `metadata.kind = "list"`: `POST /api/v1/lists` creates one and `PUT /api/v1/artifacts/{id}/text` replaces or appends to it (owner only, text files only, bounded by the upload limit, rewritten in place so the link is stable). The UI has a Lists page and reader, and every task result has Save to list (a dated section is appended).
+- **Why**: Some work is a growing record (an internship tracker), not a one-off answer. Using the artifact store needs no migration and no new infrastructure.
+- **Limit**: Today the list is grown by you (or by Save to list). A task cannot append on its own yet; that, and remembered playbooks, depend on agy getting tools.
+- **Location**: `internal/worker/worker.go`, `internal/storage/service.go`, `internal/api/handlers/artifacts.go`, `web/src/app/lists/`, `web/src/components/result-view.tsx`
+
+#### ADR-061: Motion and display system; results read as documents
+- **Status**: IMPLEMENTED and DEPLOYED for the motion layer (`ca3e790`); the rest not yet deployed
+- **Decision**: GSAP (SplitText, ScrollTrigger) and Lenis give one easing vocabulary: kinetic headlines, count-up numerals, a route entrance, magnetic buttons, a trailing cursor ring (mouse only), inertial scroll (mouse only) and a once-per-session boot curtain. Syne is the display face. The hero is a full-bleed scene with type laid over it; the JJ core is dark glass with molten brass veins and running tasks glow while finished ones fade to dust. Results render as formatted Markdown (reader card with copy, download, raw and fold) instead of JSON.
+- **Safeguards**: everything respects reduced motion and the Full/Lite/Off switch; touch devices get none of the pointer effects; automation skips the boot curtain. The reveal mask is removed after the motion ends because it clipped descenders on tight lines (found by the real-stack run).
+- **Not verified**: frame rate on a real GPU or phone; screenshots are software-rendered.
+- **Location**: `web/src/lib/motion.ts`, `web/src/components/fx/`, `web/src/components/result-view.tsx`
+
+#### ADR-062: A real-stack end-to-end check, and request caching by choice
+- **Status**: IMPLEMENTED
+- **Decision**: `web/scripts/e2e-real.mjs` drives the PWA in a real browser against the real Go server, a real Postgres and the real worker loop (mock AI and storage providers; development mode, because production refuses mock providers). 21 checks cover sign-in, task creation and completion, the result reader, saved files, duplicate prevention under a tap and a simultaneous burst, filters, bulk delete and the Lists flow. The new-task dialog shows a notice when the same goal finished in the last 24 hours, with a link to that result, and still lets the user run it again.
+- **Why a notice, not silent reuse**: some requests are time-sensitive (live openings, prices); reusing a stale answer without asking would be worse than paying for a rerun.
+- **Flake recorded**: the Go integration suite shares one test database and truncates it in setup with a 5 s deadline; under CPU contention (a dev server and browser running) that times out. It passes on a quiet machine. Tests that start a worker now wait for it to stop before teardown.
+- **Location**: `web/scripts/e2e-real.mjs`, `web/src/lib/task-actions.ts` (`findRecentResult`), `web/src/components/new-task-dialog.tsx`

@@ -62,3 +62,25 @@ export function inPeriod(t: Task, period: Period, now = Date.now()): boolean {
   const at = Date.parse(t.completed_at ?? t.updated_at ?? t.created_at);
   return Number.isFinite(at) && now - at <= days * 86_400_000;
 }
+
+const normGoal = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * A finished, top-level task with the same goal completed recently (default 24h), newest first.
+ * Used to offer the existing result before paying for an identical run. Chat and plan subtasks are
+ * never offered, and a failed or cancelled run does not count.
+ */
+export function findRecentResult(tasks: Task[], goal: string, now = Date.now(), maxAgeMs = 24 * 3_600_000): Task | null {
+  const want = normGoal(goal);
+  if (want.length < 8) return null;
+  let best: Task | null = null;
+  let bestAt = 0;
+  for (const t of tasks) {
+    if (t.status !== "COMPLETED" || t.parent_id || isChat(t) || normGoal(t.goal ?? "") !== want) continue;
+    const at = Date.parse(t.completed_at ?? t.updated_at);
+    if (Number.isNaN(at) || now - at > maxAgeMs || at <= bestAt) continue;
+    best = t;
+    bestAt = at;
+  }
+  return best;
+}
