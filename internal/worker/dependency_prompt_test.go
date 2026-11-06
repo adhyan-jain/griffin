@@ -56,3 +56,32 @@ func TestWithDependencyOutputs_Truncates(t *testing.T) {
 	assert.Contains(t, got.Goal, "[truncated]")
 	assert.Less(t, len(got.Goal), 1000+500)
 }
+
+func TestResultFile_PrefersTextThenJSON(t *testing.T) {
+	body, ext, typ, ct, ok := resultFile(&ExecutionResult{TextOutput: "  **Done**\n| a | b |\n"})
+	assert.True(t, ok)
+	assert.Equal(t, "md", ext)
+	assert.Equal(t, "MARKDOWN", typ)
+	assert.Contains(t, ct, "markdown")
+	assert.Equal(t, "**Done**\n| a | b |\n", string(body))
+
+	body, ext, _, _, ok = resultFile(&ExecutionResult{Output: json.RawMessage(`{"response":"from payload"}`)})
+	assert.True(t, ok)
+	assert.Equal(t, "md", ext)
+	assert.Equal(t, "from payload\n", string(body))
+
+	body, ext, typ, _, ok = resultFile(&ExecutionResult{Output: json.RawMessage(`{"status":"ok","n":1}`)})
+	assert.True(t, ok)
+	assert.Equal(t, "json", ext)
+	assert.Equal(t, "JSON", typ)
+	assert.Contains(t, string(body), `"status": "ok"`)
+
+	_, _, _, _, ok = resultFile(&ExecutionResult{})
+	assert.False(t, ok, "an empty run saves nothing")
+}
+
+func TestFileSlug(t *testing.T) {
+	assert.Equal(t, "check-if-invideo-has-any-interns-opening", fileSlug("Check if inVideo has any interns opening!"))
+	assert.Equal(t, "result", fileSlug("???"))
+	assert.LessOrEqual(t, len(fileSlug(strings.Repeat("word ", 40))), 60)
+}

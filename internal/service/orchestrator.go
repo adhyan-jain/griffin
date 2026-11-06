@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -29,6 +30,31 @@ type JJOrchestrator struct {
 	factory  *AgentFactoryService
 	planner  Planner
 	logger   *slog.Logger
+
+	// submitting holds the requests being planned right now, so two identical submits that arrive
+	// together cannot both pass the duplicate check before either is stored.
+	submitMu   sync.Mutex
+	submitting map[string]struct{}
+}
+
+// beginSubmit reserves a (user, text) pair; false means an identical submit is already in progress.
+func (o *JJOrchestrator) beginSubmit(key string) bool {
+	o.submitMu.Lock()
+	defer o.submitMu.Unlock()
+	if o.submitting == nil {
+		o.submitting = map[string]struct{}{}
+	}
+	if _, busy := o.submitting[key]; busy {
+		return false
+	}
+	o.submitting[key] = struct{}{}
+	return true
+}
+
+func (o *JJOrchestrator) endSubmit(key string) {
+	o.submitMu.Lock()
+	delete(o.submitting, key)
+	o.submitMu.Unlock()
 }
 
 // NewJJOrchestrator constructs a new JJOrchestrator.
@@ -69,6 +95,12 @@ func (o *JJOrchestrator) SubmitRequest(ctx context.Context, req *domain.UserRequ
 	if req.Priority == "" {
 		req.Priority = domain.TaskPriorityNormalP2
 	}
+
+	key := req.UserID.String() + "\x00" + req.RequestText
+	if !o.beginSubmit(key) {
+		return nil, nil, fmt.Errorf("%w: the same request is already being submitted; wait a moment", domain.ErrConflict)
+	}
+	defer o.endSubmit(key)
 
 	// An identical request that is still running is almost always a double tap or a client retry, and
 	// every plan costs agent time. Refuse it with a clear message instead of queueing a second run.

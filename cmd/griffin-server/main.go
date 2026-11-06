@@ -249,6 +249,7 @@ func main() {
 				HeartbeatInterval: time.Duration(cfg.HeartbeatIntervalSeconds) * time.Second,
 				PollInterval:      1 * time.Second,
 				Logger:            logger,
+				Artifacts:         storageService,
 				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
 					if err := jjOrchestrator.ReconcileByChildTask(hookCtx, taskID); err != nil {
 						logger.Warn("Orchestration reconcile after task finish failed", "task_id", taskID, "error", err)
