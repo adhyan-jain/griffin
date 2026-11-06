@@ -1,0 +1,6 @@
+{
+  "kind": "conversation",
+  "conversation_id": "6f1c2b0e-0000-4000-8000-0000000000c1",
+  "task_id": "6f1c2b0e-0000-4000-8000-000000000101",
+  "runner": { "wake": "signaled" }
+}
