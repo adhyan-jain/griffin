@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
+import { useFxActivity } from "@/lib/fx";
 import { PERIODS, canDelete, canResume, inPeriod, runAgain, runBulk, type Period } from "@/lib/task-actions";
 import { ACTIVE_STATUSES, WAITING_STATUSES, isDone } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, PageHeader } from "@/components/page";
@@ -58,6 +59,8 @@ export default function TasksPage() {
       },
     },
   );
+
+  useFxActivity(tasks ? tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).length : null);
 
   const { rows, subtaskCount } = useMemo(() => {
     const all = tasks ?? [];

@@ -8,7 +8,7 @@
   --radius: 0.75rem;
   --background: oklch(0.985 0.003 90);
   --foreground: oklch(0.2 0.02 260);
-  --card: oklch(1 0 0);
+  --card: oklch(1 0 0 / 0.8);
   --card-foreground: oklch(0.2 0.02 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.02 260);
@@ -32,7 +32,7 @@
 .dark {
   --background: oklch(0.16 0.012 260);
   --foreground: oklch(0.95 0.005 90);
-  --card: oklch(0.2 0.014 260);
+  --card: oklch(0.2 0.014 260 / 0.5);
   --card-foreground: oklch(0.95 0.005 90);
   --popover: oklch(0.22 0.014 260);
   --popover-foreground: oklch(0.95 0.005 90);
@@ -81,6 +81,12 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Glass: cards float over the deep field (components/fx/deep-field.tsx). */
+.bg-card {
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
 }
 
 /* Base rules live in the base layer so Tailwind utilities can override them. */
