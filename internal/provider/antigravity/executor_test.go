@@ -357,3 +357,86 @@ func splitLines(s string) []string {
 	}
 	return result
 }
+
+// argvRecorder is a fake agy that writes its arguments (one per line) to a file and answers normally.
+func argvRecorder(t *testing.T) (script, argvFile string) {
+	t.Helper()
+	argvFile = filepath.Join(t.TempDir(), "argv.txt")
+	script = createMockScript(t, fmt.Sprintf(`
+printf '%%s\n' "$@" > %q
+echo '{"conversation_id":"c","status":"SUCCESS","response":"ok","num_turns":1,"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}'
+`, argvFile))
+	return script, argvFile
+}
+
+func toolTask(mode string) *domain.Task {
+	return &domain.Task{ID: uuid.New(), Title: "Research openings", Goal: "Find internships", InputPayload: json.RawMessage(`{"tool_mode":"` + mode + `"}`)}
+}
+
+func runRecorded(t *testing.T, cfg ExecutorConfig, task *domain.Task) (argv string) {
+	t.Helper()
+	script, file := argvRecorder(t)
+	cfg.BinaryPath = script
+	cfg.WorkspaceRoot = t.TempDir()
+	cfg.ExecutionTimeout = 5 * time.Second
+	e, err := NewAntigravityExecutor(cfg)
+	require.NoError(t, err)
+	res, err := e.Execute(context.Background(), task)
+	require.NoError(t, err)
+	require.Equal(t, "SUCCESS", res.Status)
+	b, err := os.ReadFile(file)
+	require.NoError(t, err)
+	return string(b)
+}
+
+func TestToolTiers_OffByDefaultEveryTaskRunsTextOnly(t *testing.T) {
+	for _, mode := range []string{"read", "act"} {
+		argv := runRecorded(t, ExecutorConfig{ReadArgs: []string{"--mode", "plan", "--sandbox"}, ActArgs: []string{"--mode", "accept-edits"}}, toolTask(mode))
+		assert.NotContains(t, argv, "--mode", "tools disabled: %s must run text-only", mode)
+		assert.NotContains(t, argv, "--sandbox")
+		assert.Contains(t, argv, "You have NO tools", "text-only preamble must be used")
+	}
+}
+
+func TestToolTiers_ReadAndActGetTheirOwnFlagsAndPreamble(t *testing.T) {
+	cfg := ExecutorConfig{ToolsEnabled: true, ReadArgs: []string{"--mode", "plan", "--sandbox"}, ActArgs: []string{"--mode", "accept-edits", "--sandbox"}}
+
+	read := runRecorded(t, cfg, toolTask("read"))
+	assert.Contains(t, read, "--mode\nplan\n--sandbox")
+	assert.Contains(t, read, "READ-ONLY")
+	assert.NotContains(t, read, "accept-edits")
+
+	act := runRecorded(t, cfg, toolTask("act"))
+	assert.Contains(t, act, "--mode\naccept-edits\n--sandbox")
+	assert.Contains(t, act, "approved this specific task")
+
+	none := runRecorded(t, cfg, toolTask("none"))
+	assert.NotContains(t, none, "--mode")
+	assert.Contains(t, none, "You have NO tools")
+}
+
+func TestToolTiers_ChatNeverGetsTools(t *testing.T) {
+	cfg := ExecutorConfig{ToolsEnabled: true, ReadArgs: []string{"--sandbox"}, ActArgs: []string{"--sandbox"}}
+	task := &domain.Task{ID: uuid.New(), Title: "chat", Goal: "hi", InputPayload: json.RawMessage(`{"kind":"chat","prompt":"hi","tool_mode":"act"}`)}
+	argv := runRecorded(t, cfg, task)
+	assert.NotContains(t, argv, "--sandbox")
+}
+
+func TestToolTiers_NeverAllowPermissionBypass(t *testing.T) {
+	for _, bad := range []string{"--dangerously-skip-permissions", "-p", "--print", "--prompt", "--remote-control", "--dangerously-skip-permissions=true"} {
+		_, err := NewAntigravityExecutor(ExecutorConfig{BinaryPath: createMockScript(t, "exit 0\n"), WorkspaceRoot: t.TempDir(), ReadArgs: []string{"--sandbox", bad}})
+		require.Error(t, err, "%s must be refused in read args", bad)
+		_, err = NewAntigravityExecutor(ExecutorConfig{BinaryPath: createMockScript(t, "exit 0\n"), WorkspaceRoot: t.TempDir(), ActArgs: []string{bad}})
+		require.Error(t, err, "%s must be refused in act args", bad)
+	}
+	// And whatever the tier, the bypass flag never reaches the process.
+	argv := runRecorded(t, ExecutorConfig{ToolsEnabled: true, ReadArgs: []string{"--sandbox"}, ActArgs: []string{"--sandbox"}}, toolTask("act"))
+	assert.NotContains(t, argv, "dangerously")
+}
+
+func TestExecutor_EffortFlag(t *testing.T) {
+	assert.Contains(t, runRecorded(t, ExecutorConfig{Effort: "low"}, toolTask("none")), "--effort\nlow")
+	assert.NotContains(t, runRecorded(t, ExecutorConfig{}, toolTask("none")), "--effort")
+	_, err := NewAntigravityExecutor(ExecutorConfig{BinaryPath: createMockScript(t, "exit 0\n"), WorkspaceRoot: t.TempDir(), Effort: "turbo"})
+	require.Error(t, err)
+}

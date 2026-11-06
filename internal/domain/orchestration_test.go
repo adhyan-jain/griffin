@@ -149,3 +149,59 @@ func TestWorkerDefinition_Validation(t *testing.T) {
 		t.Fatal("expected error on unknown capability")
 	}
 }
+
+func TestToolModeFor_MalformedOrChatCanOnlyBeLessCapable(t *testing.T) {
+	cases := map[string]ToolMode{
+		``:                                  ToolNone,
+		`{}`:                                ToolNone,
+		`not json`:                          ToolNone,
+		`{"tool_mode":"read"}`:              ToolRead,
+		`{"tool_mode":"act"}`:               ToolAct,
+		`{"tool_mode":"root"}`:              ToolNone,
+		`{"tool_mode":"ACT"}`:               ToolNone,
+		`{"kind":"chat","tool_mode":"act"}`: ToolNone,
+		`{"tool_mode":["act"]}`:             ToolNone,
+	}
+	for payload, want := range cases {
+		task := &Task{InputPayload: json.RawMessage(payload)}
+		if got := ToolModeFor(task); got != want {
+			t.Errorf("payload %q: got %q, want %q", payload, got, want)
+		}
+	}
+}
+
+func TestSuggestToolMode_NeverSuggestsAct(t *testing.T) {
+	for _, c := range []struct {
+		title, goal string
+		want        ToolMode
+	}{
+		{"Scrape job listings", "collect postings", ToolRead},
+		{"Log in and apply", "submit the application form", ToolRead}, // still only read: act is an explicit, approved choice
+		{"Draft a cover letter", "tailor it", ToolNone},
+	} {
+		if got := SuggestToolMode(c.title, c.goal); got != c.want {
+			t.Errorf("SuggestToolMode(%q) = %q, want %q", c.title, got, c.want)
+		}
+	}
+}
+
+func TestWithToolMode_RespectsExistingAndNonObjects(t *testing.T) {
+	var m map[string]any
+	out := WithToolMode(nil, "Scrape pages", "")
+	if err := json.Unmarshal(out, &m); err != nil || m[ToolModeKey] != "read" {
+		t.Fatalf("empty payload: %s %v", out, err)
+	}
+	pinned := json.RawMessage(`{"tool_mode":"none","x":1}`)
+	if string(WithToolMode(pinned, "Scrape pages", "")) != string(pinned) {
+		t.Fatal("an explicit mode must be respected")
+	}
+	arr := json.RawMessage(`[1]`)
+	if string(WithToolMode(arr, "Scrape", "")) != string(arr) {
+		t.Fatal("a non-object payload must be left alone")
+	}
+	merged := WithToolMode(json.RawMessage(`{"provider_hint":"agy"}`), "Scrape pages", "")
+	_ = json.Unmarshal(merged, &m)
+	if m["provider_hint"] != "agy" || m[ToolModeKey] != "read" {
+		t.Fatalf("merge lost the provider hint: %s", merged)
+	}
+}

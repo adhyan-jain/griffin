@@ -36,6 +36,12 @@ func (r *Router) Name() string { return "router" }
 // IsHealthy follows the primary provider: the system is usable as long as agy is.
 func (r *Router) IsHealthy(ctx context.Context) (bool, error) { return r.agy.IsHealthy(ctx) }
 
+// ToolsEnabled forwards the primary provider's setting (only agy runs tool tiers).
+func (r *Router) ToolsEnabled() bool {
+	tc, ok := r.agy.(worker.ToolCapable)
+	return ok && tc.ToolsEnabled()
+}
+
 // RuntimeFacts forwards the primary provider's facts (chat quotes them).
 func (r *Router) RuntimeFacts() worker.RuntimeFacts {
 	if rp, ok := r.agy.(worker.RuntimeFactsProvider); ok {

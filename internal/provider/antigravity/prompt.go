@@ -29,6 +29,32 @@ You have NO tools: do not run shell commands, do not inspect files or the worksp
 If the request needs facts you cannot verify, say so explicitly and do not invent sources or URLs.
 Keep to the requested format.`
 
+// readPreamble is used for the read tier: research with tools, change nothing.
+const readPreamble = `You are JJ, the orchestrator of Griffin, an AI workforce.
+You may use READ-ONLY tools for this step: search the web, open public pages, read files in your workspace.
+You must NOT change anything: do not log in, submit forms, send messages, post, buy, install, delete or run commands that change state outside your scratch workspace.
+Cite every source with its URL. If you could not verify a fact, say so plainly; never invent sources.
+Answer in clear Markdown: a one-line answer first, then short sections, bullets for lists, tables for comparisons.`
+
+// actPreamble is used for the act tier, which only runs after the user approved this exact task.
+const actPreamble = `You are JJ, the orchestrator of Griffin, an AI workforce.
+The user approved this specific task, so you may act on their behalf, but only to do exactly what the task describes and nothing more.
+Stop and report instead of continuing if you meet anything unexpected: a payment, a CAPTCHA, a login you were not given credentials for, or a request for personal data the task did not mention.
+Never invent credentials, and never enter secrets you were not explicitly given for this task.
+Report precisely what you did, with links, in clear Markdown. If you did not complete something, say so.`
+
+// preambleFor picks the preamble for a tool tier. The default is the text-only preamble.
+func preambleFor(mode domain.ToolMode) string {
+	switch mode {
+	case domain.ToolRead:
+		return readPreamble
+	case domain.ToolAct:
+		return actPreamble
+	default:
+		return preamble
+	}
+}
+
 const retryPreamble = "A previous attempt tried to use a tool and produced no answer. Answer now in text only."
 
 type chatTurn struct {
@@ -53,6 +79,11 @@ func truncateRunes(s string, n int) string {
 // buildPrompt wraps every task in a text-only preamble. Chat tasks additionally
 // get a grounded runtime facts block and the role-labelled conversation history.
 func buildPrompt(task *domain.Task, attemptNumber int, rt RuntimeFacts) string {
+	return buildPromptWith(preamble, task, attemptNumber, rt)
+}
+
+// buildPromptWith is buildPrompt with an explicit preamble (the tool tier decides which).
+func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt RuntimeFacts) string {
 	var env chatEnvelope
 	if len(task.InputPayload) > 0 {
 		_ = json.Unmarshal(task.InputPayload, &env)
@@ -63,7 +94,7 @@ func buildPrompt(task *domain.Task, attemptNumber int, rt RuntimeFacts) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(preamble)
+	b.WriteString(pre)
 	b.WriteString("\n")
 	if attemptNumber > 1 {
 		b.WriteString(retryPreamble)

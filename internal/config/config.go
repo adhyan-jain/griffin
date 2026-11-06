@@ -28,12 +28,16 @@ type Config struct {
 	ClaudeEnabled              bool   // optional second provider for language-only steps; off by default
 	ClaudeBinary               string
 	MaxConcurrentClaude        int
-	AntigravityBinary          string // path or command name, default "agy"
-	MaxConcurrentAntigravity   int    // default 1, maximum 2
-	ExecutionTimeoutSeconds    int    // default 300
-	GracefulTerminationSeconds int    // default 5
-	WorkspaceRoot              string // default "/tmp/griffin-workspaces"
-	RetainWorkspacesOnFailure  bool   // default false
+	AgyToolsEnabled            bool     // read/act tool tiers for agy; off by default
+	AgyReadArgs                []string // extra agy flags for the read tier
+	AgyActArgs                 []string // extra agy flags for the act tier
+	AgyEffort                  string   // optional --effort level
+	AntigravityBinary          string   // path or command name, default "agy"
+	MaxConcurrentAntigravity   int      // default 1, maximum 2
+	ExecutionTimeoutSeconds    int      // default 300
+	GracefulTerminationSeconds int      // default 5
+	WorkspaceRoot              string   // default "/tmp/griffin-workspaces"
+	RetainWorkspacesOnFailure  bool     // default false
 
 	// Scale-to-Zero and Runner settings
 	GriffinMode                     string // "all" (default), "api", "worker"
@@ -115,6 +119,10 @@ func Load() (*Config, error) {
 		ClaudeEnabled:                   getEnvAsBool("CLAUDE_ENABLED", false),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
 		MaxConcurrentClaude:             getEnvAsInt("MAX_CONCURRENT_CLAUDE", 2),
+		AgyToolsEnabled:                 getEnvAsBool("AGY_TOOLS_ENABLED", false),
+		AgyReadArgs:                     strings.Fields(getEnv("AGY_READ_ARGS", "--mode plan --sandbox")),
+		AgyActArgs:                      strings.Fields(getEnv("AGY_ACT_ARGS", "--mode accept-edits --sandbox")),
+		AgyEffort:                       getEnv("AGY_EFFORT", ""),
 		AntigravityBinary:               getEnv("ANTIGRAVITY_BINARY", "agy"),
 		MaxConcurrentAntigravity:        getEnvAsInt("MAX_CONCURRENT_ANTIGRAVITY", 1),
 		ExecutionTimeoutSeconds:         getEnvAsInt("EXECUTION_TIMEOUT_SECONDS", 300),

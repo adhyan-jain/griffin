@@ -202,6 +202,10 @@ func main() {
 				GracefulTermination:       time.Duration(cfg.GracefulTerminationSeconds) * time.Second,
 				WorkspaceRoot:             cfg.WorkspaceRoot,
 				RetainWorkspacesOnFailure: cfg.RetainWorkspacesOnFailure,
+				ToolsEnabled:              cfg.AgyToolsEnabled,
+				ReadArgs:                  cfg.AgyReadArgs,
+				ActArgs:                   cfg.AgyActArgs,
+				Effort:                    cfg.AgyEffort,
 				Logger:                    logger,
 			})
 			if err != nil {

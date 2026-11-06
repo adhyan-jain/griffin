@@ -31,7 +31,17 @@ type ExecutorConfig struct {
 	RetainWorkspacesOnFailure bool
 	DefaultModel              string
 	VersionProbeTimeout       time.Duration // timeout for `agy --version` at construction (default 5s)
-	Logger                    *slog.Logger
+
+	// ToolsEnabled is the master switch for the read and act tiers. Off (the default) means every task
+	// runs text-only exactly as before, whatever tier it asked for.
+	ToolsEnabled bool
+	// ReadArgs and ActArgs are the extra agy flags for each tier, for example "--mode plan --sandbox".
+	// They are validated at construction: flags that bypass permission checks are refused.
+	ReadArgs []string
+	ActArgs  []string
+	// Effort is an optional reasoning-effort level (low|medium|high|xhigh|max); empty leaves agy's default.
+	Effort string
+	Logger *slog.Logger
 }
 
 // AntigravityExecutor executes tasks by invoking the Google Antigravity CLI (agy).
@@ -72,6 +82,10 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 		cfg.Logger = slog.Default()
 	}
 
+	if err := validateToolArgs(cfg); err != nil {
+		return nil, err
+	}
+
 	wsMgr, err := NewWorkspaceManager(cfg.WorkspaceRoot, cfg.RetainWorkspacesOnFailure)
 	if err != nil {
 		return nil, fmt.Errorf("antigravity executor workspace: %w", err)
@@ -93,6 +107,50 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 	cfg.Logger.Info("Antigravity runtime detected", "version", exec.facts.Version, "model", exec.facts.Model)
 
 	return exec, nil
+}
+
+// forbiddenArgs can never reach agy, in any tier: they switch off the permission checks that make tool
+// use safe, or they would let a config value replace the prompt.
+var forbiddenArgs = []string{"--dangerously-skip-permissions", "-p", "--print", "--prompt", "--prompt-interactive", "-i", "--remote-agent", "--remote-control"}
+
+func validateToolArgs(cfg ExecutorConfig) error {
+	for _, set := range [][]string{cfg.ReadArgs, cfg.ActArgs} {
+		for _, a := range set {
+			name := a
+			if i := strings.IndexByte(a, '='); i > 0 {
+				name = a[:i]
+			}
+			for _, bad := range forbiddenArgs {
+				if name == bad {
+					return fmt.Errorf("antigravity executor: %q is not allowed in tool arguments", bad)
+				}
+			}
+		}
+	}
+	switch cfg.Effort {
+	case "", "low", "medium", "high", "xhigh", "max":
+	default:
+		return fmt.Errorf("antigravity executor: invalid effort %q (want low|medium|high|xhigh|max)", cfg.Effort)
+	}
+	return nil
+}
+
+// ToolsEnabled reports whether the read and act tiers are active. The worker only asks for an
+// approval when this is true, so with tools off nothing changes.
+func (e *AntigravityExecutor) ToolsEnabled() bool { return e.cfg.ToolsEnabled }
+
+// toolArgs returns the extra flags for a tier (nil for text-only).
+func (e *AntigravityExecutor) toolArgs(mode domain.ToolMode) []string {
+	if !e.cfg.ToolsEnabled {
+		return nil
+	}
+	switch mode {
+	case domain.ToolRead:
+		return e.cfg.ReadArgs
+	case domain.ToolAct:
+		return e.cfg.ActArgs
+	}
+	return nil
 }
 
 // RuntimeFacts returns the cached provider runtime description.
@@ -218,11 +276,19 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	}
 
 	// 4. Construct argv arguments without shell interpolation
-	prompt := buildPrompt(task, task.RetryCount+1, e.facts)
+	mode := domain.ToolModeFor(task)
+	if !e.cfg.ToolsEnabled {
+		mode = domain.ToolNone
+	}
+	prompt := buildPromptWith(preambleFor(mode), task, task.RetryCount+1, e.facts)
 	args := []string{
 		"-p", prompt,
 		"--output-format", "json",
 		"--disable-slash-commands",
+	}
+	args = append(args, e.toolArgs(mode)...)
+	if e.cfg.Effort != "" {
+		args = append(args, "--effort", e.cfg.Effort)
 	}
 
 	if conversationID != "" {
