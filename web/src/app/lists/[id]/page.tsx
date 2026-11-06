@@ -16,6 +16,12 @@ import { ResponsiveDialog } from "@/components/responsive-dialog";
 
 type Editor = null | "add" | "edit" | "delete";
 
+/** The page already shows the list's title, so a leading "# Title" line in the document is dropped. */
+function withoutTitleHeading(text: string, title: string): string {
+  const m = text.match(/^#\s+(.+?)\s*\n+/);
+  return m && m[1].trim().toLowerCase() === title.trim().toLowerCase() ? text.slice(m[0].length) : text;
+}
+
 export default function ListPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -127,7 +133,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
 
           <article className="mt-6 overflow-hidden rounded-2xl border bg-card px-4 py-5 text-[15px] md:px-8 md:py-7">
             <div className="break-words">
-              <MarkdownText text={text} />
+              <MarkdownText text={withoutTitleHeading(text, meta.title)} />
             </div>
           </article>
         </>
