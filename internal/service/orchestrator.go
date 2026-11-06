@@ -70,6 +70,14 @@ func (o *JJOrchestrator) SubmitRequest(ctx context.Context, req *domain.UserRequ
 		req.Priority = domain.TaskPriorityNormalP2
 	}
 
+	// An identical request that is still running is almost always a double tap or a client retry, and
+	// every plan costs agent time. Refuse it with a clear message instead of queueing a second run.
+	if dup, err := o.orchRepo.HasActiveDuplicate(ctx, req.UserID, req.RequestText); err != nil {
+		return nil, nil, fmt.Errorf("jj: duplicate check: %w", err)
+	} else if dup {
+		return nil, nil, fmt.Errorf("%w: the same request is already running; wait for it to finish or cancel it first", domain.ErrConflict)
+	}
+
 	o.logger.Info("JJ received user request", "user_id", req.UserID, "text", req.RequestText)
 
 	// 1. Create root task representing the overall orchestration in tasks table

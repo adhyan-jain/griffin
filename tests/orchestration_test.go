@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -497,4 +498,38 @@ func TestJJ_OptInLiveAntigravityIntegration(t *testing.T) {
 		t.Fatal("expected non-nil IDs from live orchestrator")
 	}
 	t.Logf("Live JJ Orchestration successful! ID=%s, Manager=%s", orch.ID, orch.ManagerID)
+}
+
+// A double tap or client retry must not queue the same paid plan twice, but a request that finished
+// (or was cancelled) can be submitted again, and different text never collides.
+func TestJJ_SubmitRequest_RejectsActiveDuplicate(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "jj_dup@example.com")
+	other := CreateTestUser(t, env.DB, "jj_dup_other@example.com")
+	text := "Research the weekly status report format"
+
+	first, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: userID, RequestText: text})
+	if err != nil {
+		t.Fatalf("first submit: %v", err)
+	}
+	if _, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: userID, RequestText: text}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("identical active request: want ErrConflict, got %v", err)
+	}
+	if _, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: userID, RequestText: text + " v2"}); err != nil {
+		t.Fatalf("different text must be accepted: %v", err)
+	}
+	if _, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: other, RequestText: text}); err != nil {
+		t.Fatalf("another user's identical text must be accepted: %v", err)
+	}
+
+	// Once the first run is no longer active, the same text is allowed again.
+	if err := env.OrchRepo.UpdateOrchestrationStatus(ctx, first.ID, domain.OrchestrationStatusCancelled, nil, nil); err != nil {
+		t.Fatalf("cancel first: %v", err)
+	}
+	if _, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: userID, RequestText: text}); err != nil {
+		t.Fatalf("resubmit after the first finished: %v", err)
+	}
 }
