@@ -151,6 +151,15 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	res, execErr := w.executor.Execute(taskCtx, task)
 	durationMs := int(time.Since(start).Milliseconds())
 
+	// Chat tasks must yield non-blank assistant text; otherwise treat as a retryable failure.
+	var chatText string
+	chat := isChatTask(task)
+	if chat && execErr == nil && res != nil && res.Error == nil && res.RequiresApproval == nil {
+		if chatText = chatResponseText(res); strings.TrimSpace(chatText) == "" {
+			res = &ExecutionResult{ExecutionID: res.ExecutionID, ProviderName: res.ProviderName, Status: "FAILED", Error: ErrEmptyChatResponse, Retryable: true}
+		}
+	}
+
 	if execErr != nil || (res != nil && res.Error != nil) {
 		var failErr error = execErr
 		retryable := false
@@ -204,7 +213,15 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	}
 
 	w.logger.Info("Task execution completed successfully", "worker_id", w.ID, "task_id", task.ID)
-	if err := w.engine.CompleteTask(ctx, task.ID, w.ID, res.Output); err != nil {
+	output := res.Output
+	if chat {
+		var facts RuntimeFacts
+		if rp, ok := w.executor.(RuntimeFactsProvider); ok {
+			facts = rp.RuntimeFacts()
+		}
+		output = buildChatOutput(chatText, w.executor.Name(), facts)
+	}
+	if err := w.engine.CompleteTask(ctx, task.ID, w.ID, output); err != nil {
 		w.logger.Error("engine.CompleteTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
 	}
 
