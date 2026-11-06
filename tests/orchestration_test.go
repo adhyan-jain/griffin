@@ -563,3 +563,37 @@ func TestJJ_SubmitRequest_RecordsProviderHintOnEachStep(t *testing.T) {
 		}
 	}
 }
+
+// Simultaneous identical submits (a double tap that beats the planner) produce exactly one plan.
+func TestJJ_SubmitRequest_ConcurrentIdenticalSubmitsCreateOnePlan(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "jj_race@example.com")
+	const n = 8
+	var wg sync.WaitGroup
+	var ok, conflict int
+	var mu sync.Mutex
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: userID, RequestText: "Plan the quarterly review"})
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				ok++
+			case errors.Is(err, domain.ErrConflict):
+				conflict++
+			default:
+				t.Errorf("unexpected error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if ok != 1 || conflict != n-1 {
+		t.Fatalf("want exactly 1 accepted and %d rejected, got %d accepted, %d rejected", n-1, ok, conflict)
+	}
+}

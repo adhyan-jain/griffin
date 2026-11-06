@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,10 +16,16 @@ import (
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
+	"github.com/griffin/core/internal/storage"
 )
 
 // ErrEmptyOutput marks an execution that reported success but produced no result.
 var ErrEmptyOutput = errors.New("execution reported success but produced no result")
+
+// ArtifactSaver stores a file and records it against a task. *storage.StorageService implements it.
+type ArtifactSaver interface {
+	SaveArtifact(ctx context.Context, input storage.SaveArtifactInput) (*domain.Artifact, error)
+}
 
 // Worker polls the task engine, leases tasks, maintains heartbeats, and drives execution.
 type Worker struct {
@@ -31,6 +38,7 @@ type Worker struct {
 	pollInterval      time.Duration
 	logger            *slog.Logger
 	onTaskFinished    func(ctx context.Context, taskID uuid.UUID)
+	artifacts         ArtifactSaver
 
 	paused   atomic.Bool
 	inFlight atomic.Int32
@@ -50,6 +58,10 @@ type Config struct {
 	// OnTaskFinished, if set, is called after this worker wrote a task's final state (completed,
 	// or failed; retryable failures included, so the hook must tolerate non-terminal states).
 	OnTaskFinished func(ctx context.Context, taskID uuid.UUID)
+
+	// Artifacts, if set, keeps every finished task's answer as a file (Files page) so results outlive
+	// scrolling back through tasks. A failure to save is logged and never fails the task.
+	Artifacts ArtifactSaver
 }
 
 // NewWorker initializes a Worker.
@@ -84,6 +96,7 @@ func NewWorker(cfg Config) *Worker {
 		pollInterval:      cfg.PollInterval,
 		logger:            cfg.Logger,
 		onTaskFinished:    cfg.OnTaskFinished,
+		artifacts:         cfg.Artifacts,
 	}
 }
 
@@ -282,6 +295,9 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	if err := w.engine.CompleteTask(ctx, task.ID, w.ID, output); err != nil {
 		w.logger.Error("engine.CompleteTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
 	} else {
+		if !chat {
+			w.saveResultFile(ctx, task, res)
+		}
 		w.notifyFinished(ctx, task.ID)
 	}
 
@@ -364,4 +380,82 @@ func (p *WorkerPool) ActiveCount() int {
 // Workers returns the underlying worker slice.
 func (p *WorkerPool) Workers() []*Worker {
 	return p.workers
+}
+
+// resultFile picks what to keep: the answer text as Markdown when there is one, otherwise the raw
+// output as JSON. ok is false when the run produced nothing worth saving.
+func resultFile(res *ExecutionResult) (body []byte, ext, artifactType, contentType string, ok bool) {
+	text := strings.TrimSpace(res.TextOutput)
+	if text == "" {
+		var o map[string]any
+		if json.Unmarshal(res.Output, &o) == nil {
+			if s, isStr := o["response"].(string); isStr {
+				text = strings.TrimSpace(s)
+			}
+		}
+	}
+	if text != "" {
+		return []byte(text + "\n"), "md", "MARKDOWN", "text/markdown; charset=utf-8", true
+	}
+	if len(res.Output) > 0 {
+		var pretty any
+		if json.Unmarshal(res.Output, &pretty) == nil {
+			if b, err := json.MarshalIndent(pretty, "", "  "); err == nil {
+				return append(b, '\n'), "json", "JSON", "application/json", true
+			}
+		}
+	}
+	return nil, "", "", "", false
+}
+
+// fileSlug makes a short, filename-safe name from a task title.
+func fileSlug(title string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(title) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			dash = false
+		case !dash && b.Len() > 0:
+			b.WriteByte('-')
+			dash = true
+		}
+		if b.Len() >= 60 {
+			break
+		}
+	}
+	if out := strings.Trim(b.String(), "-"); out != "" {
+		return out
+	}
+	return "result"
+}
+
+// saveResultFile keeps the finished task's answer in the Files area. Best effort by design.
+func (w *Worker) saveResultFile(ctx context.Context, task *domain.Task, res *ExecutionResult) {
+	if w.artifacts == nil {
+		return
+	}
+	body, ext, artifactType, contentType, ok := resultFile(res)
+	if !ok {
+		return
+	}
+	title := strings.TrimSpace(task.Title)
+	if title == "" {
+		title = "Result"
+	}
+	meta, _ := json.Marshal(map[string]string{"source": "task_result", "provider": res.ProviderName})
+	taskID := task.ID
+	if _, err := w.artifacts.SaveArtifact(ctx, storage.SaveArtifactInput{
+		UserID:       task.UserID,
+		TaskID:       &taskID,
+		Title:        title,
+		Filename:     fileSlug(title) + "." + ext,
+		ArtifactType: artifactType,
+		ContentType:  contentType,
+		Body:         bytes.NewReader(body),
+		Metadata:     meta,
+	}); err != nil {
+		w.logger.Warn("Could not save the task result as a file", "task_id", task.ID, "error", err)
+	}
 }

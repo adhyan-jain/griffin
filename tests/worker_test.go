@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -379,4 +380,39 @@ exit 0
 	if attempts[0].PromptTokens != 50 || attempts[0].CompletionTokens != 25 {
 		t.Fatalf("expected prompt=50, completion=25 tokens, got %d / %d", attempts[0].PromptTokens, attempts[0].CompletionTokens)
 	}
+}
+
+// A finished task's answer is kept as a file in Files, linked to the task.
+func TestWorkerSavesResultAsArtifact(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	userID := CreateTestUser(t, env.DB, "result_file@example.com")
+	task, err := env.Engine.CreateTask(ctx, &domain.Task{UserID: userID, ManagerDomain: "research", Title: "Weekly internship list", Goal: "list internships", Priority: domain.TaskPriorityNormalP2}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := worker.NewWorker(worker.Config{ID: "w-file", Engine: env.Engine, TaskRepo: env.TaskRepo, Executor: worker.NewMockExecutor(), Artifacts: env.StorageService, PollInterval: 50 * time.Millisecond})
+	// Stop the worker and wait for it before the environment is torn down, so it can never hold a
+	// lock on the shared test database while the next test truncates it.
+	stopped := make(chan struct{})
+	go func() { _ = w.Run(ctx); close(stopped) }()
+	defer func() { cancel(); <-stopped }()
+
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		tid := task.ID
+		arts, err := env.ArtifactRepo.ListArtifacts(ctx, userID, &tid)
+		if err == nil && len(arts) == 1 {
+			a := arts[0]
+			if a.Title != "Weekly internship list" || a.Filename == nil || !strings.HasPrefix(*a.Filename, "weekly-internship-list.") {
+				t.Fatalf("unexpected artifact: %+v", a)
+			}
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("no result artifact was saved for the finished task")
 }
