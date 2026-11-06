@@ -97,7 +97,7 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 
 | What you feel | Cause |
 |---|---|
-| Slow answers | Each step cold-starts `agy` in a fresh workspace: 12-16 s for short steps, 99-111 s and ~100k tokens for research. Only one `agy` runs at a time, so steps queue. Simple asks are split into two steps (gather, then synthesize). If the runner is asleep, the EC2 boot comes first. |
+| Slow answers | Each step cold-starts `agy` in a fresh workspace: 12-16 s for short steps, 99-111 s and ~100k tokens for research. Only one `agy` runs at a time, so steps queue. Simple asks were split into two steps (gather, then synthesize); the fast path fixes this once shipped. If the runner is asleep, the EC2 boot comes first. |
 | Can't do complex tasks | `agy` is text-only by design today ("You have NO tools"), after earlier hangs and fake completions. It answers from memory: no browsing, logging in, forms or apps. Tool tiers are built but off and unvalidated. |
 | Tasks stuck in Queued | The runner sometimes did not wake; the cause is unknown because the API's logs are not readable with current permissions. |
 | Plans stuck in Running | The stale worker could not finish plans; a restart cleared the six stuck ones, the worker still needs replacing. |
@@ -122,7 +122,7 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 | A better way to view results | Done, live (reader card) |
 | Tasks were repeating | Done, live (duplicate guard and tap lock) |
 | Do a thorough end-to-end check with Playwright | Done (`e2e-real.mjs`, 21 checks) |
-| Optimise speed and response quality | Partly: duplicate guard, recent-result notice, effort setting; fast path, streaming, warm window and parallel steps not built (Phase 1) |
+| Optimise speed and response quality | Partly: duplicate guard, recent-result notice, effort setting, one-step fast path (not shipped); streaming, warm window and parallel steps not built (Phase 1) |
 | Cache repetitive tasks ("WhatsApp is slow the first time, quick after") | Playbooks built, off until tools are on |
 | A new terminal on EC2 for each task | Each task already runs in its own isolated workspace and process; a live per-task view is not built (Phase 2) |
 | Some parts of a task to Claude, others to agy; keep Claude off for now | Done, off |
@@ -140,7 +140,7 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 P0 blocks the product, P1 makes it good, P2 makes it great.
 
 ### 7.1 Speed
-- **P0 Fast path:** a question that needs no tools or plan is answered in one step. *Done when* "Plan a weekly status report" returns in < 15 s on a warm runner.
+- **P0 Fast path:** a question that needs no tools or plan is answered in one step. **Built, not shipped:** the planner only splits research into gather-then-synthesize when the request asks for sourced research; everything else is one step. *Done when* "Plan a weekly status report" returns in < 15 s on a warm runner.
 - **P0 Streaming:** the answer appears while it is written. *Done when* the first words show within 3 s of the agent starting.
 - **P0 Warm window:** the runner stays up for ~15 min after activity instead of booting per task; still stops when idle.
 - **P1 Parallel steps:** independent steps run together (raise the agent concurrency to 2; size the instance for more).

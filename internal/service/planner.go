@@ -134,6 +134,12 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 		}
 
 	case "research":
+		if !wantsSourcedResearch(text) {
+			// Fast path: an ask that does not call for sourced research is answered in one step.
+			// Splitting it into "gather" then "synthesize" only doubled the wait (two cold agent runs).
+			childTasks, approvalReqs = singleStep(managerID, def, req)
+			break
+		}
 		childTasks = []domain.ChildTaskPlan{
 			{
 				Key:                  "res_gather",
@@ -162,39 +168,7 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 
 	default:
 		// Standard single-step execution for other managers
-		workerKey := ""
-		if len(def.AvailableWorkers) > 0 {
-			workerKey = def.AvailableWorkers[0]
-		}
-		needsApproval, risk := domain.RequiresApproval(def.AllowedCapabilities, "")
-		actionType := ""
-		if needsApproval && len(def.ApprovalOperations) > 0 {
-			actionType = def.ApprovalOperations[0]
-		}
-
-		childTasks = []domain.ChildTaskPlan{
-			{
-				Key:                  fmt.Sprintf("%s_task_1", managerID),
-				Title:                truncateString(req.RequestText, 60),
-				Goal:                 req.RequestText,
-				ManagerDomain:        managerID,
-				WorkerKey:            workerKey,
-				InputPayload:         req.Context,
-				Priority:             req.Priority,
-				CapabilitiesRequired: def.AllowedCapabilities,
-				ApprovalRequired:     needsApproval,
-				ActionType:           actionType,
-				RiskLevel:            risk,
-			},
-		}
-		if needsApproval {
-			approvalReqs = append(approvalReqs, domain.ApprovalRequirement{
-				TaskKey:    fmt.Sprintf("%s_task_1", managerID),
-				ActionType: actionType,
-				RiskLevel:  risk,
-				Summary:    fmt.Sprintf("Approval required for sensitive %s action", actionType),
-			})
-		}
+		childTasks, approvalReqs = singleStep(managerID, def, req)
 	}
 
 	plan := &domain.PlanPayload{
@@ -298,4 +272,48 @@ func classifyIntent(text string) string {
 		}
 	}
 	return "research"
+}
+
+// sourcedResearch matches requests that explicitly ask for research with sources, the only case where
+// a separate "gather" step before a "synthesize" step is worth a second agent run.
+var sourcedResearch = regexp.MustCompile(`\b(research|sources?|cite|citations?|evidence|literature|investigate|deep[- ]dive|look up|fact[- ]check|survey of|state of the art)\b`)
+
+func wantsSourcedResearch(lowerText string) bool { return sourcedResearch.MatchString(lowerText) }
+
+// singleStep is one child task that does the whole request, with an approval when the manager's
+// capabilities require one.
+func singleStep(managerID string, def manager.ManagerDefinition, req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.ApprovalRequirement) {
+	workerKey := ""
+	if len(def.AvailableWorkers) > 0 {
+		workerKey = def.AvailableWorkers[0]
+	}
+	needsApproval, risk := domain.RequiresApproval(def.AllowedCapabilities, "")
+	actionType := ""
+	if needsApproval && len(def.ApprovalOperations) > 0 {
+		actionType = def.ApprovalOperations[0]
+	}
+	key := fmt.Sprintf("%s_task_1", managerID)
+	steps := []domain.ChildTaskPlan{{
+		Key:                  key,
+		Title:                truncateString(req.RequestText, 60),
+		Goal:                 req.RequestText,
+		ManagerDomain:        managerID,
+		WorkerKey:            workerKey,
+		InputPayload:         req.Context,
+		Priority:             req.Priority,
+		CapabilitiesRequired: def.AllowedCapabilities,
+		ApprovalRequired:     needsApproval,
+		ActionType:           actionType,
+		RiskLevel:            risk,
+	}}
+	var approvals []domain.ApprovalRequirement
+	if needsApproval {
+		approvals = append(approvals, domain.ApprovalRequirement{
+			TaskKey:    key,
+			ActionType: actionType,
+			RiskLevel:  risk,
+			Summary:    fmt.Sprintf("Approval required for sensitive %s action", actionType),
+		})
+	}
+	return steps, approvals
 }
