@@ -214,8 +214,8 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 	allCompleted := true
 	hasFailed := false
 	hasAwaitingApproval := false
-	var failureReason string
-	var completedOutputs []string
+	var failures []string
+	var stepTitles, stepTexts []string
 
 	mgr, _ := o.mgrReg.Get(orch.ManagerID)
 
@@ -246,16 +246,25 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 						"child_task_id", task.ID, "msg", verifyMsg)
 				}
 			}
-			completedOutputs = append(completedOutputs, fmt.Sprintf("- [%s]: %s", task.Title, string(task.OutputPayload)))
+			text := stepOutputText(task.OutputPayload)
+			if text == "" {
+				// A completed step with no content is never reported as success.
+				allCompleted = false
+				hasFailed = true
+				failures = append(failures, fmt.Sprintf("step %q completed with an empty output", task.Title))
+				break
+			}
+			stepTitles = append(stepTitles, task.Title)
+			stepTexts = append(stepTexts, text)
 
 		case domain.TaskStatusFailed, domain.TaskStatusCancelled:
 			allCompleted = false
 			hasFailed = true
+			reason := "Child task execution failed"
 			if task.FailureReason != nil {
-				failureReason = *task.FailureReason
-			} else {
-				failureReason = "Child task execution failed"
+				reason = *task.FailureReason
 			}
+			failures = append(failures, fmt.Sprintf("step %q failed: %s", task.Title, reason))
 
 		case domain.TaskStatusAwaitingApproval:
 			allCompleted = false
@@ -267,7 +276,7 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 	}
 
 	if hasFailed {
-		errMsg := fmt.Sprintf("Orchestration aborted due to child task failure: %s", failureReason)
+		errMsg := fmt.Sprintf("Orchestration aborted due to child task failure: %s", strings.Join(failures, "; "))
 		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusFailed, nil, &errMsg)
 		if err := o.engine.FailTask(ctx, orch.RootTaskID, "JJ_ORCHESTRATOR", errMsg, false); err != nil {
 			o.logger.Warn("Failed to fail root task", "root_id", orch.RootTaskID, "err", err)
@@ -287,11 +296,10 @@ func (o *JJOrchestrator) ReconcileOrchestration(ctx context.Context, orchestrati
 
 	if allCompleted && len(delegations) > 0 {
 		// RESPOND: Synthesize final response
-		finalResp := fmt.Sprintf("Objective achieved successfully by Manager %s.\n\nSummary of Deliverables:\n%s",
-			orch.ManagerID, strings.Join(completedOutputs, "\n"))
+		finalResp := buildFinalResponse(orch.ManagerID, stepTitles, stepTexts)
 
 		_ = o.orchRepo.UpdateOrchestrationStatus(ctx, orch.ID, domain.OrchestrationStatusCompleted, &finalResp, nil)
-		if err := o.engine.CompleteTask(ctx, orch.RootTaskID, "JJ_ORCHESTRATOR", json.RawMessage(fmt.Sprintf(`{"summary":%q}`, finalResp))); err != nil {
+		if err := o.engine.CompleteTask(ctx, orch.RootTaskID, "JJ_ORCHESTRATOR", summaryPayload(finalResp)); err != nil {
 			o.logger.Warn("Failed to complete root task", "root_id", orch.RootTaskID, "err", err)
 		}
 
