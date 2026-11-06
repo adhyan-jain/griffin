@@ -209,6 +209,30 @@ export interface SubmitResult {
   plan: OrchestrationPlan;
 }
 
+/** runner.wake from POST /api/v1/jj/messages. */
+export interface RunnerWake {
+  wake: "signaled" | "skipped" | "failed" | "disabled";
+  detail?: string;
+}
+
+export interface JJHistoryTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export interface JJMessageRequest {
+  message: string;
+  conversation_id?: string;
+  history?: JJHistoryTurn[];
+  priority?: TaskPriority;
+  idempotency_key?: string;
+}
+
+/** 201 body of POST /api/v1/jj/messages. */
+export type JJMessageResult =
+  | { kind: "conversation"; conversation_id: string; task_id: string; runner?: RunnerWake }
+  | { kind: "objective"; conversation_id: string; orchestration: Orchestration; plan: OrchestrationPlan; runner?: RunnerWake };
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -262,6 +286,25 @@ export function getCurrentUser(): UserProfile | null {
   }
 }
 
+/** An HTTP error from the API; `status` lets callers tell "not found" from "broken". */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** POST /api/v1/jj/messages answered 404: the backend that serves it is not deployed yet. */
+export class JJEndpointUnavailable extends Error {
+  constructor() {
+    super("The JJ messages endpoint is not available on this backend.");
+    this.name = "JJEndpointUnavailable";
+  }
+}
+
 async function errorMessage(res: Response): Promise<string> {
   let message = `HTTP ${res.status}: ${res.statusText}`;
   try {
@@ -299,7 +342,7 @@ async function doFetch<T>(path: string, options: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
   const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
   return unwrap<T>(res);
 }
 
@@ -453,6 +496,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ request_text: requestText, priority }),
     }),
+  /**
+   * Sends a chat message to JJ. Every call carries an idempotency key (fresh unless given) so a
+   * double tap cannot create two replies. Throws JJEndpointUnavailable on 404 (old backend).
+   */
+  async sendJJMessage(req: JJMessageRequest): Promise<JJMessageResult> {
+    try {
+      return await fetchWithAuth<JJMessageResult>("/api/v1/jj/messages", {
+        method: "POST",
+        body: JSON.stringify({ ...req, idempotency_key: req.idempotency_key ?? crypto.randomUUID() }),
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) throw new JJEndpointUnavailable();
+      throw e;
+    }
+  },
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
 
   // Approvals
