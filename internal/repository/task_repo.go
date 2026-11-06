@@ -45,6 +45,12 @@ type TaskRepository interface {
 	CompleteTask(ctx context.Context, taskID uuid.UUID, workerID string, output json.RawMessage) error
 	FailTask(ctx context.Context, taskID uuid.UUID, workerID string, reason string, retryable bool, backoff time.Duration) error
 	CancelTask(ctx context.Context, taskID uuid.UUID, reason string) error
+	// ResumeTask re-queues a FAILED/CANCELLED standalone task (not part of a JJ plan) with a fresh retry budget.
+	// Returns domain.ErrConflict when the task is in another state or belongs to a plan.
+	ResumeTask(ctx context.Context, taskID uuid.UUID) error
+	// DeleteTaskTree deletes a task and all of its subtasks, only when every one of them is terminal.
+	// Returns domain.ErrConflict when the task or a subtask is still active (or does not exist).
+	DeleteTaskTree(ctx context.Context, taskID uuid.UUID) error
 	ReapExpiredLeases(ctx context.Context) (int64, error)
 
 	AddDependency(ctx context.Context, taskID, dependsOnID uuid.UUID) error
@@ -423,6 +429,63 @@ func (r *PostgresTaskRepository) CancelTask(ctx context.Context, taskID uuid.UUI
 	}
 	if cmd.RowsAffected() == 0 {
 		return domain.ErrTaskAlreadyTerminal
+	}
+	return nil
+}
+
+func (r *PostgresTaskRepository) ResumeTask(ctx context.Context, taskID uuid.UUID) error {
+	now := time.Now().UTC()
+	query := `
+		UPDATE tasks
+		SET
+			status = CASE WHEN EXISTS (
+				SELECT 1 FROM task_dependencies td
+				JOIN tasks dep ON dep.id = td.depends_on_task_id
+				WHERE td.task_id = tasks.id AND dep.status != 'COMPLETED'
+			) THEN 'WAITING_FOR_DEPENDENCY'::task_status ELSE 'QUEUED'::task_status END,
+			retry_count = 0,
+			failure_reason = NULL,
+			scheduled_for = NULL,
+			completed_at = NULL,
+			leased_by = NULL,
+			lease_expires_at = NULL,
+			updated_at = $2::timestamptz
+		WHERE id = $1
+		  AND status IN ('FAILED', 'CANCELLED')
+		  AND parent_id IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM orchestrations o WHERE o.root_task_id = tasks.id)
+	`
+	cmd, err := r.pool.Exec(ctx, query, taskID, now)
+	if err != nil {
+		return fmt.Errorf("resume task: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("%w: only a failed or cancelled task that is not part of a JJ plan can be resumed", domain.ErrConflict)
+	}
+	return nil
+}
+
+func (r *PostgresTaskRepository) DeleteTaskTree(ctx context.Context, taskID uuid.UUID) error {
+	// parent_id is ON DELETE SET NULL, so subtasks must be deleted explicitly with their parent.
+	query := `
+		WITH RECURSIVE tree AS (
+			SELECT id FROM tasks WHERE id = $1
+			UNION
+			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id
+		)
+		DELETE FROM tasks
+		WHERE id IN (SELECT id FROM tree)
+		  AND NOT EXISTS (
+			SELECT 1 FROM tasks a
+			WHERE a.id IN (SELECT id FROM tree) AND a.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+		  )
+	`
+	cmd, err := r.pool.Exec(ctx, query, taskID)
+	if err != nil {
+		return fmt.Errorf("delete task tree: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("%w: the task or one of its subtasks is still active; cancel it first", domain.ErrConflict)
 	}
 	return nil
 }

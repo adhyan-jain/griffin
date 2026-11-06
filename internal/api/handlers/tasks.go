@@ -244,6 +244,62 @@ func (h *TaskHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ownedTaskID parses {id} and verifies the task belongs to the caller.
+func (h *TaskHandler) ownedTaskID(w http.ResponseWriter, r *http.Request) (uuid.UUID, *domain.Task, bool) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return uuid.Nil, nil, false
+	}
+	taskID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid task id format")))
+		return uuid.Nil, nil, false
+	}
+	task, err := h.engine.GetTaskForUser(r.Context(), taskID, userID)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return uuid.Nil, nil, false
+	}
+	return taskID, task, true
+}
+
+// ResumeTask re-queues a failed or cancelled standalone task.
+func (h *TaskHandler) ResumeTask(w http.ResponseWriter, r *http.Request) {
+	taskID, _, ok := h.ownedTaskID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.engine.ResumeTask(r.Context(), taskID); err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if h.scaleToZeroEnabled && h.wakeup != nil {
+		wakeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		_ = h.wakeup.TriggerWakeup(wakeCtx) // best-effort: the task is durably queued
+		cancel()
+	}
+	task, err := h.engine.GetTask(r.Context(), taskID)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, task)
+}
+
+// DeleteTask permanently removes a finished task and its subtasks.
+func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
+	taskID, _, ok := h.ownedTaskID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.engine.DeleteTask(r.Context(), taskID); err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *TaskHandler) GetTaskEvents(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r.Context())
 	if err != nil {

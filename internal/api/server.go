@@ -117,6 +117,8 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.ListTasks)))
 	mux.Handle("GET /api/v1/tasks/{id}", userAuth(http.HandlerFunc(taskHandler.GetTask)))
 	mux.Handle("POST /api/v1/tasks/{id}/cancel", userAuth(http.HandlerFunc(taskHandler.CancelTask)))
+	mux.Handle("POST /api/v1/tasks/{id}/resume", userAuth(http.HandlerFunc(taskHandler.ResumeTask)))
+	mux.Handle("DELETE /api/v1/tasks/{id}", userAuth(http.HandlerFunc(taskHandler.DeleteTask)))
 	mux.Handle("GET /api/v1/tasks/{id}/events", userAuth(http.HandlerFunc(taskHandler.GetTaskEvents)))
 	mux.Handle("GET /api/v1/tasks/{id}/attempts", userAuth(http.HandlerFunc(taskHandler.GetTaskAttempts)))
 

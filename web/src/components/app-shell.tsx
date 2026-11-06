@@ -77,8 +77,7 @@ function RunnerPill({ runner }: { runner: RunnerStatus | null }) {
   const state = runner?.state ?? "unknown";
   const dot =
     state === "running" ? "bg-success" : state === "pending" || state === "stopping" ? "bg-warning animate-pulse" : "bg-muted-foreground";
-  const label =
-    !runner ? "Runner" : state === "running" ? "Runner on" : state === "stopped" ? "Runner asleep" : `Runner ${state}`;
+  const label = !runner ? "Runner" : state === "running" ? "On" : state === "stopped" ? "Asleep" : state;
   const canWake = state === "stopped";
 
   const wake = async () => {
@@ -95,12 +94,15 @@ function RunnerPill({ runner }: { runner: RunnerStatus | null }) {
 
   const body = (
     <>
-      <span className={cn("size-2 rounded-full", dot)} aria-hidden />
-      {label}
-      {canWake && <span className="text-primary">· Wake</span>}
+      <span className={cn("size-2 shrink-0 rounded-full", dot)} aria-hidden />
+      <span className="capitalize">
+        <span className="hidden sm:inline">Runner </span>
+        {label.toLowerCase()}
+      </span>
+      {canWake && <span className="border-l pl-2 text-primary">Wake</span>}
     </>
   );
-  const cls = "inline-flex min-h-9 items-center gap-2 rounded-full border bg-card px-3 text-xs font-medium";
+  const cls = "inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border bg-card px-3 text-xs font-medium";
   return canWake ? (
     <button type="button" onClick={wake} disabled={busy} className={cn(cls, "active:scale-[0.97] transition-transform")}>
       {body}
