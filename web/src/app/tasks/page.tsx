@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
 import { useRouter } from "next/navigation";
-import { ListChecks, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { ListChecks, Play, Plus, Search, Square, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Task } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { useFxActivity } from "@/lib/fx";
-import { PERIODS, canDelete, canResume, inPeriod, runAgain, runBulk, type Period } from "@/lib/task-actions";
+import { PERIODS, canCancel, canDelete, canResume, inPeriod, runAgain, runBulk, type Period } from "@/lib/task-actions";
 import { ACTIVE_STATUSES, WAITING_STATUSES, isDone } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, PageHeader } from "@/components/page";
 import { NewTaskDialog } from "@/components/new-task-dialog";
@@ -100,14 +100,30 @@ export default function TasksPage() {
     exitSelect();
     refresh();
   };
+  // One submit per task at a time: submitting a plan takes a few seconds, and a second tap while it is
+  // pending used to queue a second paid run (the 2026-11-06 duplicate plans).
+  const starting = useRef(new Set<string>());
+  const doCancel = async (list: Task[]) => {
+    setBusy(true);
+    const o = await runBulk(list, canCancel, (t) => api.cancelTask(t.id));
+    report("Cancelled", o);
+    setBusy(false);
+    exitSelect();
+    refresh();
+  };
   const doRunAgain = async (t: Task) => {
+    if (starting.current.has(t.id)) return;
+    starting.current.add(t.id);
+    const toastId = toast.loading("Starting again...");
     try {
       const created = await runAgain(t);
-      toast.success("Started again");
+      toast.success("Started again", { id: toastId });
       refresh();
       if (created) router.push(`/tasks/${created.id}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not start it again.");
+      toast.error(e instanceof Error ? e.message : "Could not start it again.", { id: toastId });
+    } finally {
+      starting.current.delete(t.id);
     }
   };
   const doDelete = async () => {
@@ -243,6 +259,9 @@ export default function TasksPage() {
         <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 border-t bg-background/95 px-4 py-3 backdrop-blur md:bottom-0 md:left-60">
           <div className="mx-auto flex max-w-3xl items-center gap-2">
             <span className="mr-auto text-sm tabular-nums">{chosen.length} selected</span>
+            <Button variant="outline" className="h-11" disabled={busy || !chosen.some(canCancel)} onClick={() => doCancel(chosen)}>
+              <Square /> Cancel
+            </Button>
             <Button variant="outline" className="h-11" disabled={busy || !chosen.some(canResume)} onClick={() => doResume(chosen)}>
               <Play /> Resume
             </Button>

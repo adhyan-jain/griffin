@@ -27,7 +27,10 @@ const STATUS_COLOR: Record<string, string> = {
   CANCELLED: "#6b7280",
 };
 const LIVE = new Set(["RUNNING", "VERIFYING", "RETRYING"]);
-const MAX_NODES = 40;
+const MAX_NODES = 28;
+/** Finished work recedes to faint dust; what needs attention glows. */
+const DONE = new Set(["COMPLETED", "CANCELLED"]);
+const weight = (status: string) => (LIVE.has(status) ? 1 : DONE.has(status) ? 0.38 : 0.8);
 
 // ---- JJ core: displaced brass sphere with a fresnel rim, plus a soft aura -------------------------
 
@@ -59,20 +62,24 @@ const CORE_VERT = /* glsl */ `
 const CORE_FRAG = /* glsl */ `
   precision highp float;
   uniform vec3 uBrass;
-  uniform vec3 uDeep;
   uniform float uActivity;
   varying vec3 vN;
   varying vec3 vV;
   varying float vD;
   void main() {
-    float fres = pow(1.0 - max(dot(normalize(vN), normalize(vV)), 0.0), 2.0);
-    float band = smoothstep(-0.28, 0.30, vD);
-    // Molten metal: never black, soft bands, thin bright veins along the displacement crests.
-    vec3 col = mix(uDeep, uBrass, 0.38 + 0.62 * band);
-    float vein = smoothstep(0.035, 0.0, abs(vD - 0.07));
-    col += uBrass * vein * (0.45 + 0.5 * uActivity);
-    col = mix(col, vec3(1.0, 0.94, 0.78), fres * 0.5);
-    col += uBrass * fres * (0.35 + 0.9 * uActivity);
+    vec3 n = normalize(vN);
+    vec3 v = normalize(vV);
+    float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
+    // Obsidian body: near-black ink with a faint blue sheen where the displacement rises.
+    vec3 body = mix(vec3(0.018, 0.022, 0.038), vec3(0.055, 0.070, 0.125), smoothstep(-0.30, 0.30, vD));
+    // Molten veins: thin brass lines where the moving displacement crosses fixed levels.
+    float veins = smoothstep(0.030, 0.0, abs(vD - 0.07))
+                + 0.7 * smoothstep(0.022, 0.0, abs(vD + 0.10))
+                + 0.5 * smoothstep(0.018, 0.0, abs(vD - 0.20));
+    vec3 col = body + uBrass * veins * (0.9 + 1.3 * uActivity);
+    // Rim light: brass at the edge, a pinpoint of warm white at the very silhouette.
+    col += uBrass * fres * (0.22 + 0.35 * uActivity);
+    col += vec3(1.0, 0.93, 0.75) * pow(fres, 3.0) * 0.28;
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -143,16 +150,15 @@ function Scene({
   const ringTilt = useMemo(() => [new THREE.Euler(1.05, 0.2, 0), new THREE.Euler(0.55, -0.7, 0.4), new THREE.Euler(1.35, 0.9, -0.3)], []);
 
   const coreUniforms = useMemo(
-    () => ({ uTime: { value: 0 }, uActivity: { value: 0.1 }, uBrass: { value: new THREE.Color("#e3b648") }, uDeep: { value: new THREE.Color("#8a5a10") } }),
+    () => ({ uTime: { value: 0 }, uActivity: { value: 0.1 }, uBrass: { value: new THREE.Color("#e3b648") } }),
     [],
   );
-  const auraUniforms = useMemo(() => ({ uColor: { value: new THREE.Color("#e3b648") }, uPower: { value: 1.1 } }), []);
+  const auraUniforms = useMemo(() => ({ uColor: { value: new THREE.Color("#e3b648") }, uPower: { value: 0.22 } }), []);
   useEffect(() => {
     const c = coreMat.current?.uniforms;
     const a = auraMat.current?.uniforms;
     if (!c || !a) return;
     c.uBrass.value.set(brass);
-    c.uDeep.value.set(dark ? "#8a5a10" : "#7a5710");
     a.uColor.value.set(brass);
     invalidate();
   }, [brass, dark, invalidate]);
@@ -161,7 +167,7 @@ function Scene({
   useEffect(() => {
     const m = inst.current;
     if (!m) return;
-    shown.forEach((n, i) => m.setColorAt(i, color.set(STATUS_COLOR[n.status] ?? "#8a93a6")));
+    shown.forEach((n, i) => m.setColorAt(i, color.set(STATUS_COLOR[n.status] ?? "#8a93a6").multiplyScalar(DONE.has(n.status) ? 0.5 : 1)));
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
     invalidate();
   }, [shown, color, invalidate]);
@@ -202,7 +208,7 @@ function Scene({
         dummy.position.set(Math.cos(a) * o.r, 0, Math.sin(a) * o.r).applyEuler(ringTilt[o.ring]);
         const live = LIVE.has(n.status);
         const pulse = live && animated ? 1 + Math.sin(t * 4 + i) * 0.3 : 1;
-        dummy.scale.setScalar((hover === i ? 1.9 : 1) * pulse);
+        dummy.scale.setScalar((hover === i ? 1.9 : 1) * pulse * weight(n.status));
         dummy.updateMatrix();
         m.setMatrixAt(i, dummy.matrix);
         if (hover === i && chip.current) chip.current.position.copy(dummy.position);
@@ -236,19 +242,22 @@ function Scene({
           <icosahedronGeometry args={[1.0, lite ? 6 : 12]} />
           <shaderMaterial ref={coreMat} vertexShader={CORE_VERT} fragmentShader={CORE_FRAG} uniforms={coreUniforms} />
         </mesh>
-        <mesh scale={1.42}>
-          <sphereGeometry args={[1, lite ? 24 : 40, lite ? 24 : 40]} />
-          <shaderMaterial
-            ref={auraMat}
-            vertexShader={AURA_VERT}
-            fragmentShader={AURA_FRAG}
-            uniforms={auraUniforms}
-            side={THREE.BackSide}
-            transparent
-            depthWrite={false}
-            blending={dark ? THREE.AdditiveBlending : THREE.NormalBlending}
-          />
-        </mesh>
+        {/* The shell fakes a glow where there is no bloom pass (Lite, light theme). With bloom it would double up into a halo. */}
+        {(lite || !dark) && (
+          <mesh scale={1.3}>
+            <sphereGeometry args={[1, lite ? 24 : 40, lite ? 24 : 40]} />
+            <shaderMaterial
+              ref={auraMat}
+              vertexShader={AURA_VERT}
+              fragmentShader={AURA_FRAG}
+              uniforms={auraUniforms}
+              side={THREE.BackSide}
+              transparent
+              depthWrite={false}
+              blending={dark ? THREE.AdditiveBlending : THREE.NormalBlending}
+            />
+          </mesh>
+        )}
         {ringTilt.map((rot, i) => (
           <mesh key={i} rotation={rot}>
             <torusGeometry args={[1.9 + i * 0.42, 0.004, 6, lite ? 96 : 192]} />
@@ -270,7 +279,7 @@ function Scene({
               if (n) onSelect?.(n.id);
             }}
           >
-            <sphereGeometry args={[0.095, 14, 14]} />
+            <sphereGeometry args={[0.1, 14, 14]} />
             <meshBasicMaterial toneMapped={false} />
           </instancedMesh>
         )}
@@ -382,7 +391,7 @@ export default function Hero3D({
           {/* Bloom makes the molten core and the live nodes glow. Skipped in Lite (a full-screen pass) and in light theme. */}
           {!lite && dark && (
             <EffectComposer multisampling={0}>
-              <Bloom mipmapBlur intensity={0.3 + activity * 0.35} luminanceThreshold={0.82} luminanceSmoothing={0.2} radius={0.6} />
+              <Bloom mipmapBlur intensity={0.35 + activity * 0.4} luminanceThreshold={0.86} luminanceSmoothing={0.2} radius={0.6} />
             </EffectComposer>
           )}
         </Canvas>

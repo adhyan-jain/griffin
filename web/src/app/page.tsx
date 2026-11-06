@@ -63,7 +63,7 @@ export default function DashboardPage() {
         <Hero3D
           nodes={list.map((t) => ({ id: t.id, status: t.status, title: t.title || t.goal }))}
           onSelect={(id) => router.push(`/tasks/${id}`)}
-          className="absolute inset-x-0 top-0 z-0 h-[58%] [mask-image:linear-gradient(to_bottom,#000_78%,transparent)] md:inset-y-0 md:left-auto md:right-0 md:h-full md:w-[60%]"
+          className="absolute inset-x-0 top-0 z-0 h-[58%] [mask-image:linear-gradient(to_bottom,#000_78%,transparent)] md:inset-y-0 md:left-auto md:right-0 md:h-full md:w-[58%]"
         />
         {/* A soft pool of page colour behind the type, fading to nothing, so text stays legible without a visible box. */}
         <div aria-hidden className="hero-scrim pointer-events-none absolute inset-0 z-[1]" />
@@ -72,7 +72,7 @@ export default function DashboardPage() {
             <Kinetic
               as="h1"
               text={headline}
-              className="font-display text-[clamp(2.25rem,7.2vw,5.25rem)] font-bold leading-[0.95] tracking-[-0.045em] text-balance"
+              className="font-display max-w-[30rem] text-[clamp(2.25rem,5vw,4.5rem)] font-bold leading-[0.98] tracking-[-0.045em] text-balance md:max-w-[34rem]"
             />
             <p className="mt-4 max-w-md text-base text-muted-foreground md:text-lg">{sub}</p>
           </div>
