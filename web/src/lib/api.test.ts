@@ -156,3 +156,50 @@ describe("dev login", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("sendJJMessage", () => {
+  it("POSTs the message with an idempotency key and returns the conversation result", async () => {
+    fetchMock.mockResolvedValue(json(envelope(fixtures.jjConversation), 201));
+    const r = await mod.api.sendJJMessage({ message: "hi", conversation_id: "c1", history: [{ role: "user", text: "yo" }] });
+    const { url, init, body } = lastCall();
+    expect(url).toBe("http://api.test/api/v1/jj/messages");
+    expect(init.method).toBe("POST");
+    const parsed = JSON.parse(body as string);
+    expect(parsed).toMatchObject({ message: "hi", conversation_id: "c1", history: [{ role: "user", text: "yo" }] });
+    expect(typeof parsed.idempotency_key).toBe("string");
+    expect(parsed.idempotency_key.length).toBeGreaterThan(8);
+    expect(r.kind).toBe("conversation");
+    if (r.kind === "conversation") expect(r.task_id).toBe(fixtures.jjConversation.task_id);
+  });
+
+  it("uses a fresh idempotency key per call unless one is given", async () => {
+    fetchMock.mockImplementation(async () => json(envelope(fixtures.jjConversation), 201));
+    await mod.api.sendJJMessage({ message: "a" });
+    const k1 = JSON.parse(lastCall().body as string).idempotency_key;
+    await mod.api.sendJJMessage({ message: "a" });
+    const k2 = JSON.parse(lastCall().body as string).idempotency_key;
+    expect(k1).not.toBe(k2);
+    await mod.api.sendJJMessage({ message: "a", idempotency_key: "fixed" });
+    expect(JSON.parse(lastCall().body as string).idempotency_key).toBe("fixed");
+  });
+
+  it("returns the objective result", async () => {
+    fetchMock.mockResolvedValue(json(envelope(fixtures.jjObjective), 201));
+    const r = await mod.api.sendJJMessage({ message: "plan a report" });
+    expect(r.kind).toBe("objective");
+    if (r.kind === "objective") expect(r.plan.plan_payload.child_tasks).toHaveLength(1);
+  });
+
+  it("maps 404 to JJEndpointUnavailable and does not retry", async () => {
+    fetchMock.mockResolvedValue(json({ success: false, error: { message: "not found" } }, 404));
+    await expect(mod.api.sendJJMessage({ message: "hi" })).rejects.toBeInstanceOf(mod.JJEndpointUnavailable);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps other errors as ordinary errors", async () => {
+    fetchMock.mockResolvedValue(json({ success: false, error: { message: "boom" } }, 500));
+    const err = await mod.api.sendJJMessage({ message: "hi" }).catch((e) => e);
+    expect(err).not.toBeInstanceOf(mod.JJEndpointUnavailable);
+    expect(err.message).toBe("boom");
+  });
+});
