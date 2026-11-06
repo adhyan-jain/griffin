@@ -35,6 +35,8 @@ export function Kinetic({
         delay,
         ease: EASE.out,
         stagger: { each: 0.03 },
+        // The reveal mask crops descenders on tightly set lines, so drop it the moment the motion ends.
+        onComplete: () => split.revert(),
       });
     },
     { dependencies: [text, allowed, delay], scope: ref, revertOnUpdate: true },
