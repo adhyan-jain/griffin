@@ -113,15 +113,8 @@ griffin/
 │   └── 000004_s3_storage_artifacts.up.sql / down.sql
 ├── tests/                   # Full integration test suite (Engine, RLS, API, Worker, Orchestration, S3 Live)
 ├── infra/                   # Automated AWS EC2 launch & cloud-init provisioning scripts
-├── docs/                    # Architecture blueprints, implementation specs, and test reports
-│   ├── DEPLOYMENT_RUNBOOK.md
-│   ├── ANTIGRAVITY_CLOUD_RUNNER.md
-│   ├── JJ_ORCHESTRATOR.md
-│   ├── MANAGER_FRAMEWORK.md
-│   ├── AGENT_FACTORY.md
-│   ├── STORAGE_ARCHITECTURE.md
-│   ├── S3_STORAGE_CONFIGURATION.md
-│   └── IMPLEMENTATION_STATUS.md
+├── docs/
+│   └── PRD.md               # The product: what is built, what each ask's status is, what is next
 ├── decisions.md             # Canonical record of all decisions made & planned
 ├── evolution.md             # Chronicle of product pivots and lessons learned
 
