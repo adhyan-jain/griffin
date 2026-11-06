@@ -145,6 +145,12 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 | Every task uses as many sub-agents as it needs | Designed (7.10); the worker already runs plan steps in parallel up to its capacity; not built beyond that |
 | Access all my apps, with permissions the owner sets; learn an app once and reuse it | Designed (7.4, 7.11, 7.12); not built |
 | Tools through the phone, web search and curl-style requests | Designed (7.11); not built |
+| Managers only plan, assign and summarize; workers do all labor (even summaries); a terminal per worker or manager | Designed (7.13); managers already only route and verify, the rest is plan 2.12 and 2.13 |
+| Text to speech: speak results, Siri-like speed and voice, pick a voice and preview it, anime voices | Designed (7.14, plan 1.9 and 2.14); anime voices as a bring-your-own slot only |
+| The agent calls people from my phone, several at once, approvals in chat | Designed (7.14, plan 4.4 to 4.6, 3.8); several at once on one SIM is not possible as parallel calls |
+| Laptop as a server for agy and Claude Code when it is on; EC2 for agy when it is off; Claude from the phone | Designed (7.15, plan 2.15, 2.16, 5.1, 5.5); the phone part is experimental |
+| Keep my resume context and role resume drafts in S3 | Designed (7.15, plan 3.9); upload from Files works today |
+| The voice agent can run on the EC2 itself | Yes for speech output and input; not for a large language model (7.8, 7.14) |
 | Check Activity and Subtasks don't overlap; cute and minimal | Checked at four phone widths: no overlap; counts made inline (built, not shipped) |
 | Select-all action bar was off screen on my phone | Fixed and covered by a test (built, not shipped) |
 | The assistant must not deny what I ask for | Principle added (section 2) and design in 7.8; the refusal you hit came from a hosted model, so a no-refusal drafting engine is planned (Phase 2) |
@@ -205,6 +211,7 @@ Use the official API or the web version first; drive the real app only when ther
 - **P1** Alerts: plan stuck, runner awake but idle, wake failed, agent sign-in expired.
 
 ### 7.7 UI/UX
+- **P0 Each tab has one job.** Activity and Subtasks overlapped in meaning (both were lists of "what happened"). By task kind: a **manager task** (a plan) has *Overview* (goal and the summary passed up), *Plan* (one row per worker it assigned, with status; replaces Subtasks) and *Log* (the manager's decisions); a **worker task** has *Result*, *Terminal* (the live view, replaces Activity), *Attempts* and *Files*. See 7.13.
 - **P0** Live progress on running tasks (the live per-task view).
 - **P1** Push notifications when something needs you or finishes.
 - **P1** Confirm smoothness on a real mid-range phone (60 fps Full, 30 fps Lite).
@@ -232,6 +239,7 @@ Honest limits: open-weights models are weaker than the hosted agent at long tool
 | Option | Pros | Cons |
 |---|---|---|
 | Ollama on **your own computer**, reached from the worker over a private tunnel (e.g. Tailscale) | No cloud GPU bill; text stays home | Your computer must be on; quality limited by its hardware |
+| Ollama on the **existing EC2 instance** | No new infrastructure or cost | About 3.8 GB RAM and no GPU (as last measured; the instance type could not be re-read because the network dropped): only small models (roughly 1-3B) fit beside the agents, they write poorly, and they compete with the agent for memory |
 | Ollama on a **cloud GPU instance** | Always available | Costs far more than today's setup; breaks scale-to-zero unless it also sleeps; needs a new instance, which needs the owner's explicit approval |
 | A hosted no-refusal model API | Easiest | A new paid dependency; conflicts with "no paid API fallback" unless approved |
 
@@ -266,6 +274,62 @@ The first time Griffin does something in an app it has to work out how: where to
 - **P1 Safety:** skills never contain credentials, contact lists or message content (the credential filter in ADR-064 applies); they describe *how*, never *what was said*.
 - **P2 Sharing a skill across tasks:** a skill learned for one task type is offered to related ones (keyword overlap today, semantic matching later).
 - **Done when:** the second "send a WhatsApp message" is measurably faster than the first and makes no exploratory steps.
+
+### 7.13 Agent hierarchy: JJ, managers (brains), workers (hands)
+Three layers, each with one job.
+
+| Layer | Does | Never does |
+|---|---|---|
+| **JJ** (top manager) | Understands the ask, picks which sub-managers it needs, receives their summaries, talks to the owner | Any labor, tool use, or writing of results itself |
+| **Sub-manager** (the 11 domain managers) | **Plans** its slice, **assigns** tasks to workers, tracks them, asks a worker to **summarize**, and passes the summary up to JJ | Any labor. It is only a brain: no tools, no executor, no summarizing itself |
+| **Worker** | Does one narrow job (research, write, **summarize**, call, tap, fetch) in its own isolated workspace and terminal, and reports the result | Planning or assigning work |
+
+- **Everything laborious is a worker task**, including summaries and JJ's final answer (a `summarize` step whose input is the sub-managers' summaries).
+- **Enforced by code, not convention:** manager code gets no executor and no tools, only the ability to create and read tasks; a test fails if a manager path runs a provider.
+- **Messages are task records** (assignment, result, summary), so the whole chain is auditable and replayable.
+- **Terminals:** every worker has its own terminal, a live view of what it is doing (its isolated process and workspace already exist today). Every sub-manager has its own log, a terminal of decisions: its plan, assignments, status and the summary it sent up.
+- **What exists today:** the 11 managers already only route, interpret and verify; JJ's planner assigns steps to workers; chat replies already run on a worker. What is left: JJ's final answer is stitched together in code (`buildFinalResponse`), not by a worker; there is no per-manager log; the live terminal is not built.
+- **Cost of the rule:** a worker-run summary adds one agent run (about 13 s warm). Mitigated by skipping it for one-step plans and by reusing a warm conversation (plan 1.7).
+
+### 7.14 Voice: speaking results, and calls
+**Speak results (P1).** A **Listen** button on every result, and an optional "read results aloud", that speaks sentence by sentence as text arrives (so it starts at once, like a voice assistant), with pause, stop and speed.
+- **Engines:** (a) **device voices** through the browser's speech synthesis: instant, free, many voices, quality varies by phone; (b) **neural voices** (open Piper or Kokoro-class models) generated on the worker, which runs on CPU: more natural, slower to start, audio cached per result. Siri's own voice is not available to web apps; the closest is the best device voice.
+- **Voice picker in Settings (P1):** a list of voices, each with a **Preview** button that plays a sample; the choice is remembered per device.
+- **Character and anime voices:** imitating a character needs a voice-conversion model, which uses a copyrighted character and a real voice actor's likeness without a licence. Not shipped. The picker offers a **"bring your own voice model"** slot for the owner's personal use; the default catalog is open or licensed voices only. Griffin never clones a real person's voice for calls.
+- **Where it runs:** the voice agent can run **on the existing EC2**: neural text-to-speech and speech-to-text (Whisper-class, CPU) are light enough. A *large* no-refusal language model is not: see 7.8. Memory is shared with the agents, so measure before enabling.
+
+**Calls (P2, after the Android bridge).** Griffin places phone calls for the owner, always with approval.
+- **Android only:** a call through the phone's dialer and SIM via the Android bridge (7.4). iOS does not allow it.
+- **"Many people at once" on one SIM is not possible as independent calls:** a phone holds about one active call plus one on hold, and a conference merges a few parties. Options: (1) **sequential** calls; (2) a **conference** call; (3) a **cloud telephony number** for truly parallel calls (a new paid service; calls come from that number, not the owner's SIM).
+- **A live conversation** needs the call audio, which Android restricts. Realistic routes: a telephony provider's media stream, or a speakerphone and microphone loop. Pipeline: speech to text, model, text to speech, under about one second per turn. Hard; scoped after a scripted-call first version (the agent states the message, then the owner joins or the call ends).
+- **Legal and consent:** automated or AI-voiced calls and recording are regulated and the rules differ by country (disclosure, consent, do-not-call). The owner is responsible; a setting makes Griffin say it is an assistant when the law requires.
+- **Approval for every call:** who, what will be said (the script or goal), maximum length. Approved by one tap or **in chat** (below).
+
+**Approve in chat (P0 for approvals).** Pending approvals appear **in the chat thread** as cards (Approve, Deny, Edit), and typed replies work too: "yes", "no", "approve all the calls to Mom and Dad". Every reply is bound to the specific pending approvals listed in that thread; "approve all" covers only those. Only the owner's signed-in session can approve; text from outside never can (7.8). The Approvals page stays as the full list.
+
+### 7.15 Execution hosts: laptop first, EC2 as backup (and your documents)
+**Idea:** the agents can run on more than one machine, and Griffin picks the best one that is awake. The laptop becomes an optional host; the EC2 worker stays as the always-available backup.
+
+| Host | Runs | Used when | Credentials |
+|---|---|---|---|
+| **Laptop** (optional) | `agy` and Claude Code, with the owner's own logins | The laptop is on and connected | Stay on the laptop; nothing is copied to the cloud |
+| **EC2 worker** (today) | `agy` | The laptop is off or busy | `agy` login on the instance (as now) |
+| **Phone** (experimental) | Claude Code inside a terminal app (Termux) | Only if the owner wants it | On the phone |
+
+- **How the laptop connects:** a small **host agent** on the laptop connects **out** to Griffin (no open ports) and asks for work it can do; it needs no database access. Griffin gives it a **device token** scoped to the owner's tasks only (claim, heartbeat, complete): a new **Host API** on the Lambda. Today workers talk to the database directly, which a laptop must never be able to do.
+- **Routing:** when the laptop's heartbeat is fresh, tasks go there first; otherwise to the EC2 worker. **A bonus:** with the laptop online the EC2 is not woken at all (no boot wait, no instance cost).
+- **Claude steps:** run on the laptop when it is on. When it is off, the owner's policy decides: **queue** until the laptop is back, or **fall back to `agy`** (the router in ADR-059 already falls back and records which engine ran). Signing Claude in on the EC2 is the other option; it puts that login on the instance.
+- **Laptop safety:** a task running on a personal machine can touch personal files, so each task runs in its **own scratch folder**, sees only folders the owner allows (for example `Documents/Griffin`), and the agent's permission mode stays restricted. Everything the host does is logged.
+- **Phone as a host, honestly:** Claude Code is a command-line program. It may run in a phone terminal app, but that is unofficial and unverified here, phones suspend background apps (so it would drop out often), and it cannot lend the *Claude mobile app's* session. Worth a trial after the laptop host works, not something to depend on.
+- **Terms:** Claude Code run headlessly on the owner's own machine with the owner's own login is its normal use; check the current subscription terms before relying on heavy automated use.
+- **Done when:** with the laptop on, a task runs there and the EC2 stays asleep; close the lid and the same task runs on the EC2 with no manual step; the task page says which host ran it.
+
+**Your documents (resume context, role-specific resume drafts).**
+- **A Documents library** in the app: files you add once (for example `AJ_resume_context` and your rough resume per role), stored in your private S3 area, each with tags (for example `resume-context`, `role: backend`).
+- **Two ways in:** upload from the Files page (works today, 5 MB each) or, once the laptop host exists, **sync a chosen folder** (for example `Documents/Griffin`) to S3 automatically.
+- **How tasks use them:** a task names the documents it needs, or Griffin picks by tags and keywords (an application for a backend role pulls `AJ_resume_context` plus the backend resume draft). Only the relevant ones are given to the agent, long ones are condensed once and cached, and the content is never written to logs.
+- **Privacy:** documents are as sensitive as the resume they hold: they stay under your own prefix in your bucket (already per-user), are read only by the worker or host running your task, and never appear in playbooks or in anything shared.
+- **Done when:** "apply to this role" starts from your context and the matching resume draft without you attaching anything.
 
 ---
 
@@ -320,6 +384,7 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 | 1.6 | Effort tiers: low reasoning effort for simple steps, default for hard ones (`AGY_EFFORT`, per-step) | S | 1.4 to judge quality | Simple answers are measurably faster with no quality loss on a sample of 10 |
 | 1.7 | Reuse a warm conversation for follow-ups (`--conversation`) | M | 1.4 | A follow-up skips the cold start |
 | 1.8 | Timing dashboard: p50 and p95 per step type from the attempts table, in Settings | M | none | Numbers on screen match section 10 targets |
+| 1.9 | **Listen** button with device voices, speed control, and a Settings voice picker with Preview (7.14) | M | none | A result is read aloud from its first sentence; you can preview and choose a voice |
 
 ### Phase 2: Real work (research with tools)
 | # | Work | Effort | Needs | Done when |
@@ -334,6 +399,11 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 | 2.8 | Voice engine: Ollama on your computer over a private tunnel; "Draft for me" returns text in the app | M | You choose where it runs (7.8) | A drafting step the hosted model would decline comes back as a draft |
 | 2.9 | Refusal fallback: detect a refusal on a drafting step, re-run on the voice engine, show which engine ran | M | 2.8 | The WhatsApp-style message is drafted without asking twice |
 | 2.10 | Sub-agent fan-out and a join step (7.10) | L | 1.3, 2.1 | A five-way comparison runs five sub-agents at once |
+| 2.12 | Agent hierarchy as code (7.13): summaries and the final answer become worker steps; managers get no executor; a test enforces it | M | 1.7 helps latency | A plan's summary comes from a worker; the manager-purity test passes |
+| 2.13 | Terminals: worker live terminal and manager decision log; tabs become Plan / Summary / Log for managers and Result / Terminal / Attempts / Files for workers | L | 1.5, 2.12 | Each worker's live view and each manager's log are visible; Activity and Subtasks no longer overlap in purpose |
+| 2.14 | Neural voices on the worker (CPU) with cached audio, as a picker option | M | 1.9 | A neural voice previews and reads a result; measured memory stays within the instance |
+| 2.15 | Host API (claim, heartbeat, complete) with scoped device tokens, and the laptop host agent that connects out and runs `agy` and Claude Code in per-task scratch folders (7.15) | L | You choose the laptop and install the agent | A task runs on the laptop with no database access on it |
+| 2.16 | Host routing: laptop first when its heartbeat is fresh, EC2 otherwise; skip waking the EC2 when the laptop is online; policy for Claude when the laptop is off (queue or fall back); the task shows which host ran it | M | 2.15 | Close the lid and the same task completes on the EC2 |
 | 2.11 | App skills: skill documents keyed by app and action, replay, staleness handling (7.12) | M | 2.3, 2.4 | The second run of an app action is faster with no exploration |
 
 ### Phase 3: Acts for you
@@ -345,6 +415,8 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 | 3.4 | Web Push for "needs approval" and "finished" | M | VAPID keys and a subscription table (migration) | Phone notification arrives |
 | 3.5 | Gmail and Calendar connectors (OAuth): read and draft; send with approval | L | You create a Google Cloud OAuth client | Summary of today's mail; a drafted reply waiting for approval |
 | 3.6 | The internship journey end to end (acceptance journey 1) | M | 2.4, 3.1 to 3.3 | Shortlist, drafts, approved submissions, screenshots, tracker rows |
+| 3.9 | Documents library: tagged files in your S3 area (upload now, folder sync once the laptop host exists); tasks pick relevant ones by tags and keywords | M | none for upload; 2.15 for sync | "Apply to this role" starts from your resume context and the matching draft |
+| 3.8 | Approve in chat: approval cards and typed replies bound to the listed approvals; only the owner's session counts | M | 3.1 | "approve all" in chat approves exactly the listed items and nothing else (tested) |
 | 3.7 | Trust settings: ask / auto / off per action class and per contact (including auto for everything); untrusted-content rule enforced in the worker; kill switch; audit log | M | none | You set a class to auto and it stops asking; text read from a web page cannot trigger an action (tested); one tap pauses everything |
 
 ### Phase 4: Your apps
@@ -352,12 +424,16 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 |---|---|---|---|---|
 | 4.1 | WhatsApp Web: pair once (QR), keep the session on the worker; read, summarise, draft; each send approved | L | You scan the QR; accept the terms risk | Acceptance journey 2 passes |
 | 4.2 | Android bridge for one chosen app (ADB over a secure tunnel, UI automation, screenshots) | L | You choose the device (spare phone, your phone, or an emulator) | One real action in one app, with before and after screenshots |
+| 4.4 | Place a call from the phone (Android bridge): scripted call with approval | M | 4.2 | An approved call is placed from the dialer; the script and length are shown first |
+| 4.5 | Calls to several people: sequential or conference, or a cloud number for true parallel (decision) | M | 4.4 | The chosen mode runs three calls as designed |
+| 4.6 | Live conversation on calls (speech to text, model, text to speech) | L | 4.4, 2.14 | A call holds a two-way exchange under about one second per turn |
 | 4.3 | iOS Shortcut "Send to JJ" and a share-sheet action | S | none | Anything shared from an iPhone arrives as a task |
 
 ### Phase 5: Models and memory
 | # | Work | Effort | Needs | Done when |
 |---|---|---|---|---|
-| 5.1 | Claude on the worker for language steps (one-time CLI sign-in; `CLAUDE_ENABLED=true`) | S | You sign in | A drafting step runs on Claude; falls back to agy if signed out |
+| 5.1 | Claude for language steps: on the laptop host first (login stays on the laptop), or on the worker with a one-time CLI sign-in (`CLAUDE_ENABLED=true`) | S | You sign in on the chosen machine | A drafting step runs on Claude; falls back to agy if it is signed out or the laptop is off |
+| 5.5 | Trial Claude Code on the phone (terminal app) as an extra host | M | You try it; unofficial | Works for a day without the phone suspending it, or we drop it |
 | 5.2 | Voice engine used inside plans (a step type "draft in my tone"), built on 2.8 and 2.9 | S | 2.8 | A plan's drafting step records the voice engine as the one that ran |
 | 5.3 | Engine policy per step: tool steps to agy, hard writing to Claude, tone drafts to the voice model | M | 5.1, 5.2 | The router records which engine ran each step |
 | 5.4 | Search across results, files, lists, playbooks | M | none | One search box finds anything |
@@ -405,4 +481,8 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 6. Where the voice engine runs: your own computer over a tunnel, a cloud GPU instance, or a hosted no-refusal API.
 7. Confirm the trust model in 7.8: your instructions are never second-guessed, outside content can never trigger an action, and each confirmation is ask / auto / off per action class and contact (including auto for everything).
 8. A narrow read-only grant for the API's logs (0.5), so failures can be diagnosed.
+10. Calls: sequential or conference on your SIM, or a cloud telephony number for parallel calls (a new paid service)? How much live conversation do you want in the first version?
+11. Neural voices and speech-to-text on the existing instance: measure memory first, or move to a larger instance?
+12. Laptop host: which laptop and OS, which folders it may see, and whether Claude steps should queue or fall back to `agy` while it is off.
+13. Documents: upload by hand now, or wait for folder sync (needs the laptop host)?
 9. Capacity for sub-agents: stay at 2 agents on the current instance, or approve a larger instance (a cost decision).
