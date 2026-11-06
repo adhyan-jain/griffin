@@ -14,6 +14,12 @@ type OutputUsage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
+// DeniedAction is a tool action the headless CLI auto-denied.
+type DeniedAction struct {
+	Action      string `json:"action"`
+	DisplayName string `json:"display_name"`
+}
+
 // CLIOutput maps the structured JSON emitted by `agy --output-format json`.
 type CLIOutput struct {
 	ConversationID   string          `json:"conversation_id"`
@@ -24,6 +30,7 @@ type CLIOutput struct {
 	NumTurns         int             `json:"num_turns"`
 	StructuredOutput json.RawMessage `json:"structured_output,omitempty"`
 	Usage            OutputUsage     `json:"usage"`
+	DeniedActions    []DeniedAction  `json:"denied_actions,omitempty"`
 }
 
 // ParsedResult contains the normalized execution payload.
@@ -34,6 +41,7 @@ type ParsedResult struct {
 	StructuredOutput json.RawMessage
 	Usage            map[string]int
 	DurationSeconds  float64
+	DeniedActions    []DeniedAction
 	RawStdout        string
 	RawStderr        string
 }
@@ -155,6 +163,7 @@ func ParseOutput(stdoutBytes, stderrBytes []byte, exitCode int) (*ParsedResult, 
 		StructuredOutput: structOut,
 		Usage:            usageMap,
 		DurationSeconds:  cliOut.DurationSeconds,
+		DeniedActions:    cliOut.DeniedActions,
 		RawStdout:        stdoutStr,
 		RawStderr:        stderrStr,
 	}, nil

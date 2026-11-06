@@ -45,3 +45,15 @@ type TaskExecutor interface {
 	Name() string
 	IsHealthy(ctx context.Context) (bool, error)
 }
+
+// RuntimeFacts describes the provider runtime (grounded facts the model may quote).
+type RuntimeFacts struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Model   string `json:"model"`
+}
+
+// RuntimeFactsProvider is an optional interface executors implement to expose runtime facts.
+type RuntimeFactsProvider interface {
+	RuntimeFacts() RuntimeFacts
+}

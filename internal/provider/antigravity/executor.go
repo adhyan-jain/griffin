@@ -30,6 +30,7 @@ type ExecutorConfig struct {
 	WorkspaceRoot             string
 	RetainWorkspacesOnFailure bool
 	DefaultModel              string
+	VersionProbeTimeout       time.Duration // timeout for `agy --version` at construction (default 5s)
 	Logger                    *slog.Logger
 }
 
@@ -39,6 +40,7 @@ type AntigravityExecutor struct {
 	workspace *WorkspaceManager
 	sem       chan struct{}
 	logger    *slog.Logger
+	facts     RuntimeFacts
 
 	// Health and authentication telemetry
 	healthy       atomic.Bool
@@ -63,6 +65,9 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 	if cfg.GracefulTermination <= 0 {
 		cfg.GracefulTermination = 5 * time.Second
 	}
+	if cfg.VersionProbeTimeout <= 0 {
+		cfg.VersionProbeTimeout = 5 * time.Second
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -80,7 +85,19 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 	}
 	exec.healthy.Store(true)
 
+	model := cfg.DefaultModel
+	if model == "" {
+		model = "default"
+	}
+	exec.facts = RuntimeFacts{Name: providerLabel, Version: detectVersion(cfg.BinaryPath, cfg.VersionProbeTimeout), Model: model}
+	cfg.Logger.Info("Antigravity runtime detected", "version", exec.facts.Version, "model", exec.facts.Model)
+
 	return exec, nil
+}
+
+// RuntimeFacts returns the cached provider runtime description.
+func (e *AntigravityExecutor) RuntimeFacts() RuntimeFacts {
+	return e.facts
 }
 
 // Name returns the provider name.
@@ -123,8 +140,19 @@ func (e *AntigravityExecutor) ResetHealth() {
 	e.healthMu.Unlock()
 }
 
+func deniedNames(d []DeniedAction) string {
+	names := make([]string, 0, len(d))
+	for _, a := range d {
+		n := a.DisplayName
+		if n == "" {
+			n = a.Action
+		}
+		names = append(names, n)
+	}
+	return strings.Join(names, ", ")
+}
+
 type inputEnvelope struct {
-	Prompt         string          `json:"prompt"`
 	ConversationID string          `json:"conversation_id"`
 	Model          string          `json:"model"`
 	JSONSchema     json.RawMessage `json:"json_schema"`
@@ -166,7 +194,6 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	}()
 
 	// 3. Extract prompt, conversation continuation, model, schema from payload or task definition
-	prompt := task.Goal
 	var conversationID string
 	var model string
 	var jsonSchema []byte
@@ -174,9 +201,6 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	if len(task.InputPayload) > 0 {
 		var env inputEnvelope
 		if err := json.Unmarshal(task.InputPayload, &env); err == nil {
-			if env.Prompt != "" {
-				prompt = env.Prompt
-			}
 			if env.ConversationID != "" {
 				conversationID = env.ConversationID
 			}
@@ -194,6 +218,7 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	}
 
 	// 4. Construct argv arguments without shell interpolation
+	prompt := buildPrompt(task, task.RetryCount+1, e.facts)
 	args := []string{
 		"-p", prompt,
 		"--output-format", "json",
@@ -229,6 +254,8 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		"binary", e.cfg.BinaryPath,
 		"workspace", wsDir,
 		"conversation_id", conversationID,
+		"agy_version", e.facts.Version,
+		"model", e.facts.Model,
 	)
 
 	if err := cmd.Start(); err != nil {
@@ -352,7 +379,7 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		e.logger.Error("Antigravity execution failed to produce valid output",
 			"task_id", task.ID,
 			"exit_code", exitCode,
-			"stderr", stderrBuf.String(),
+			"stderr", truncateRunes(stderrBuf.String(), 500),
 			"error", parseErr,
 		)
 		return &worker.ExecutionResult{
@@ -363,6 +390,37 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 			Error:        parseErr,
 			Retryable:    false,
 		}, parseErr
+	}
+
+	hasContent := len(parsed.StructuredOutput) > 0 || strings.TrimSpace(parsed.ResponseText) != ""
+	if len(parsed.DeniedActions) > 0 {
+		names := deniedNames(parsed.DeniedActions)
+		if !hasContent {
+			cause := fmt.Errorf("%w: model attempted a tool the headless runner cannot approve (denied: %s)", ErrToolPermissionDenied, names)
+			e.logger.Warn("Antigravity produced no output because tool actions were denied",
+				"task_id", task.ID, "exit_code", exitCode, "agy_version", e.facts.Version, "denied_actions", names)
+			return &worker.ExecutionResult{
+				ExecutionID:  execID,
+				ProviderName: "antigravity",
+				Status:       "FAILED",
+				Duration:     duration,
+				Error:        cause,
+				Retryable:    true,
+			}, cause
+		}
+		e.logger.Warn("Antigravity attempted denied tool actions but produced a response",
+			"task_id", task.ID, "denied_actions", names)
+	} else if !hasContent {
+		cause := fmt.Errorf("%w: empty response and no structured output", ErrEmptyResult)
+		e.logger.Warn("Antigravity returned an empty result", "task_id", task.ID, "exit_code", exitCode)
+		return &worker.ExecutionResult{
+			ExecutionID:  execID,
+			ProviderName: "antigravity",
+			Status:       "FAILED",
+			Duration:     duration,
+			Error:        cause,
+			Retryable:    true,
+		}, cause
 	}
 
 	// Reset health on verified success
@@ -404,6 +462,9 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		"exec_id", execID,
 		"duration", duration,
 		"total_tokens", totalTokens,
+		"exit_code", exitCode,
+		"agy_version", e.facts.Version,
+		"denied_actions", deniedNames(parsed.DeniedActions),
 	)
 
 	return &worker.ExecutionResult{

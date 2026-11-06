@@ -16,4 +16,5 @@ var (
 	ErrRateLimitExceeded      = errors.New("antigravity provider rate limit or quota exceeded")
 	ErrExecutionFailed        = errors.New("antigravity execution returned an error")
 	ErrEmptyResult            = errors.New("agy exited 0 but returned no result")
+	ErrToolPermissionDenied   = errors.New("antigravity model attempted a tool the headless runner cannot approve")
 )
