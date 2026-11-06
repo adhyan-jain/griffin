@@ -114,7 +114,7 @@ type EC2API interface {
 }
 
 // EC2InstanceManager implements InstanceManager against exactly one EC2 instance.
-// Required IAM (see docs/DEPLOYMENT_RUNBOOK.md): ec2:StartInstances and ec2:StopInstances on the
+// Required IAM (see docs/PRD.md, section 8.4): ec2:StartInstances and ec2:StopInstances on the
 // instance ARN, ec2:DescribeInstances on *. It uses the default credential chain (Lambda role).
 type EC2InstanceManager struct {
 	client     EC2API

@@ -2,7 +2,7 @@
 # Idempotent installer for the Griffin worker on the EC2 runner (Ubuntu 24.04 arm64).
 # Run as root from the unpacked worker bundle (see scripts/package-worker.sh), e.g. via SSM:
 #   sudo bash install-worker.sh
-# It does NOT start the service: authenticate agy first (docs/DEPLOYMENT_RUNBOOK.md).
+# It does NOT start the service: authenticate agy first (docs/PRD.md, section 8).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -28,7 +28,7 @@ Every agent working on Griffin must consult and update these two living ledgers:
    - **How the product changed from one thing to another as we built it.**
    - Documents the history of assumptions, empirical findings, and product pivots.
    - *Rule*: When building code reveals that an architectural theory was flawed or requires a pivot, chronicle that insight in `evolution.md`.
-3. **[`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)**:
+3. **[`docs/PRD.md`](docs/PRD.md)**:
    - Live phase tracker, deliverable statuses, and automated test scorecard.
 
 ---
@@ -173,4 +173,4 @@ make migrate-down
 5. **Keep Ledgers Current**:
    - Always update `decisions.md` when introducing new architectural rules or patterns.
    - Always update `evolution.md` when a pivot or implementation discovery occurs.
-   - Keep `docs/IMPLEMENTATION_STATUS.md` synchronized with actual test results.
+   - Keep `docs/PRD.md` (section 4, what is built) synchronized with actual test results.
