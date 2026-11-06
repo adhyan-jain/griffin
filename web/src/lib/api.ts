@@ -492,6 +492,10 @@ export const api = {
     });
   },
   cancelTask: (id: string) => fetchWithAuth<unknown>(`/api/v1/tasks/${id}/cancel`, { method: "POST" }),
+  /** Re-queues a failed or cancelled standalone task (409 for plans, subtasks and active tasks). */
+  resumeTask: (id: string) => fetchWithAuth<Task>(`/api/v1/tasks/${id}/resume`, { method: "POST" }),
+  /** Permanently deletes a finished task and its subtasks (409 while anything in it is still active). */
+  deleteTask: (id: string) => fetchWithAuth<unknown>(`/api/v1/tasks/${id}`, { method: "DELETE" }),
   getTaskEvents: (id: string, opts?: ReqOpts) => fetchList<TaskEvent>(`/api/v1/tasks/${id}/events`, opts),
   getTaskAttempts: (id: string, opts?: ReqOpts) => fetchList<TaskAttempt>(`/api/v1/tasks/${id}/attempts`, opts),
 

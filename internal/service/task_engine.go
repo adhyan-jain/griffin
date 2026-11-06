@@ -242,6 +242,28 @@ func (e *TaskEngine) CancelTask(ctx context.Context, taskID uuid.UUID, reason st
 	return nil
 }
 
+// ResumeTask re-queues a failed or cancelled standalone task and records the event.
+func (e *TaskEngine) ResumeTask(ctx context.Context, taskID uuid.UUID) error {
+	if err := e.taskRepo.ResumeTask(ctx, taskID); err != nil {
+		return fmt.Errorf("task_engine: resume task: %w", err)
+	}
+	_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+		TaskID:    taskID,
+		EventType: "STATUS_CHANGE",
+		Message:   "Task resumed by user",
+		Metadata:  json.RawMessage("{}"),
+	})
+	return nil
+}
+
+// DeleteTask permanently removes a finished task and its subtasks.
+func (e *TaskEngine) DeleteTask(ctx context.Context, taskID uuid.UUID) error {
+	if err := e.taskRepo.DeleteTaskTree(ctx, taskID); err != nil {
+		return fmt.Errorf("task_engine: delete task: %w", err)
+	}
+	return nil
+}
+
 // cascadeCancelChildren cancels every non-terminal child (parent_id link) of a cancelled task.
 func (e *TaskEngine) cascadeCancelChildren(ctx context.Context, parentID uuid.UUID, reason string) {
 	children, err := e.taskRepo.ListTasks(ctx, repository.TaskFilter{ParentID: &parentID, Limit: 1000})

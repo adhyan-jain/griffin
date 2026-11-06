@@ -129,9 +129,9 @@ export function SystemStatusDot() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label={`System status: ${loading ? "checking" : STATE_LABEL[overall]}`}
-        className="relative inline-flex size-11 items-center justify-center rounded-full"
+        className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border bg-card transition-transform active:scale-[0.95]"
       >
-        <StatusDot state={overall} className="size-3 ring-4 ring-background" />
+        <StatusDot state={overall} className="size-2.5" />
       </button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]">

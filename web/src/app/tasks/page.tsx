@@ -3,12 +3,16 @@
 import { useMemo, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
 import { useRouter } from "next/navigation";
-import { ListChecks, Plus, Search } from "lucide-react";
+import { ListChecks, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { api, type Task } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ResponsiveDialog } from "@/components/responsive-dialog";
+import { PERIODS, canDelete, canResume, inPeriod, runAgain, runBulk, type Period } from "@/lib/task-actions";
 import { ACTIVE_STATUSES, WAITING_STATUSES, isDone } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, PageHeader } from "@/components/page";
 import { NewTaskDialog } from "@/components/new-task-dialog";
@@ -17,7 +21,7 @@ import { TaskRow } from "@/components/task-row";
 const FILTERS = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
-  { value: "approval", label: "Needs approval" },
+  { value: "approval", label: "Approval" },
   { value: "done", label: "Done" },
 ] as const;
 type Filter = (typeof FILTERS)[number]["value"];
@@ -35,8 +39,13 @@ export default function TasksPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [newOpen, setNewOpen] = useState(false);
+  const [period, setPeriod] = useState<Period>("all");
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<Task[] | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  usePolling(
+  const { refresh } = usePolling(
     async (signal) => {
       setTasks(await api.listTasks({ limit: 200 }, { signal }));
       setError(null);
@@ -58,12 +67,60 @@ export default function TasksPage() {
     const rows = all
       .filter((t) => !t.parent_id)
       .filter((t) => matches(t, filter))
+      .filter((t) => filter !== "done" || inPeriod(t, period))
       .filter((t) => !q || `${t.title} ${t.goal} ${t.manager_domain} ${t.id}`.toLowerCase().includes(q));
     return { rows, subtaskCount: counts };
-  }, [tasks, filter, query]);
+  }, [tasks, filter, query, period]);
+
+  const chosen = rows.filter((t) => selected.has(t.id));
+  const exitSelect = () => {
+    setSelecting(false);
+    setSelected(new Set());
+  };
+  const toggle = (t: Task) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (!n.delete(t.id)) n.add(t.id);
+      return n;
+    });
+  const report = (verb: string, o: Awaited<ReturnType<typeof runBulk>>) => {
+    if (o.ok) toast.success(`${verb} ${o.ok} task${o.ok === 1 ? "" : "s"}`);
+    if (o.failed) toast.error(`${o.failed} failed: ${o.firstError}`);
+    else if (!o.ok && o.skipped) toast.info("Nothing to do for the selected tasks.");
+  };
+
+  const doResume = async (list: Task[]) => {
+    setBusy(true);
+    const o = await runBulk(list, canResume, (t) => api.resumeTask(t.id));
+    report("Resumed", o);
+    setBusy(false);
+    exitSelect();
+    refresh();
+  };
+  const doRunAgain = async (t: Task) => {
+    try {
+      const created = await runAgain(t);
+      toast.success("Started again");
+      refresh();
+      if (created) router.push(`/tasks/${created.id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not start it again.");
+    }
+  };
+  const doDelete = async () => {
+    if (!pendingDelete) return;
+    setBusy(true);
+    const o = await runBulk(pendingDelete, canDelete, (t) => api.deleteTask(t.id));
+    report("Deleted", o);
+    setBusy(false);
+    setPendingDelete(null);
+    exitSelect();
+    refresh();
+  };
+  const rowActions = { onResume: (t: Task) => doResume([t]), onRunAgain: doRunAgain, onDelete: (t: Task) => setPendingDelete([t]) };
 
   return (
-    <PageContainer>
+    <PageContainer className={selecting ? "pb-28" : undefined}>
       <PageHeader
         title="Tasks"
         description="Everything JJ and your team are working on."
@@ -76,12 +133,12 @@ export default function TasksPage() {
 
       <div className="space-y-3">
         <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto bg-transparent px-0 py-1">
+          <TabsList className="grid h-auto group-data-[orientation=horizontal]/tabs:h-auto w-full grid-cols-4 gap-1 bg-muted/60 p-1">
             {FILTERS.map((f) => (
               <TabsTrigger
                 key={f.value}
                 value={f.value}
-                className="h-10 flex-none rounded-full border px-4 data-[state=active]:border-primary data-[state=active]:bg-accent"
+                className="h-10 rounded-lg px-1 text-[13px] sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm"
               >
                 {f.label}
               </TabsTrigger>
@@ -101,6 +158,40 @@ export default function TasksPage() {
           />
         </div>
 
+        <div className="flex min-h-11 items-center justify-between gap-2">
+          {filter === "done" ? (
+            <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
+              <SelectTrigger aria-label="Finished within" className="h-11 w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PERIODS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="text-xs text-muted-foreground tabular-nums">{rows.length} task{rows.length === 1 ? "" : "s"}</span>
+          )}
+          {rows.length > 0 &&
+            (selecting ? (
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" className="h-11" onClick={() => setSelected(new Set(rows.map((t) => t.id)))}>
+                  Select all
+                </Button>
+                <Button variant="ghost" size="icon" className="size-11" aria-label="Exit selection" onClick={exitSelect}>
+                  <X />
+                </Button>
+              </div>
+            ) : (
+              <Button variant="ghost" className="h-11" onClick={() => setSelecting(true)}>
+                Select
+              </Button>
+            ))}
+        </div>
+
         {error && <ErrorNote message={error} />}
 
         {tasks === null ? (
@@ -113,7 +204,13 @@ export default function TasksPage() {
           <EmptyState
             icon={<ListChecks />}
             title={tasks.length ? "Nothing matches" : "No tasks yet"}
-            description={tasks.length ? "Try another filter or search." : "Create a task and it will show up here."}
+            description={
+              tasks.length
+                ? filter === "done" && period !== "all"
+                  ? "Nothing finished in that window. Try a longer one."
+                  : "Try another filter or search."
+                : "Create a task and it will show up here."
+            }
             action={
               !tasks.length && (
                 <Button onClick={() => setNewOpen(true)}>
@@ -125,11 +222,52 @@ export default function TasksPage() {
         ) : (
           <div className="divide-y overflow-hidden rounded-xl border bg-card">
             {rows.map((t) => (
-              <TaskRow key={t.id} task={t} subtasks={subtaskCount.get(t.id) ?? 0} />
+              <TaskRow
+                key={t.id}
+                task={t}
+                subtasks={subtaskCount.get(t.id) ?? 0}
+                actions={rowActions}
+                selecting={selecting}
+                selected={selected.has(t.id)}
+                onToggle={toggle}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {selecting && (
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 border-t bg-background/95 px-4 py-3 backdrop-blur md:bottom-0 md:left-60">
+          <div className="mx-auto flex max-w-3xl items-center gap-2">
+            <span className="mr-auto text-sm tabular-nums">{chosen.length} selected</span>
+            <Button variant="outline" className="h-11" disabled={busy || !chosen.some(canResume)} onClick={() => doResume(chosen)}>
+              <Play /> Resume
+            </Button>
+            <Button variant="destructive" className="h-11" disabled={busy || !chosen.some(canDelete)} onClick={() => setPendingDelete(chosen)}>
+              <Trash2 /> Delete
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <ResponsiveDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => !o && !busy && setPendingDelete(null)}
+        title={pendingDelete && pendingDelete.length > 1 ? `Delete ${pendingDelete.length} tasks?` : "Delete this task?"}
+        description="This permanently removes the task with its subtasks, activity and attempts. Files already saved stay in storage."
+      >
+        {pendingDelete && pendingDelete.some((t) => !canDelete(t)) && (
+          <p className="mb-3 text-sm text-muted-foreground">Tasks that are still running are skipped. Cancel them first.</p>
+        )}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" className="h-11" disabled={busy} onClick={() => setPendingDelete(null)}>
+            Keep
+          </Button>
+          <Button variant="destructive" className="h-11" disabled={busy} onClick={doDelete}>
+            {busy ? "Deleting..." : "Delete"}
+          </Button>
+        </div>
+      </ResponsiveDialog>
 
       <NewTaskDialog open={newOpen} onOpenChange={setNewOpen} onCreated={(t) => router.push(`/tasks/${t.id}`)} />
     </PageContainer>

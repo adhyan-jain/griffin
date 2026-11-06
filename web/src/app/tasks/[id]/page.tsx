@@ -2,7 +2,8 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Download, FileText, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronLeft, Download, FileText, Loader2, Play, RotateCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Artifact, type Task, type TaskAttempt, type TaskEvent } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
 import { deriveNow } from "@/lib/task-now";
 import { usePolling } from "@/lib/use-polling";
+import { canDelete, canResume, canRunAgain, runAgain } from "@/lib/task-actions";
 
 /** Refresh cadence while a task is active. Terminal tasks are not polled at all. */
 const SUMMARY_POLL_MS = 4000;
@@ -121,6 +123,39 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
+  const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [acting, setActing] = useState(false);
+  const act = async (fn: () => Promise<void>, fail: string) => {
+    setActing(true);
+    try {
+      await fn();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : fail);
+    } finally {
+      setActing(false);
+    }
+  };
+  const resume = () =>
+    act(async () => {
+      await api.resumeTask(id);
+      toast.success("Task resumed");
+      refreshSummary();
+      refreshDetail();
+    }, "Could not resume the task.");
+  const again = (t: Task) =>
+    act(async () => {
+      const created = await runAgain(t);
+      toast.success("Started again");
+      router.push(created ? `/tasks/${created.id}` : "/tasks");
+    }, "Could not start it again.");
+  const remove = () =>
+    act(async () => {
+      await api.deleteTask(id);
+      toast.success("Task deleted");
+      router.replace("/tasks");
+    }, "Could not delete the task.");
+
   const download = async (a: Artifact) => {
     try {
       const { url } = await api.getPresignedUrl(a.id);
@@ -150,7 +185,6 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const count = (n: number) => (n > 0 ? ` (${n})` : "");
   const now = deriveNow(task, events, attempts, children);
 
   return (
@@ -169,11 +203,28 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             {task.retry_count > 0 ? ` · retry ${task.retry_count}/${task.max_retries}` : ""}
           </span>
         </div>
-        {!isDone(task.status) && (
-          <Button variant="outline" className="h-10 text-destructive" onClick={() => setCancelOpen(true)}>
-            Cancel task
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {!isDone(task.status) && (
+            <Button variant="outline" className="h-11 text-destructive" onClick={() => setCancelOpen(true)}>
+              Cancel task
+            </Button>
+          )}
+          {canResume(task) && (
+            <Button className="h-11" disabled={acting} onClick={resume}>
+              <Play /> Resume
+            </Button>
+          )}
+          {canRunAgain(task) && (
+            <Button variant="outline" className="h-11" disabled={acting} onClick={() => again(task)}>
+              <RotateCw /> Run again
+            </Button>
+          )}
+          {canDelete(task) && (
+            <Button variant="outline" className="h-11 text-destructive" disabled={acting} onClick={() => setDeleteOpen(true)}>
+              <Trash2 /> Delete
+            </Button>
+          )}
+        </div>
       </header>
 
       <section data-testid="task-now" aria-label="Now" className="mb-5 rounded-xl border bg-card p-4">
@@ -203,20 +254,23 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       </section>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto bg-transparent px-0 py-1">
-          {[
-            ["overview", "Overview"],
-            ["activity", `Activity${count(events.length)}`],
-            ["attempts", `Attempts${count(attempts.length)}`],
-            ["files", `Files${count(files.length)}`],
-            ["subtasks", `Subtasks${count(children.length)}`],
-          ].map(([v, label]) => (
+        <TabsList className="grid h-auto group-data-[orientation=horizontal]/tabs:h-auto w-full grid-cols-5 gap-0.5 bg-muted/60 p-1">
+          {(
+            [
+              ["overview", "Overview", 0],
+              ["activity", "Activity", events.length],
+              ["attempts", "Attempts", attempts.length],
+              ["files", "Files", files.length],
+              ["subtasks", "Subtasks", children.length],
+            ] as const
+          ).map(([v, label, n]) => (
             <TabsTrigger
               key={v}
               value={v}
-              className="h-10 flex-none rounded-full border px-4 data-[state=active]:border-primary data-[state=active]:bg-accent"
+              className="h-11 min-w-0 flex-col gap-0 rounded-lg px-0.5 text-[11px] leading-tight sm:flex-row sm:gap-1.5 sm:px-3 sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
-              {label}
+              <span className="truncate">{label}</span>
+              {n > 0 && <span className="text-[10px] tabular-nums text-muted-foreground sm:text-xs">{n}</span>}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -317,7 +371,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         </TabsContent>
       </Tabs>
 
-      <ResponsiveDialog open={cancelOpen} onOpenChange={setCancelOpen} title="Cancel this task?" description="Work in progress stops and can't be resumed.">
+      <ResponsiveDialog open={cancelOpen} onOpenChange={setCancelOpen} title="Cancel this task?" description="Work in progress stops.">
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" className="h-11" onClick={() => setCancelOpen(false)}>
             Keep running
@@ -325,6 +379,23 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           <Button variant="destructive" className="h-11" onClick={cancel} disabled={cancelling}>
             {cancelling && <Loader2 className="animate-spin" />}
             Cancel task
+          </Button>
+        </div>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        open={deleteOpen}
+        onOpenChange={(o) => !acting && setDeleteOpen(o)}
+        title="Delete this task?"
+        description="This permanently removes the task with its subtasks, activity and attempts. Files already saved stay in storage."
+      >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" className="h-11" disabled={acting} onClick={() => setDeleteOpen(false)}>
+            Keep
+          </Button>
+          <Button variant="destructive" className="h-11" disabled={acting} onClick={remove}>
+            {acting && <Loader2 className="animate-spin" />}
+            Delete
           </Button>
         </div>
       </ResponsiveDialog>
