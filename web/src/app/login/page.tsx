@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ErrorNote } from "@/components/page";
+import { Kinetic } from "@/components/fx/kinetic";
 
 // Inlined at build time (NEXT_PUBLIC_*): `false` in production builds, so the dev-login UI below is
 // eliminated from the bundle. Keep this local; an imported constant would not be tree-shaken.
@@ -48,11 +49,11 @@ export default function LoginPage() {
 
   return (
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10">
-      <Hero3D nodes={DEMO_NODES} className="pointer-events-none absolute inset-0 opacity-50 md:opacity-70" />
-      <div className="absolute inset-0 bg-gradient-to-b from-background/20 via-background/60 to-background" aria-hidden />
+      {/* The core sits above the card, fully visible and fading into the page, instead of a dim blur behind the form. */}
+      <Hero3D nodes={DEMO_NODES} className="pointer-events-none absolute inset-x-0 top-0 h-[46%] [mask-image:linear-gradient(to_bottom,#000_72%,transparent)]" />
 
       <main className="relative w-full max-w-sm rounded-2xl border bg-card/85 p-6 shadow-xl backdrop-blur-md">
-        <h1 className="text-2xl font-semibold tracking-tight">Sign in to Griffin</h1>
+        <Kinetic as="h1" text="Sign in to Griffin" className="font-display text-3xl font-bold leading-[1.05] tracking-[-0.04em]" />
         <p className="mt-1 text-sm text-muted-foreground">Your AI workforce is waiting for instructions.</p>
 
         <div className="mt-6 space-y-4">
