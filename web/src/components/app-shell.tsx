@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -25,6 +26,8 @@ import { usePolling } from "@/lib/use-polling";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SystemStatusDot } from "@/components/system-status";
+
+const DeepField = dynamic(() => import("@/components/fx/deep-field"), { ssr: false });
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -168,7 +171,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     router.replace("/login");
   };
 
-  if (isLogin) return <>{children}</>;
+  if (isLogin)
+    return (
+      <div className="relative isolate min-h-dvh">
+        <DeepField />
+        {children}
+      </div>
+    );
 
   if (!authed) {
     return (
@@ -181,7 +190,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const badge = (href: string) => (href === "/approvals" && pending > 0 ? pending : 0);
 
   return (
-    <div className="min-h-dvh md:flex">
+    <div className="relative isolate min-h-dvh md:flex">
+      <DeepField />
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r bg-card/40 p-4 md:flex">
         <div className="mb-6 px-2 pt-1">

@@ -231,20 +231,22 @@ const windowCalls = calls.filter((c) => c.at >= startedAt && c.at <= endedAt);
 const secs = endedAt - startedAt;
 const byEndpoint = {};
 for (const c of windowCalls) byEndpoint[c.key] = (byEndpoint[c.key] ?? 0) + 1;
-const after = completed() ? windowCalls.filter((c) => c.at > 26) : [];
+// Only the task page's own endpoints must go quiet; the app shell keeps polling runner/system/approvals on purpose.
+const TASK_ENDPOINT = /^GET \/api\/v1\/(tasks|artifacts)/;
+const after = completed() ? windowCalls.filter((c) => c.at > 26 && TASK_ENDPOINT.test(c.key)) : [];
 
 console.log(`scenario=${SCENARIO} window=${secs.toFixed(1)}s`);
 console.log(`total API requests: ${windowCalls.length}  (${(windowCalls.length / secs).toFixed(2)} req/s)`);
 console.log(`max identical requests in flight at once: ${maxIdentical}`);
 console.log("per endpoint:");
 for (const [k, v] of Object.entries(byEndpoint).sort((a, b) => b[1] - a[1])) console.log(`  ${String(v).padStart(6)}  ${k}`);
-if (SCENARIO === "completes") console.log(`requests after the task reached a terminal state (t>26s): ${after.length}`);
+if (SCENARIO === "completes") console.log(`task requests after the task reached a terminal state (t>26s): ${after.length}`);
 
 let failed = false;
 if (TERMINAL) {
   const clean = tabLabels.map((s) => s.replace(/\s+/g, " ").trim());
   console.log(`tab labels: ${clean.join(" | ")}`);
-  for (const want of ["Activity (4)", "Attempts (1)"]) {
+  for (const want of ["Activity 4", "Attempts 1"]) {
     if (!clean.includes(want)) { console.error(`FAIL: the page did not show "${want}" although the API returned that data`); failed = true; }
   }
 }
@@ -252,7 +254,7 @@ if (windowCalls.length > BUDGET) { console.error(`FAIL: ${windowCalls.length} re
 // Terminal scenarios deliberately abort the stopped poller's requests and re-issue them once; the
 // aborted request stays "in flight" in this harness until the mock's timer fires, so skip the check.
 if (maxIdentical > 1 && !TERMINAL) { console.error(`FAIL: ${maxIdentical} identical requests were in flight at once`); failed = true; }
-if (SCENARIO === "completes" && after.length > 4) { console.error(`FAIL: polling continued after a terminal state (${after.length} requests)`); failed = true; }
+if (SCENARIO === "completes" && after.length > 2) { console.error(`FAIL: task polling continued after a terminal state (${after.length} requests)`); failed = true; }
 if (CHAT) {
   const chatCalls = calls.filter((c) => c.at >= sendAt - 0.5);
   const n = (key, from = 0) => chatCalls.filter((c) => c.key === key && c.at >= from).length;

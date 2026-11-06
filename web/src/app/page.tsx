@@ -13,6 +13,8 @@ import { ACTIVE_STATUSES, WAITING_STATUSES } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer } from "@/components/page";
 import { NewTaskDialog } from "@/components/new-task-dialog";
 import { TaskRow } from "@/components/task-row";
+import { Spotlight } from "@/components/fx/spotlight";
+import { useFxActivity } from "@/lib/fx";
 
 const Hero3D = dynamic(() => import("@/components/hero-3d"), { ssr: false });
 
@@ -46,6 +48,8 @@ export default function DashboardPage() {
   const failed = list.filter((t) => t.status === "FAILED").length;
   const recent = list.filter((t) => !t.parent_id).slice(0, 6);
 
+  useFxActivity(tasks ? running : null);
+
   const headline = running > 0 ? `${running} running now` : queued > 0 ? `${queued} waiting to start` : list.length ? "All quiet" : "Ready when you are";
   const sub = list.length
     ? `${done} finished${failed ? `, ${failed} failed` : ""}. Hand JJ something new.`
@@ -53,8 +57,12 @@ export default function DashboardPage() {
 
   return (
     <PageContainer>
-      <section className="grid overflow-hidden rounded-2xl border bg-card md:grid-cols-2">
-        <Hero3D nodes={list.map((t) => ({ id: t.id, status: t.status }))} className="h-44 md:order-2 md:h-72" />
+      <Spotlight className="grid overflow-hidden rounded-2xl border bg-card md:grid-cols-2">
+        <Hero3D
+          nodes={list.map((t) => ({ id: t.id, status: t.status, title: t.title || t.goal }))}
+          onSelect={(id) => router.push(`/tasks/${id}`)}
+          className="h-56 md:order-2 md:h-80"
+        />
         <div className="flex flex-col justify-center gap-4 p-5 md:p-8">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{headline}</h1>
@@ -71,7 +79,7 @@ export default function DashboardPage() {
             </Button>
           </div>
         </div>
-      </section>
+      </Spotlight>
 
       {pending > 0 && (
         <Link
@@ -93,10 +101,10 @@ export default function DashboardPage() {
           ["Done", done],
           ["Failed", failed],
         ].map(([label, n]) => (
-          <div key={label} className="rounded-xl border bg-card px-3 py-2.5">
+          <Spotlight key={label} tilt={7} className="rounded-xl border bg-card px-3 py-2.5">
             <dd className="text-xl font-semibold tabular-nums">{tasks ? n : "–"}</dd>
             <dt className="text-xs text-muted-foreground">{label}</dt>
-          </div>
+          </Spotlight>
         ))}
       </dl>
 

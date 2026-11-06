@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SystemStatusList, useSystemStatus } from "@/components/system-status";
 import { PageContainer, PageHeader } from "@/components/page";
+import { useFxMode, type FxMode } from "@/lib/fx";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -17,6 +18,30 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="text-sm font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+const FX_OPTIONS: { value: FxMode; label: string; hint: string }[] = [
+  { value: "full", label: "Full", hint: "Deep field, live core, glass depth." },
+  { value: "lite", label: "Lite", hint: "Fewer particles, 30 fps. Easier on battery." },
+  { value: "off", label: "Off", hint: "No 3D at all. Plain interface." },
+];
+
+function FxPicker() {
+  const [mode, setMode] = useFxMode();
+  return (
+    <div className="space-y-2">
+      <Tabs value={mode} onValueChange={(v) => setMode(v as FxMode)}>
+        <TabsList className="grid h-auto w-full grid-cols-3 group-data-[orientation=horizontal]/tabs:h-auto">
+          {FX_OPTIONS.map((o) => (
+            <TabsTrigger key={o.value} value={o.value} className="h-10">
+              {o.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+      <p className="text-xs text-muted-foreground">{FX_OPTIONS.find((o) => o.value === mode)?.hint} Saved on this device only.</p>
+    </div>
   );
 }
 
@@ -91,6 +116,9 @@ export default function SettingsPage() {
           )}
         </Section>
 
+        <Section title="Visual effects">
+          <FxPicker />
+        </Section>
         <Section title="Runner">
           <Row label="State" value={runner ? runner.state : "Unknown"} />
           <Row label="Sleeps when idle" value={runner ? (runner.scale_to_zero_enabled ? "Yes" : "No") : "Unknown"} />
