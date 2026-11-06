@@ -1,0 +1,91 @@
+package service
+
+import (
+	"regexp"
+	"strings"
+)
+
+// MessageKind says how a JJ chat message should be handled.
+type MessageKind string
+
+const (
+	// MessageKindConversation is answered directly by one chat task (no orchestration).
+	MessageKindConversation MessageKind = "conversation"
+	// MessageKindObjective is a request for a deliverable or multi-step work and goes through
+	// the planner/managers (JJOrchestrator.SubmitRequest).
+	MessageKindObjective MessageKind = "objective"
+)
+
+// ClassifyMessage decides whether a chat message is a conversation or an objective.
+// Ambiguous text is a conversation: that is the cheap path (one task, no orchestration).
+func ClassifyMessage(text string) MessageKind {
+	kind, _ := ClassifyMessageWithReason(text)
+	return kind
+}
+
+var (
+	sentenceSplitRe = regexp.MustCompile(`[^.!?\n]+[.!?]*`)
+
+	// Greetings / address / politeness at the start of a sentence.
+	leadFillerRe = regexp.MustCompile(`^(?:(?:hi|hello|hey|yo|howdy|greetings|good (?:morning|afternoon|evening)|thanks|thank you|ok|okay|so|well|please|jj)\b[\s,:;-]*)+`)
+	// Polite request prefixes: the rest of the sentence is an imperative, even when phrased as a question.
+	politePrefixRe = regexp.MustCompile(`^(?:can|could|would|will) you (?:please )?|^(?:i need|i want|i'd like|i would like) you to |^(?:let's|lets) |^go ahead and `)
+
+	questionOpenerRe = regexp.MustCompile(`^(?:what|what's|whats|why|how|who|whom|whose|when|where|which|explain|describe|tell me|define|is|are|was|were|has|have|should|can|could|would|will|(?:do|does|did) (?:you|i|it|the|a|an|we|they|he|she|this|that|my))\b`)
+
+	// Imperatives that are always a request for work.
+	objectiveVerbRe = regexp.MustCompile(`^(?:research|investigate|compare|analy[sz]e|audit|draft|build|create|prepare|plan|compile|benchmark|evaluate|find|gather|collect|design|develop|implement|review)\b`)
+	// Imperatives that only count when a deliverable is named.
+	conditionalVerbRe = regexp.MustCompile(`^(?:write|summari[sz]e|produce|generate|make|put together|give me|draw up)\b`)
+
+	deliverableRe = regexp.MustCompile(`\b(?:reports?|tables?|documents?|proposals?|spreadsheets?|presentations?|slide deck|whitepaper|dossier|essay|article|email|letter|brief|spec|readme|script|program|plan|comparison|sources|citations|references|roadmap|checklist)\b`)
+	needWordRe    = regexp.MustCompile(`\b(?:need|want|give|produce|generate|prepare|draft|write|compile)\b`)
+)
+
+// ClassifyMessageWithReason is ClassifyMessage plus a short, stable reason for logs and tests.
+func ClassifyMessageWithReason(text string) (MessageKind, string) {
+	t := strings.ToLower(strings.TrimSpace(text))
+	if t == "" {
+		return MessageKindConversation, "empty"
+	}
+	for _, s := range sentenceSplitRe.FindAllString(t, -1) {
+		if reason := objectiveSentenceReason(strings.TrimSpace(s)); reason != "" {
+			return MessageKindObjective, reason
+		}
+	}
+	return MessageKindConversation, "default-conversation"
+}
+
+// objectiveSentenceReason returns a non-empty reason when the sentence asks for a deliverable
+// or multi-step work.
+func objectiveSentenceReason(s string) string {
+	question := strings.HasSuffix(s, "?")
+	s = strings.Trim(leadFillerRe.ReplaceAllString(s, ""), " \t.!?")
+	if s == "" {
+		return ""
+	}
+
+	polite := false
+	if loc := politePrefixRe.FindString(s); loc != "" {
+		polite = true
+		s = strings.TrimSpace(strings.TrimPrefix(s, loc))
+		s = strings.TrimSpace(leadFillerRe.ReplaceAllString(s, ""))
+	}
+	if !polite && (questionOpenerRe.MatchString(s) || question) {
+		return ""
+	}
+	if polite && questionOpenerRe.MatchString(s) {
+		return "" // "can you explain ..." stays a conversation
+	}
+
+	if m := objectiveVerbRe.FindString(s); m != "" {
+		return "imperative-verb:" + m
+	}
+	if m := conditionalVerbRe.FindString(s); m != "" && deliverableRe.MatchString(s) {
+		return "deliverable-request:" + m
+	}
+	if deliverableRe.MatchString(s) && needWordRe.MatchString(s) && !question {
+		return "deliverable-noun"
+	}
+	return ""
+}
