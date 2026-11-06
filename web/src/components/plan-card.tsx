@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
-import { ListChecks, ShieldCheck } from "lucide-react";
+import { AlertCircle, ChevronDown, ListChecks, ShieldCheck } from "lucide-react";
+import { stepResult } from "@/lib/jj-chat";
+import { ChatText } from "@/components/chat-text";
 import { api, type ChildTaskPlan, type SubmitResult, type Task } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,41 @@ export function dependencyTitles(key: string, steps: ChildTaskPlan[], deps: { ta
     .map((d) => steps.find((s) => s.key === d.depends_on_key)?.title ?? d.depends_on_key);
 }
 
+/** One finished step's outcome: its text (collapsed to the first lines), its failure, or an honest "no result". */
+function StepOutcome({ task }: { task: Task }) {
+  const [open, setOpen] = useState(false);
+  const r = stepResult(task);
+  if (!r) return null;
+  return (
+    <li data-testid="step-result" className="rounded-xl border bg-background p-3">
+      <p className="text-sm font-medium">{task.title}</p>
+      {r.kind === "failed" ? (
+        <p role="alert" className="mt-1.5 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" /> {r.reason}
+        </p>
+      ) : r.kind === "empty" ? (
+        <p className="mt-1.5 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" /> This step finished without a result
+        </p>
+      ) : (
+        <div className="mt-1.5">
+          <div className={open ? "" : "line-clamp-3"}>
+            <ChatText text={r.text} />
+          </div>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            className="mt-1 flex min-h-11 items-center gap-1 text-xs text-muted-foreground"
+          >
+            <ChevronDown className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} /> {open ? "Show less" : "Show more"}
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function PlanCard({ result }: { result: SubmitResult }) {
   const { orchestration, plan } = result;
   const steps = useMemo(() => plan.plan_payload.child_tasks ?? [], [plan]);
@@ -31,7 +68,8 @@ export function PlanCard({ result }: { result: SubmitResult }) {
 
   const total = steps.length || children.length;
   const finished = children.filter((c) => isDone(c.status));
-  const done = children.filter((c) => c.status === "COMPLETED").length;
+  const empty = children.filter((c) => stepResult(c)?.kind === "empty").length;
+  const done = children.filter((c) => c.status === "COMPLETED").length - empty; // empty output is not success
   const failed = children.filter((c) => c.status === "FAILED" || c.status === "CANCELLED").length;
   const active = total === 0 ? false : finished.length < total;
   const awaiting = children.filter((c) => c.status === "AWAITING_APPROVAL").length;
@@ -49,7 +87,11 @@ export function PlanCard({ result }: { result: SubmitResult }) {
   );
 
   const statusFor = (s: ChildTaskPlan) => children.find((c) => c.title === s.title)?.status;
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const noResult = (s: ChildTaskPlan) => {
+    const c = children.find((x) => x.title === s.title);
+    return c ? stepResult(c)?.kind === "empty" : false;
+  };
+  const pct =total ? Math.round((done / total) * 100) : 0;
   const manager = plan.manager_id.replaceAll("_", " ");
 
   return (
@@ -76,10 +118,28 @@ export function PlanCard({ result }: { result: SubmitResult }) {
                       needs your OK
                     </Badge>
                   )}
-                  {st && <StatusBadge status={st} />}
+                  {st &&
+                    (noResult(s) ? (
+                      <Badge variant="outline" className="border-transparent bg-warning/15 font-medium text-warning">
+                        No result
+                      </Badge>
+                    ) : (
+                      <StatusBadge status={st} />
+                    ))}
                 </li>
               );
             })}
+          </ul>
+        </div>
+      )}
+
+      {loaded && !active && children.length > 0 && (
+        <div data-testid="plan-result">
+          <h3 className="mb-1.5 text-xs font-medium text-muted-foreground">Result</h3>
+          <ul className="space-y-2">
+            {children.map((c) => (
+              <StepOutcome key={c.id} task={c} />
+            ))}
           </ul>
         </div>
       )}
@@ -88,6 +148,7 @@ export function PlanCard({ result }: { result: SubmitResult }) {
         <Progress value={pct} aria-label="Plan progress" />
         <p className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
           {done} of {total} done
+          {empty > 0 ? `, ${empty} without a result` : ""}
           {failed > 0 ? `, ${failed} stopped` : ""}
           {pollError ? " (progress may be out of date)" : ""}
         </p>
