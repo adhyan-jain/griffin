@@ -120,7 +120,9 @@ func (e *TestEnv) Teardown() {
 
 func cleanTables(t *testing.T, db *database.DB) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// TRUNCATE needs an exclusive lock on every table, so it can wait briefly behind a background
+	// worker query from the previous test. A generous limit makes that a short delay, not a failure.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	query := `

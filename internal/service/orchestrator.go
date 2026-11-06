@@ -479,6 +479,8 @@ func (o *JJOrchestrator) delegatePlan(
 		assignedID := taskKeyToID[ct.Key]
 		// Record which provider this step is planned for (by what it needs, not how hard it is).
 		ct.InputPayload = domain.WithProviderHint(ct.InputPayload, ct.Title, ct.Goal)
+		// Suggest read-only tools for work that touches the outside world (never act: that needs approval).
+		ct.InputPayload = domain.WithToolMode(ct.InputPayload, ct.Title, ct.Goal)
 
 		var task *domain.Task
 		// Check if specialist worker is specified and exists in AgentFactory

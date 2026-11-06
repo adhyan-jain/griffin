@@ -22,6 +22,12 @@ import (
 // ErrEmptyOutput marks an execution that reported success but produced no result.
 var ErrEmptyOutput = errors.New("execution reported success but produced no result")
 
+// ToolCapable is implemented by executors that can run the read and act tiers. The worker only asks for
+// an act approval when it is true, so with tools off behaviour is unchanged.
+type ToolCapable interface {
+	ToolsEnabled() bool
+}
+
 // ArtifactSaver stores a file and records it against a task. *storage.StorageService implements it.
 type ArtifactSaver interface {
 	SaveArtifact(ctx context.Context, input storage.SaveArtifactInput) (*domain.Artifact, error)
@@ -206,6 +212,18 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		} else {
 			execTask = withDependencyOutputs(task, deps, 0)
 		}
+	}
+
+	// The act tier never runs without the owner's approval for this exact task: ask first and stop.
+	if paused := w.gateActTier(ctx, task); paused {
+		attempt.Status = "AWAITING_APPROVAL"
+		attempt.DurationMs = int(time.Since(start).Milliseconds())
+		now := time.Now().UTC()
+		attempt.CompletedAt = &now
+		if w.taskRepo != nil {
+			w.recordAttempt(ctx, attempt)
+		}
+		return true, nil
 	}
 
 	res, execErr := w.executor.Execute(taskCtx, execTask)
@@ -458,4 +476,41 @@ func (w *Worker) saveResultFile(ctx context.Context, task *domain.Task, res *Exe
 	}); err != nil {
 		w.logger.Warn("Could not save the task result as a file", "task_id", task.ID, "error", err)
 	}
+}
+
+// gateActTier pauses a task that asked to act on the user's behalf until they approve it. It returns
+// true when the task was paused (or could not be cleared), meaning the executor must not run. When the
+// approval check itself fails the task is not run either: the safe default is to do nothing.
+func (w *Worker) gateActTier(ctx context.Context, task *domain.Task) bool {
+	if domain.ToolModeFor(task) != domain.ToolAct {
+		return false
+	}
+	tc, ok := w.executor.(ToolCapable)
+	if !ok || !tc.ToolsEnabled() {
+		return false // tools are off: the task runs text-only, so there is nothing to approve
+	}
+	approved, err := w.engine.HasApprovedAction(ctx, task, domain.ToolApprovalAction)
+	if err != nil {
+		w.logger.Error("Could not check the act approval; not running the task", "worker_id", w.ID, "task_id", task.ID, "error", err)
+		return true
+	}
+	if approved {
+		return false
+	}
+	payload, _ := json.Marshal(map[string]string{"task_title": task.Title, "goal": task.Goal, "tool_mode": string(domain.ToolAct)})
+	summary := "Allow Griffin to act for you on: " + strings.TrimSpace(task.Title)
+	if err := w.engine.RequestApproval(ctx, task.ID, &domain.Approval{
+		ID:            uuid.New(),
+		UserID:        task.UserID,
+		TaskID:        task.ID,
+		ActionType:    domain.ToolApprovalAction,
+		RiskLevel:     domain.ApprovalRiskHigh,
+		Summary:       summary,
+		ActionPayload: payload,
+	}); err != nil {
+		w.logger.Error("Could not request approval for the act tier", "worker_id", w.ID, "task_id", task.ID, "error", err)
+	} else {
+		w.logger.Info("Task wants to act on the user's behalf; paused for approval", "worker_id", w.ID, "task_id", task.ID)
+	}
+	return true
 }

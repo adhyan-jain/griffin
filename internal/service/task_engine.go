@@ -291,6 +291,22 @@ func (e *TaskEngine) RequestApproval(ctx context.Context, taskID uuid.UUID, appr
 	return e.taskRepo.TransitionToApproval(ctx, taskID, approval)
 }
 
+// HasApprovedAction reports whether the task's owner has approved the given action type for this task.
+// It is how a task that wants to act on the user's behalf proves it was allowed to.
+func (e *TaskEngine) HasApprovedAction(ctx context.Context, task *domain.Task, actionType string) (bool, error) {
+	st := domain.ApprovalStatusApproved
+	list, err := e.approvalRepo.ListApprovals(ctx, task.UserID, &st)
+	if err != nil {
+		return false, fmt.Errorf("task_engine: list approvals: %w", err)
+	}
+	for _, a := range list {
+		if a.TaskID == task.ID && a.ActionType == actionType {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // RespondApproval applies a human decision to an approval, resuming or cancelling the underlying task.
 func (e *TaskEngine) RespondApproval(ctx context.Context, approvalID uuid.UUID, userID uuid.UUID, approved bool, reason string) (*domain.Approval, error) {
 	app, err := e.approvalRepo.RespondToApproval(ctx, approvalID, userID, approved, reason)
