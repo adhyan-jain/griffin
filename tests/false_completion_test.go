@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -318,4 +319,122 @@ func TestActTier_OnlyTheOwnersApprovalCounts(t *testing.T) {
 	require.NoError(t, err)
 	ok, _ = env.Engine.HasApprovedAction(ctx, otherTask, domain.ToolApprovalAction)
 	assert.False(t, ok)
+}
+
+func playbookWorker(env *TestEnv, id string, exec worker.TaskExecutor) *worker.Worker {
+	return worker.NewWorker(worker.Config{
+		ID: id, Engine: env.Engine, TaskRepo: env.TaskRepo, Executor: exec,
+		Artifacts: env.StorageService, Playbooks: env.StorageService,
+		LeaseDuration: 10 * time.Second, HeartbeatInterval: time.Second, PollInterval: 100 * time.Millisecond,
+	})
+}
+
+func readTask(userID uuid.UUID, title string) *domain.Task {
+	return &domain.Task{UserID: userID, Title: title, Goal: title, MaxRetries: 2, InputPayload: json.RawMessage(`{"tool_mode":"read"}`)}
+}
+
+func playbooksOf(t *testing.T, env *TestEnv, userID uuid.UUID) []*domain.Artifact {
+	t.Helper()
+	list, err := env.StorageService.ListByKind(context.Background(), userID, domain.PlaybookKind)
+	require.NoError(t, err)
+	return list
+}
+
+func TestPlaybooks_SavedThenReusedByASimilarTaskAndUpdatedNotDuplicated(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "playbook@example.com")
+	answer := "**Found 3 roles.**\n\n## Playbook\n1. Open the careers page\n2. Filter by Internship\n\n## Sources\n- https://example.com\n"
+	exec := &toolExecutor{fakeExecutor: fakeExecutor{output: json.RawMessage(`{"response":` + mustJSON(answer) + `}`)}, tools: true}
+	w := playbookWorker(env, "w-pb", exec)
+
+	// First run: nothing to reuse, and a playbook is saved afterwards.
+	_, err := env.Engine.CreateTask(ctx, readTask(userID, "Check LinkedIn for intern roles"), nil)
+	require.NoError(t, err)
+	processed, err := w.ProcessNext(ctx)
+	require.NoError(t, err)
+	require.True(t, processed)
+	assert.NotContains(t, exec.lastTask().Goal, "Notes from an earlier run", "nothing to reuse the first time")
+	pbs := playbooksOf(t, env, userID)
+	require.Len(t, pbs, 1)
+	assert.Contains(t, pbs[0].Title, "Playbook:")
+	text, err := env.StorageService.ReadText(ctx, userID, pbs[0].ID, 0)
+	require.NoError(t, err)
+	assert.Contains(t, text, "Open the careers page")
+	assert.NotContains(t, text, "Sources", "only the playbook section is kept")
+
+	// A similar task later starts from those notes.
+	_, err = env.Engine.CreateTask(ctx, readTask(userID, "intern roles on LinkedIn"), nil)
+	require.NoError(t, err)
+	processed, err = w.ProcessNext(ctx)
+	require.NoError(t, err)
+	require.True(t, processed)
+	goal := exec.lastTask().Goal
+	assert.Contains(t, goal, "Notes from an earlier run")
+	assert.Contains(t, goal, "Open the careers page")
+	assert.Contains(t, goal, "never override", "notes are framed as background, not instructions")
+
+	assert.Len(t, playbooksOf(t, env, userID), 1, "a reworded repeat of the same task updates its playbook, it does not add a copy")
+
+	// An unrelated task gets no notes, and keeps its own playbook.
+	_, err = env.Engine.CreateTask(ctx, readTask(userID, "Compare three note-taking apps"), nil)
+	require.NoError(t, err)
+	_, err = w.ProcessNext(ctx)
+	require.NoError(t, err)
+	assert.NotContains(t, exec.lastTask().Goal, "Notes from an earlier run")
+	assert.Len(t, playbooksOf(t, env, userID), 2)
+
+	// Re-running the same task updates its playbook instead of adding another copy.
+	exec.output = json.RawMessage(`{"response":` + mustJSON("Done.\n\n## Playbook\n1. New faster route via the jobs API page\n") + `}`)
+	_, err = env.Engine.CreateTask(ctx, readTask(userID, "Check LinkedIn for intern roles"), nil)
+	require.NoError(t, err)
+	_, err = w.ProcessNext(ctx)
+	require.NoError(t, err)
+	pbs = playbooksOf(t, env, userID)
+	require.Len(t, pbs, 2, "same task type: updated in place, not added")
+	var updated string
+	for _, a := range pbs {
+		if strings.Contains(a.Title, "LinkedIn") {
+			updated, _ = env.StorageService.ReadText(ctx, userID, a.ID, 0)
+		}
+	}
+	assert.Contains(t, updated, "jobs API page")
+	assert.NotContains(t, updated, "careers page")
+}
+
+func TestPlaybooks_NeverStoreCredentialsAndOnlyForToolTiers(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "playbook_safe@example.com")
+
+	leaky := &toolExecutor{fakeExecutor: fakeExecutor{output: json.RawMessage(`{"response":` + mustJSON("ok\n\n## Playbook\n1. Log in with password: hunter2\n") + `}`)}, tools: true}
+	_, err := env.Engine.CreateTask(ctx, readTask(userID, "Check the portal for new messages"), nil)
+	require.NoError(t, err)
+	_, err = playbookWorker(env, "w-leak", leaky).ProcessNext(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, playbooksOf(t, env, userID), "a playbook that looks like it holds a credential must not be saved")
+
+	plain := "ok\n\n## Playbook\n1. Open the page\n"
+	// Tools off: no playbook even for a read task.
+	off := &toolExecutor{fakeExecutor: fakeExecutor{output: json.RawMessage(`{"response":` + mustJSON(plain) + `}`)}, tools: false}
+	_, err = env.Engine.CreateTask(ctx, readTask(userID, "Check the careers page"), nil)
+	require.NoError(t, err)
+	_, err = playbookWorker(env, "w-off", off).ProcessNext(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, playbooksOf(t, env, userID), "tools off: nothing is remembered")
+
+	// A text-only (none) task never produces one either.
+	on := &toolExecutor{fakeExecutor: fakeExecutor{output: json.RawMessage(`{"response":` + mustJSON(plain) + `}`)}, tools: true}
+	_, err = env.Engine.CreateTask(ctx, &domain.Task{UserID: userID, Title: "Summarise the careers page", Goal: "Summarise the careers page", MaxRetries: 2}, nil)
+	require.NoError(t, err)
+	_, err = playbookWorker(env, "w-none", on).ProcessNext(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, playbooksOf(t, env, userID), "a text-only task leaves no playbook")
+}
+
+func mustJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }

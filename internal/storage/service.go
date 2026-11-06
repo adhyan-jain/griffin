@@ -481,3 +481,38 @@ func (s *StorageService) UpdateText(ctx context.Context, id, userID uuid.UUID, t
 	}
 	return s.artifactRepo.UpdateArtifactContentInfo(ctx, id, userID, int64(len(next)), checksum)
 }
+
+// ListByKind returns the user's artifacts whose metadata "kind" equals kind (lists, playbooks).
+func (s *StorageService) ListByKind(ctx context.Context, userID uuid.UUID, kind string) ([]*domain.Artifact, error) {
+	all, err := s.artifactRepo.ListArtifacts(ctx, userID, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []*domain.Artifact
+	for _, a := range all {
+		var m struct {
+			Kind string `json:"kind"`
+		}
+		if json.Unmarshal(a.Metadata, &m) == nil && m.Kind == kind {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// ReadText reads a text artifact the user owns, up to maxBytes.
+func (s *StorageService) ReadText(ctx context.Context, userID, id uuid.UUID, maxBytes int64) (string, error) {
+	_, down, err := s.DownloadArtifact(ctx, id, userID)
+	if err != nil {
+		return "", err
+	}
+	defer down.Body.Close()
+	if maxBytes <= 0 {
+		maxBytes = 5 << 20
+	}
+	b, err := io.ReadAll(io.LimitReader(down.Body, maxBytes))
+	if err != nil {
+		return "", fmt.Errorf("read artifact text: %w", err)
+	}
+	return string(b), nil
+}
