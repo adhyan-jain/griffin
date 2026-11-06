@@ -116,6 +116,9 @@ export interface Artifact {
   filename?: string | null;
   file_size_bytes?: number | null;
   mime_type?: string | null;
+  /** Free-form tags; `{ kind: "list" }` marks a living list. */
+  metadata?: { kind?: string } | null;
+  updated_at?: string;
   created_at: string;
 }
 
@@ -535,6 +538,16 @@ export const api = {
   listArtifacts: (taskId?: string, opts?: ReqOpts) =>
     fetchList<Artifact>(`/api/v1/artifacts${taskId ? `?task_id=${taskId}` : ""}`, opts),
   getPresignedUrl: (id: string) => fetchWithAuth<{ url: string; expires_at: string }>(`/api/v1/artifacts/${id}/presign`),
+  /** Living lists: Markdown files a task or you can keep adding to. */
+  createList: (title: string, content?: string) => fetchWithAuth<Artifact>("/api/v1/lists", { method: "POST", body: JSON.stringify({ title, content }) }),
+  updateArtifactText: (id: string, text: string, mode: "append" | "replace") =>
+    fetchWithAuth<Artifact>(`/api/v1/artifacts/${id}/text`, { method: "PUT", body: JSON.stringify({ text, mode }) }),
+  async getArtifactText(id: string, opts?: ReqOpts): Promise<string> {
+    const token = await resolveAuthToken();
+    const res = await fetch(`${API_BASE_URL}/api/v1/artifacts/${id}/download`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: opts?.signal });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.text();
+  },
   deleteArtifact: (id: string) => fetchWithAuth<unknown>(`/api/v1/artifacts/${id}`, { method: "DELETE" }),
   async uploadArtifact(file: File, taskId?: string): Promise<Artifact> {
     const form = new FormData();

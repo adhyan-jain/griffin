@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { api, type Artifact } from "@/lib/api";
+import { ResponsiveDialog } from "@/components/responsive-dialog";
+import { Input } from "@/components/ui/input";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronDown, ChevronUp, Code2, Copy, Download, FileText } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Code2, Copy, Download, FileText, ListPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -51,6 +54,15 @@ const components: Components = {
 
 const pretty = (v: unknown) => JSON.stringify(v, null, 2);
 
+/** Renders Markdown with the app's typography. No raw HTML is ever rendered. Shared by results and lists. */
+export function MarkdownText({ text }: { text: string }) {
+  return (
+    <Markdown remarkPlugins={[remarkGfm]} components={components} skipHtml>
+      {text}
+    </Markdown>
+  );
+}
+
 /**
  * The result of a task, as a reader: the answer rendered as formatted text with copy, download and a
  * raw-data toggle, folded when long. The raw payload is always one tap away, and a payload with no
@@ -61,6 +73,10 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
   const [raw, setRaw] = useState(false);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [lists, setLists] = useState<Artifact[] | null>(null);
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const long = !!text && text.length > FOLD_AT;
   const showRaw = raw || text === null;
@@ -73,6 +89,35 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
       setTimeout(() => setCopied(false), 1600);
     } catch {
       toast.error("Could not copy. Select the text instead.");
+    }
+  };
+  const openSave = () => {
+    setSaveOpen(true);
+    setNewName("");
+    api
+      .listArtifacts()
+      .then((all) => setLists(all.filter((a) => a.metadata?.kind === "list")))
+      .catch(() => setLists([]));
+  };
+  // Adds this answer to a living list as a dated section; creates the list first when needed.
+  const saveTo = async (target: Artifact | null) => {
+    setSaving(true);
+    try {
+      const entry = `## ${title}\n_${new Date().toLocaleDateString()}_\n\n${body}`;
+      if (target) {
+        await api.updateArtifactText(target.id, entry, "append");
+        toast.success(`Added to ${target.title}`);
+      } else {
+        const name = newName.trim();
+        if (!name) return;
+        await api.createList(name, `# ${name}\n\n${entry}`);
+        toast.success(`Created ${name}`);
+      }
+      setSaveOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save to the list.");
+    } finally {
+      setSaving(false);
     }
   };
   const download = () => {
@@ -100,6 +145,9 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
             {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
             <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
           </Button>
+          <Button variant="ghost" size="sm" onClick={openSave} className="h-8 gap-1.5" aria-label="Save to a list">
+            <ListPlus className="size-4" /> <span className="hidden sm:inline">Save to list</span>
+          </Button>
           <Button variant="ghost" size="sm" onClick={download} className="h-8 gap-1.5" aria-label="Download result">
             <Download className="size-4" /> <span className="hidden sm:inline">Download</span>
           </Button>
@@ -112,9 +160,7 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
             <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-6">{body}</pre>
           ) : (
             <div className="max-w-prose break-words">
-              <Markdown remarkPlugins={[remarkGfm]} components={components} skipHtml>
-                {text!}
-              </Markdown>
+              <MarkdownText text={text!} />
             </div>
           )}
           {!showRaw && rest && (
@@ -145,6 +191,39 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
           )}
         </button>
       )}
+
+      <ResponsiveDialog open={saveOpen} onOpenChange={(o) => !saving && setSaveOpen(o)} title="Save to a list" description="Lists keep growing: each save adds a dated section to the end.">
+        <div className="space-y-3">
+          {lists === null ? (
+            <p className="text-sm text-muted-foreground">Loading your lists...</p>
+          ) : (
+            lists.length > 0 && (
+              <ul className="divide-y overflow-hidden rounded-xl border">
+                {lists.map((l) => (
+                  <li key={l.id}>
+                    <button type="button" disabled={saving} onClick={() => saveTo(l)} className="flex min-h-12 w-full items-center justify-between gap-3 px-3 text-left text-sm font-medium transition-colors hover:bg-accent/50 disabled:opacity-60">
+                      <span className="truncate">{l.title}</span>
+                      <span className="shrink-0 text-xs text-primary">Add here</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          )}
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveTo(null);
+            }}
+          >
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Or start a new list, e.g. Internship tracker" className="h-11" aria-label="New list name" />
+            <Button type="submit" className="h-11" disabled={saving || !newName.trim()}>
+              Create
+            </Button>
+          </form>
+        </div>
+      </ResponsiveDialog>
     </section>
   );
 }
