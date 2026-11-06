@@ -40,7 +40,9 @@
     ".next-e2e/types/**/*.ts",
     ".next-e2e/dev/types/**/*.ts",
     ".next-measure/types/**/*.ts",
-    ".next-measure/dev/types/**/*.ts"
+    ".next-measure/dev/types/**/*.ts",
+    ".next-uitasks/types/**/*.ts",
+    ".next-uitasks/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
