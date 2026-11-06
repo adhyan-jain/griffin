@@ -10,6 +10,8 @@ export const canResume = (t: Task) => (t.status === "FAILED" || t.status === "CA
 /** Plans, and finished work in general, are repeated by submitting the same request again. */
 export const canRunAgain = (t: Task) => isDone(t.status) && !t.parent_id && !isChat(t) && (isPlan(t) || t.status === "COMPLETED");
 export const canDelete = (t: Task) => isDone(t.status);
+/** Only top-level work is cancelled directly; cancelling a plan stops its subtasks too. */
+export const canCancel = (t: Task) => !isDone(t.status) && !t.parent_id;
 
 export async function runAgain(t: Task): Promise<Task | null> {
   if (isPlan(t)) {

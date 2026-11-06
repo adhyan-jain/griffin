@@ -14,6 +14,7 @@ import { EmptyState, ErrorNote, PageContainer, formatBytes, timeAgo } from "@/co
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
 import { Kinetic } from "@/components/fx/kinetic";
+import { ResultView } from "@/components/result-view";
 import { deriveNow } from "@/lib/task-now";
 import { usePolling } from "@/lib/use-polling";
 import { canDelete, canResume, canRunAgain, isPlan, runAgain } from "@/lib/task-actions";
@@ -31,7 +32,7 @@ const hasJSON = (v: unknown) => v != null && !(typeof v === "object" && Object.k
 
 function Json({ value }: { value: unknown }) {
   return (
-    <pre className="max-h-80 overflow-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs leading-relaxed">
+    <pre className="whitespace-pre-wrap break-words rounded-lg border bg-muted/50 p-3 font-mono text-xs leading-relaxed">
       {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -287,10 +288,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           </section>
           {task.failure_reason && <ErrorNote message={task.failure_reason} />}
           {hasJSON(task.output_payload) && (
-            <section>
-              <h2 className="mb-1.5 text-sm font-semibold">Result</h2>
-              <Json value={task.output_payload} />
-            </section>
+            <ResultView payload={task.output_payload} title={task.title || task.goal} />
           )}
           {hasJSON(task.input_payload) && (
             <section>
