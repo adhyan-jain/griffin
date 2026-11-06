@@ -185,6 +185,33 @@ func main() {
 	if runWorkers {
 		// 8. Background Lease Reaper
 		reaper := worker.NewLeaseReaper(engine, time.Duration(cfg.ReaperIntervalSeconds)*time.Second, logger)
+		// Keep old finished tasks lean: drop their activity history and shorten long answers that are
+		// already kept as files. Runs at start and every 6 hours while the runner is up.
+		if cfg.TaskCompactAfterDays > 0 {
+			go func() {
+				compact := func() {
+					res, err := taskRepo.CompactFinishedTasks(ctx, time.Now().Add(-time.Duration(cfg.TaskCompactAfterDays)*24*time.Hour), 600)
+					if err != nil {
+						logger.Warn("Compacting old finished tasks failed", "error", err)
+						return
+					}
+					if res.Events+res.Attempts+res.Trimmed > 0 {
+						logger.Info("Compacted old finished tasks", "events_removed", res.Events, "attempts_removed", res.Attempts, "answers_trimmed", res.Trimmed)
+					}
+				}
+				compact()
+				t := time.NewTicker(6 * time.Hour)
+				defer t.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.C:
+						compact()
+					}
+				}
+			}()
+		}
 		go func() {
 			if err := reaper.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				logger.Error("Lease reaper stopped with error", "error", err)
