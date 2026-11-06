@@ -1,53 +1,130 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, Loader2, RotateCcw, Sparkles, WifiOff } from "lucide-react";
-import { api, type SubmitResult } from "@/lib/api";
+import { api, JJEndpointUnavailable, type Task } from "@/lib/api";
+import { buildHistory, pollIntervalMs, reduceReply, type Provider, type ReplyEvent, type Turn } from "@/lib/jj-chat";
+import { usePolling } from "@/lib/use-polling";
 import { useOnline } from "@/lib/use-online";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNote } from "@/components/page";
+import { ChatText } from "@/components/chat-text";
 import { PlanCard } from "@/components/plan-card";
 
-type Msg =
-  | { id: number; role: "user"; text: string }
-  | { id: number; role: "jj"; result: SubmitResult }
-  | { id: number; role: "error"; text: string; goal: string };
-
 const SUGGESTIONS = ["Plan a weekly status report", "Review this repo for security issues", "Draft a launch checklist for next week"];
+const CONVERSATION_KEY = "griffin_jj_conversation";
+const MAX_POLL_ERRORS = 6;
+let memoryConversationId: string | null = null;
+
+/** One id per chat session; sessionStorage keeps the thread across a refresh (memory if blocked). */
+function conversationId(): string {
+  try {
+    const stored = sessionStorage.getItem(CONVERSATION_KEY);
+    if (stored) return stored;
+    const fresh = crypto.randomUUID();
+    sessionStorage.setItem(CONVERSATION_KEY, fresh);
+    return fresh;
+  } catch {
+    return (memoryConversationId ??= crypto.randomUUID());
+  }
+}
+
+const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : "JJ could not take that message.");
+const providerLine = (p: Provider) => [p.name, p.version && `v${p.version}`, p.model].filter(Boolean).join(" · ");
+
+/** The single bounded poll loop for one reply task. Mounted only while that reply is unfinished. */
+function ReplyPoller({ taskId, onTask, onGiveUp }: { taskId: string; onTask: (t: Task) => void; onGiveUp: (reason: string) => void }) {
+  const [slow, setSlow] = useState(false);
+  const errors = useRef(0);
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), 30_000);
+    return () => clearTimeout(id);
+  }, []);
+  usePolling(
+    async (signal) => {
+      const t = await api.getTask(taskId, { signal });
+      errors.current = 0;
+      onTask(t);
+    },
+    {
+      intervalMs: pollIntervalMs(slow ? 30_000 : 0),
+      onError: () => {
+        if (++errors.current >= MAX_POLL_ERRORS) onGiveUp("Lost contact with JJ while waiting for the answer.");
+      },
+    },
+  );
+  return null;
+}
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
   const online = useOnline();
   const endRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
+  const turnsRef = useRef<Turn[]>([]);
+  const endpointMissing = useRef(false); // POST /jj/messages answered 404: never ask again this session
+  const [wakeBusy, setWakeBusy] = useState(false);
 
   useEffect(() => {
+    turnsRef.current = turns;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     endRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "end" });
-  }, [messages, busy]);
+  }, [turns]);
 
-  const send = async (raw: string, retry = false) => {
-    const goal = raw.trim();
-    if (!goal || busy || !online) return;
-    setText("");
-    setBusy(true);
-    // A retry replaces the failed turn instead of repeating the user's message.
-    setMessages((m) => (retry ? m.filter((x) => x.role !== "error") : [...m, { id: nextId.current++, role: "user", text: goal }]));
+  const dispatch = useCallback((id: number, ev: ReplyEvent) => {
+    setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, reply: reduceReply(t.reply, ev) } : t)));
+  }, []);
+
+  const deliver = async (id: number, message: string, history: ReturnType<typeof buildHistory>) => {
     try {
-      const result = await api.submitOrchestratorRequest(goal);
-      setMessages((m) => [...m, { id: nextId.current++, role: "jj", result }]);
+      if (!endpointMissing.current) {
+        try {
+          const result = await api.sendJJMessage({ message, conversation_id: conversationId(), history });
+          dispatch(id, { type: "accepted", result });
+          return;
+        } catch (e) {
+          if (!(e instanceof JJEndpointUnavailable)) throw e;
+          endpointMissing.current = true;
+        }
+      }
+      dispatch(id, { type: "fallback", result: await api.submitOrchestratorRequest(message) });
     } catch (e) {
-      const text = e instanceof Error ? e.message : "JJ could not take that request.";
-      setMessages((m) => [...m, { id: nextId.current++, role: "error", text, goal }]);
-    } finally {
-      setBusy(false);
+      dispatch(id, { type: "error", reason: errText(e) });
     }
   };
 
-  const empty = messages.length === 0;
+  const send = (raw: string) => {
+    const message = raw.trim();
+    if (!message || !online) return;
+    const id = nextId.current++;
+    const history = buildHistory(turnsRef.current);
+    setText("");
+    setTurns((ts) => [...ts, { id, text: message, reply: { phase: "sending" } }]);
+    void deliver(id, message, history);
+  };
+
+  const retry = (turn: Turn) => {
+    if (!online || turn.reply.phase !== "failed") return;
+    const history = buildHistory(turnsRef.current.filter((t) => t.id < turn.id));
+    dispatch(turn.id, { type: "retry" });
+    void deliver(turn.id, turn.text, history); // a new idempotency key is generated per call
+  };
+
+  const wake = async () => {
+    setWakeBusy(true);
+    try {
+      await api.wakeRunner();
+    } catch {
+      // The reply keeps polling either way.
+    } finally {
+      setWakeBusy(false);
+    }
+  };
+
+  const empty = turns.length === 0;
+  const anyPending = turns.some((t) => t.reply.phase === "sending" || t.reply.phase === "waiting");
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-3xl flex-col px-4 md:h-dvh md:px-8">
@@ -58,23 +135,23 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="flex-1 space-y-4 overflow-y-auto py-5" aria-live="polite" aria-busy={busy}>
+      <div className="flex-1 space-y-4 overflow-y-auto py-5" aria-live="polite" aria-busy={anyPending}>
         {empty && (
           <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
             <div className="flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
               <Sparkles className="size-5" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold tracking-tight text-balance">What should JJ take care of?</h1>
-              <p className="mt-1 text-sm text-muted-foreground text-pretty">Describe the outcome. JJ plans the steps and hands them to your team.</p>
+              <h1 className="text-xl font-semibold tracking-tight text-balance">Ask JJ anything</h1>
+              <p className="mt-1 text-sm text-muted-foreground text-pretty">JJ answers questions directly and plans bigger goals into steps for your team.</p>
             </div>
             <div className="flex w-full flex-col gap-2">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
                   type="button"
-                  disabled={!online || busy}
-                  onClick={() => void send(s)}
+                  disabled={!online}
+                  onClick={() => send(s)}
                   className="min-h-12 rounded-xl border bg-card px-4 text-left text-sm transition-colors active:bg-muted disabled:opacity-50 md:hover:bg-muted"
                 >
                   {s}
@@ -84,28 +161,66 @@ export default function ChatPage() {
           </div>
         )}
 
-        {messages.map((m) =>
-          m.role === "user" ? (
-            <div key={m.id} className="flex justify-end">
-              <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">{m.text}</p>
+        {turns.map((t) => (
+          <div key={t.id} className="space-y-3" data-testid="chat-turn">
+            <div className="flex justify-end">
+              <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">{t.text}</p>
             </div>
-          ) : m.role === "error" ? (
-            <div key={m.id} className="space-y-2">
-              <ErrorNote message={m.text} />
-              <Button variant="outline" size="sm" className="h-11" disabled={busy || !online} onClick={() => void send(m.goal, true)}>
-                <RotateCcw /> Try again
-              </Button>
-            </div>
-          ) : (
-            <PlanCard key={m.id} result={m.result} />
-          ),
-        )}
 
-        {busy && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-            <Loader2 className="size-4 animate-spin motion-reduce:animate-none" /> JJ is planning
+            {(t.reply.phase === "sending" || t.reply.phase === "waiting") && (
+              <div className="space-y-1.5" role="status">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin motion-reduce:animate-none" /> JJ is thinking
+                </div>
+                {t.reply.phase === "waiting" && t.reply.wake?.wake === "failed" && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-warning">
+                    <span>
+                      The worker could not start{t.reply.wake.detail ? `: ${t.reply.wake.detail}` : ""}; JJ will keep trying, or tap Wake.
+                    </span>
+                    <Button variant="outline" size="sm" className="h-11" disabled={wakeBusy || !online} onClick={() => void wake()}>
+                      Wake
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {t.reply.phase === "waiting" && (
+              <ReplyPoller
+                taskId={t.reply.taskId}
+                onTask={(task) => dispatch(t.id, { type: "task", task })}
+                onGiveUp={(reason) => dispatch(t.id, { type: "error", reason })}
+              />
+            )}
+
+            {t.reply.phase === "done" && (
+              <div data-testid="jj-reply" className="w-full max-w-[96%] space-y-1.5 rounded-2xl rounded-bl-md border bg-card px-4 py-3">
+                <ChatText text={t.reply.text} />
+                {t.reply.provider && providerLine(t.reply.provider) && <p className="text-[11px] text-muted-foreground">{providerLine(t.reply.provider)}</p>}
+              </div>
+            )}
+
+            {t.reply.phase === "failed" && (
+              <div className="space-y-2">
+                <ErrorNote message={t.reply.reason} />
+                <Button variant="outline" size="sm" className="h-11" disabled={!online} onClick={() => retry(t)}>
+                  <RotateCcw /> Retry
+                </Button>
+              </div>
+            )}
+
+            {t.reply.phase === "plan" && (
+              <div className="space-y-1.5">
+                {t.reply.planOnly && (
+                  <p data-testid="plan-only-label" className="text-xs text-warning">
+                    Plan only: JJ&apos;s direct answers are not available yet, so this is a plan for your team, not a reply.
+                  </p>
+                )}
+                <PlanCard result={t.reply.result} />
+              </div>
+            )}
           </div>
-        )}
+        ))}
         <div ref={endRef} />
       </div>
 
@@ -113,7 +228,7 @@ export default function ChatPage() {
         className="flex items-end gap-2 border-t bg-background py-3"
         onSubmit={(e) => {
           e.preventDefault();
-          void send(text);
+          send(text);
         }}
       >
         <Textarea
@@ -124,14 +239,14 @@ export default function ChatPage() {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && window.matchMedia("(min-width: 768px)").matches) {
               e.preventDefault();
-              void send(text);
+              send(text);
             }
           }}
           placeholder={online ? "Message JJ" : "Offline"}
           rows={1}
           className="max-h-32 min-h-11 resize-none"
         />
-        <Button type="submit" size="icon" className="size-11 shrink-0 rounded-full" disabled={busy || !online || !text.trim()} aria-label="Send">
+        <Button type="submit" size="icon" className="size-11 shrink-0 rounded-full" disabled={!online || !text.trim()} aria-label="Send">
           <ArrowUp />
         </Button>
       </form>

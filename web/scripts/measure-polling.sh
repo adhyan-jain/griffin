@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the PWA (mock API URL, dev login on so the mock token is accepted), serves it, and runs
 # scripts/measure-polling.mjs for one scenario. Extra args are passed through to the harness.
-# Usage: scripts/measure-polling.sh [--seconds 60] [--scenario active|completes|failing|hidden]
+# Usage: scripts/measure-polling.sh [--seconds 60] [--scenario active|completes|failing|hidden|chat|chat-failed|chat-404|chat-objective] [--shots DIR]
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
