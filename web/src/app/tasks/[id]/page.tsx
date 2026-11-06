@@ -15,11 +15,16 @@ import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
 import { deriveNow } from "@/lib/task-now";
 import { usePolling } from "@/lib/use-polling";
-import { canDelete, canResume, canRunAgain, runAgain } from "@/lib/task-actions";
+import { canDelete, canResume, canRunAgain, isPlan, runAgain } from "@/lib/task-actions";
 
-/** Refresh cadence while a task is active. Terminal tasks are not polled at all. */
-const SUMMARY_POLL_MS = 4000;
-const DETAIL_POLL_MS = 12000;
+/**
+ * Refresh cadence follows what the task is doing. Terminal tasks are not polled at all. A task that is
+ * only waiting (queued, retrying, awaiting approval) cannot change on its own faster than the worker
+ * picks it up, so it is polled slowly: every request is billed API Gateway + Lambda + DB time.
+ */
+const BUSY = new Set(["RUNNING", "VERIFYING"]);
+const summaryEvery = (status?: string) => (status && BUSY.has(status) ? 5000 : 20000);
+const detailEvery = (status?: string) => (status && BUSY.has(status) ? 15000 : 40000);
 
 const hasJSON = (v: unknown) => v != null && !(typeof v === "object" && Object.keys(v as object).length === 0);
 
@@ -45,6 +50,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [tab, setTab] = useState("overview");
 
   const terminal = task !== null && isDone(task.status);
+  const status = task?.status;
 
   // Three bounded loops, each created once per (task id, active/terminal) and never restarted by
   // the data they fetch. Each stops by itself when the task reaches a terminal state.
@@ -52,16 +58,15 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   // 1. Summary: the task and its subtasks.
   const { refresh: refreshSummary } = usePolling(
     async (signal) => {
-      const [t, kids] = await Promise.all([
-        api.getTask(id, { signal }),
-        api.listTasks({ parent_id: id, limit: 200 }, { signal }),
-      ]);
+      const t = await api.getTask(id, { signal });
+      // Only a plan has subtasks; skip the second request for everything else.
+      const kids = isPlan(t) ? await api.listTasks({ parent_id: id, limit: 200 }, { signal }) : [];
       setTask(t);
       setChildren(kids);
       setError(null);
     },
     {
-      intervalMs: SUMMARY_POLL_MS,
+      intervalMs: summaryEvery(status),
       enabled: !terminal,
       onError: (err) => setError(err instanceof Error ? err.message : "Could not load this task."),
     },
@@ -76,9 +81,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       if (e.status === "fulfilled") setEvents(e.value);
       if (a.status === "rejected" && e.status === "rejected") throw a.reason; // let the poller back off
     },
-    { intervalMs: DETAIL_POLL_MS, enabled: !terminal },
+    { intervalMs: detailEvery(status), enabled: !terminal },
   );
-  const status = task?.status;
   useEffect(() => {
     if (status) refreshDetail(); // a status change is the moment new events/attempts exist
   }, [status, refreshDetail]);
@@ -88,7 +92,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     async (signal) => {
       setFiles(await api.listArtifacts(id, { signal }));
     },
-    { intervalMs: DETAIL_POLL_MS, enabled: tab === "files" && !terminal },
+    { intervalMs: detailEvery(status), enabled: tab === "files" && !terminal },
   );
 
   // Once the task is terminal nothing polls; fetch the final attempts, events and files exactly once.

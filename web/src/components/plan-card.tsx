@@ -14,6 +14,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { StatusBadge, isDone } from "@/components/StatusBadge";
 
 const POLL_MS = 5000;
+/** Nothing is executing (queued or waiting): the next change is at least a worker pick-up away. */
+const IDLE_POLL_MS = 20000;
 const label = (s: string) => s.replaceAll("_", " ");
 
 /** Steps that must finish before `key` can start, as human titles. */
@@ -83,7 +85,7 @@ export function PlanCard({ result }: { result: SubmitResult }) {
       setPollError(false);
       setLoaded(true);
     },
-    { intervalMs: POLL_MS, enabled: active || !loaded, onError: () => setPollError(true) },
+    { intervalMs: children.some((c) => c.status === "RUNNING" || c.status === "VERIFYING") ? POLL_MS : IDLE_POLL_MS, enabled: active || !loaded, onError: () => setPollError(true) },
   );
 
   const statusFor = (s: ChildTaskPlan) => children.find((c) => c.title === s.title)?.status;
