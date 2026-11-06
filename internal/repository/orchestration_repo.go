@@ -21,6 +21,8 @@ type OrchestrationRepository interface {
 	UpdateOrchestrationStatus(ctx context.Context, id uuid.UUID, status domain.OrchestrationStatus, finalResponse *string, errorMsg *string) error
 	ListOrchestrations(ctx context.Context, userID uuid.UUID, status string) ([]*domain.OrchestrationRecord, error)
 	ListActiveOrchestrations(ctx context.Context) ([]*domain.OrchestrationRecord, error)
+	// HasActiveDuplicate reports whether the user already has a non-terminal orchestration with exactly this request text.
+	HasActiveDuplicate(ctx context.Context, userID uuid.UUID, requestText string) (bool, error)
 
 	CreatePlan(ctx context.Context, plan *domain.OrchestrationPlan) (*domain.OrchestrationPlan, error)
 	GetPlanByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*domain.OrchestrationPlan, error)
@@ -144,6 +146,20 @@ func (r *PostgresOrchestrationRepository) ListOrchestrations(ctx context.Context
 		list = append(list, &o)
 	}
 	return list, nil
+}
+
+func (r *PostgresOrchestrationRepository) HasActiveDuplicate(ctx context.Context, userID uuid.UUID, requestText string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM orchestrations
+			WHERE user_id = $1 AND request_text = $2
+			  AND status IN ('PLANNING','DELEGATED','RUNNING','AWAITING_APPROVAL','VERIFYING')
+		)`, userID, requestText).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check duplicate orchestration: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *PostgresOrchestrationRepository) ListActiveOrchestrations(ctx context.Context) ([]*domain.OrchestrationRecord, error) {
