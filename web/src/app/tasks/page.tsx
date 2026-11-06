@@ -256,21 +256,25 @@ export default function TasksPage() {
       </div>
 
       {selecting && (
-        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 border-t bg-background/95 px-4 py-3 backdrop-blur md:bottom-0 md:left-60">
-          <div className="mx-auto flex max-w-3xl items-center gap-2">
-            <span className="mr-auto text-sm tabular-nums">{chosen.length} selected</span>
-            <Button variant="outline" className="h-11" disabled={busy || !chosen.some(canCancel)} onClick={() => doCancel(chosen)}>
-              <Square /> Cancel
-            </Button>
-            <Button variant="outline" className="h-11" disabled={busy || !chosen.some(canResume)} onClick={() => doResume(chosen)}>
-              <Play /> Resume
-            </Button>
-            <Button variant="destructive" className="h-11" disabled={busy || !chosen.some(canDelete)} onClick={() => setPendingDelete(chosen)}>
-              <Trash2 /> Delete
-            </Button>
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 border-t bg-background/95 px-4 py-2.5 backdrop-blur md:bottom-0 md:left-60">
+          <div className="mx-auto flex max-w-3xl flex-col gap-2 sm:flex-row sm:items-center">
+            <span className="text-center text-xs text-muted-foreground tabular-nums sm:mr-auto sm:text-left sm:text-sm sm:text-foreground">{chosen.length} selected</span>
+            <div className="grid grid-cols-3 gap-2 sm:flex">
+              <Button variant="outline" className="h-11 px-2" disabled={busy || !chosen.some(canCancel)} onClick={() => doCancel(chosen)}>
+                <Square /> Cancel
+              </Button>
+              <Button variant="outline" className="h-11 px-2" disabled={busy || !chosen.some(canResume)} onClick={() => doResume(chosen)}>
+                <Play /> Resume
+              </Button>
+              <Button variant="destructive" className="h-11 px-2" disabled={busy || !chosen.some(canDelete)} onClick={() => setPendingDelete(chosen)}>
+                <Trash2 /> Delete
+              </Button>
+            </div>
           </div>
         </div>
       )}
+      {/* Room under the list so the last rows are never hidden behind the selection bar. */}
+      {selecting && <div aria-hidden className="h-32 md:h-24" />}
 
       <ResponsiveDialog
         open={pendingDelete !== null}

@@ -274,7 +274,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             <TabsTrigger
               key={v}
               value={v}
-              className="h-11 min-w-0 flex-col gap-0 rounded-lg px-0.5 text-[11px] leading-tight sm:flex-row sm:gap-1.5 sm:px-3 sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              className="h-11 min-w-0 flex-row gap-1 rounded-lg px-0.5 text-[11px] leading-tight sm:gap-1.5 sm:px-3 sm:text-sm data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
               <span className="truncate">{label}</span>
               {n > 0 && <span className="text-[10px] tabular-nums text-muted-foreground sm:text-xs">{n}</span>}
