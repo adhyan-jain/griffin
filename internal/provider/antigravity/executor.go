@@ -30,6 +30,7 @@ type ExecutorConfig struct {
 	WorkspaceRoot             string
 	RetainWorkspacesOnFailure bool
 	DefaultModel              string
+	VersionProbeTimeout       time.Duration // timeout for `agy --version` at construction (default 5s)
 	Logger                    *slog.Logger
 }
 
@@ -39,6 +40,7 @@ type AntigravityExecutor struct {
 	workspace *WorkspaceManager
 	sem       chan struct{}
 	logger    *slog.Logger
+	facts     RuntimeFacts
 
 	// Health and authentication telemetry
 	healthy       atomic.Bool
@@ -63,6 +65,9 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 	if cfg.GracefulTermination <= 0 {
 		cfg.GracefulTermination = 5 * time.Second
 	}
+	if cfg.VersionProbeTimeout <= 0 {
+		cfg.VersionProbeTimeout = 5 * time.Second
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -80,7 +85,19 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 	}
 	exec.healthy.Store(true)
 
+	model := cfg.DefaultModel
+	if model == "" {
+		model = "default"
+	}
+	exec.facts = RuntimeFacts{Name: providerLabel, Version: detectVersion(cfg.BinaryPath, cfg.VersionProbeTimeout), Model: model}
+	cfg.Logger.Info("Antigravity runtime detected", "version", exec.facts.Version, "model", exec.facts.Model)
+
 	return exec, nil
+}
+
+// RuntimeFacts returns the cached provider runtime description.
+func (e *AntigravityExecutor) RuntimeFacts() RuntimeFacts {
+	return e.facts
 }
 
 // Name returns the provider name.
@@ -136,7 +153,6 @@ func deniedNames(d []DeniedAction) string {
 }
 
 type inputEnvelope struct {
-	Prompt         string          `json:"prompt"`
 	ConversationID string          `json:"conversation_id"`
 	Model          string          `json:"model"`
 	JSONSchema     json.RawMessage `json:"json_schema"`
@@ -178,7 +194,6 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	}()
 
 	// 3. Extract prompt, conversation continuation, model, schema from payload or task definition
-	prompt := task.Goal
 	var conversationID string
 	var model string
 	var jsonSchema []byte
@@ -186,9 +201,6 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	if len(task.InputPayload) > 0 {
 		var env inputEnvelope
 		if err := json.Unmarshal(task.InputPayload, &env); err == nil {
-			if env.Prompt != "" {
-				prompt = env.Prompt
-			}
 			if env.ConversationID != "" {
 				conversationID = env.ConversationID
 			}
@@ -206,6 +218,7 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	}
 
 	// 4. Construct argv arguments without shell interpolation
+	prompt := buildPrompt(task, task.RetryCount+1, e.facts)
 	args := []string{
 		"-p", prompt,
 		"--output-format", "json",

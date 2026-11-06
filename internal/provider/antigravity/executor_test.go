@@ -113,7 +113,7 @@ exit 0
 	require.NotNil(t, res)
 
 	// Verify all arguments were passed as separate argv tokens
-	assert.Contains(t, res.TextOutput, "-p Custom prompt text with special chars: \"quoted\" and $VAR")
+	assert.Contains(t, res.TextOutput, "Custom prompt text with special chars: \"quoted\" and $VAR")
 	assert.Contains(t, res.TextOutput, "--output-format json")
 	assert.Contains(t, res.TextOutput, "--disable-slash-commands")
 	assert.Contains(t, res.TextOutput, "--conversation conv-continuation-uuid")
@@ -154,6 +154,7 @@ exit 1
 func TestAntigravityExecutor_ProcessTimeoutAndKill(t *testing.T) {
 	// Script traps SIGTERM and sleeps until hard killed by SIGKILL
 	script := createMockScript(t, `
+[ "$1" = "--version" ] && exit 0
 trap '' TERM
 sleep 30
 exit 0
@@ -187,6 +188,7 @@ exit 0
 
 func TestAntigravityExecutor_ProcessCancellation(t *testing.T) {
 	script := createMockScript(t, `
+[ "$1" = "--version" ] && exit 0
 sleep 30
 exit 0
 `)
@@ -225,6 +227,7 @@ func TestAntigravityExecutor_BoundedConcurrency(t *testing.T) {
 	logFile := filepath.Join(t.TempDir(), "execution.log")
 
 	script := createMockScript(t, fmt.Sprintf(`
+[ "$1" = "--version" ] && exit 0
 echo "START $(date +%%s%%N)" >> "%s"
 sleep 0.15
 echo "END $(date +%%s%%N)" >> "%s"
