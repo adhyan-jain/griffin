@@ -13,6 +13,7 @@ import { PriorityBadge, StatusBadge, isDone } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, formatBytes, timeAgo } from "@/components/page";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
+import { Kinetic } from "@/components/fx/kinetic";
 import { deriveNow } from "@/lib/task-now";
 import { usePolling } from "@/lib/use-polling";
 import { canDelete, canResume, canRunAgain, isPlan, runAgain } from "@/lib/task-actions";
@@ -198,7 +199,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       </Link>
 
       <header className="mb-5 space-y-3">
-        <h1 className="text-xl font-semibold leading-snug tracking-tight md:text-2xl">{task.title || task.goal}</h1>
+        <Kinetic as="h1" text={task.title || task.goal} className="font-display text-2xl font-bold leading-[1.05] tracking-[-0.035em] text-balance md:text-4xl" />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <StatusBadge status={task.status} />
           <PriorityBadge priority={task.priority} />

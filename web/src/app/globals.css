@@ -56,6 +56,7 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-syne);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -119,5 +120,15 @@
       animation-duration: 0.01ms !important;
       transition-duration: 0.01ms !important;
     }
+  }
+}
+
+/* Legibility pool behind hero type: fades to fully transparent in every direction, so it never draws an edge. */
+.hero-scrim {
+  background: radial-gradient(ellipse 90% 45% at 30% 80%, color-mix(in oklab, var(--background) 85%, transparent), transparent 75%);
+}
+@media (min-width: 768px) {
+  .hero-scrim {
+    background: radial-gradient(ellipse 52% 55% at 24% 50%, color-mix(in oklab, var(--background) 80%, transparent), transparent 78%);
   }
 }

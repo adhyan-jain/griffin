@@ -6,6 +6,7 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
+import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { useTheme } from "next-themes";
 import * as THREE from "three";
 import { useFxMode, useReducedMotion } from "@/lib/fx";
@@ -324,7 +325,15 @@ function Ticker({ fps, animated }: { fps: number; animated: boolean }) {
  * (it keeps its momentum), hover a satellite for the task title, tap one to open it. Decorative to
  * assistive tech (the task list below carries the same information).
  */
-export default function Hero3D({ nodes, onSelect, className }: { nodes: OrbitNode[]; onSelect?: (id: string) => void; className?: string }) {
+export default function Hero3D({
+  nodes,
+  onSelect,
+  className,
+}: {
+  nodes: OrbitNode[];
+  onSelect?: (id: string) => void;
+  className?: string;
+}) {
   const { resolvedTheme } = useTheme();
   const [mode] = useFxMode();
   const reduced = useReducedMotion();
@@ -366,10 +375,16 @@ export default function Hero3D({ nodes, onSelect, className }: { nodes: OrbitNod
           dpr={lite ? 1 : [1, 1.75]}
           camera={{ position: [0, 0, animated ? 11 : 7.1], fov: 38 }}
           frameloop="demand"
-          gl={{ antialias: !lite, alpha: true, powerPreference: lite ? "low-power" : "default" }}
+          gl={{ antialias: true, alpha: true, powerPreference: lite ? "low-power" : "default" }}
         >
           <Ticker fps={lite ? 30 : 60} animated={animated} />
           <Scene nodes={nodes} animated={animated} lite={lite} dark={dark} activity={activity} drag={drag} onSelect={onSelect} />
+          {/* Bloom makes the molten core and the live nodes glow. Skipped in Lite (a full-screen pass) and in light theme. */}
+          {!lite && dark && (
+            <EffectComposer multisampling={0}>
+              <Bloom mipmapBlur intensity={0.3 + activity * 0.35} luminanceThreshold={0.82} luminanceSmoothing={0.2} radius={0.6} />
+            </EffectComposer>
+          )}
         </Canvas>
       </Boundary>
     </div>
