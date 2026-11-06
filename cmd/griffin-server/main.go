@@ -18,6 +18,8 @@ import (
 	"github.com/griffin/core/internal/database"
 	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/provider/antigravity"
+	"github.com/griffin/core/internal/provider/claudecli"
+	"github.com/griffin/core/internal/provider/router"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/runner"
 	"github.com/griffin/core/internal/service"
@@ -206,7 +208,25 @@ func main() {
 				logger.Error("Failed to initialize Antigravity executor", "error", err)
 				os.Exit(1)
 			}
-			executor = agyExec
+			// The router sends each step to the provider that suits it. Claude is optional: without it
+			// (the default) every step runs on agy exactly as before.
+			var claudeExec worker.TaskExecutor
+			if cfg.ClaudeEnabled {
+				ce, cerr := claudecli.New(claudecli.Config{
+					BinaryPath:    cfg.ClaudeBinary,
+					MaxConcurrent: cfg.MaxConcurrentClaude,
+					Timeout:       time.Duration(cfg.ExecutionTimeoutSeconds) * time.Second,
+					WorkspaceRoot: cfg.WorkspaceRoot,
+					Logger:        logger,
+				})
+				if cerr != nil {
+					logger.Warn("CLAUDE_ENABLED is set but the claude CLI is unavailable; running every step on agy", "error", cerr)
+				} else {
+					claudeExec = ce
+					logger.Info("Claude provider enabled for language-only steps", "binary", cfg.ClaudeBinary, "max_concurrent", cfg.MaxConcurrentClaude)
+				}
+			}
+			executor = router.New(agyExec, claudeExec, logger)
 			logger.Info("Initialized Antigravity AI execution provider",
 				"binary", cfg.AntigravityBinary,
 				"max_concurrent", cfg.MaxConcurrentAntigravity,
