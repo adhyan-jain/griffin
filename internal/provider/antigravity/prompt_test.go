@@ -184,3 +184,10 @@ if [ "$1" = "--version" ]; then sleep 30; fi
 	assert.Equal(t, "unknown", e.RuntimeFacts().Version)
 	assert.Less(t, time.Since(start), 3*time.Second)
 }
+
+func TestToolPreambles_AskForAPlaybookTextOnlyDoesNot(t *testing.T) {
+	assert.Contains(t, preambleFor(domain.ToolRead), `"## Playbook"`)
+	assert.Contains(t, preambleFor(domain.ToolAct), `"## Playbook"`)
+	assert.Contains(t, preambleFor(domain.ToolRead), "Never put passwords")
+	assert.NotContains(t, preambleFor(domain.ToolNone), "Playbook", "the text-only tier never asks for one")
+}

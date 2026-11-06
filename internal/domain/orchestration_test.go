@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -203,5 +204,67 @@ func TestWithToolMode_RespectsExistingAndNonObjects(t *testing.T) {
 	_ = json.Unmarshal(merged, &m)
 	if m["provider_hint"] != "agy" || m[ToolModeKey] != "read" {
 		t.Fatalf("merge lost the provider hint: %s", merged)
+	}
+}
+
+func TestExtractPlaybook(t *testing.T) {
+	ans := "**Done.** Found 3 roles.\n\n## Playbook\n1. Open the careers page\n2. Filter by Internship\n\n## Sources\n- https://example.com\n"
+	got, ok := ExtractPlaybook(ans)
+	if !ok || got != "1. Open the careers page\n2. Filter by Internship" {
+		t.Fatalf("got %q ok=%v", got, ok)
+	}
+	if _, ok := ExtractPlaybook("no playbook here"); ok {
+		t.Fatal("no heading, no playbook")
+	}
+	if _, ok := ExtractPlaybook("## Playbook\n\n## Next\nx"); ok {
+		t.Fatal("an empty section is not a playbook")
+	}
+	long, _ := ExtractPlaybook("# Playbook\n" + strings.Repeat("step ", 2000))
+	if len([]rune(long)) > 4000 {
+		t.Fatalf("playbook not capped: %d", len([]rune(long)))
+	}
+}
+
+func TestPlaybookLooksSafe_RefusesCredentials(t *testing.T) {
+	for _, bad := range []string{
+		"1. Log in with password: hunter2",
+		"api_key = abc",
+		"Authorization: Bearer abcdefghijklmnop12345",
+		"token: xyz",
+		"-----BEGIN RSA PRIVATE KEY-----",
+		"ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+		"use AKIAABCDEFGHIJKLMNOP",
+		"cookie=abc123",
+		"secret " + strings.Repeat("A", 44),
+	} {
+		if PlaybookLooksSafe(bad) {
+			t.Errorf("must refuse: %q", bad)
+		}
+	}
+	for _, ok := range []string{"1. Open the careers page\n2. Click Internships\n3. Sort by newest", "The login page is at /signin; use the saved profile"} {
+		if !PlaybookLooksSafe(ok) {
+			t.Errorf("must allow: %q", ok)
+		}
+	}
+}
+
+func TestPlaybookKeyAndSimilarity(t *testing.T) {
+	a := PlaybookKey("Check LinkedIn for intern roles", "please check linkedin for intern roles")
+	if a != PlaybookKey("check linkedin   for INTERN roles", "") {
+		t.Fatal("casing, spacing and filler words must not change the key")
+	}
+	b := PlaybookKey("intern roles on LinkedIn", "")
+	if got := PlaybookSimilarity(a, b); got < 0.5 {
+		t.Fatalf("a rewording of the same task must clear the reuse threshold, got %.2f (%q vs %q)", got, a, b)
+	}
+	if PlaybookSimilarity(a, a) < 0.99 {
+		t.Fatal("identical keys are fully similar")
+	}
+	c := PlaybookKey("Draft a cover letter", "for a backend role")
+	if PlaybookSimilarity(a, c) > 0.2 {
+		t.Fatalf("unrelated tasks must not match: %f", PlaybookSimilarity(a, c))
+	}
+	if PlaybookSimilarity("", a) != 0 {
+		t.Fatal("empty never matches")
 	}
 }

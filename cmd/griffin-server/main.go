@@ -254,6 +254,7 @@ func main() {
 				PollInterval:      1 * time.Second,
 				Logger:            logger,
 				Artifacts:         storageService,
+				Playbooks:         storageService,
 				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
 					if err := jjOrchestrator.ReconcileByChildTask(hookCtx, taskID); err != nil {
 						logger.Warn("Orchestration reconcile after task finish failed", "task_id", taskID, "error", err)
