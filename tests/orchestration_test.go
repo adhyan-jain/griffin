@@ -533,3 +533,33 @@ func TestJJ_SubmitRequest_RejectsActiveDuplicate(t *testing.T) {
 		t.Fatalf("resubmit after the first finished: %v", err)
 	}
 }
+
+// Every delegated step records which provider it is planned for, chosen by what the step needs.
+func TestJJ_SubmitRequest_RecordsProviderHintOnEachStep(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "jj_hint@example.com")
+	orch, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: userID, RequestText: "Research best practices for Go worker pools"})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	dels, err := env.OrchRepo.GetDelegationsByOrchestrationID(ctx, orch.ID, userID)
+	if err != nil || len(dels) == 0 {
+		t.Fatalf("delegations: %v (%d)", err, len(dels))
+	}
+	for _, d := range dels {
+		task, err := env.TaskRepo.GetTaskByID(ctx, d.ChildTaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p map[string]any
+		if err := json.Unmarshal(task.InputPayload, &p); err != nil {
+			t.Fatalf("child payload is not an object: %s", task.InputPayload)
+		}
+		if h := p[domain.ProviderHintKey]; h != "agy" && h != "claude" {
+			t.Fatalf("step %q has no provider hint: %s", task.Title, task.InputPayload)
+		}
+	}
+}

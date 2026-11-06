@@ -25,6 +25,9 @@ type Config struct {
 
 	// AI Execution Provider settings (Phase 2)
 	AIProvider                 string // "antigravity" (default) or "mock"
+	ClaudeEnabled              bool   // optional second provider for language-only steps; off by default
+	ClaudeBinary               string
+	MaxConcurrentClaude        int
 	AntigravityBinary          string // path or command name, default "agy"
 	MaxConcurrentAntigravity   int    // default 1, maximum 2
 	ExecutionTimeoutSeconds    int    // default 300
@@ -109,6 +112,9 @@ func Load() (*Config, error) {
 		ReaperIntervalSeconds:           getEnvAsInt("REAPER_INTERVAL_SECONDS", 30),
 		MaxConcurrentWorkers:            getEnvAsInt("MAX_CONCURRENT_WORKERS", 2),
 		AIProvider:                      getEnv("AI_PROVIDER", "antigravity"),
+		ClaudeEnabled:                   getEnvAsBool("CLAUDE_ENABLED", false),
+		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
+		MaxConcurrentClaude:             getEnvAsInt("MAX_CONCURRENT_CLAUDE", 2),
 		AntigravityBinary:               getEnv("ANTIGRAVITY_BINARY", "agy"),
 		MaxConcurrentAntigravity:        getEnvAsInt("MAX_CONCURRENT_ANTIGRAVITY", 1),
 		ExecutionTimeoutSeconds:         getEnvAsInt("EXECUTION_TIMEOUT_SECONDS", 300),
