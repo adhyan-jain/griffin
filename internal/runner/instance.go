@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -24,6 +25,8 @@ const (
 )
 
 var (
+	// ErrInsufficientCapacity: AWS answered InsufficientInstanceCapacity to StartInstances.
+	ErrInsufficientCapacity = errors.New("aws has insufficient capacity for the runner instance")
 	ErrRunnerStopping       = errors.New("runner instance is currently in stopping transition")
 	ErrRunnerStartFailed    = errors.New("failed to start runner instance")
 	ErrRunnerStopFailed     = errors.New("failed to stop runner instance")
@@ -191,9 +194,24 @@ func (e *EC2InstanceManager) StartRunner(ctx context.Context) error {
 		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "IncorrectInstanceState" {
 			return ErrRunnerStopping
 		}
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InsufficientInstanceCapacity" {
+			return fmt.Errorf("%w: %v", ErrInsufficientCapacity, err)
+		}
 		return fmt.Errorf("%w: %v", ErrRunnerStartFailed, err)
 	}
 	return nil
+}
+
+// classifyStartError wraps ErrInsufficientCapacity around errors that mention the AWS code
+// (covers managers that flatten the AWS error into text).
+func classifyStartError(err error) error {
+	if err == nil || errors.Is(err, ErrInsufficientCapacity) {
+		return err
+	}
+	if strings.Contains(err.Error(), "InsufficientInstanceCapacity") {
+		return fmt.Errorf("%w: %v", ErrInsufficientCapacity, err)
+	}
+	return err
 }
 
 // StopRunner idempotently stops the instance: no-op when stopped/stopping.
