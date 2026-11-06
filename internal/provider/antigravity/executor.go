@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -120,6 +121,18 @@ func (e *AntigravityExecutor) ResetHealth() {
 	e.healthMu.Lock()
 	e.lastHealthErr = nil
 	e.healthMu.Unlock()
+}
+
+func deniedNames(d []DeniedAction) string {
+	names := make([]string, 0, len(d))
+	for _, a := range d {
+		n := a.DisplayName
+		if n == "" {
+			n = a.Action
+		}
+		names = append(names, n)
+	}
+	return strings.Join(names, ", ")
 }
 
 type inputEnvelope struct {
@@ -362,6 +375,37 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 			Error:        parseErr,
 			Retryable:    false,
 		}, parseErr
+	}
+
+	hasContent := len(parsed.StructuredOutput) > 0 || strings.TrimSpace(parsed.ResponseText) != ""
+	if len(parsed.DeniedActions) > 0 {
+		names := deniedNames(parsed.DeniedActions)
+		if !hasContent {
+			cause := fmt.Errorf("%w: model attempted a tool the headless runner cannot approve (denied: %s)", ErrToolPermissionDenied, names)
+			e.logger.Warn("Antigravity produced no output because tool actions were denied",
+				"task_id", task.ID, "exit_code", exitCode, "denied_actions", names)
+			return &worker.ExecutionResult{
+				ExecutionID:  execID,
+				ProviderName: "antigravity",
+				Status:       "FAILED",
+				Duration:     duration,
+				Error:        cause,
+				Retryable:    true,
+			}, cause
+		}
+		e.logger.Warn("Antigravity attempted denied tool actions but produced a response",
+			"task_id", task.ID, "denied_actions", names)
+	} else if !hasContent {
+		cause := fmt.Errorf("%w: empty response and no structured output", ErrEmptyResult)
+		e.logger.Warn("Antigravity returned an empty result", "task_id", task.ID, "exit_code", exitCode)
+		return &worker.ExecutionResult{
+			ExecutionID:  execID,
+			ProviderName: "antigravity",
+			Status:       "FAILED",
+			Duration:     duration,
+			Error:        cause,
+			Retryable:    true,
+		}, cause
 	}
 
 	// Reset health on verified success
