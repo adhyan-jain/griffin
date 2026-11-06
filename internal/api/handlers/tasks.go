@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,11 +40,52 @@ type RunnerWakeup interface {
 	TriggerWakeup(ctx context.Context) error
 }
 
+// PlanReconciler finishes plans whose subtasks are all done. *service.JJOrchestrator implements it.
+type PlanReconciler interface {
+	ReconcileActiveForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+// planReconcileEvery bounds how often one process re-checks a user's plans on task-list reads.
+const planReconcileEvery = 10 * time.Second
+
 type TaskHandler struct {
 	engine             *service.TaskEngine
 	taskRepo           repository.TaskRepository
 	wakeup             RunnerWakeup
 	scaleToZeroEnabled bool
+
+	reconciler    PlanReconciler
+	reconcileMu   sync.Mutex
+	lastReconcile map[uuid.UUID]time.Time
+}
+
+// WithPlanReconciler makes task-list reads finish plans whose subtasks have all completed.
+func (h *TaskHandler) WithPlanReconciler(r PlanReconciler) *TaskHandler {
+	h.reconciler = r
+	return h
+}
+
+// reconcilePlans is best effort and throttled: it never delays or fails the read it piggybacks on.
+func (h *TaskHandler) reconcilePlans(ctx context.Context, userID uuid.UUID) {
+	if h.reconciler == nil {
+		return
+	}
+	h.reconcileMu.Lock()
+	if h.lastReconcile == nil {
+		h.lastReconcile = map[uuid.UUID]time.Time{}
+	}
+	if time.Since(h.lastReconcile[userID]) < planReconcileEvery {
+		h.reconcileMu.Unlock()
+		return
+	}
+	h.lastReconcile[userID] = time.Now()
+	h.reconcileMu.Unlock()
+
+	rctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := h.reconciler.ReconcileActiveForUser(rctx, userID); err != nil {
+		slog.Warn("plan reconcile on task list failed", "user_id", userID, "error", err)
+	}
 }
 
 func NewTaskHandler(engine *service.TaskEngine, taskRepo repository.TaskRepository, wakeup RunnerWakeup, scaleToZeroEnabled bool) *TaskHandler {
@@ -157,6 +200,8 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		httputil.ErrorJSON(w, domain.ErrUnauthorized)
 		return
 	}
+
+	h.reconcilePlans(r.Context(), userID)
 
 	query := r.URL.Query()
 	filter := repository.TaskFilter{

@@ -597,3 +597,63 @@ func TestJJ_SubmitRequest_ConcurrentIdenticalSubmitsCreateOnePlan(t *testing.T) 
 		t.Fatalf("want exactly 1 accepted and %d rejected, got %d accepted, %d rejected", n-1, ok, conflict)
 	}
 }
+
+// A plan whose subtasks all finished must not stay "Running" just because the worker that finished
+// them predates the reconcile hook. Reading the task list finishes it, for that user only.
+func TestJJ_ReconcileActiveForUser_FinishesPlansWithAllChildrenDone(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "jj_stuck@example.com")
+	other := CreateTestUser(t, env.DB, "jj_stuck_other@example.com")
+
+	orch, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: userID, RequestText: "Research stuck plan recovery"})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	otherOrch, _, err := env.Orchestrator.SubmitRequest(ctx, &domain.UserRequest{UserID: other, RequestText: "Research another users plan"})
+	if err != nil {
+		t.Fatalf("submit other: %v", err)
+	}
+
+	// Finish only the first user's children the way a worker does, with NO reconcile hook.
+	for i := 0; i < 2; i++ {
+		claimed, err := env.Engine.ClaimTask(ctx, "old-worker", 60*time.Second)
+		if err != nil || claimed == nil {
+			t.Fatalf("claim %d: %v", i, err)
+		}
+		if claimed.UserID != userID {
+			t.Fatalf("expected the first user's task, got another user's")
+		}
+		if err := env.Engine.CompleteTask(ctx, claimed.ID, "old-worker", json.RawMessage(`{"response":"step done"}`)); err != nil {
+			t.Fatalf("complete %d: %v", i, err)
+		}
+	}
+	root, _ := env.TaskRepo.GetTaskByID(ctx, orch.RootTaskID)
+	if root.Status != domain.TaskStatusRunning {
+		t.Fatalf("precondition: the plan should still look Running, got %s", root.Status)
+	}
+
+	if err := env.Orchestrator.ReconcileActiveForUser(ctx, userID); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	root, _ = env.TaskRepo.GetTaskByID(ctx, orch.RootTaskID)
+	if root.Status != domain.TaskStatusCompleted {
+		t.Fatalf("a plan with every subtask done must be finished, got %s", root.Status)
+	}
+	got, _ := env.OrchRepo.GetOrchestrationByID(ctx, orch.ID, userID)
+	if got.Status != domain.OrchestrationStatusCompleted || got.FinalResponse == nil || *got.FinalResponse == "" {
+		t.Fatalf("orchestration not completed with a final response: %+v", got)
+	}
+
+	// The other user's unfinished plan is untouched.
+	otherRoot, _ := env.TaskRepo.GetTaskByID(ctx, otherOrch.RootTaskID)
+	if otherRoot.Status != domain.TaskStatusRunning {
+		t.Fatalf("another user's plan must not be touched, got %s", otherRoot.Status)
+	}
+	// Idempotent.
+	if err := env.Orchestrator.ReconcileActiveForUser(ctx, userID); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+}

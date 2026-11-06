@@ -113,6 +113,9 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 
 	taskHandler := handlers.NewTaskHandler(deps.Engine, deps.TaskRepo, deps.Wakeup, scaleToZero)
+	if deps.Orchestrator != nil {
+		taskHandler.WithPlanReconciler(deps.Orchestrator)
+	}
 	mux.Handle("POST /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.CreateTask)))
 	mux.Handle("GET /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.ListTasks)))
 	mux.Handle("GET /api/v1/tasks/{id}", userAuth(http.HandlerFunc(taskHandler.GetTask)))
@@ -139,6 +142,8 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("GET /api/v1/artifacts/{id}/download", userAuth(http.HandlerFunc(artifactHandler.DownloadArtifact)))
 	mux.Handle("GET /api/v1/artifacts/{id}/presign", userAuth(http.HandlerFunc(artifactHandler.PresignArtifact)))
 	mux.Handle("DELETE /api/v1/artifacts/{id}", userAuth(http.HandlerFunc(artifactHandler.DeleteArtifact)))
+	mux.Handle("PUT /api/v1/artifacts/{id}/text", userAuth(http.HandlerFunc(artifactHandler.UpdateArtifactText)))
+	mux.Handle("POST /api/v1/lists", userAuth(http.HandlerFunc(artifactHandler.CreateList)))
 
 	// JJ Orchestrator & Manager routes
 	if deps.Orchestrator != nil && deps.ManagerRegistry != nil {

@@ -22,6 +22,8 @@ type ArtifactRepository interface {
 	GetArtifactByObjectKey(ctx context.Context, bucket, objectKey string) (*domain.Artifact, error)
 	ListArtifacts(ctx context.Context, userID uuid.UUID, taskID *uuid.UUID) ([]*domain.Artifact, error)
 	DeleteArtifact(ctx context.Context, id uuid.UUID, userID uuid.UUID) error
+	// UpdateArtifactContentInfo records the new size and checksum after an artifact's object was rewritten.
+	UpdateArtifactContentInfo(ctx context.Context, id uuid.UUID, userID uuid.UUID, size int64, checksum string) (*domain.Artifact, error)
 }
 
 // PostgresArtifactRepository implements ArtifactRepository.
@@ -191,4 +193,18 @@ func (r *PostgresArtifactRepository) DeleteArtifact(ctx context.Context, id uuid
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func (r *PostgresArtifactRepository) UpdateArtifactContentInfo(ctx context.Context, id uuid.UUID, userID uuid.UUID, size int64, checksum string) (*domain.Artifact, error) {
+	if userID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user id is required", domain.ErrUnauthorized)
+	}
+	tag, err := r.pool.Exec(ctx, `UPDATE artifacts SET file_size_bytes = $3, checksum = $4 WHERE id = $1 AND user_id = $2`, id, userID, size, checksum)
+	if err != nil {
+		return nil, fmt.Errorf("update artifact content info: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrNotFound
+	}
+	return r.GetArtifactByIDAndUser(ctx, id, userID)
 }

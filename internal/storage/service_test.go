@@ -300,3 +300,15 @@ func TestStorageService_PresignedURL(t *testing.T) {
 		t.Fatalf("invalid expiry timestamp: %v", presigned.ExpiresAt)
 	}
 }
+
+func (m *mockArtifactRepo) UpdateArtifactContentInfo(ctx context.Context, id uuid.UUID, userID uuid.UUID, size int64, checksum string) (*domain.Artifact, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	art, ok := m.artifacts[id]
+	if !ok || art.UserID != userID {
+		return nil, domain.ErrNotFound
+	}
+	art.FileSizeBytes = &size
+	art.Checksum = &checksum
+	return art, nil
+}

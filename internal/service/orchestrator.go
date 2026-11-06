@@ -388,6 +388,27 @@ func (o *JJOrchestrator) ReconcileInFlight(ctx context.Context) error {
 	return nil
 }
 
+// ReconcileActiveForUser finishes any of the user's plans whose subtasks are all done. The worker does
+// this when a subtask finishes, but a worker built before that hook existed (or one that was down
+// when the last subtask finished) leaves plans "Running" forever. Reading the task list repairs them.
+// It is idempotent and cheap: terminal plans are skipped and only active ones are looked at.
+func (o *JJOrchestrator) ReconcileActiveForUser(ctx context.Context, userID uuid.UUID) error {
+	active, err := o.orchRepo.ListActiveOrchestrations(ctx)
+	if err != nil {
+		return fmt.Errorf("jj: list active orchestrations: %w", err)
+	}
+	var firstErr error
+	for _, orch := range active {
+		if orch.UserID != userID {
+			continue
+		}
+		if _, err := o.ReconcileOrchestration(ctx, orch.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // GetOrchestration retrieves orchestration details and child delegation records.
 func (o *JJOrchestrator) GetOrchestration(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*domain.OrchestrationRecord, []*domain.DelegationRecord, error) {
 	orch, err := o.orchRepo.GetOrchestrationByID(ctx, id, userID)

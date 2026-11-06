@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -416,4 +417,96 @@ func (h *ArtifactHandler) DeleteArtifact(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// CreateListRequest is the body of POST /api/v1/lists.
+type CreateListRequest struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
+// CreateList makes a new living list: a Markdown file marked as a list that can be appended to.
+func (h *ArtifactHandler) CreateList(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+	if h.storageSvc == nil {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: storage service is not initialized", domain.ErrValidation))
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload)
+	var req CreateListRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid JSON body")))
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: a list needs a title", domain.ErrValidation))
+		return
+	}
+	body := strings.TrimRight(req.Content, "\n ")
+	if body == "" {
+		body = "# " + title
+	}
+	created, err := h.storageSvc.SaveArtifact(r.Context(), storage.SaveArtifactInput{
+		UserID:       userID,
+		Title:        title,
+		Filename:     storage.SanitizeFilename(strings.ToLower(strings.ReplaceAll(title, " ", "-"))) + ".md",
+		ArtifactType: "MARKDOWN",
+		ContentType:  "text/markdown; charset=utf-8",
+		Body:         strings.NewReader(body + "\n"),
+		Metadata:     json.RawMessage(`{"kind":"` + storage.ListKind + `"}`),
+	})
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusCreated, created)
+}
+
+// UpdateTextRequest is the body of PUT /api/v1/artifacts/{id}/text.
+type UpdateTextRequest struct {
+	Text string `json:"text"`
+	Mode string `json:"mode"` // "replace" (default) or "append"
+}
+
+// UpdateArtifactText replaces or appends to a Markdown file the caller owns.
+func (h *ArtifactHandler) UpdateArtifactText(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+	if h.storageSvc == nil {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: storage service is not initialized", domain.ErrValidation))
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid artifact id format")))
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload)
+	var req UpdateTextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid JSON body")))
+		return
+	}
+	if req.Mode != "" && req.Mode != "replace" && req.Mode != "append" {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: mode must be replace or append", domain.ErrValidation))
+		return
+	}
+	if req.Mode == "append" && strings.TrimSpace(req.Text) == "" {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: nothing to append", domain.ErrValidation))
+		return
+	}
+	updated, err := h.storageSvc.UpdateText(r.Context(), id, userID, req.Text, req.Mode == "append", h.maxUpload)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, updated)
 }
