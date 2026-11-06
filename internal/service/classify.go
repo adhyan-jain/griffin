@@ -34,7 +34,7 @@ var (
 	questionOpenerRe = regexp.MustCompile(`^(?:what|what's|whats|why|how|who|whom|whose|when|where|which|explain|describe|tell me|define|is|are|was|were|has|have|should|can|could|would|will|(?:do|does|did) (?:you|i|it|the|a|an|we|they|he|she|this|that|my))\b`)
 
 	// Imperatives that are always a request for work.
-	objectiveVerbRe = regexp.MustCompile(`^(?:research|investigate|compare|analy[sz]e|audit|draft|build|create|prepare|plan|compile|benchmark|evaluate|find|gather|collect|design|develop|implement|review)\b`)
+	objectiveVerbRe = regexp.MustCompile(`^(?:research|investigate|compare|analy[sz]e|audit|draft|build|create|prepare|plan|compile|benchmark|evaluate|find|gather|collect|design|develop|implement|review|fix|debug|refactor|optimi[sz]e|migrate)\b`)
 	// Imperatives that only count when a deliverable is named.
 	conditionalVerbRe = regexp.MustCompile(`^(?:write|summari[sz]e|produce|generate|make|put together|give me|draw up)\b`)
 
