@@ -319,3 +319,48 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Rationale**: Essential for scale-to-zero compute where workers start on demand and execute background AI workflows without active SSH/SSM sessions.
 - **Location**: [`infra/user-data.sh`](file:///home/adhyan/Desktop/griffin/infra/user-data.sh), [`docs/ANTIGRAVITY_CLOUD_RUNNER.md`](file:///home/adhyan/Desktop/griffin/docs/ANTIGRAVITY_CLOUD_RUNNER.md)
 
+
+### JJ-not-responding incident (2026-11) — decisions
+
+#### ADR-047: Chat turns are tasks, with no schema migration
+- **Status**: IMPLEMENTED (not yet deployed)
+- **Decision**: `POST /api/v1/jj/messages` stores a conversational turn as a task (`manager_domain "JJ"`, `input_payload {kind:"chat", conversation_id, history}`). Its output is `{response, provider{name,version,model}}`. Only the last 10 turns (2000 chars each) are sent as history.
+- **Rationale**: Chat reuses the existing lease, retry, RLS and reaper machinery and needs no migration. Before this there was no chat path, so every message became a repo-diagnosis task.
+- **Trade-off**: The thread is not restored after a refresh (only `conversation_id` is kept in sessionStorage).
+- **Location**: `internal/api/handlers/jj_chat.go`, `internal/worker/worker.go`, `docs/api/jj-messages.md`
+
+#### ADR-048: Rule-based message classification (conversation vs objective)
+- **Status**: IMPLEMENTED
+- **Decision**: `service.ClassifyMessage` is a deterministic rule-based classifier. Conversation goes to a chat task; an objective goes through the orchestrator planner.
+- **Rationale**: No model call is needed to decide routing, so routing works when the provider is down. `AIPlanner` is still not wired in.
+
+#### ADR-049: Empty or tool-denied agy output is a failure, never a success
+- **Status**: IMPLEMENTED
+- **Decision**: agy exiting 0 with an empty response, or with `denied_actions`, becomes `ErrEmptyResult` or `ErrToolPermissionDenied` (retryable). The worker also fails any task whose output is empty, and fails a chat task whose response text is blank. The orchestrator's final response carries real step text and the task goes FAILED if a step produced nothing.
+- **Rationale**: Root cause of the incident. A denied `RunCommand` produced exit 0, SUCCESS and an empty response, which the worker accepted as a completed task.
+- **Rejected**: `--dangerously-skip-permissions` and allow-rules. The runner stays text-only with no tool approval, for security.
+
+#### ADR-050: Runner wake failures are surfaced, not swallowed
+- **Status**: IMPLEMENTED
+- **Decision**: The wake outcome (signaled, skipped, failed, disabled) is returned with the response. `ErrInsufficientCapacity` yields a clear message ("AWS has no capacity for the worker instance right now; it will retry"). Wake is bounded to 8s.
+- **Rationale**: t4g.medium in ap-south-1b repeatedly hit InsufficientInstanceCapacity and the user saw nothing. Changing the instance type or AZ is infrastructure and needs approval, so it was not done.
+
+#### ADR-051: agy version drift is logged, not pinned
+- **Status**: IMPLEMENTED (logging only)
+- **Decision**: The executor logs the agy version, exit code and denied actions, and caps logged stderr. Auto-update (1.4.12 → 1.5.0 → 1.5.1) is not disabled.
+- **Open**: Pinning needs an infra change.
+
+#### ADR-052: Frontend polling is bounded and deduplicated
+- **Status**: IMPLEMENTED & DEPLOYED (request-storm fix)
+- **Decision**: All polling goes through `lib/poll.ts` and `use-polling.ts`. Identical in-flight GETs are deduplicated with ref-counted aborts. Polling backs off, stops on terminal states and pauses while the tab is hidden. `scripts/measure-polling` counts requests in a real browser.
+- **Rationale**: A redesign bug caused about 1,674 requests per scenario; the fix brought it to 52.
+
+#### ADR-053: Canonical-origin redirect and exact-origin CORS
+- **Status**: IMPLEMENTED & DEPLOYED
+- **Decision**: CORS allows only `https://griffin-pwa.vercel.app`. In production, non-canonical Vercel hosts redirect to it.
+
+#### ADR-054: Backend deploys go through one dry-run-by-default script
+- **Status**: IMPLEMENTED (script uncommitted until this entry), not run with `--apply`
+- **Decision**: `infra/ops/deploy-backend.sh lambda|worker|all|rollback-worker [--apply]` refuses a dirty tree, smoke-tests the API after a Lambda deploy, and checks the sha256 of a worker binary, keeps a `.prev` copy and auto-restores on a failed health check.
+- **Constraint**: It creates no infrastructure and never changes IAM or launches new instances. The Lambda call set (`GetFunctionConfiguration`, `UpdateFunctionCode --publish`) is already covered by policy `D`. The worker path depends on policy `A` (EC2/SSM/S3).
+- **Rejected**: Widening IAM with `ListVersionsByFunction`, `ListAliases`, `GetAlias`, `GetPolicy` or `ListTags`. The script never calls them.
