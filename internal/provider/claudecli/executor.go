@@ -87,7 +87,8 @@ func (e *Executor) ResetHealth() { e.healthy.Store(true) }
 
 const preamble = `You are a specialist inside Griffin, an AI workforce. Do the one step you are given.
 Answer in clear Markdown: a one-line answer first, then short sections, bullets for lists, tables for comparisons.
-You have NO tools: do not run commands, open files or browse. If you lack a fact, say so; never invent sources or URLs.`
+You have NO tools: do not run commands, open files or browse. If you lack a fact, say so; never invent sources or URLs.
+If you find no relevant information, say so in one plain sentence (for example: I couldn't find any information about this.) instead of returning nothing.`
 
 type taskPrompt struct {
 	Prompt string `json:"prompt"`

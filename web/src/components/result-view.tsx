@@ -69,7 +69,7 @@ export function MarkdownText({ text }: { text: string }) {
  * readable text falls back to wrapped JSON (never a sideways scrollbar).
  */
 export function ResultView({ payload, title }: { payload: unknown; title: string }) {
-  const { text, rest } = parseResult(payload);
+  const { text, rest, noInfo, trimmed } = parseResult(payload);
   const [raw, setRaw] = useState(false);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -129,6 +129,17 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
     URL.revokeObjectURL(url);
   };
 
+  if (noInfo) {
+    return (
+      <section aria-label="Result" className="rounded-2xl border bg-card px-4 py-5 md:px-6">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <FileText className="size-4 text-primary" /> Result
+        </h2>
+        <p className="mt-2 text-[15px] leading-7 text-muted-foreground">No information was found for this. Try rephrasing it or adding more detail.</p>
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Result" className="overflow-hidden rounded-2xl border bg-card">
       <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
@@ -154,6 +165,11 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
         </div>
       </div>
 
+      {trimmed && (
+        <p className="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground md:px-6">
+          Shortened after a week to keep things tidy. The full answer is in this task&apos;s Files tab.
+        </p>
+      )}
       <div className="relative">
         <div className={cn("px-4 py-4 text-[15px] md:px-6 md:py-5", long && !open && !showRaw && "max-h-[24rem] overflow-hidden")}>
           {showRaw ? (

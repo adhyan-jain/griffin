@@ -848,3 +848,58 @@ func scanTask(s scannable) (*domain.Task, error) {
 	}
 	return &t, nil
 }
+
+// CompactResult counts what CompactFinishedTasks removed or shortened.
+type CompactResult struct {
+	Events, Attempts, Trimmed int64
+}
+
+// TaskCompactor trims old finished tasks down to what is worth keeping.
+type TaskCompactor interface {
+	CompactFinishedTasks(ctx context.Context, olderThan time.Time, keepChars int) (CompactResult, error)
+}
+
+// CompactFinishedTasks keeps finished tasks lean once they are older than the cutoff: their activity
+// and attempt history is removed, and a long answer is shortened to its first keepChars characters,
+// but only when the full answer is kept as a file for that task. Title, goal, status, timestamps and
+// any playbook (a separate file) stay. Running, waiting and recent tasks are never touched.
+func (r *PostgresTaskRepository) CompactFinishedTasks(ctx context.Context, olderThan time.Time, keepChars int) (CompactResult, error) {
+	var res CompactResult
+	if keepChars < 100 {
+		keepChars = 100
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return res, fmt.Errorf("compact: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const old = `SELECT id FROM tasks WHERE status IN ('COMPLETED','FAILED','CANCELLED') AND COALESCE(completed_at, updated_at) < $1`
+	tag, err := tx.Exec(ctx, `DELETE FROM task_events WHERE task_id IN (`+old+`)`, olderThan)
+	if err != nil {
+		return res, fmt.Errorf("compact: events: %w", err)
+	}
+	res.Events = tag.RowsAffected()
+	tag, err = tx.Exec(ctx, `DELETE FROM task_attempts WHERE task_id IN (`+old+`)`, olderThan)
+	if err != nil {
+		return res, fmt.Errorf("compact: attempts: %w", err)
+	}
+	res.Attempts = tag.RowsAffected()
+	tag, err = tx.Exec(ctx, `
+		UPDATE tasks t
+		SET output_payload = jsonb_build_object('response', left(t.output_payload->>'response', $2) || '…', 'trimmed', true)
+		WHERE t.status IN ('COMPLETED','FAILED','CANCELLED')
+		  AND COALESCE(t.completed_at, t.updated_at) < $1
+		  AND jsonb_typeof(t.output_payload->'response') = 'string'
+		  AND length(t.output_payload->>'response') > $2
+		  AND COALESCE(t.output_payload->>'trimmed', '') <> 'true'
+		  AND EXISTS (SELECT 1 FROM artifacts a WHERE a.task_id = t.id)`, olderThan, keepChars)
+	if err != nil {
+		return res, fmt.Errorf("compact: trim: %w", err)
+	}
+	res.Trimmed = tag.RowsAffected()
+	if err := tx.Commit(ctx); err != nil {
+		return res, fmt.Errorf("compact: commit: %w", err)
+	}
+	return res, nil
+}

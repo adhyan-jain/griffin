@@ -124,7 +124,9 @@ export default function FilesPage() {
                   <FileText className="size-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{f.title}</p>
+                  <Link href={`/artifacts/${f.id}`} className="block truncate text-sm font-medium hover:underline">
+                    {f.title}
+                  </Link>
                   <p className="truncate text-xs text-muted-foreground">
                     {[f.artifact_type.toLowerCase(), formatBytes(f.file_size_bytes), timeAgo(f.created_at)].filter(Boolean).join(" · ")}
                   </p>
@@ -136,6 +138,11 @@ export default function FilesPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    <DropdownMenuItem asChild className="min-h-10">
+                      <Link href={`/artifacts/${f.id}`}>
+                        <FileText /> Open
+                      </Link>
+                    </DropdownMenuItem>
                     <DropdownMenuItem className="min-h-10" onSelect={() => void download(f)}>
                       <Download /> Download
                     </DropdownMenuItem>

@@ -32,6 +32,7 @@ type Config struct {
 	AgyReadArgs                []string // extra agy flags for the read tier
 	AgyActArgs                 []string // extra agy flags for the act tier
 	AgyEffort                  string   // optional --effort level
+	TaskCompactAfterDays       int      // finished tasks older than this are trimmed; 0 disables
 	AntigravityBinary          string   // path or command name, default "agy"
 	MaxConcurrentAntigravity   int      // default 1, maximum 2
 	ExecutionTimeoutSeconds    int      // default 300
@@ -123,6 +124,7 @@ func Load() (*Config, error) {
 		AgyReadArgs:                     strings.Fields(getEnv("AGY_READ_ARGS", "--mode plan --sandbox")),
 		AgyActArgs:                      strings.Fields(getEnv("AGY_ACT_ARGS", "--mode accept-edits --sandbox")),
 		AgyEffort:                       getEnv("AGY_EFFORT", ""),
+		TaskCompactAfterDays:            getEnvAsInt("TASK_COMPACT_AFTER_DAYS", 7),
 		AntigravityBinary:               getEnv("ANTIGRAVITY_BINARY", "agy"),
 		MaxConcurrentAntigravity:        getEnvAsInt("MAX_CONCURRENT_ANTIGRAVITY", 1),
 		ExecutionTimeoutSeconds:         getEnvAsInt("EXECUTION_TIMEOUT_SECONDS", 300),

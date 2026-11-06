@@ -447,3 +447,10 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Decision**: The research split is kept only when the request explicitly asks for sourced research (research, sources, cite, evidence, literature, investigate, deep dive, look up, fact-check, survey, state of the art). Everything else is one step carrying the whole request. Engineering and career keep their two steps because those separate a step that needs approval.
 - **Expected effect**: roughly half the agent time for plain asks; no change for explicit research.
 - **Location**: `internal/service/planner.go` (`wantsSourcedResearch`, `singleStep`), `internal/service/planner_test.go`
+
+#### ADR-066: Files open in the app; empty answers say so; old finished tasks are trimmed
+- **Status**: IMPLEMENTED (not yet deployed); trimming runs in the worker, so it needs the worker replaced.
+- **Decision**: Every file has an in-app page (`/artifacts/[id]`): Markdown formatted, JSON and text readable, images and PDFs inline, other types a download button. A run whose answer is empty shows "No information was found for this" instead of an empty card or raw data, and the agent prompts ask it to say so in a sentence. Finished tasks older than 7 days (`TASK_COMPACT_AFTER_DAYS`, 0 disables) lose their activity and attempt history, and an answer longer than ~600 characters is shortened **only when the full answer is stored as a file for that task**; title, goal, status, timestamps and playbooks stay; running and recent tasks are never touched. The task page says when an answer was shortened.
+- **Why**: Files were saved but could only be downloaded, so they were invisible in practice. Old tasks piled up long text nobody reads again, while the file already holds the full answer.
+- **Limit**: There is no per-task "keep forever" flag yet; a result worth reusing should be saved to a list (or become a playbook), which are separate files that trimming never touches.
+- **Location**: `web/src/app/artifacts/[id]/page.tsx`, `web/src/lib/result-text.ts`, `internal/repository/task_repo.go` (`CompactFinishedTasks`), `cmd/griffin-server/main.go`, `tests/task_lifecycle_test.go`

@@ -538,6 +538,7 @@ export const api = {
   listArtifacts: (taskId?: string, opts?: ReqOpts) =>
     fetchList<Artifact>(`/api/v1/artifacts${taskId ? `?task_id=${taskId}` : ""}`, opts),
   getPresignedUrl: (id: string) => fetchWithAuth<{ url: string; expires_at: string }>(`/api/v1/artifacts/${id}/presign`),
+  getArtifact: (id: string, opts?: ReqOpts) => fetchWithAuth<Artifact>(`/api/v1/artifacts/${id}`, opts),
   /** Living lists: Markdown files a task or you can keep adding to. */
   createList: (title: string, content?: string) => fetchWithAuth<Artifact>("/api/v1/lists", { method: "POST", body: JSON.stringify({ title, content }) }),
   updateArtifactText: (id: string, text: string, mode: "append" | "replace") =>

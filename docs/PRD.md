@@ -69,13 +69,16 @@ Status as of 2026-11-06 14:20 UTC, after the last ship.
 - **Look and feel:** ink-and-brass design system, Syne display type with Geist; a live WebGL deep field behind every screen; an obsidian JJ core with molten veins as the home hero (running tasks glow, finished ones fade); frosted glass cards; kinetic headlines, count-up numbers, route reveals, magnetic buttons, a cursor ring, inertial scroll and a once-per-session boot animation; all of it respects reduced motion and the effects switch, and touch devices get no pointer effects.
 
 ### 4.2 Built and committed, not yet shipped
-- Login screen restyled to match the rest of the app.
-- Deploy scripts no longer print the Lambda environment (the 2026-11-06 leak).
+- **One-step fast path:** plain asks run as one step instead of gather-then-synthesize.
+- **File viewer in the app:** every file (results, lists, playbooks, uploads) opens in the app: Markdown formatted, JSON and text readable, images and PDFs inline, anything else a download button; reachable from Files and from a task's Files tab (previously files could only be downloaded).
+- **Empty answers say so:** a run that comes back with nothing shows "No information was found for this", and the agent prompts ask it to say so in a sentence instead of returning nothing.
+- **Old tasks stay lean:** finished tasks older than 7 days lose their activity and attempt history, and a long answer is shortened to ~600 characters *only when the full answer is saved as a file*; title, goal, status and playbooks stay. Runs on the worker at start and every 6 hours (`TASK_COMPACT_AFTER_DAYS`, 0 turns it off). The task page tells you when an answer was shortened.
+- **Login screen** restyled to match the app; **deploy scripts** no longer print the Lambda environment; **docs** cleaned up to the PRD, `decisions.md` and `evolution.md`; credential-rotation runbook.
 
 ### 4.3 Built, but waiting for the worker to be replaced
 The production worker binary is from **2 Nov**. Everything below runs in the worker, so it is not active until the worker is replaced (`infra/ops/deploy-backend.sh worker`):
 - Finishing a plan the moment its last step completes (today only startup and task-list reads do it).
-- Saving every finished answer as a file.
+- Saving every finished answer as a file (and the trimming of old tasks above).
 - Not counting running plans as work in the idle check (the old build can keep the runner awake).
 - Provider routing, tool tiers and playbooks (below).
 
@@ -129,8 +132,10 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 | Keep files for tasks where info should be stored, e.g. a list when applying to internships | Lists and Save to list live; tasks writing to lists on their own is Phase 3 |
 | Product-grade UI/UX everywhere | Every page reviewed at phone and desktop size; login fixed; real-device check pending |
 | Give agy tools, with approvals | Built and tested, off; validation is Phase 2 |
-| Delete all tasks in the database | Owner to do from the app (Tasks, Select, Select all, Delete) or the Supabase SQL editor; the assistant has no session or database access |
-| Access my mobile apps | Planned (section 7.4); not built |
+| Delete all tasks in the database | Owner does it from the app (Tasks, Select all, Delete); the assistant has no session or database access |
+| Access my mobile apps | Planned (sections 7.4 and 9, Phase 4); not built |
+| View saved files in the app, no placeholders, say so when there is no information, trim old finished tasks | Built, not shipped (4.2) |
+| Phone access, use my own Claude, no guardrails, a self-hosted model | Answered in 7.8 and 7.9; decisions in section 11 |
 | Only maintain decisions, evolution and the PRD | Done (other Markdown docs removed; recoverable from git) |
 
 ---
@@ -192,6 +197,35 @@ Use the official API or the web version first; drive the real app only when ther
 - **P1** Confirm smoothness on a real mid-range phone (60 fps Full, 30 fps Lite).
 - **P2** One home view: what is running, what needs you, what finished.
 
+### 7.8 Models, guardrails and "all access"
+"Guardrails" means three different things, and they should not be treated the same:
+
+| Kind | Who sets it | Can we remove it? | Should we? |
+|---|---|---|---|
+| **Model refusals** (a hosted model declines some wording or topics) | The model vendor | Only by using a model that does not refuse (self-hosted open weights) | Yes for *drafting your own messages*, in your own voice |
+| **Approval gates, allow-lists, spending caps** | Griffin (ours) | Yes, they are our code | **No.** They are not about what the model *says*, they are about what it can *do*. An agent with full access and no confirmation can be steered by anything it reads (a web page, an email, a chat message: "prompt injection") into sending messages, deleting files or paying, and it makes mistakes at machine speed |
+| **Platform rules** (WhatsApp, LinkedIn terms) | The platforms | No | Respect them; account bans are the cost |
+
+**Recommended design: separate the voice from the authority.**
+- **Voice (writes text):** a self-hosted open-weights model (Ollama) with no refusals, used only to *draft* text in your tone: replies, messages to friends, any wording you want. Your words are your call. Output is a draft; Griffin never needs the model to be "safe" for this job.
+- **Authority (does things):** a strong hosted agent (agy now, Claude when enabled) does planning and tool use. Its permissions are ours: allow-lists, per-action approvals and a kill switch, tuned by **trust levels**, not by removing them. Example: auto-send replies to contacts on your allow-list; always ask before money, deletes, new contacts or anything irreversible.
+- **"Give it all access"** is therefore delivered as *more trust over time* (allow-lists you grow, an auto mode for a class of action after you have watched it work), never as "no checks".
+
+**Self-hosted model options (decision needed):**
+| Option | Pros | Cons |
+|---|---|---|
+| Ollama on **your own computer** (reached from the worker over a private tunnel such as Tailscale) | No new cloud cost, no GPU bill, your data stays home | Your machine must be on; quality limited by your hardware |
+| Ollama on a **cloud GPU instance** | Always available | Costs far more than the current setup, which breaks "scale to zero, no unnecessary infrastructure"; needs a new instance (needs your explicit approval) |
+| Hosted uncensored model API | Easy | A new paid dependency; conflicts with "no paid API fallback" unless you approve it |
+
+**Honest limits:** open-weights models are weaker than the hosted agent at following long tool instructions, so they are a poor choice for *driving* complex tasks and a good choice for *writing*. The routing built in ADR-059 already separates steps by what they need; the voice model would be a third engine for "draft" steps. Not building anything aimed at harassing or abusing people at scale; your own messages to your own contacts are yours.
+
+### 7.9 Using it from your phone
+- **Front end:** `https://griffin-pwa.vercel.app`. It is an installable PWA: open it in Chrome (Android) or Safari (iPhone) and choose **Add to Home Screen**; it then opens full screen like an app. Sign in with your Supabase account.
+- **"Use my Claude from my phone":** the Claude app on your phone cannot be driven by Griffin, and a phone cannot lend its logged-in session to a server. What *is* possible: sign the Claude CLI in **once on the worker** (device login with your own account, no API key), after which Griffin uses that login for language steps. That is a credential living on the worker (as sensitive as a password; encrypted disk, no remote access except the platform's session manager). Check the Claude terms for automated use of a consumer subscription before relying on it.
+- **Your apps from the phone:** see section 7.4: Layer 2 (web versions) and Layer 3 (an Android bridge) are how Griffin operates apps; iOS only supports Shortcuts into Griffin.
+- **Credentials on the worker are unavoidable** for anything that logs in for you; the design choice is to store them in the cloud parameter store (encrypted) or as saved browser sessions, never in prompts, files or logs.
+
 ---
 
 ## 8. Operations
@@ -219,21 +253,79 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 
 ---
 
-## 9. Roadmap
+## 9. Plan to finish
 
-| Phase | Outcome | Exit criteria |
-|---|---|---|
-| 0. Stabilize | Nothing stuck, nothing leaked | Worker replaced; credentials rotated; API logs readable; wake failures explained |
-| 1. Fast | Answers feel instant | Fast path, streaming, warm window, parallel steps; simple answer p50 < 15 s |
-| 2. Research | The read tier works | Tools on; read tier validated; live per-task view; playbooks seen working |
-| 3. Acts for you | Applications, email, forms | Act tier in the browser with approvals; Gmail and Calendar; the internship journey passes |
-| 4. Your apps | WhatsApp and Android | WhatsApp Web read and approved replies; Android bridge for one app |
-| 5. Smarter | Two engines and memory | Claude on for language steps; profile; tasks append to lists themselves |
+**Order of work, what each step needs, and how we know it is done.** Effort: S under a day, M a few days, L about a week or more. "You" marks something only the owner can do or decide.
+
+### Phase 0: Stabilize (do first; unblocks everything)
+| # | Work | Effort | Needs | Done when |
+|---|---|---|---|---|
+| 0.1 | Ship the waiting commits (`ship.sh --apply`) | S | You run it | Live checks pass: new routes 401, web has the file viewer and Save to list |
+| 0.2 | Replace the worker binary (`deploy-backend.sh worker`, dry run first) | S | You approve and run it | Worker reports the new build; plans finish the instant their last step ends; the runner reaches idle shutdown; saved files and compaction log lines appear |
+| 0.3 | Add the worker step to `ship.sh` and a build-version check (worker reports its commit; the app warns when it is older than the API) | M | none | A stale worker is visible in Settings |
+| 0.4 | Rotate the exposed credentials (PRD 8.3) | S | You | Sign-in works, one task completes, old values retired |
+| 0.5 | Make API logs readable: grant read on `/aws/lambda/griffin-api` only (a narrow policy), or ship logs to a place already readable | S | You decide on a narrow log-read policy | We can see why a wake failed |
+| 0.6 | Diagnose why the runner sometimes does not wake (likely the Lambda role's EC2 permission or a cooldown) using 0.5 | S | 0.5 | A submit on a stopped runner starts it, proven twice |
+| 0.7 | Delete your old tasks from the app (Tasks, Select all, Delete); check on your phone | S | You | Clean list; you report what feels off |
+
+### Phase 1: Fast
+| # | Work | Effort | Needs | Done when |
+|---|---|---|---|---|
+| 1.1 | One-step fast path | done | ship | Plain ask returns in one agent run |
+| 1.2 | Warm window: `IDLE_SHUTDOWN_SECONDS=900` | S | worker env change | A second task within 15 min starts without a boot |
+| 1.3 | Two agents at once: `MAX_CONCURRENT_ANTIGRAVITY=2` (hard cap 2; the instance has ~3.8 GB RAM and the worker uses well under 1 GB) | S | worker env change | Two independent steps overlap in the log |
+| 1.4 | Capture one real streaming run (`agy --output-format stream-json`) on the worker to learn the event format | S | You allow one test prompt | A saved sample of real events |
+| 1.5 | Streaming to the app: events become task activity as they happen; the app shows them live (server-sent events, falling back to the existing adaptive polling) | L | 1.4 | First words visible within 3 s of the agent starting |
+| 1.6 | Effort tiers: low reasoning effort for simple steps, default for hard ones (`AGY_EFFORT`, per-step) | S | 1.4 to judge quality | Simple answers are measurably faster with no quality loss on a sample of 10 |
+| 1.7 | Reuse a warm conversation for follow-ups (`--conversation`) | M | 1.4 | A follow-up skips the cold start |
+| 1.8 | Timing dashboard: p50 and p95 per step type from the attempts table, in Settings | M | none | Numbers on screen match section 10 targets |
+
+### Phase 2: Real work (research with tools)
+| # | Work | Effort | Needs | Done when |
+|---|---|---|---|---|
+| 2.1 | Turn on `AGY_TOOLS_ENABLED=true` on the worker; run three read-only research tasks while we watch the logs | S | You | Cited sources; nothing changed; flags confirmed under `--sandbox` |
+| 2.2 | Live per-task view (built on 1.5): steps, pages visited, commands | M | 1.5 | You can watch a running task from your phone |
+| 2.3 | Playbooks observed: run the same kind of task twice | S | 2.1 | Second run is faster and shows the notes |
+| 2.4 | Browser automation: headless Chromium (Playwright) with a per-task profile on the worker; screenshots attached to the task | L | 2.1 | A task opens a site, reads a page and attaches a screenshot |
+| 2.5 | Credentials vault: SecureString parameters, worker fetches at use time, never in prompts or logs | M | 2.4 | A login works with the secret absent from every log |
+| 2.6 | Code sandbox for data tasks | M | 2.1 | A CSV task runs isolated and returns a file |
+
+### Phase 3: Acts for you
+| # | Work | Effort | Needs | Done when |
+|---|---|---|---|---|
+| 3.1 | Approval UX: show the exact action, the page and a screenshot before and after | M | 2.4 | You can approve from the phone with full context |
+| 3.2 | Profile (resume, links, standard answers): a table and a Settings screen | M | a migration (approval) | Tasks can read it; nothing else can |
+| 3.3 | Tasks append to lists themselves: a `list` field on a step; on success a row is added | M | none | The internship tracker grows without you |
+| 3.4 | Web Push for "needs approval" and "finished" | M | VAPID keys and a subscription table (migration) | Phone notification arrives |
+| 3.5 | Gmail and Calendar connectors (OAuth): read and draft; send with approval | L | You create a Google Cloud OAuth client | Summary of today's mail; a drafted reply waiting for approval |
+| 3.6 | The internship journey end to end (acceptance journey 1) | M | 2.4, 3.1 to 3.3 | Shortlist, drafts, approved submissions, screenshots, tracker rows |
+| 3.7 | Trust levels: allow-lists and an auto mode per action class; kill switch; audit log | M | none | You can pause everything in one tap; every action is logged |
+
+### Phase 4: Your apps
+| # | Work | Effort | Needs | Done when |
+|---|---|---|---|---|
+| 4.1 | WhatsApp Web: pair once (QR), keep the session on the worker; read, summarise, draft; each send approved | L | You scan the QR; accept the terms risk | Acceptance journey 2 passes |
+| 4.2 | Android bridge for one chosen app (ADB over a secure tunnel, UI automation, screenshots) | L | You choose the device (spare phone, your phone, or an emulator) | One real action in one app, with before and after screenshots |
+| 4.3 | iOS Shortcut "Send to JJ" and a share-sheet action | S | none | Anything shared from an iPhone arrives as a task |
+
+### Phase 5: Models and memory
+| # | Work | Effort | Needs | Done when |
+|---|---|---|---|---|
+| 5.1 | Claude on the worker for language steps (one-time CLI sign-in; `CLAUDE_ENABLED=true`) | S | You sign in | A drafting step runs on Claude; falls back to agy if signed out |
+| 5.2 | Voice model: Ollama on your own machine over a private tunnel, used only for drafting text in your tone | M | You choose where it runs (section 7.8) | A "draft my reply" step uses it and returns a draft |
+| 5.3 | Engine policy per step: tool steps to agy, hard writing to Claude, tone drafts to the voice model | M | 5.1, 5.2 | The router records which engine ran each step |
+| 5.4 | Search across results, files, lists, playbooks | M | none | One search box finds anything |
+
+### Cross-cutting (every phase)
+- **Tests:** each feature ships with Go tests (real Postgres) and a check added to `e2e-real.mjs`; CI (`.github/workflows/ci.yml`) must stay green.
+- **Docs:** update this PRD (section 4) and `decisions.md` with every change; `evolution.md` at phase ends.
+- **Security:** no secret in any log, prompt, result or chat; deploy tooling never prints configuration; secrets only in the parameter store.
+- **Verification:** nothing is called done until it is checked live (API route, bundle, worker log), and UI changes are checked at phone and desktop size; the owner confirms feel on a real phone.
 
 **Acceptance journeys**
 1. *"Apply to every internship I'm eligible for this week."* Search job boards (read); shortlist into the Internship tracker with links and deadlines; draft each application from your profile; you approve each submission (act); each submitted one gets a screenshot and a tracker row. Next week it reuses the playbook and is faster.
-2. *"What did my family group say on WhatsApp today? Draft replies."* Summary and drafts; nothing sent without per-message approval.
-3. *"Plan a weekly status report."* One step, streamed, < 15 s.
+2. *"What did my family group say on WhatsApp today? Draft replies."* Summary and drafts; nothing sent without per-message approval (or auto-send for allow-listed contacts once you enable it).
+3. *"Plan a weekly status report."* One step, streamed, under 15 s.
 4. *"Compare these three laptops under ₹80k with sources."* Cited table, saved as a file.
 
 ---
@@ -264,3 +356,5 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 3. Android: a spare phone, your phone in developer mode, or a cloud emulator.
 4. A monthly compute ceiling.
 5. Whether Claude (signed-in, no API billing) is in scope.
+6. Where a self-hosted voice model would run (your own computer over a tunnel, a cloud GPU instance, or not at all) and whether the trust-level design in 7.8 is what you want in place of "no guardrails".
+7. A narrow read-only grant for the API's logs (0.5), so failures can be diagnosed.

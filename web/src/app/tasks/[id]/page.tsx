@@ -15,6 +15,7 @@ import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
 import { Kinetic } from "@/components/fx/kinetic";
 import { ResultView } from "@/components/result-view";
+import { isEmptyAnswerFailure } from "@/lib/result-text";
 import { deriveNow } from "@/lib/task-now";
 import { usePolling } from "@/lib/use-polling";
 import { canDelete, canResume, canRunAgain, isPlan, runAgain } from "@/lib/task-actions";
@@ -286,7 +287,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             <h2 className="mb-1.5 text-sm font-semibold">Goal</h2>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{task.goal}</p>
           </section>
-          {task.failure_reason && <ErrorNote message={task.failure_reason} />}
+          {task.failure_reason &&
+            (isEmptyAnswerFailure(task.failure_reason) ? (
+              <p className="rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">No information was found for this request. Try rephrasing it or adding more detail.</p>
+            ) : (
+              <ErrorNote message={task.failure_reason} />
+            ))}
           {hasJSON(task.output_payload) && (
             <ResultView payload={task.output_payload} title={task.title || task.goal} />
           )}
@@ -347,7 +353,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               {files.map((f) => (
                 <li key={f.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{f.title}</p>
+                    <Link href={`/artifacts/${f.id}`} className="block truncate text-sm font-medium hover:underline">
+                      {f.title}
+                    </Link>
                     <p className="text-xs text-muted-foreground">
                       {f.artifact_type.toLowerCase()} · {formatBytes(f.file_size_bytes)}
                     </p>
