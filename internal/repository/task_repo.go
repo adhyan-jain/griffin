@@ -30,6 +30,8 @@ type TaskRepository interface {
 	CreateTask(ctx context.Context, task *domain.Task) (*domain.Task, error)
 	GetTaskByID(ctx context.Context, id uuid.UUID) (*domain.Task, error)
 	GetTaskByIDAndUser(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*domain.Task, error)
+	// GetTaskByIdempotencyKey returns the live (not CANCELLED/FAILED) task holding the key for the user.
+	GetTaskByIdempotencyKey(ctx context.Context, userID uuid.UUID, key string) (*domain.Task, error)
 	ListTasks(ctx context.Context, filter TaskFilter) ([]*domain.Task, error)
 	UpdateTask(ctx context.Context, task *domain.Task) error
 	ClaimNextTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*domain.Task, error)
@@ -130,6 +132,27 @@ func (r *PostgresTaskRepository) GetTaskByID(ctx context.Context, id uuid.UUID) 
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("get task by id: %w", err)
+	}
+	return t, nil
+}
+
+func (r *PostgresTaskRepository) GetTaskByIdempotencyKey(ctx context.Context, userID uuid.UUID, key string) (*domain.Task, error) {
+	query := `
+		SELECT 
+			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
+			manager_domain, title, goal, input_payload, output_payload,
+			status, priority, idempotency_key, leased_by, lease_expires_at,
+			retry_count, max_retries, failure_reason, scheduled_for, started_at, completed_at,
+			created_at, updated_at
+		FROM tasks
+		WHERE user_id = $1 AND idempotency_key = $2 AND status NOT IN ('CANCELLED', 'FAILED')
+	`
+	t, err := scanTask(r.pool.QueryRow(ctx, query, userID, key))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("get task by idempotency key: %w", err)
 	}
 	return t, nil
 }
