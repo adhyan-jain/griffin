@@ -46,7 +46,9 @@ deploy_lambda() {
     PREV="$(aws lambda get-function-configuration --function-name "$FN" --query CodeSha256 --output text)"
     echo "previous CodeSha256: $PREV (rebuild that commit with scripts/package-lambda.sh to roll back)"
   fi
-  run aws lambda update-function-code --function-name "$FN" --zip-file fileb://build/griffin-api.zip --architectures arm64 --publish
+  # --query keeps the function's environment (database URLs, API keys) out of the output and any log of it.
+  run aws lambda update-function-code --function-name "$FN" --zip-file fileb://build/griffin-api.zip --architectures arm64 --publish \
+    --query '{Version:Version,CodeSha256:CodeSha256,LastModified:LastModified,State:State}' --output json
   run aws lambda wait function-updated --function-name "$FN"
   [ "$APPLY" -eq 1 ] && smoke_api || echo "(after --apply: smoke test of /healthz, /api/v1/system/status and /api/v1/jj/messages)"
 }

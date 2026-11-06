@@ -63,9 +63,10 @@ done
 DESC="Vercel build finished with success (was: $STATE)"
 check test "$STATE" = success
 
-DESC="live web serves the new code (Save to list)"
+DESC="live web serves the new code (Save to list, in the task and list routes)"
 found=0
-for p in / /tasks; do
+# "Save to list" lives in the task-detail and Lists chunks, which the home page does not load.
+for p in /lists /tasks/00000000-0000-0000-0000-000000000000; do
   for c in $(curl -s "$WEB$p" | grep -o '/_next/static/[^"\\]*\.js' | sort -u); do
     curl -s "$WEB$c" | grep -q 'Save to list' && found=1 && break 2
   done
