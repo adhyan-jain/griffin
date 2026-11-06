@@ -1,6 +1,12 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/manager"
+)
 
 // classifyIntent must match whole words. Substring matching misrouted "report" to engineering
 // because it contains "repo", and "latest" because it contains "test".
@@ -40,6 +46,35 @@ func TestClassifyIntent(t *testing.T) {
 	for _, tc := range cases {
 		if got := classifyIntent(tc.text); got != tc.want {
 			t.Errorf("classifyIntent(%q) = %q, want %q", tc.text, got, tc.want)
+		}
+	}
+}
+
+// Plain asks are answered in one step; only an explicit research ask keeps the gather-then-synthesize split.
+func TestRuleBasedPlanner_FastPathForPlainAsks(t *testing.T) {
+	reg := manager.NewDefaultRegistry()
+	p := NewRuleBasedPlanner()
+	steps := func(text string) (int, string) {
+		t.Helper()
+		plan, err := p.GeneratePlan(context.Background(), &domain.UserRequest{RequestText: text, Priority: domain.TaskPriorityNormalP2}, reg)
+		if err != nil {
+			t.Fatalf("plan %q: %v", text, err)
+		}
+		return len(plan.ChildTasks), plan.ChildTasks[0].Goal
+	}
+
+	for _, plain := range []string{"Plan a weekly status report", "Give me a concise summary of the AI agent ecosystem", "what should I cook tonight"} {
+		n, goal := steps(plain)
+		if n != 1 {
+			t.Errorf("%q: want one step, got %d", plain, n)
+		}
+		if goal != plain {
+			t.Errorf("%q: the single step must carry the whole request, got %q", plain, goal)
+		}
+	}
+	for _, research := range []string{"Research best practices for Go worker pools", "Find sources on cgroup v2 limits", "Deep dive into vector databases with citations"} {
+		if n, _ := steps(research); n != 2 {
+			t.Errorf("%q: explicit research keeps two steps, got %d", research, n)
 		}
 	}
 }

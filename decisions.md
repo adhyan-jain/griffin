@@ -440,3 +440,10 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why this shape**: It works the same whatever agy's tool output looks like, because it only acts when a run actually wrote a playbook section. If agy never writes one, nothing is stored and nothing changes.
 - **Limits**: Matching is keyword overlap, not semantic. The quality of a playbook is only as good as what agy writes; this has not been observed against real tool runs. The per-task live terminal view is still not built.
 - **Location**: `internal/domain/playbook.go`, `internal/worker/worker.go` (`playbookNotes`, `savePlaybook`), `internal/storage/service.go` (`ListByKind`, `ReadText`), `internal/provider/antigravity/prompt.go`, `tests/false_completion_test.go`
+
+#### ADR-065: One-step fast path for plain asks
+- **Status**: IMPLEMENTED (not yet deployed). PRD 7.1, P0.
+- **Finding**: Any request the planner could not classify fell to the research manager, which always produced two steps ("Gather primary sources" then "Synthesize report"). With a text-only agent the gather step cannot gather anything, so a plain ask like "Plan a weekly status report" paid for two cold agent runs (about 13 s each) to produce one answer.
+- **Decision**: The research split is kept only when the request explicitly asks for sourced research (research, sources, cite, evidence, literature, investigate, deep dive, look up, fact-check, survey, state of the art). Everything else is one step carrying the whole request. Engineering and career keep their two steps because those separate a step that needs approval.
+- **Expected effect**: roughly half the agent time for plain asks; no change for explicit research.
+- **Location**: `internal/service/planner.go` (`wantsSourcedResearch`, `singleStep`), `internal/service/planner_test.go`
