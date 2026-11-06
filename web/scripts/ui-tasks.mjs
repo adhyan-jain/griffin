@@ -183,6 +183,16 @@ await page.getByRole("button", { name: "Select", exact: true }).click();
 await page.getByRole("button", { name: "Select all" }).click();
 await shot("tasks-select-390");
 check(await has(page.getByText(/\d+ selected/)), "selection bar shows a count");
+// The bar must keep every action on screen on the narrowest phones (it once pushed Delete off at 360px).
+for (const w of [320, 360, 390]) {
+  await page.setViewportSize({ width: w, height: 740 });
+  await page.waitForTimeout(150);
+  const boxes = [];
+  for (const name of ["Cancel", "Resume", "Delete"]) boxes.push(await page.getByRole("button", { name, exact: true }).first().boundingBox());
+  const inside = boxes.every((b) => b && b.x >= 0 && b.x + b.width <= w + 0.5);
+  check(inside, `selection actions all fit on screen at ${w}px`);
+}
+await page.setViewportSize({ width: 390, height: 844 });
 await page.getByRole("button", { name: "Delete", exact: true }).first().click();
 await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
 await page.waitForTimeout(700);
