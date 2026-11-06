@@ -50,6 +50,8 @@ func TestClassifyMessage(t *testing.T) {
 		{"create", "Create a table of AWS regions and their latencies", o},
 		{"plan", "Plan a 3 day trip to Lisbon", o},
 		{"prepare", "Prepare a study checklist for the CKA exam", o},
+		{"investigate and fix", "Investigate and fix the bug in the codebase", o},
+		{"debug", "Debug the failing tests in the repo", o},
 		{"polite can you", "Can you research three Go queue libraries and compare them?", o},
 		{"please", "Please compile a comparison of Kafka and NATS", o},
 		{"i need a report", "I need a report comparing Kafka and NATS", o},
