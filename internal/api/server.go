@@ -148,6 +148,14 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("GET /api/v1/managers/{id}", userAuth(http.HandlerFunc(orchHandler.GetManager)))
 	}
 
+	// JJ chat: conversations become one chat task; objectives go through the orchestrator.
+	var objectives handlers.ObjectiveSubmitter
+	if deps.Orchestrator != nil {
+		objectives = deps.Orchestrator
+	}
+	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero)
+	mux.Handle("POST /api/v1/jj/messages", userAuth(http.HandlerFunc(jjChatHandler.PostMessage)))
+
 	// Worker Definition / Agent Factory routes
 	if deps.Factory != nil {
 		workerDefHandler := handlers.NewWorkerDefinitionHandler(deps.Factory)
