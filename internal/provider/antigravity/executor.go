@@ -254,6 +254,8 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		"binary", e.cfg.BinaryPath,
 		"workspace", wsDir,
 		"conversation_id", conversationID,
+		"agy_version", e.facts.Version,
+		"model", e.facts.Model,
 	)
 
 	if err := cmd.Start(); err != nil {
@@ -377,7 +379,7 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		e.logger.Error("Antigravity execution failed to produce valid output",
 			"task_id", task.ID,
 			"exit_code", exitCode,
-			"stderr", stderrBuf.String(),
+			"stderr", truncateRunes(stderrBuf.String(), 500),
 			"error", parseErr,
 		)
 		return &worker.ExecutionResult{
@@ -396,7 +398,7 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		if !hasContent {
 			cause := fmt.Errorf("%w: model attempted a tool the headless runner cannot approve (denied: %s)", ErrToolPermissionDenied, names)
 			e.logger.Warn("Antigravity produced no output because tool actions were denied",
-				"task_id", task.ID, "exit_code", exitCode, "denied_actions", names)
+				"task_id", task.ID, "exit_code", exitCode, "agy_version", e.facts.Version, "denied_actions", names)
 			return &worker.ExecutionResult{
 				ExecutionID:  execID,
 				ProviderName: "antigravity",
@@ -448,6 +450,9 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		"exec_id", execID,
 		"duration", duration,
 		"total_tokens", totalTokens,
+		"exit_code", exitCode,
+		"agy_version", e.facts.Version,
+		"denied_actions", deniedNames(parsed.DeniedActions),
 	)
 
 	return &worker.ExecutionResult{
