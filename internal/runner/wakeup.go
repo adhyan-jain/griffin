@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -55,8 +56,32 @@ func NewWakeupController(mgr InstanceManager, cfg WakeupConfig, logger *slog.Log
 	}
 }
 
+// WakeOutcome says what a wake attempt did when it did not fail.
+type WakeOutcome string
+
+const (
+	// WakeSignaled means a start signal was dispatched to the runner.
+	WakeSignaled WakeOutcome = "signaled"
+	// WakeSkipped means nothing was needed: runner already active/booting, or cooldown debounce.
+	WakeSkipped WakeOutcome = "skipped"
+)
+
 // TriggerWakeup verifies runner status and idempotently signals startup.
 func (c *WakeupController) TriggerWakeup(ctx context.Context) error {
+	_, err := c.Wake(ctx)
+	return err
+}
+
+// Wake is TriggerWakeup that also reports whether a start was signaled or skipped.
+func (c *WakeupController) Wake(ctx context.Context) (WakeOutcome, error) {
+	out, err := c.wake(ctx)
+	if err != nil && errors.Is(err, ErrInsufficientCapacity) {
+		c.logger.Error("runner wake failed: AWS InsufficientInstanceCapacity; no capacity for the worker instance, will retry on the next wake", "error", err)
+	}
+	return out, err
+}
+
+func (c *WakeupController) wake(ctx context.Context) (WakeOutcome, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -66,7 +91,7 @@ func (c *WakeupController) TriggerWakeup(ctx context.Context) error {
 			"elapsed", time.Since(c.lastTrigger),
 			"cooldown", c.cfg.CooldownWindow,
 		)
-		return nil
+		return WakeSkipped, nil
 	}
 
 	// 2. Query runner state
@@ -82,7 +107,7 @@ func (c *WakeupController) TriggerWakeup(ctx context.Context) error {
 		// Already active or starting
 		c.lastTrigger = time.Now()
 		c.logger.Info("Runner is already active or booting; no start action required", "state", state)
-		return nil
+		return WakeSkipped, nil
 
 	case RunnerStateStopping:
 		// A stopping instance cannot be started immediately by AWS EC2.
@@ -91,7 +116,7 @@ func (c *WakeupController) TriggerWakeup(ctx context.Context) error {
 		for i := 0; i < c.cfg.MaxStoppingRetries; i++ {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return WakeSkipped, ctx.Err()
 			case <-time.After(c.cfg.StoppingRetryDelay):
 			}
 
@@ -103,26 +128,26 @@ func (c *WakeupController) TriggerWakeup(ctx context.Context) error {
 		}
 
 		if state != RunnerStateStopped {
-			return fmt.Errorf("%w: timeout waiting for runner to stop before restarting", ErrRunnerStopping)
+			return WakeSkipped, fmt.Errorf("%w: timeout waiting for runner to stop before restarting", ErrRunnerStopping)
 		}
 		fallthrough
 
 	case RunnerStateStopped, RunnerStateUnknown:
 		c.logger.Info("Signaling runner startup")
 		if err := c.mgr.StartRunner(ctx); err != nil {
-			return fmt.Errorf("trigger runner start: %w", err)
+			return WakeSkipped, fmt.Errorf("trigger runner start: %w", classifyStartError(err))
 		}
 		c.lastTrigger = time.Now()
 		c.logger.Info("Runner startup signal dispatched successfully")
-		return nil
+		return WakeSignaled, nil
 
 	default:
 		c.logger.Info("Unknown state, attempting start", "state", state)
 		if err := c.mgr.StartRunner(ctx); err != nil {
-			return fmt.Errorf("trigger runner start: %w", err)
+			return WakeSkipped, fmt.Errorf("trigger runner start: %w", classifyStartError(err))
 		}
 		c.lastTrigger = time.Now()
-		return nil
+		return WakeSignaled, nil
 	}
 }
 

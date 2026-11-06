@@ -104,6 +104,11 @@ func (e *TaskEngine) GetTaskForUser(ctx context.Context, taskID uuid.UUID, userI
 	return e.taskRepo.GetTaskByIDAndUser(ctx, taskID, userID)
 }
 
+// GetTaskByIdempotencyKey returns the user's live task that holds the idempotency key.
+func (e *TaskEngine) GetTaskByIdempotencyKey(ctx context.Context, userID uuid.UUID, key string) (*domain.Task, error) {
+	return e.taskRepo.GetTaskByIdempotencyKey(ctx, userID, key)
+}
+
 // ListTasks lists tasks matching the filter criteria.
 func (e *TaskEngine) ListTasks(ctx context.Context, filter repository.TaskFilter) ([]*domain.Task, error) {
 	return e.taskRepo.ListTasks(ctx, filter)
