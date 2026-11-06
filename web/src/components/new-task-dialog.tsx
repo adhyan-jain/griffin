@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api, PRIORITIES, type Manager, type Task, type TaskPriority } from "@/lib/api";
@@ -9,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ErrorNote } from "@/components/page";
+import { ErrorNote, timeAgo } from "@/components/page";
+import { findRecentResult } from "@/lib/task-actions";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 
 export function NewTaskDialog({
@@ -29,13 +31,18 @@ export function NewTaskDialog({
   const [managers, setManagers] = useState<Manager[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recent, setRecent] = useState<Task[]>([]);
 
   useEffect(() => {
     if (!open) return;
     setManager(defaultManager);
     setError(null);
     api.listManagers().then(setManagers).catch(() => setManagers([]));
+    api.listTasks({ limit: 100 }).then(setRecent).catch(() => setRecent([]));
   }, [open, defaultManager]);
+
+  // Offer an identical result from the last day before paying for another run.
+  const existing = useMemo(() => findRecentResult(recent, goal), [recent, goal]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +77,15 @@ export function NewTaskDialog({
             required
             autoFocus
           />
+          {existing && (
+            <p className="rounded-lg border border-primary/40 bg-accent px-3 py-2 text-sm text-accent-foreground" role="status">
+              You finished this {timeAgo(existing.completed_at ?? existing.updated_at)}.{" "}
+              <Link href={`/tasks/${existing.id}`} onClick={() => onOpenChange(false)} className="font-medium underline underline-offset-4">
+                View that result
+              </Link>{" "}
+              or run it again below.
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">

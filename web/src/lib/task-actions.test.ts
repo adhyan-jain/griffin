@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "@/lib/api";
-import { canCancel, canDelete, canResume, canRunAgain, inPeriod, isPlan, runBulk } from "@/lib/task-actions";
+import { canCancel, canDelete, canResume, findRecentResult, canRunAgain, inPeriod, isPlan, runBulk } from "@/lib/task-actions";
 
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-11-06T12:00:00Z");
@@ -85,5 +85,24 @@ describe("runBulk", () => {
   });
   it("handles an empty eligible set", async () => {
     expect(await runBulk([task({ status: "RUNNING" })], canDelete, async () => {})).toEqual({ ok: 0, failed: 0, skipped: 1 });
+  });
+});
+
+describe("findRecentResult", () => {
+  const done = (over: Partial<Task>) => task({ goal: "Summarise the benefits of unit testing", completed_at: new Date(NOW - 2 * 3_600_000).toISOString(), ...over });
+  it("finds the newest finished run of the same goal, ignoring case and spacing", () => {
+    const older = done({ id: "a", completed_at: new Date(NOW - 5 * 3_600_000).toISOString() });
+    const newer = done({ id: "b" });
+    expect(findRecentResult([older, newer], "  summarise the BENEFITS of   unit testing ", NOW)?.id).toBe("b");
+  });
+  it("ignores old, failed, subtask, chat and different-goal tasks", () => {
+    expect(findRecentResult([done({ completed_at: new Date(NOW - 30 * 3_600_000).toISOString() })], "Summarise the benefits of unit testing", NOW)).toBeNull();
+    expect(findRecentResult([done({ status: "FAILED" })], "Summarise the benefits of unit testing", NOW)).toBeNull();
+    expect(findRecentResult([done({ parent_id: "p" })], "Summarise the benefits of unit testing", NOW)).toBeNull();
+    expect(findRecentResult([done({ input_payload: { kind: "chat" } })], "Summarise the benefits of unit testing", NOW)).toBeNull();
+    expect(findRecentResult([done({})], "Something else entirely different", NOW)).toBeNull();
+  });
+  it("does not match on very short text", () => {
+    expect(findRecentResult([done({ goal: "hi" })], "hi", NOW)).toBeNull();
   });
 });
