@@ -58,7 +58,7 @@ function useShellData(enabled: boolean) {
       // Both failed: let the poller back off instead of hammering a struggling API.
       if (r.status === "rejected" && a.status === "rejected") throw r.reason;
     },
-    { intervalMs: 15000, enabled },
+    { intervalMs: 30000, enabled },
   );
   return { runner, pending };
 }
