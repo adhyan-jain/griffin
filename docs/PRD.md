@@ -1,6 +1,6 @@
 # Griffin PRD
 
-**Owner:** Adhyan Jain · **Status:** living document · **Last updated:** 2026-11-06
+**Owner:** Adhyan Jain · **Status:** living document · **Last updated:** 2026-11-07
 The only maintained docs are this PRD, `decisions.md` (why each decision was made) and `evolution.md` (how the project changed). `README.md` (the repo's front page) and `agents.md` (instructions for coding agents) stay as repo conventions. Everything else that used to live in `docs/` is folded in here or recoverable from git history.
 
 ---
@@ -151,8 +151,8 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 | Managers only plan, assign and summarize; workers do all labor (even summaries); a terminal per worker or manager | Designed (7.13); managers already only route and verify, the rest is plan 2.12 and 2.13 |
 | Text to speech: speak results, Siri-like speed and voice, pick a voice and preview it, anime voices | Designed (7.14, plan 1.9 and 2.14); anime voices as a bring-your-own slot only |
 | The agent calls people from my phone, several at once, approvals in chat | Designed (7.14, plan 4.4 to 4.6, 3.8); several at once on one SIM is not possible as parallel calls |
-| Laptop as a server for agy and Claude Code when it is on; EC2 for agy when it is off; Claude from the phone | Designed (7.15, plan 2.15, 2.16, 5.1, 5.5); the phone part is experimental |
-| Keep my resume context and role resume drafts in S3 | Designed (7.15, plan 3.9); upload from Files works today |
+| Laptop on: it is primary with full setup (`agy`, Claude Code, all tools) and a permissions dashboard. Laptop off: the phone is primary and reaches WhatsApp, Instagram and other apps within limits, asking approval for anything not permitted. Tasks can be followed up in chat. EC2 `agy` is only the brain in phone mode. | Designed (7.15 to 7.17, ADR-074 to 076); Android only; not built |
+| Keep my resume context and role resume drafts in S3 (not repos) | Designed (7.15 Documents in S3); upload from Files works today |
 | The voice agent can run on the EC2 itself | Yes for speech output and input; not for a large language model (7.8, 7.14) |
 | Check Activity and Subtasks don't overlap; cute and minimal | Checked at four phone widths: no overlap; counts made inline (built, not shipped) |
 | Select-all action bar was off screen on my phone | Fixed and covered by a test (built, not shipped) |
@@ -310,20 +310,74 @@ Three layers, each with one job.
 
 **Approve in chat (P0 for approvals).** Pending approvals appear **in the chat thread** as cards (Approve, Deny, Edit), and typed replies work too: "yes", "no", "approve all the calls to Mom and Dad". Every reply is bound to the specific pending approvals listed in that thread; "approve all" covers only those. Only the owner's signed-in session can approve; text from outside never can (7.8). The Approvals page stays as the full list.
 
-### 7.15 Devices that are ready do the work; the cloud thinks
-The EC2 is **not** where tools, logins or apps live: setting them up and authenticating there is slow and puts credentials in the cloud. The hands are the devices that already have everything.
+### 7.15 Two modes: laptop-primary and phone-primary (brain vs hands)
 
-| Machine | Role | Runs |
-|---|---|---|
-| **Laptop** (Linux) | Browser, local files, Ollama, and the link to the phone | `agy`, Claude Code, Playwright |
-| **Android phone** | SIM, native apps, notifications, speech | Controlled from the laptop (ADB, KDE Connect) first; its own host later |
-| **EC2 + API** | Queue, planner, approvals, storage, scheduling, text-only backup | `agy` text-only. No tools, no logins, ever |
+The owner's ideal, in one line: **laptop on, the laptop does everything with full setup; laptop off, the phone is primary and reaches the apps; either way the owner controls the permissions and can keep talking to a task.**
 
-- **Capabilities, not machines:** each step lists what it *requires* (`browser`, `files`, `phone_apps`, `sms`, `calls`, `messaging`, or nothing for plain text); each online machine advertises what it *can do* by heartbeat; a step is claimed by an online machine that covers it (laptop first for general agent work). If the needed device is off the step waits ("Waiting for your laptop / phone"), then resumes by itself; plain text keeps running on the EC2.
-- **Host API:** a small API (heartbeat, claim, events, complete) with a per-host key; hosts never get database credentials. Claim reuses `ClaimNextTask` with one added condition; presence is stored on an `agents` row (no migration).
-- **Safety on a personal machine:** each task runs in its own scratch folder that sees only allow-listed folders (default `Documents/Griffin`), with a restricted agent permission mode, full logging and a revocable key per host.
-- **Documents:** the laptop host reads `Documents/Griffin` (your `AJ_resume_context` and role resume drafts) and one-way syncs it to your S3 area so the phone and cloud runs can fetch the same files.
-- **Claude steps** run on a device with a Claude login; with none on, they fall back to text-only `agy` on the EC2 and say so.
+The design handle that makes this work: separate the **brain** from the **hands**.
+- **Brain:** where the agent session (`agy`, Claude Code) runs and reasons.
+- **Hands:** any online device that can perform a capability: `browser`, `files`, `shell`, `phone_apps`, `sms`, `calls`, `messaging`.
+
+| Laptop host | Phone host | Brain | Hands |
+|---|---|---|---|
+| online | any | **Laptop:** `agy` and Claude Code with the laptop's own logins, tools and files, inside the sandbox of 7.16 | Laptop (browser, files, shell, local apps); phone for `phone_apps`, `sms` and `calls` when it is online |
+| offline | online | **EC2 `agy`, text-only:** plans, drafts, decides; never holds a tool or a login | **Phone host:** apps, SMS, calls, notifications, within the permissions of 7.16 |
+| offline | offline | EC2 `agy`, text-only | None: text steps still run; steps that need hands show "Waiting for your laptop / phone" and resume by themselves |
+
+- **Who is primary** is automatic: a host is *live* when its heartbeat is under 45 s old. While the laptop is live it gets all work and the EC2 is not woken (saves cost and cold starts). The owner can pin a mode in Settings ("always use phone", "never use laptop").
+- **Capabilities, not machines:** each step lists what it *requires*; each live host advertises what it *can do*; a step is claimed by a live host that covers it. A phone-only step waits for the phone even while the laptop is primary.
+- **Host API:** a small API (heartbeat, claim, events, complete) with a per-host key; hosts never get database credentials. Claim reuses `ClaimNextTask` with one added condition; presence is an `agents` row (no migration).
+
+**The laptop host (Linux).** Runs `agy` and Claude Code as the owner's own installs. This is the one place the agent's own permission prompts may be skipped, and only inside a verified OS sandbox (7.16, ADR-075). Each task runs in its own scratch folder. The EC2 worker keeps refusing the bypass flag (ADR-063); that rule is unchanged.
+
+**The phone host (Android only).** A small Android app that connects out to the Host API over HTTPS (no inbound port), with its own revocable token. It operates the apps the owner enabled through Android's accessibility service, takes a screenshot before and after every outward action, and sends the screen's text tree (not raw screenshots by default) to the brain.
+- **iOS cannot be a host.** Apple does not let a third-party app operate other apps. On iPhone the options are Shortcuts into Griffin and nothing more; this mode needs an Android phone.
+- **Instagram, WhatsApp and similar:** the official API or web version first (7.4). Driving the real app is last resort, and Instagram and WhatsApp both restrict or ban automated accounts. Griffin warns once per app, the owner accepts the risk per app, and sending starts as *ask*.
+- **Speed warning.** In phone mode every UI step would round-trip to a cold `agy` on the EC2 (12-16 s per step, section 5), so a 20-tap flow would take minutes. Three mitigations are part of the requirement: (1) **skill replay** (7.12) runs a known flow with no model call; (2) the brain returns a **batch** of actions with checkpoints, not one tap at a time; (3) a **warm session** (plan 1.7). *Done when* the second "send a WhatsApp message" replays without a model call.
+
+**Switching mid-task.**
+- A task finishes where it started; new tasks route by the current mode.
+- If the laptop drops while a **read or text** step runs, its lease expires and the step is requeued to the EC2 (or waits for the laptop if it needs hands).
+- If a host drops during an **outward action** (send, submit, post, delete), Griffin does **not** retry it. The task goes to *Needs you* with the last screenshot ("laptop went offline during the send; check before retrying"). Double-sending is worse than waiting.
+
+**Documents in S3 (not repos).** The laptop host one-way syncs `Documents/Griffin` (the career-context file `AJ_resume_context.md` and role resume drafts) to the owner's S3 area. Repos are never synced. The laptop is the single writer; versions are kept on the bucket. A phone-mode or EC2 run fetches the files it needs by presigned URL into its per-task scratch folder and deletes them when the task ends. An edit made in phone mode is saved as a new version that the laptop pulls (no silent overwrite). Encrypted at rest, per-user prefix, never written to logs, results or playbooks.
+
+**Claude steps** run on a host with a Claude login (laptop, in laptop mode). With the laptop off they follow the owner's policy: wait, or fall back to text-only `agy` on the EC2 and say so. No API key, ever.
+
+### 7.16 Permission dashboard and how it is enforced
+
+**Where it lives:** Settings → Permissions in the web app. The cloud is the source of truth, so the owner can change it from the phone while the laptop is off. The laptop host caches the signed policy and enforces it locally. Hosts and agents cannot edit policy; only the owner's signed-in session can. A localhost-only dashboard is rejected: it fails when the laptop is off, and an agent running on that laptop could reach it.
+
+**What the owner controls** (each is *ask*, *auto* or *off*; defaults are *ask* for anything outward or destructive):
+
+| Dimension | Examples |
+|---|---|
+| Device | laptop host, phone host (each can be disabled or paused) |
+| Capability | browser, shell, files, messaging, calls, phone apps |
+| App | WhatsApp, Instagram, Gmail, Chrome |
+| Folder | `Documents/Griffin` yes, `~/.ssh` never |
+| Contact | auto for Mom, ask for everyone else |
+| Action class | read, draft, send, submit, buy, delete |
+
+Plus one switch on the laptop: **Sandbox** (default: scratch folder plus allow-listed folders), **Elevated** (one task, approved with the exact extra access shown) and **Full** (everything the owner's user can reach; time-boxed, default 2 h, expires by itself, shown as a banner). Anything not covered by a policy row asks. "Pause all automation" is one tap.
+
+**Enforcement sits below the agent, not inside it.** `--dangerously-skip-permissions` removes the agent's own prompts, so the dashboard cannot depend on them. The host enforces with:
+1. **An OS sandbox** (dedicated unprivileged user or `bubblewrap`) exposing only the scratch folder and allow-listed folders. Browser profiles, `~/.ssh`, cloud credentials and password stores are not mounted unless a policy row grants them.
+2. **A sandbox self-test at startup:** the host plants a canary file outside the allow-list and refuses to start the bypass flag if the agent could read it.
+3. **A tool gateway** for outward actions (message send, browser submit, phone tap on a send button, calls): each action is checked against the policy and against the **declared intent of its plan step**. A step "reply to X on WhatsApp" may send to X. An action that falls outside the declared intent asks, even where policy says *auto*. This is how 7.8's rule ("text read from outside can never trigger an action") is made mechanical rather than hoped for.
+4. **A network egress allow-list** in the sandbox, with the same private-address refusals as 7.11.
+5. **An audit log** with screenshots, readable in the app.
+
+**Why not just trust the owner's "full access":** an agent that browses a page and holds an unsandboxed shell can be steered by that page. Full mode exists and the owner can turn it on; it is time-boxed and still passes the gateway's intent check.
+
+### 7.17 Follow-ups: every task is a conversation
+
+Many tasks cannot finish in one shot. A task has a **thread**; the agent, the owner and approvals all speak in it.
+- **P0 Questions, not just approvals:** a step can pause as *Waiting on you* with a question ("which contact? which resume?"). A reply in the thread resumes it.
+- **P0 Continue a finished task:** "also add X", "make it shorter", "now send it" create a linked follow-up step that starts with the task's transcript and files.
+- **P1 Session reuse:** the thread's context lives in the database (transcript and files), never only in a device's session. A warm `agy` or Claude session is an optimization: switching laptop to phone mode mid-thread loses nothing but speed.
+- **P1 Notify:** a question or approval pushes a notification (ntfy) whose tap opens the thread.
+- Approvals in chat (7.14) are the same mechanism.
 
 ---
 
@@ -360,10 +414,10 @@ Milestones in order; each ends in a demo. "You" marks what only the owner can do
 |---|---|---|---|
 | **M0 Stabilize** (1-2 d) | Nothing stuck or leaked | Ship the waiting commits (`ship.sh --apply`); replace the worker (`deploy-backend.sh worker`, dry run first); add the worker step to `ship.sh`; worker reports its build and Settings warns when stale; **You:** rotate the leaked credentials, delete old tasks in the app, check the phone, grant read on one log group | Plans finish the instant their last step ends; runner reaches idle shutdown; a stopped runner wakes on submit twice |
 | **M1 Fast, listens, simpler** (2-3 d) | Quick wins, no new infrastructure | Worker `IDLE_SHUTDOWN_SECONDS=900`, `MAX_CONCURRENT_ANTIGRAVITY` is a ceiling (default 4) with adaptive admission; **done:** Listen + voice picker, tabs by kind, manager-purity test; fast path done; summarize-as-worker-step deferred (below) | Plain-ask p50 before/after; Playwright at 320-412 px |
-| **M2 Host protocol + laptop host** (1-2 w) | The hands exist | Host API, `cmd/griffin-host`, capability claim and routing (no EC2 wake while a device can work), waiting states, "ran on" label, live Terminal (after capturing one real `agy` stream) | Host runs a task; stop it and a text step finishes on the EC2 while a device step waits, then resumes. **Stop if** a host needs more than these endpoints |
-| **M3 Laptop hands** (1-2 w) | Browser, messaging, approvals, documents | Playwright browser; trust settings (ask/auto per action and contact; outside text can never trigger an action); approve in chat; messaging: click-to-send first, WhatsApp Web second; Ollama drafting + refusal fallback; documents folder + sync; playbooks validated; click-to-call | E2E on a fake chat page; then a real run: read-only, then one approved message to your own number. **Stop sending** on any account warning |
+| **M2 Host protocol + laptop host** (1-2 w) | The hands exist | Host API, `cmd/griffin-host`, capability claim and routing (no EC2 wake while a device can work), waiting states, "ran on" label, live Terminal (after capturing one real `agy` stream), **primary-mode election from heartbeats (45 s), no-retry rule for outward actions on host loss, task threads with questions and follow-ups (7.17)** | Host runs a task; stop it and a text step finishes on the EC2 while a device step waits, then resumes. **Stop if** a host needs more than these endpoints |
+| **M3 Laptop hands** (1-2 w) | Browser, messaging, approvals, documents | **OS sandbox + startup canary self-test, tool gateway with intent check, Permissions dashboard in the web app (7.16), bypass flag allowed on the laptop host only after the self-test passes**; Playwright browser; trust settings (ask/auto per action and contact; outside text can never trigger an action); approve in chat; messaging: click-to-send first, WhatsApp Web second; Ollama drafting + refusal fallback; documents folder + sync; playbooks validated; click-to-call | E2E on a fake chat page; then a real run: read-only, then one approved message to your own number. **Stop sending** on any account warning |
 | **M4 Internships** (3-5 d) | The headline journey | Search, shortlist into the tracker list, drafts from your documents, each submission approved in chat, screenshot + tracker row | Dry run on 3 postings, then one real approved application |
-| **M5 The phone, through the laptop** (1-2 w) | Phone apps and SMS | Mobilerun/DroidRun over ADB (adopt, don't build); KDE Connect for SMS and notifications (confirm delivery by reading the sent state, not the exit code) | With your phone: list notifications, read a WhatsApp message, one approved SMS to your own number. **Stop if** apps block automation |
+| **M5 The phone as a host** (2-3 w) | Phone apps and SMS, laptop on or off | **Android phone host app** (accessibility service, outbound-only Host API, per-app enablement, before/after screenshots) so phone mode works with the laptop off; while the laptop is on, Mobilerun/DroidRun over ADB and KDE Connect are the faster path (adopt, don't build); skill replay so common flows need no model call (confirm delivery by reading the sent state, not the exit code) | With your phone: list notifications, read a WhatsApp message, one approved SMS to your own number. **Stop if** apps block automation |
 | **M6 Calls like companies do** (optional) | Calls without SIM cards | Telephony provider (rented number or SIP trunk) + audio stream + speech pipeline (LiveKit Agents or Pipecat): (1) speak-a-message calls, many recipients in parallel after you approve the list; (2) two-way voice agent; (3) caller ID: rented or your own verified number, never a number you do not own | Needs your approval of a paid provider; India rules (DLT, DND, consent, hours, AI disclosure) checked first. **Skip** if click-to-call is enough |
 
 **Deferred decision (summaries):** the final answer is still stitched in code because every multi-step plan already ends in a worker-written synthesis step; a separate worker summarize step would add about 13 s for little gain. Revisit once live Terminals show whether it matters.
@@ -374,7 +428,9 @@ Milestones in order; each ends in a demo. "You" marks what only the owner can do
 | Tools, browser, logins or a vault on the EC2 | Devices that already have them; EC2 stays text-only | now |
 | SIM calls, many at once; live AI calls | M6: telephony provider and a speech pipeline; concurrency is the provider's (calling ten people is ten API calls) | optional |
 | WhatsApp automation risk | Click-to-send (prefilled `wa.me` link) first; WhatsApp Web second; the official Business Platform only for a business number (templates outside 24 h) | M3 |
-| A cloud Android bridge | M5: Mobilerun + ADB + KDE Connect from the laptop; a Termux host later only if laptop-off phone control is needed | M5 |
+| A cloud Android bridge (emulator the EC2 controls) | M5: an Android phone host that connects out; Mobilerun + ADB + KDE Connect while the laptop is on | M5 |
+| Skip the agent's permissions on the laptop with no sandbox | Bypass flag only inside a verified OS sandbox; Full mode is time-boxed (7.16) | M3 |
+| A permissions dashboard served from the laptop | Dashboard in the web app; the laptop caches signed policy (7.16) | M3 |
 | Neural or anime voices | Phone voices now; free open voices (Piper, Kokoro) on the laptop later; a bring-your-own model slot; no copyrighted characters shipped | later |
 | Realtime updates | Adaptive polling; Supabase Realtime later if needed | if needed |
 | Web Push | ntfy (one HTTP POST becomes a phone notification; the tap opens the approval chat) | after M3 |
@@ -417,4 +473,9 @@ Milestones in order; each ends in a demo. "You" marks what only the owner can do
 11. Neural voices and speech-to-text on the existing instance: measure memory first, or move to a larger instance?
 12. Laptop host: which laptop and OS, which folders it may see, and whether Claude steps should queue or fall back to `agy` while it is off.
 13. Documents: upload by hand now, or wait for folder sync (needs the laptop host)?
+14. **Phone model and OS:** phone mode needs Android (7.15). Which phone, and is it the one you carry? On iPhone this mode is not possible.
+15. Which apps first in phone mode, given WhatsApp and Instagram restrict automated accounts (suggested: WhatsApp via click-to-send, one read-only app, then decide on Instagram).
+16. Full mode: default time-box (suggested 2 h) and whether it may ever be always-on.
+17. Laptop sandbox: `bubblewrap` or a dedicated OS user (suggested: dedicated user, simpler to reason about on Linux).
+18. When the laptop drops during a send: Griffin never auto-retries (7.15). Confirm.
 9. Capacity for sub-agents: stay at 2 agents on the current instance, or approve a larger instance (a cost decision).

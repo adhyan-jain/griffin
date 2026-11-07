@@ -226,3 +226,13 @@ Phase 4 grounded Griffin's document and artifact storage in enterprise cloud obj
   - **CORS & Web Auth**: Implemented `internal/api/middleware/cors.go` and `internal/api/handlers/auth.go` (`POST /api/v1/auth/login`) with automatic foreign-key user provisioning and signed Supabase JWT issuance.
   - **Live Cloud Verification**: Verified `tests/s3_live_test.go` directly against real AWS S3 bucket `griffin-artifacts-123456789012-ap-south-1` in `ap-south-1` using `griffin-bootstrap` credentials with zero errors.
   - **Deployment Runbooks**: Authored `docs/DEPLOYMENT_RUNBOOK.md` and `docs/ANTIGRAVITY_CLOUD_RUNNER.md` detailing unattended Antigravity CLI authentication, DBus user lingering sessions, and EventBridge Scheduler configurations.
+
+---
+
+### Epoch 10: Two Modes (2026-11-07)
+
+- **Trigger**: The plan made the laptop a host (ADR-072), but `agy` was still the only brain and the EC2 the only fallback, which left the phone with no way to act when the laptop was off.
+- **Shift**:
+  - **From**: devices as workers of one cloud brain, laptop first, phone driven only through the laptop.
+  - **To**: brain and hands as separate ideas. The laptop is brain and hands when live; otherwise a text-only EC2 `agy` is the brain and an Android phone host is the hands.
+- **What surfaced while writing it**: (1) skipping the agent's permission prompts on the laptop and offering a permission dashboard are contradictory unless enforcement moves below the agent, so the bypass-flag rejection of ADR-049/063 was narrowed, not dropped; (2) a dashboard served from the laptop fails exactly when phone mode is needed, so policy lives in the cloud; (3) UI automation through a cold `agy` per tap is too slow, so skill replay moved from nice-to-have to required; (4) a send interrupted by a device dropping must not be retried automatically.

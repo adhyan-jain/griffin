@@ -502,3 +502,22 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Knobs**: `AGY_RESERVE_MB` (900), `AGY_AGENT_MB` (500), `AGY_LOAD_FACTOR` (1.5). Non-Linux hosts without `/proc` fall back to the ceiling alone.
 - **Limit**: the ceiling still bounds a very large fan-out; hosts (laptop, M2) carry their own limiter.
 
+
+#### ADR-074: Two modes - brain and hands are separate; laptop-primary, phone-primary
+- **Status**: PLANNED (PRD 7.15; plan M2, M5). Refines ADR-071 and ADR-072.
+- **Trigger**: The owner's target: with the laptop on, everything runs from it with its full setup (`agy`, Claude Code, all tools); with it off, the phone is primary and reaches apps such as WhatsApp and Instagram within limits the owner sets; tasks accept follow-ups; the career-context files are mirrored in S3.
+- **Decision**: Split **brain** (where the agent session reasons) from **hands** (devices that perform a capability). Laptop live (heartbeat under 45 s): laptop is brain and hands, the EC2 is not woken. Laptop off, phone live: the EC2 `agy` is a text-only brain and the Android phone host is the hands. Neither live: text steps run, hands steps wait. The EC2 still never holds tools or logins. The phone host is an Android app that connects out with its own token; iOS cannot be a host.
+- **Outward actions are never auto-retried** when a host drops mid-action; the task goes to *Needs you* with the last screenshot. Read and text steps requeue.
+- **Why**: it keeps credentials off the cloud, removes cold starts and EC2 cost while the laptop is on, and makes laptop-off mode possible without putting apps in a datacenter.
+- **Known cost**: in phone mode each UI step would round-trip to a cold EC2 `agy` (12-16 s). Required mitigations: skill replay, batched actions with checkpoints, warm sessions.
+- **Rejected**: a cloud emulator that the EC2 controls (needs the owner's logged-in apps in the cloud).
+
+#### ADR-075: Permissions are enforced below the agent; the bypass flag is allowed only inside a verified sandbox on the laptop host
+- **Status**: PLANNED (PRD 7.16; plan M3). Narrows ADR-049's and ADR-063's rejection of `--dangerously-skip-permissions`: it stays refused on the EC2 worker (the startup check and its test are unchanged) and becomes allowed on the laptop host only.
+- **Decision**: With the flag the agent no longer prompts, so a dashboard cannot rely on agent prompts. Enforcement is (1) an OS sandbox exposing only the task scratch folder and allow-listed folders, (2) a startup canary self-test that refuses the flag if the agent can read a file outside the allow-list, (3) a tool gateway that checks each outward action against policy and against the declared intent of its plan step (an action outside the intent asks even under *auto*), (4) a network egress allow-list, (5) an audit log with screenshots. Policy lives in the cloud (Settings → Permissions) and is cached signed on the host; hosts and agents cannot edit it. A **Full** mode exists but is time-boxed (default 2 h).
+- **Why**: an agent with an unsandboxed shell that browses a page can be steered by that page. The intent check makes ADR-067's "outside text can never trigger an action" mechanical.
+- **Rejected**: a localhost-only dashboard (fails when the laptop is off; reachable by an agent on that laptop); the bypass flag with no sandbox.
+
+#### ADR-076: Every task is a conversation
+- **Status**: PLANNED (PRD 7.17; plan M2).
+- **Decision**: A task has a thread. A step can pause as *Waiting on you* with a question, not only an approval. A reply resumes it. A finished task can be continued, creating a linked step that starts with its transcript and files. Thread context lives in the database; a warm `agy` or Claude session is only a speed optimization, so switching between laptop and phone mode mid-thread loses nothing but speed. Approvals in chat (ADR-070) use the same mechanism.
