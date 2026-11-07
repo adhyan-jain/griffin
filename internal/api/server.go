@@ -36,7 +36,9 @@ type ServerDependencies struct {
 	ApprovalRepo repository.ApprovalRepository
 	AgentRepo    repository.AgentRepository
 	// HostRepo enables the host API (laptop/phone hosts) when set.
-	HostRepo        repository.HostRepository
+	HostRepo repository.HostRepository
+	// PolicyRepo stores the owner's permission policy; used with HostRepo.
+	PolicyRepo      repository.PolicyRepository
 	ArtifactRepo    repository.ArtifactRepository
 	StorageService  *storage.StorageService
 	WorkerDefRepo   repository.WorkerDefinitionRepository
@@ -208,11 +210,22 @@ func NewServer(deps ServerDependencies) *Server {
 	// Execution hosts (laptop, phone). Owner routes use the user JWT; host routes use a per-host token and
 	// never touch the database directly.
 	if hostSvc != nil {
-		hostHandler := handlers.NewHostHandler(hostSvc, deps.Engine)
+		var policySvc *service.PolicyService
+		if deps.PolicyRepo != nil {
+			policySvc = service.NewPolicyService(deps.PolicyRepo)
+		}
+		hostHandler := handlers.NewHostHandler(hostSvc, deps.Engine, policySvc)
 		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))
 		mux.Handle("GET /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.ListHosts)))
 		mux.Handle("PATCH /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.UpdateHost)))
 		mux.Handle("DELETE /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.RevokeHost)))
+
+		if policySvc != nil {
+			permHandler := handlers.NewPermissionsHandler(policySvc)
+			mux.Handle("GET /api/v1/permissions", userAuth(http.HandlerFunc(permHandler.Get)))
+			mux.Handle("PUT /api/v1/permissions", userAuth(http.HandlerFunc(permHandler.Put)))
+			mux.Handle("GET /api/v1/host/policy", middleware.AuthenticateHost(hostSvc)(http.HandlerFunc(permHandler.HostGet)))
+		}
 
 		hostAuth := middleware.AuthenticateHost(hostSvc)
 		mux.Handle("POST /api/v1/host/heartbeat", hostAuth(http.HandlerFunc(hostHandler.Heartbeat)))

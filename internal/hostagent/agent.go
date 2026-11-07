@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/policy"
 	"github.com/griffin/core/internal/worker"
 )
 
@@ -40,6 +41,11 @@ type Agent struct {
 	paused   atomic.Bool
 	inFlight atomic.Int32
 	wg       sync.WaitGroup
+
+	polMu   sync.RWMutex
+	pol     policy.Policy
+	polVer  int
+	polSync bool
 }
 
 // New builds an Agent, applying defaults.
@@ -66,6 +72,42 @@ func New(cfg Config) (*Agent, error) {
 		cfg.Logger = slog.Default()
 	}
 	return &Agent{cfg: cfg, logger: cfg.Logger}, nil
+}
+
+// Policy returns the owner's permission policy as last received. ok is false until one has been, and
+// the gateway treats that as "deny everything outward". It implements gateway.Source.
+func (a *Agent) Policy() (policy.Policy, int, bool) {
+	a.polMu.RLock()
+	defer a.polMu.RUnlock()
+	return a.pol, a.polVer, a.polSync
+}
+
+// syncPolicy refetches the policy when the owner has changed it. A policy that does not validate is
+// ignored and the last good one stays in force (or nothing, which denies): the host never loosens on a
+// malformed answer.
+func (a *Agent) syncPolicy(ctx context.Context, serverVersion int) {
+	a.polMu.RLock()
+	have, synced := a.polVer, a.polSync
+	a.polMu.RUnlock()
+	if synced && have == serverVersion {
+		return
+	}
+	v, err := a.cfg.Client.Policy(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			a.logger.Warn("could not fetch the permission policy; keeping the last one", "error", err)
+		}
+		return
+	}
+	p := v.Policy
+	if err := p.Validate(time.Now().UTC()); err != nil {
+		a.logger.Error("the server sent a permission policy that does not validate; ignoring it", "error", err)
+		return
+	}
+	a.polMu.Lock()
+	a.pol, a.polVer, a.polSync = p, v.Version, true
+	a.polMu.Unlock()
+	a.logger.Info("permission policy updated", "version", v.Version, "rules", len(p.Rules), "default", p.Default)
 }
 
 // InFlight is the number of tasks currently running.
@@ -135,6 +177,7 @@ func (a *Agent) presenceLoop(ctx context.Context) error {
 		if was := a.paused.Swap(rep.Paused); was != rep.Paused {
 			a.logger.Info("pause state changed by the owner", "paused", rep.Paused)
 		}
+		a.syncPolicy(ctx, rep.PolicyVersion)
 		return nil
 	}
 	if err := beat(); err != nil {

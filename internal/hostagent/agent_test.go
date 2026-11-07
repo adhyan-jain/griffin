@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/gateway"
+	"github.com/griffin/core/internal/policy"
 	"github.com/griffin/core/internal/worker"
 )
 
@@ -30,6 +32,10 @@ type fakeAPI struct {
 	completed map[string]json.RawMessage
 	failed    map[string]map[string]any
 	renewals  int
+
+	polVer     int
+	polBody    map[string]any
+	polFetches int
 }
 
 func newFakeAPI(t *testing.T) *fakeAPI {
@@ -62,7 +68,17 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 		f.lastCaps = body.Capabilities
 		paused := f.paused
 		f.mu.Unlock()
-		write(w, 200, map[string]any{"paused": paused, "granted": body.Capabilities, "effective_capabilities": body.Capabilities, "live_window_seconds": 45})
+		f.mu.Lock()
+		pv := f.polVer
+		f.mu.Unlock()
+		write(w, 200, map[string]any{"paused": paused, "granted": body.Capabilities, "effective_capabilities": body.Capabilities, "live_window_seconds": 45, "policy_version": pv})
+	}))
+	mux.HandleFunc("GET /api/v1/host/policy", guard(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.polFetches++
+		body, ver := f.polBody, f.polVer
+		f.mu.Unlock()
+		write(w, 200, map[string]any{"policy": body, "version": ver})
 	}))
 	mux.HandleFunc("POST /api/v1/host/claim", guard(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -346,5 +362,92 @@ func TestNewRejectsAPresenceIntervalThatWouldLooseLiveStatus(t *testing.T) {
 	_, err := New(Config{Client: NewClient("http://x", "t", nil), Executor: fnExec{}, PresenceInterval: domain.HostLiveWindow})
 	if err == nil {
 		t.Fatal("a presence interval at or over the live window would make the host flicker offline")
+	}
+}
+
+// The agent is what the gateway reads the policy from.
+var _ gateway.Source = (*Agent)(nil)
+
+func (f *fakeAPI) setPolicy(ver int, body map[string]any) {
+	f.mu.Lock()
+	f.polVer, f.polBody = ver, body
+	f.mu.Unlock()
+}
+
+func (f *fakeAPI) policyFetchCount() int { f.mu.Lock(); defer f.mu.Unlock(); return f.polFetches }
+
+func idleExec() fnExec {
+	return fnExec{fn: func(context.Context, *domain.Task) (*worker.ExecutionResult, error) { return nil, nil }}
+}
+
+func TestAgentReceivesThePolicyAndOnlyRefetchesWhenItChanges(t *testing.T) {
+	f := newFakeAPI(t)
+	f.setPolicy(1, map[string]any{"default": "ask", "rules": []any{map[string]any{"class": "read", "mode": "auto"}}})
+	a, _, _ := startAgent(t, f, idleExec(), "agent")
+
+	waitFor(t, "policy v1", func() bool { _, v, ok := a.Policy(); return ok && v == 1 })
+	if n := f.policyFetchCount(); n != 1 {
+		t.Fatalf("one fetch for version 1, got %d", n)
+	}
+	// Several more heartbeats with the same version must not refetch.
+	f.mu.Lock()
+	beats := f.beats
+	f.mu.Unlock()
+	waitFor(t, "more heartbeats", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.beats >= beats+3 })
+	if n := f.policyFetchCount(); n != 1 {
+		t.Fatalf("an unchanged version must not refetch, fetches=%d", n)
+	}
+	// The owner tightens it: the host notices through the heartbeat alone.
+	f.setPolicy(2, map[string]any{"default": "off", "rules": []any{}})
+	waitFor(t, "policy v2", func() bool { p, v, ok := a.Policy(); return ok && v == 2 && p.Default == policy.Off })
+}
+
+func TestAgentIgnoresAPolicyThatDoesNotValidate(t *testing.T) {
+	f := newFakeAPI(t)
+	f.setPolicy(1, map[string]any{"default": "off", "rules": []any{}})
+	a, _, _ := startAgent(t, f, idleExec(), "agent")
+	waitFor(t, "policy v1", func() bool { _, v, ok := a.Policy(); return ok && v == 1 })
+
+	// A malformed answer (say, a bug or tampering) must not loosen anything: the last good one stays.
+	f.setPolicy(2, map[string]any{"default": "yolo", "rules": []any{map[string]any{"mode": "auto"}}})
+	time.Sleep(250 * time.Millisecond)
+	p, v, ok := a.Policy()
+	if !ok || v != 1 || p.Default != policy.Off {
+		t.Fatalf("the last good policy must stay in force, got v=%d ok=%v default=%s", v, ok, p.Default)
+	}
+}
+
+func TestAMalformedFirstPolicyLeavesTheHostDenyingEverything(t *testing.T) {
+	f := newFakeAPI(t)
+	f.setPolicy(1, map[string]any{"default": "yolo", "rules": []any{}})
+	a, _, _ := startAgent(t, f, idleExec(), "agent")
+	time.Sleep(250 * time.Millisecond)
+	if _, _, ok := a.Policy(); ok {
+		t.Fatal("an invalid first policy must leave the host unsynced (the gateway then denies everything)")
+	}
+	g := gateway.New("laptop", a, nil)
+	err := g.Require("t", policy.Action{Capability: "files", Class: policy.Read, Path: "/home/me/a"}, policy.Intent{Capability: "files", Class: policy.Read, Folder: "/home/me"})
+	if !gateway.IsDenied(err) {
+		t.Fatalf("an unsynced host must deny, got %v", err)
+	}
+}
+
+func TestGatewayFollowsThePolicyTheAgentReceived(t *testing.T) {
+	f := newFakeAPI(t)
+	f.setPolicy(1, map[string]any{"default": "ask", "rules": []any{map[string]any{"class": "read", "mode": "auto"}}})
+	a, _, _ := startAgent(t, f, idleExec(), "agent")
+	g := gateway.New("laptop", a, nil)
+
+	act := policy.Action{Capability: "browser", Class: policy.Read, App: "chrome"}
+	in := policy.Intent{Capability: "browser", Class: policy.Read, App: "chrome"}
+	// Before sync: denied. After: allowed. Then the owner switches reading off: denied again.
+	waitFor(t, "synced", func() bool { _, _, ok := a.Policy(); return ok })
+	if err := g.Require("t", act, in); err != nil {
+		t.Fatalf("reading is auto under this policy, got %v", err)
+	}
+	f.setPolicy(2, map[string]any{"default": "off", "rules": []any{}})
+	waitFor(t, "tightened", func() bool { _, v, _ := a.Policy(); return v == 2 })
+	if err := g.Require("t", act, in); !gateway.IsDenied(err) {
+		t.Fatalf("after the owner turns everything off the gateway must refuse, got %v", err)
 	}
 }

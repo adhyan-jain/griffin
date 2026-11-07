@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/policy"
 	"github.com/griffin/core/internal/repository"
 )
 
@@ -114,6 +115,8 @@ type HeartbeatReply struct {
 	Granted           []string `json:"granted"`
 	Effective         []string `json:"effective_capabilities"`
 	LiveWindowSeconds int      `json:"live_window_seconds"`
+	// PolicyVersion is the version of the owner's permission policy; refetch it when it changes.
+	PolicyVersion int `json:"policy_version"`
 }
 
 // Heartbeat reports presence and what this host can currently do.
@@ -170,4 +173,19 @@ func (c *Client) Complete(ctx context.Context, taskID string, output json.RawMes
 func (c *Client) Fail(ctx context.Context, taskID, reason string, retryable bool) error {
 	_, err := c.do(ctx, http.MethodPost, "/api/v1/host/tasks/"+taskID+"/fail", map[string]any{"reason": reason, "retryable": retryable}, nil)
 	return err
+}
+
+// PolicyView is the owner's permission policy with its version (0 means none saved: the default applies).
+type PolicyView struct {
+	Policy  policy.Policy `json:"policy"`
+	Version int           `json:"version"`
+}
+
+// Policy fetches the owner's permission policy. Hosts can read it and never write it.
+func (c *Client) Policy(ctx context.Context) (*PolicyView, error) {
+	var out PolicyView
+	if _, err := c.do(ctx, http.MethodGet, "/api/v1/host/policy", nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

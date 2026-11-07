@@ -78,15 +78,15 @@ func TestMigrateAppliesOnceAndIsRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first migrate: %v", err)
 	}
-	if len(done) != 5 {
-		t.Fatalf("want 5 migrations applied, got %v", done)
+	if len(done) != 6 {
+		t.Fatalf("want 6 migrations applied, got %v", done)
 	}
 	done, err = database.Migrate(ctx, db, migrations.FS, database.MigrateOptions{LocalAuthShim: true})
 	if err != nil || len(done) != 0 {
 		t.Fatalf("second migrate must be a no-op: done=%v err=%v", done, err)
 	}
-	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != 5 {
-		t.Fatalf("want 5 recorded versions, got %d", n)
+	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != 6 {
+		t.Fatalf("want 6 recorded versions, got %d", n)
 	}
 	if err := database.CheckSchema(ctx, db, migrations.FS); err != nil {
 		t.Fatalf("CheckSchema after migrate: %v", err)
@@ -184,7 +184,7 @@ func TestMigrateConcurrentRunnersSerialize(t *testing.T) {
 			t.Fatalf("concurrent migrate failed: %v", err)
 		}
 	}
-	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != 5 {
+	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != 6 {
 		t.Fatalf("want 4 versions, got %d", n)
 	}
 }
