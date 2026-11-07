@@ -68,6 +68,13 @@ type TaskRepository interface {
 
 	TransitionToApproval(ctx context.Context, taskID uuid.UUID, approval *domain.Approval) error
 	CountRunnableTasks(ctx context.Context) (int64, error)
+
+	// ClaimNextTaskForHost leases the next QUEUED task of userID that the host can do: every capability
+	// the task declares in input_payload.requires must be in caps, and a task that declares none needs
+	// the agent capability. Tasks of other users are never returned.
+	ClaimNextTaskForHost(ctx context.Context, userID uuid.UUID, workerID string, caps []string, leaseDuration time.Duration) (*domain.Task, error)
+	// ListTasksNeedingHosts returns the user's waiting (QUEUED or RETRYING) tasks that declare requirements.
+	ListTasksNeedingHosts(ctx context.Context, userID uuid.UUID, limit int) ([]*domain.Task, error)
 }
 
 // PostgresTaskRepository implements TaskRepository on top of pgxpool.Pool.
@@ -262,6 +269,24 @@ func (r *PostgresTaskRepository) UpdateTask(ctx context.Context, t *domain.Task)
 	return nil
 }
 
+// requiresArraySQL is the task's declared `requires` as a JSONB array ('[]' when absent or malformed).
+func requiresArraySQL(alias string) string {
+	return `(CASE WHEN jsonb_typeof(` + alias + `input_payload->'requires') = 'array' THEN ` + alias + `input_payload->'requires' ELSE '[]'::jsonb END)`
+}
+
+// needsHandsSQL is true for a task that declares at least one required capability. The cloud runner
+// never claims such a task: it has no tools, so it would answer from memory instead of doing the work.
+func needsHandsSQL(alias string) string {
+	return `jsonb_array_length(` + requiresArraySQL(alias) + `) > 0`
+}
+
+// hostCanDoSQL is true when every declared capability is in the $capsParam text[] and, for a task that
+// declares none, the agent capability is present.
+func hostCanDoSQL(alias, capsParam string) string {
+	return `(NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(` + requiresArraySQL(alias) + `) AS req(cap) WHERE NOT (req.cap = ANY(` + capsParam + `::text[]))) ` +
+		`AND (` + needsHandsSQL(alias) + ` OR 'agent' = ANY(` + capsParam + `::text[])))`
+}
+
 func (r *PostgresTaskRepository) ClaimNextTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*domain.Task, error) {
 	now := time.Now().UTC()
 	leaseExpires := now.Add(leaseDuration)
@@ -280,6 +305,7 @@ func (r *PostgresTaskRepository) ClaimNextTask(ctx context.Context, workerID str
 			FROM tasks
 			WHERE status IN ('QUEUED', 'RETRYING')
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
+			  AND NOT (` + needsHandsSQL("") + `)
 			ORDER BY priority DESC, created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -810,17 +836,22 @@ func (r *PostgresTaskRepository) TransitionToApproval(ctx context.Context, taskI
 
 // CountRunnableTasks returns the number of tasks that are currently runnable or in flight.
 func (r *PostgresTaskRepository) CountRunnableTasks(ctx context.Context) (int64, error) {
+	// Counts work the cloud runner can do. Work that needs a host's hands (declared `requires`) and work a
+	// host is already running are excluded: neither should wake the runner or keep it awake.
 	query := `
 		SELECT COUNT(*)
 		FROM tasks t
-		WHERE (t.status IN ('RUNNING', 'ROUTED') AND t.leased_by IS DISTINCT FROM 'JJ_ORCHESTRATOR') -- orchestration roots are coordination-only; their children count themselves
+		WHERE (
+		      (t.status IN ('RUNNING', 'ROUTED') AND t.leased_by IS DISTINCT FROM 'JJ_ORCHESTRATOR') -- orchestration roots are coordination-only; their children count themselves
 		   OR (t.status = 'QUEUED' AND (t.scheduled_for IS NULL OR t.scheduled_for <= NOW()))
 		   OR (t.status = 'WAITING_FOR_DEPENDENCY' AND NOT EXISTS (
 		       SELECT 1 FROM task_dependencies td
 		       JOIN tasks parent ON parent.id = td.depends_on_task_id
 		       WHERE td.task_id = t.id AND parent.status != 'COMPLETED'
 		   ))
-		   OR (t.status = 'RETRYING' AND (t.scheduled_for IS NULL OR t.scheduled_for <= NOW()));
+		   OR (t.status = 'RETRYING' AND (t.scheduled_for IS NULL OR t.scheduled_for <= NOW()))
+		) AND NOT (` + needsHandsSQL("t.") + `)
+		  AND COALESCE(t.leased_by, '') NOT LIKE 'host:%'
 	`
 	var count int64
 	err := r.pool.QueryRow(ctx, query).Scan(&count)
@@ -902,4 +933,79 @@ func (r *PostgresTaskRepository) CompactFinishedTasks(ctx context.Context, older
 		return res, fmt.Errorf("compact: commit: %w", err)
 	}
 	return res, nil
+}
+
+// ClaimNextTaskForHost implements TaskRepository.
+func (r *PostgresTaskRepository) ClaimNextTaskForHost(ctx context.Context, userID uuid.UUID, workerID string, caps []string, leaseDuration time.Duration) (*domain.Task, error) {
+	now := time.Now().UTC()
+	leaseExpires := now.Add(leaseDuration)
+	if caps == nil {
+		caps = []string{}
+	}
+
+	query := `
+		UPDATE tasks
+		SET status = 'RUNNING',
+			leased_by = $1,
+			lease_expires_at = $2,
+			started_at = COALESCE(started_at, $3),
+			updated_at = $3
+		WHERE id = (
+			SELECT id
+			FROM tasks
+			WHERE user_id = $4
+			  AND status IN ('QUEUED', 'RETRYING')
+			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
+			  AND ` + hostCanDoSQL("", "$5") + `
+			ORDER BY priority DESC, created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING
+			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
+			manager_domain, title, goal, input_payload, output_payload,
+			status, priority, idempotency_key, leased_by, lease_expires_at,
+			retry_count, max_retries, failure_reason, scheduled_for, started_at, completed_at,
+			created_at, updated_at
+	`
+	row := r.pool.QueryRow(ctx, query, workerID, leaseExpires, now, userID, caps)
+	task, err := scanTask(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("claim next task for host: %w", err)
+	}
+	return task, nil
+}
+
+// ListTasksNeedingHosts implements TaskRepository.
+func (r *PostgresTaskRepository) ListTasksNeedingHosts(ctx context.Context, userID uuid.UUID, limit int) ([]*domain.Task, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
+			manager_domain, title, goal, input_payload, output_payload,
+			status, priority, idempotency_key, leased_by, lease_expires_at,
+			retry_count, max_retries, failure_reason, scheduled_for, started_at, completed_at,
+			created_at, updated_at
+		FROM tasks
+		WHERE user_id = $1 AND status IN ('QUEUED', 'RETRYING') AND `+needsHandsSQL("")+`
+		ORDER BY priority DESC, created_at ASC
+		LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list tasks needing hosts: %w", err)
+	}
+	defer rows.Close()
+	out := []*domain.Task{}
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }

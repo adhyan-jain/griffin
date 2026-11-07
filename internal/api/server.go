@@ -28,13 +28,15 @@ type Server struct {
 
 // ServerDependencies holds all required repositories and services for HTTP routing.
 type ServerDependencies struct {
-	Config          *config.Config
-	Logger          *slog.Logger
-	DB              *database.DB
-	Engine          *service.TaskEngine
-	TaskRepo        repository.TaskRepository
-	ApprovalRepo    repository.ApprovalRepository
-	AgentRepo       repository.AgentRepository
+	Config       *config.Config
+	Logger       *slog.Logger
+	DB           *database.DB
+	Engine       *service.TaskEngine
+	TaskRepo     repository.TaskRepository
+	ApprovalRepo repository.ApprovalRepository
+	AgentRepo    repository.AgentRepository
+	// HostRepo enables the host API (laptop/phone hosts) when set.
+	HostRepo        repository.HostRepository
 	ArtifactRepo    repository.ArtifactRepository
 	StorageService  *storage.StorageService
 	WorkerDefRepo   repository.WorkerDefinitionRepository
@@ -110,6 +112,21 @@ func NewServer(deps ServerDependencies) *Server {
 	scaleToZero := false
 	if deps.Config != nil {
 		scaleToZero = deps.Config.ScaleToZeroEnabled
+	}
+
+	// Hosts (ADR-074): when a live host can take plain work the cloud runner is not woken for it. The
+	// manual Wake button keeps the raw controller: an explicit wake is always honoured.
+	rawWakeup := deps.Wakeup
+	var hostSvc *service.HostService
+	if deps.HostRepo != nil && deps.TaskRepo != nil && deps.Config != nil && deps.Config.HostsEnabled {
+		leaseSec := 60
+		if deps.Config != nil && deps.Config.LeaseDurationSeconds > 0 {
+			leaseSec = deps.Config.LeaseDurationSeconds
+		}
+		hostSvc = service.NewHostService(deps.HostRepo, deps.TaskRepo, time.Duration(leaseSec)*time.Second, deps.Logger)
+		if deps.Wakeup != nil {
+			deps.Wakeup = service.NewHostAwareWakeup(deps.Wakeup, hostSvc, deps.Logger)
+		}
 	}
 
 	taskHandler := handlers.NewTaskHandler(deps.Engine, deps.TaskRepo, deps.Wakeup, scaleToZero)
@@ -188,8 +205,25 @@ func NewServer(deps ServerDependencies) *Server {
 	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.Wakeup)
 	mux.Handle("POST /api/v1/scheduler/tick", workerAuth(http.HandlerFunc(schedulerHandler.Tick)))
 
+	// Execution hosts (laptop, phone). Owner routes use the user JWT; host routes use a per-host token and
+	// never touch the database directly.
+	if hostSvc != nil {
+		hostHandler := handlers.NewHostHandler(hostSvc, deps.Engine)
+		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))
+		mux.Handle("GET /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.ListHosts)))
+		mux.Handle("PATCH /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.UpdateHost)))
+		mux.Handle("DELETE /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.RevokeHost)))
+
+		hostAuth := middleware.AuthenticateHost(hostSvc)
+		mux.Handle("POST /api/v1/host/heartbeat", hostAuth(http.HandlerFunc(hostHandler.Heartbeat)))
+		mux.Handle("POST /api/v1/host/claim", hostAuth(http.HandlerFunc(hostHandler.Claim)))
+		mux.Handle("POST /api/v1/host/tasks/{task_id}/heartbeat", hostAuth(http.HandlerFunc(hostHandler.TaskHeartbeat)))
+		mux.Handle("POST /api/v1/host/tasks/{task_id}/complete", hostAuth(http.HandlerFunc(hostHandler.CompleteTask)))
+		mux.Handle("POST /api/v1/host/tasks/{task_id}/fail", hostAuth(http.HandlerFunc(hostHandler.FailTask)))
+	}
+
 	// Runner management endpoints
-	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, deps.Wakeup, scaleToZero)
+	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, rawWakeup, scaleToZero)
 	mux.Handle("GET /api/v1/runner/status", userAuth(http.HandlerFunc(runnerHandler.GetStatus)))
 	mux.Handle("POST /api/v1/runner/wake", userAuth(http.HandlerFunc(runnerHandler.WakeRunner)))
 	// System status: evidence-derived component health for the authenticated user.

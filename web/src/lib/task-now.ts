@@ -1,4 +1,5 @@
 import type { Task, TaskAttempt, TaskEvent, TaskStatus } from "@/lib/api";
+import { displayWorker, waitingForDevice } from "@/lib/hosts";
 
 export interface TaskNow {
   stage: string;
@@ -43,7 +44,7 @@ export function deriveNow(task: Task, events: TaskEvent[], attempts: TaskAttempt
   let stage = STAGE[task.status] ?? task.status;
   if (coordinating) {
     const running = children.find((c) => EXECUTING.includes(c.status) && c.leased_by && c.leased_by !== ORCHESTRATOR_LEASE);
-    worker = running ? `JJ coordinating · ${running.leased_by}` : "JJ coordinating";
+    worker = running ? `JJ coordinating · ${displayWorker(running.leased_by)}` : "JJ coordinating";
     if (task.status === "RUNNING") {
       const done = children.filter((c) => c.status === "COMPLETED").length;
       const idle = !children.some((c) => EXECUTING.includes(c.status) || c.status === "RETRYING");
@@ -54,11 +55,14 @@ export function deriveNow(task: Task, events: TaskEvent[], attempts: TaskAttempt
     const lease = EXECUTING.includes(task.status) && task.leased_by && task.leased_by !== ORCHESTRATOR_LEASE ? task.leased_by : null;
     worker = lease ?? latest?.worker_id ?? (typeof payload?.worker_key === "string" ? payload.worker_key : null);
   }
+  // A step that needs a device the owner has not got online is waiting for it, not for a worker.
+  const device = coordinating ? null : waitingForDevice(task);
+  if (device) stage = `Waiting for ${device} to come online`;
   return {
     stage,
     lastActivityAt,
     manager: task.manager_domain,
-    worker,
+    worker: displayWorker(worker),
     retry: task.retry_count > 0 ? { count: task.retry_count, max: task.max_retries } : null,
     failureReason: task.failure_reason || (task.status === "FAILED" ? (latest?.error_message ?? null) : null),
   };

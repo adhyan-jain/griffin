@@ -1,0 +1,24 @@
+# User service for the laptop host. Install:
+#   mkdir -p ~/.config/systemd/user ~/.griffin-host && chmod 700 ~/.griffin-host
+#   cp griffin-host.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   printf '%s' "<token from registration>" > ~/.griffin-host/token && chmod 600 ~/.griffin-host/token
+#   systemctl --user enable --now griffin-host
+# The API address goes in ~/.griffin-host/env as GRIFFIN_API_URL=https://... (no secrets in that file).
+[Unit]
+Description=Griffin laptop host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=%h/.griffin-host/env
+Environment=GRIFFIN_HOST_TOKEN_FILE=%h/.griffin-host/token
+ExecStart=%h/.griffin-host/griffin-host
+Restart=on-failure
+RestartSec=10
+# Stops cleanly: an interrupted step is left to its lease and requeued.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

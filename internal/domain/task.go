@@ -124,6 +124,9 @@ func (t *Task) Validate() error {
 	if err := ValidatePriority(t.Priority); err != nil {
 		return err
 	}
+	if err := ValidateRequires(t.InputPayload); err != nil {
+		return err
+	}
 	if t.Priority == "" {
 		t.Priority = TaskPriorityNormalP2
 	}
