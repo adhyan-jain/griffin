@@ -87,6 +87,17 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 await ctx.addInitScript(() => {
   localStorage.setItem("griffin_auth_token", "mock.jwt.token");
   localStorage.setItem("griffin_user_profile", JSON.stringify({ id: "u1", email: "operator@example.com", role: "OPERATOR" }));
+  // A stand-in speech engine that records what would be spoken, so Listen can be checked without audio.
+  window.__spoken = [];
+  const voices = [{ name: "Test Voice", lang: "en-US", voiceURI: "test-voice", default: true }];
+  const stub = {
+    speak(u) { window.__spoken.push({ text: u.text, rate: u.rate, voice: u.voice && u.voice.voiceURI }); setTimeout(() => u.onend && u.onend(), 20); },
+    cancel() { window.__cancelled = (window.__cancelled || 0) + 1; },
+    getVoices: () => voices,
+    addEventListener() {}, removeEventListener() {},
+  };
+  Object.defineProperty(window, "speechSynthesis", { value: stub, configurable: true });
+  window.SpeechSynthesisUtterance = function (text) { this.text = text; };
 });
 const page = await ctx.newPage();
 await page.route(`${API}/**`, async (route) => {
@@ -199,6 +210,30 @@ await page.waitForTimeout(700);
 const dels = calls.filter((c) => c.startsWith("DELETE")).length;
 check(dels >= 4, `bulk delete issued individual DELETEs (${dels} total)`);
 check(!tasks.some((t) => t.id === PLAN || t.parent_id === PLAN), "plan root deleted together with its subtask");
+
+// --- listen and voice picker
+tasks = [mk("d0000000-0000-4000-8000-000000000001", "Spoken answer", "COMPLETED", 0, { output_payload: { response: "## Summary\n\n**Yes**, they hire interns. See [the page](https://example.com/careers).\n\nA second sentence follows here for the reader." } })];
+await page.goto(`${BASE}/tasks/d0000000-0000-4000-8000-000000000001`, { waitUntil: "domcontentloaded" });
+await page.getByRole("button", { name: "Read result aloud" }).waitFor();
+await page.evaluate(() => { window.__spoken = []; });
+await page.getByRole("button", { name: "Read result aloud" }).click();
+await page.waitForTimeout(300);
+const spoken = await page.evaluate(() => window.__spoken.map((x) => x.text));
+check(spoken.length >= 1 && spoken.every((t) => !/[#*\[\]]|https?:/.test(t)), `Listen speaks clean sentences (${spoken.length} spoken, no symbols or links)`);
+check(spoken.join(" ").includes("they hire interns") && !spoken.join(" ").includes("example.com"), "Listen reads the answer, not the link address");
+await page.getByRole("button", { name: /Stop reading|Read result aloud/ }).first().click().catch(() => {});
+await page.goto(`${BASE}/settings`, { waitUntil: "domcontentloaded" });
+await page.getByRole("button", { name: "Preview", exact: true }).waitFor();
+await page.getByRole("tab", { name: "1.5x" }).click();
+await page.getByText("Voices come from your device").scrollIntoViewIfNeeded();
+await shot("settings-voice-390");
+await page.evaluate(() => { window.__spoken = []; });
+await page.getByRole("button", { name: "Preview", exact: true }).click();
+await page.waitForTimeout(200);
+const pv = await page.evaluate(() => window.__spoken[0]);
+check(pv && /how I will sound/.test(pv.text), "Preview speaks a sample sentence");
+check(pv && pv.rate === 1.5, "Preview uses the chosen speed");
+check((await page.evaluate(() => JSON.parse(localStorage.getItem("griffin_voice") || "{}").rate)) === 1.5, "the chosen speed is remembered on this device");
 
 // --- detail page
 tasks = [mk("c0000000-0000-4000-8000-000000000001", "Detail failed", "FAILED", 1, { failure_reason: "x" })];
