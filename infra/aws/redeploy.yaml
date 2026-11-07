@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Griffin one-click redeploy. Creates ONE CodeBuild project you start from the AWS console. It clones
+  the public repo, refuses any commit that is not on master, applies database migrations, then runs
+  infra/ops/deploy-backend.sh (the same checksum, health-check and auto-restore logic as from a laptop).
+  Defaults to a dry run. It has no webhook and nothing starts it except you.
+
+Parameters:
+  DatabaseSecretArn:
+    Type: String
+    Description: >
+      Secrets Manager secret (you create it) with JSON {"url":"postgres://..."}: the session-pooler or
+      direct connection of a database user allowed to migrate. NOT the transaction pooler (port 6543).
+  RepoUrl:
+    Type: String
+    Default: https://github.com/adhyan-jain/griffin.git
+  FunctionName:
+    Type: String
+    Default: griffin-api
+  InstanceId:
+    Type: String
+    Default: i-0123456789abcdef0
+  ArtifactBucket:
+    Type: String
+    Default: griffin-artifacts-123456789012-ap-south-1
+  ApiUrl:
+    Type: String
+    Default: https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com
+  GoVersion:
+    Type: String
+    Default: "1.25.0"
+    Description: Must be at least the version in go.mod.
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /griffin/redeploy
+      RetentionInDays: 30
+
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: griffin-redeploy-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: griffin-redeploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Deliberately NOT allowed: lambda:UpdateFunctionConfiguration (the function's environment
+              # holds database URLs and API keys), IAM, creating anything. HOSTS_ENABLED is set by you in the console.
+              - Sid: UpdateTheApiLambdaCode
+                Effect: Allow
+                Action:
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:PublishVersion
+                Resource:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}:*
+              - Sid: StartTheRunner
+                Effect: Allow
+                Action: ec2:StartInstances
+                Resource: !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${InstanceId}
+              - Sid: ReadInstanceState
+                Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ssm:DescribeInstanceInformation
+                  - ssm:GetCommandInvocation
+                Resource: "*"
+              - Sid: RunTheWorkerInstallScriptOnTheRunnerOnly
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${InstanceId}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript
+              - Sid: PublishReleasesOnly
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucket}/releases/*
+              - Sid: ReadTheMigrationSecret
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecretArn
+              - Sid: WriteBuildLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub ${LogGroup.Arn}:*
+
+  Project:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: griffin-redeploy
+      Description: Start build = plan. Start build with overrides, MODE=apply = deploy. Only commits on master.
+      ServiceRole: !GetAtt BuildRole.Arn
+      TimeoutInMinutes: 30
+      ConcurrentBuildLimit: 1
+      Artifacts: { Type: NO_ARTIFACTS }
+      LogsConfig:
+        CloudWatchLogs: { Status: ENABLED, GroupName: !Ref LogGroup }
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                - dnf install -y -q zip unzip file git python3 >/dev/null
+                - curl -sSfL https://go.dev/dl/go${GoVersion}.linux-amd64.tar.gz | tar -C /usr/local -xz
+            build:
+              commands:
+                - |
+                  set -euo pipefail
+                  export PATH=/usr/local/go/bin:$PATH
+                  git clone --quiet "$REPO_URL" repo
+                  cd repo
+                  git fetch --quiet origin master
+                  TIP="$(git rev-parse origin/master)"
+                  WANT="$COMMIT"; [ -n "$WANT" ] || WANT="$TIP"
+                  git cat-file -e "$WANT^{commit}" 2>/dev/null || { echo "unknown commit: $WANT"; exit 1; }
+                  WANT="$(git rev-parse "$WANT^{commit}")"
+                  git merge-base --is-ancestor "$WANT" origin/master || { echo "REFUSED: $WANT is not on master. Merge it first."; exit 1; }
+                  git checkout --quiet --detach "$WANT"
+                  echo "deploying $WANT (master tip is $TIP)"
+                  bash infra/aws/redeploy-build.sh
+      Environment:
+        # x86 build host: the Lambda and worker binaries are cross-compiled to arm64 (package-lambda.sh checks it).
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux-x86_64-standard:5.0
+        EnvironmentVariables:
+          - { Name: MODE, Value: plan }
+          - { Name: TARGET, Value: all }
+          - { Name: MIGRATE, Value: "yes" }
+          - { Name: COMMIT, Value: "" }
+          - { Name: REPO_URL, Value: !Ref RepoUrl }
+          - { Name: DATABASE_SECRET_ARN, Value: !Ref DatabaseSecretArn }
+          - { Name: LAMBDA_FUNCTION, Value: !Ref FunctionName }
+          - { Name: INSTANCE_ID, Value: !Ref InstanceId }
+          - { Name: BUCKET, Value: !Ref ArtifactBucket }
+          - { Name: API_URL, Value: !Ref ApiUrl }
+          - { Name: AWS_REGION, Value: !Ref "AWS::Region" }
+
+Outputs:
+  ProjectName:
+    Value: !Ref Project
+  HowToDeploy:
+    Value: "CodeBuild > griffin-redeploy > Start build with overrides > Environment variable overrides: MODE=apply"

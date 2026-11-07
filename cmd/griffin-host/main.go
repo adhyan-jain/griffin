@@ -36,6 +36,7 @@ import (
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/hostagent"
 	"github.com/griffin/core/internal/provider/antigravity"
+	"github.com/griffin/core/internal/sandbox"
 	"github.com/griffin/core/internal/worker"
 )
 
@@ -151,6 +152,9 @@ func runCheck(ctx context.Context, c *hostagent.Client, caps []string, exec work
 	if len(rep.Effective) == 0 {
 		fmt.Println("Note: nothing is both granted and advertised, so this host will be given no work. Grant capabilities in the app.")
 	}
+	// The sandbox is the gate for ever turning the permission-bypass flag on (ADR-075). This build does
+	// not use that flag, so the result is informational here; it tells you whether M3 can run on this machine.
+	fmt.Printf("Sandbox:        %s\n", sandboxStatus(ctx))
 	if herr != nil {
 		return fmt.Errorf("agent health check: %w", herr)
 	}
@@ -248,4 +252,16 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// sandboxStatus runs the canary self-test and describes the result in one line.
+func sandboxStatus(ctx context.Context) string {
+	bw, err := sandbox.Available(ctx)
+	if err != nil {
+		return "NOT AVAILABLE (" + err.Error() + "). The bypass flag must stay off on this machine."
+	}
+	if err := sandbox.SelfTest(ctx, bw); err != nil {
+		return "SELF-TEST FAILED: " + err.Error()
+	}
+	return "ok (bubblewrap; a file outside the allow-list is invisible from inside)"
 }

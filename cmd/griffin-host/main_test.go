@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -68,5 +69,13 @@ func TestLoadTokenPrefersTheFileAndNeverReturnsEmpty(t *testing.T) {
 	t.Setenv("GRIFFIN_HOST_TOKEN", "")
 	if _, err := loadToken(logger); err == nil {
 		t.Fatal("no token anywhere must be an error")
+	}
+}
+
+func TestSandboxStatusNeverClaimsSafetyWhenUnavailable(t *testing.T) {
+	t.Setenv("PATH", t.TempDir()) // no bwrap
+	got := sandboxStatus(context.Background())
+	if !strings.Contains(got, "NOT AVAILABLE") || strings.HasPrefix(got, "ok") {
+		t.Fatalf("with no bubblewrap the status must say so, got %q", got)
 	}
 }
