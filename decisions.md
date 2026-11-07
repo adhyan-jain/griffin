@@ -494,3 +494,11 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Alternatives researched for every rejected idea**: PRD section 9. Sources are vendor pages and bug trackers, not regulators; prices and India telecom rules must be confirmed before spending money.
 - **Deferred**: a worker-run summarize step (extra ~13 s for little gain since multi-step plans already end in a worker synthesis); revisit with live Terminals.
 - **Built so far**: `web/src/lib/speech.ts`, the Voice section in Settings, Listen on results, tabs by task kind (`web/src/app/tasks/[id]/page.tsx`), `internal/manager/purity_test.go` (managers may not import worker, provider, runner, storage, os, net or process packages; verified to fail on a violation).
+
+#### ADR-073: Agent concurrency follows the machine, not a fixed number
+- **Status**: BUILT (`internal/provider/antigravity/limiter.go`); ships with the next worker deploy.
+- **Decision**: `MAX_CONCURRENT_ANTIGRAVITY` is now a ceiling (default 4), not a fixed cap of 2. A limiter admits one more `agy` run only while free memory minus a reserve covers a learned per-agent size (plus 20%) and the 1-minute load is under CPUs x `AGY_LOAD_FACTOR`. The per-agent size starts at `AGY_AGENT_MB` and is updated from the resident memory of each finished run's process group. One agent is always admitted when none is running, so work never stalls. The worker asks the executor for capacity before claiming a task, so a task is never claimed and then left waiting.
+- **Why**: a fixed 2 wasted the machine on light tasks and could not grow with a burst of sub-agents; a fixed high number risks out-of-memory kills on the 4 GB instance. Measuring what runs really cost adapts to both.
+- **Knobs**: `AGY_RESERVE_MB` (900), `AGY_AGENT_MB` (500), `AGY_LOAD_FACTOR` (1.5). Non-Linux hosts without `/proc` fall back to the ceiling alone.
+- **Limit**: the ceiling still bounds a very large fan-out; hosts (laptop, M2) carry their own limiter.
+

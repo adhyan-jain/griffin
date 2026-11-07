@@ -169,7 +169,7 @@ P0 blocks the product, P1 makes it good, P2 makes it great.
 - **P0 Fast path:** a question that needs no tools or plan is answered in one step. **Built, not shipped:** the planner only splits research into gather-then-synthesize when the request asks for sourced research; everything else is one step. *Done when* "Plan a weekly status report" returns in < 15 s on a warm runner.
 - **P0 Streaming:** the answer appears while it is written. *Done when* the first words show within 3 s of the agent starting.
 - **P0 Warm window:** the runner stays up for ~15 min after activity instead of booting per task; still stops when idle.
-- **P1 Parallel steps:** independent steps run together (raise the agent concurrency to 2; size the instance for more).
+- **P1 Parallel steps:** independent steps run together (agent concurrency now follows free memory and load up to a ceiling, ADR-073).
 - **P1 Effort tiers:** low reasoning effort for simple steps, higher for hard ones.
 - **P1 Session reuse:** follow-ups in a thread reuse the warm agent conversation.
 
@@ -255,7 +255,7 @@ Honest limits: open-weights models are weaker than the hosted agent at long tool
 - **Credentials on the worker are unavoidable** for anything that logs in for you; the design choice is to store them in the cloud parameter store (encrypted) or as saved browser sessions, never in prompts, files or logs.
 
 ### 7.10 Sub-agents: as many as the task needs
-- **What exists:** a plan is already a set of steps with dependencies; independent steps can run on separate workers, up to the agent concurrency cap (2 today, on a ~3.8 GB instance).
+- **What exists:** a plan is already a set of steps with dependencies; independent steps can run on separate workers, as many as free memory and CPU allow, up to a ceiling of 4 by default (ADR-073; the old fixed cap was 2 on a ~3.8 GB instance).
 - **P1 Fan-out planning:** JJ decides per task how many parallel sub-agents help (research five sources at once, check ten job boards, draft several replies), not a fixed two steps. Each sub-agent gets one narrow goal, its own isolated workspace and its own tool tier.
 - **P1 Join step:** a synthesizer combines the sub-agents' results into one answer, with a visible list of who did what.
 - **P1 Capacity-aware:** fan-out is bounded by what the runner can hold; extra sub-agents queue rather than overload it. Raising capacity (a larger instance, or a second) is a cost decision for the owner.
@@ -359,7 +359,7 @@ Milestones in order; each ends in a demo. "You" marks what only the owner can do
 | M | Goal | Work | Proof |
 |---|---|---|---|
 | **M0 Stabilize** (1-2 d) | Nothing stuck or leaked | Ship the waiting commits (`ship.sh --apply`); replace the worker (`deploy-backend.sh worker`, dry run first); add the worker step to `ship.sh`; worker reports its build and Settings warns when stale; **You:** rotate the leaked credentials, delete old tasks in the app, check the phone, grant read on one log group | Plans finish the instant their last step ends; runner reaches idle shutdown; a stopped runner wakes on submit twice |
-| **M1 Fast, listens, simpler** (2-3 d) | Quick wins, no new infrastructure | Worker `IDLE_SHUTDOWN_SECONDS=900`, `MAX_CONCURRENT_ANTIGRAVITY=2`; **done:** Listen + voice picker, tabs by kind, manager-purity test; fast path done; summarize-as-worker-step deferred (below) | Plain-ask p50 before/after; Playwright at 320-412 px |
+| **M1 Fast, listens, simpler** (2-3 d) | Quick wins, no new infrastructure | Worker `IDLE_SHUTDOWN_SECONDS=900`, `MAX_CONCURRENT_ANTIGRAVITY` is a ceiling (default 4) with adaptive admission; **done:** Listen + voice picker, tabs by kind, manager-purity test; fast path done; summarize-as-worker-step deferred (below) | Plain-ask p50 before/after; Playwright at 320-412 px |
 | **M2 Host protocol + laptop host** (1-2 w) | The hands exist | Host API, `cmd/griffin-host`, capability claim and routing (no EC2 wake while a device can work), waiting states, "ran on" label, live Terminal (after capturing one real `agy` stream) | Host runs a task; stop it and a text step finishes on the EC2 while a device step waits, then resumes. **Stop if** a host needs more than these endpoints |
 | **M3 Laptop hands** (1-2 w) | Browser, messaging, approvals, documents | Playwright browser; trust settings (ask/auto per action and contact; outside text can never trigger an action); approve in chat; messaging: click-to-send first, WhatsApp Web second; Ollama drafting + refusal fallback; documents folder + sync; playbooks validated; click-to-call | E2E on a fake chat page; then a real run: read-only, then one approved message to your own number. **Stop sending** on any account warning |
 | **M4 Internships** (3-5 d) | The headline journey | Search, shortlist into the tracker list, drafts from your documents, each submission approved in chat, screenshot + tracker row | Dry run on 3 postings, then one real approved application |

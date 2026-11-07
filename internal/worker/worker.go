@@ -22,6 +22,13 @@ import (
 // ErrEmptyOutput marks an execution that reported success but produced no result.
 var ErrEmptyOutput = errors.New("execution reported success but produced no result")
 
+// CapacityChecker is implemented by executors that limit how many tasks run at once by what the machine can
+// hold. The worker asks before claiming, so tasks wait in the queue (visible, fair, reclaimable) instead of
+// being claimed and then stalling.
+type CapacityChecker interface {
+	HasCapacity() bool
+}
+
 // ToolCapable is implemented by executors that can run the read and act tiers. The worker only asks for
 // an act approval when it is true, so with tools off behaviour is unchanged.
 type ToolCapable interface {
@@ -165,6 +172,9 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
+	if cc, ok := w.executor.(CapacityChecker); ok && !cc.HasCapacity() {
+		return false, nil // no room for another agent: leave the task queued
+	}
 	task, err := w.engine.ClaimTask(ctx, w.ID, w.leaseDuration)
 	if err != nil {
 		return false, fmt.Errorf("claim task: %w", err)

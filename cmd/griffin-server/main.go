@@ -225,6 +225,9 @@ func main() {
 			agyExec, err := antigravity.NewAntigravityExecutor(antigravity.ExecutorConfig{
 				BinaryPath:                cfg.AntigravityBinary,
 				MaxConcurrent:             cfg.MaxConcurrentAntigravity,
+				ReserveMB:                 cfg.AgyReserveMB,
+				AgentMB:                   cfg.AgyAgentMB,
+				LoadFactor:                cfg.AgyLoadFactor,
 				ExecutionTimeout:          time.Duration(cfg.ExecutionTimeoutSeconds) * time.Second,
 				GracefulTermination:       time.Duration(cfg.GracefulTerminationSeconds) * time.Second,
 				WorkspaceRoot:             cfg.WorkspaceRoot,
@@ -269,7 +272,12 @@ func main() {
 		}
 
 		workerPool = worker.NewWorkerPool()
-		for i := 1; i <= cfg.MaxConcurrentWorkers; i++ {
+		// One worker loop per agent the machine may run at once, so a growing queue can use all of them.
+		workerLoops := cfg.MaxConcurrentWorkers
+		if cfg.MaxConcurrentAntigravity > workerLoops {
+			workerLoops = cfg.MaxConcurrentAntigravity
+		}
+		for i := 1; i <= workerLoops; i++ {
 			workerID := fmt.Sprintf("griffin-worker-%d", i)
 			w := worker.NewWorker(worker.Config{
 				ID:                workerID,
@@ -295,7 +303,7 @@ func main() {
 				}
 			}(w)
 		}
-		logger.Info("Spawned background task workers", "count", cfg.MaxConcurrentWorkers, "provider", executor.Name())
+		logger.Info("Spawned background task workers", "count", workerLoops, "provider", executor.Name())
 
 		// If running in dedicated worker mode with scale-to-zero, enable IdleShutdownMonitor
 		if cfg.GriffinMode == "worker" && cfg.ScaleToZeroEnabled {
