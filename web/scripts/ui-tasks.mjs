@@ -203,7 +203,7 @@ check(!tasks.some((t) => t.id === PLAN || t.parent_id === PLAN), "plan root dele
 // --- detail page
 tasks = [mk("c0000000-0000-4000-8000-000000000001", "Detail failed", "FAILED", 1, { failure_reason: "x" })];
 await page.goto(`${BASE}/tasks/c0000000-0000-4000-8000-000000000001`, { waitUntil: "domcontentloaded" });
-await page.getByRole("tab", { name: /Overview/ }).waitFor();
+await page.getByRole("tab", { name: /^Result/ }).waitFor();
 const dt = await scrolls("[data-slot=tabs-list]");
 check(!dt.v && !dt.h, `detail tabs have no scrollbar (v=${dt.v} h=${dt.h})`);
 const tabBox = await page.locator("[data-slot=tabs-list]").boundingBox();

@@ -8,9 +8,11 @@ import { Loader2 } from "lucide-react";
 import { api, clearAuthToken, getCurrentUser, type RunnerStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SystemStatusList, useSystemStatus } from "@/components/system-status";
 import { PageContainer, PageHeader } from "@/components/page";
 import { useFxMode, type FxMode } from "@/lib/fx";
+import { RATES, setVoicePrefs, speak, stopSpeaking, useSpeechSupported, useVoicePrefs, useVoices } from "@/lib/speech";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -41,6 +43,50 @@ function FxPicker() {
         </TabsList>
       </Tabs>
       <p className="text-xs text-muted-foreground">{FX_OPTIONS.find((o) => o.value === mode)?.hint} Saved on this device only.</p>
+    </div>
+  );
+}
+
+/** Pick the voice results are read in, and the speed; Preview plays a sample in that voice. */
+function VoicePicker() {
+  const supported = useSpeechSupported();
+  const voices = useVoices();
+  const prefs = useVoicePrefs();
+  if (!supported) return <p className="text-sm text-muted-foreground">This browser cannot read text aloud, so there is nothing to pick here.</p>;
+  const sample = "Hi, this is how I will sound when I read your results to you.";
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Select value={prefs.voiceURI ?? "default"} onValueChange={(v) => setVoicePrefs({ voiceURI: v === "default" ? null : v })}>
+          <SelectTrigger className="h-11 min-w-0 flex-1" aria-label="Voice">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">Device default</SelectItem>
+            {voices.map((v) => (
+              <SelectItem key={v.voiceURI} value={v.voiceURI}>
+                {v.name} ({v.lang})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" className="h-11 shrink-0" onClick={() => speak("preview", sample)}>
+          Preview
+        </Button>
+        <Button variant="ghost" className="h-11 shrink-0" onClick={stopSpeaking} aria-label="Stop preview">
+          Stop
+        </Button>
+      </div>
+      <Tabs value={String(prefs.rate)} onValueChange={(v) => setVoicePrefs({ rate: Number(v) })}>
+        <TabsList className="grid h-auto w-full grid-cols-5 p-[3px] group-data-[orientation=horizontal]/tabs:h-auto" aria-label="Speed">
+          {RATES.map((r) => (
+            <TabsTrigger key={r} value={String(r)} className="h-10 px-1 text-xs">
+              {r}x
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+      <p className="text-xs text-muted-foreground">Voices come from your device. Saved on this device only.</p>
     </div>
   );
 }
@@ -118,6 +164,9 @@ export default function SettingsPage() {
 
         <Section title="Visual effects">
           <FxPicker />
+        </Section>
+        <Section title="Voice">
+          <VoicePicker />
         </Section>
         <Section title="Runner">
           <Row label="State" value={runner ? runner.state : "Unknown"} />
