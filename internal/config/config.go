@@ -34,7 +34,10 @@ type Config struct {
 	AgyEffort                  string   // optional --effort level
 	TaskCompactAfterDays       int      // finished tasks older than this are trimmed; 0 disables
 	AntigravityBinary          string   // path or command name, default "agy"
-	MaxConcurrentAntigravity   int      // default 1, maximum 2
+	MaxConcurrentAntigravity   int      // ceiling for agents at once; the machine's memory and load decide how many actually run
+	AgyReserveMB               int      // memory kept free for the OS and the worker
+	AgyAgentMB                 int      // starting estimate of one agent's memory (learned from real runs)
+	AgyLoadFactor              float64  // a new agent starts only while load < CPUs x this
 	ExecutionTimeoutSeconds    int      // default 300
 	GracefulTerminationSeconds int      // default 5
 	WorkspaceRoot              string   // default "/tmp/griffin-workspaces"
@@ -126,7 +129,10 @@ func Load() (*Config, error) {
 		AgyEffort:                       getEnv("AGY_EFFORT", ""),
 		TaskCompactAfterDays:            getEnvAsInt("TASK_COMPACT_AFTER_DAYS", 7),
 		AntigravityBinary:               getEnv("ANTIGRAVITY_BINARY", "agy"),
-		MaxConcurrentAntigravity:        getEnvAsInt("MAX_CONCURRENT_ANTIGRAVITY", 1),
+		MaxConcurrentAntigravity:        getEnvAsInt("MAX_CONCURRENT_ANTIGRAVITY", 4),
+		AgyReserveMB:                    getEnvAsInt("AGY_RESERVE_MB", 900),
+		AgyAgentMB:                      getEnvAsInt("AGY_AGENT_MB", 500),
+		AgyLoadFactor:                   getEnvAsFloat("AGY_LOAD_FACTOR", 1.5),
 		ExecutionTimeoutSeconds:         getEnvAsInt("EXECUTION_TIMEOUT_SECONDS", 300),
 		GracefulTerminationSeconds:      getEnvAsInt("GRACEFUL_TERMINATION_SECONDS", 5),
 		WorkspaceRoot:                   getEnv("WORKSPACE_ROOT", "/tmp/griffin-workspaces"),
@@ -341,4 +347,13 @@ func getEnvAsBool(key string, defaultVal bool) bool {
 		return defaultVal
 	}
 	return val
+}
+
+func getEnvAsFloat(key string, fallback float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return fallback
 }

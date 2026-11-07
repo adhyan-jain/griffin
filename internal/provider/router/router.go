@@ -36,6 +36,12 @@ func (r *Router) Name() string { return "router" }
 // IsHealthy follows the primary provider: the system is usable as long as agy is.
 func (r *Router) IsHealthy(ctx context.Context) (bool, error) { return r.agy.IsHealthy(ctx) }
 
+// HasCapacity forwards the primary provider's answer (only agy is limited by this machine's resources).
+func (r *Router) HasCapacity() bool {
+	cc, ok := r.agy.(worker.CapacityChecker)
+	return !ok || cc.HasCapacity()
+}
+
 // ToolsEnabled forwards the primary provider's setting (only agy runs tool tiers).
 func (r *Router) ToolsEnabled() bool {
 	tc, ok := r.agy.(worker.ToolCapable)

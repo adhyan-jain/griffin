@@ -34,6 +34,13 @@ type ExecutorConfig struct {
 
 	// ToolsEnabled is the master switch for the read and act tiers. Off (the default) means every task
 	// runs text-only exactly as before, whatever tier it asked for.
+	// Adaptive concurrency: MaxConcurrent is the ceiling; agents are admitted only while the machine has
+	// memory and CPU for them (see Limiter). Zero values use sensible defaults.
+	ReserveMB  int
+	AgentMB    int
+	LoadFactor float64
+	Probe      Probe
+
 	ToolsEnabled bool
 	// ReadArgs and ActArgs are the extra agy flags for each tier, for example "--mode plan --sandbox".
 	// They are validated at construction: flags that bypass permission checks are refused.
@@ -48,7 +55,7 @@ type ExecutorConfig struct {
 type AntigravityExecutor struct {
 	cfg       ExecutorConfig
 	workspace *WorkspaceManager
-	sem       chan struct{}
+	limiter   *Limiter
 	logger    *slog.Logger
 	facts     RuntimeFacts
 
@@ -66,8 +73,8 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 	if cfg.MaxConcurrent <= 0 {
 		cfg.MaxConcurrent = 1
 	}
-	if cfg.MaxConcurrent > 2 {
-		cfg.MaxConcurrent = 2 // Hard bounded limit to protect host resources
+	if cfg.MaxConcurrent > 32 {
+		cfg.MaxConcurrent = 32 // an absolute sanity bound; the real limit is what the machine can hold
 	}
 	if cfg.ExecutionTimeout <= 0 {
 		cfg.ExecutionTimeout = 300 * time.Second
@@ -94,7 +101,7 @@ func NewAntigravityExecutor(cfg ExecutorConfig) (*AntigravityExecutor, error) {
 	exec := &AntigravityExecutor{
 		cfg:       cfg,
 		workspace: wsMgr,
-		sem:       make(chan struct{}, cfg.MaxConcurrent),
+		limiter:   NewLimiter(LimiterConfig{Ceiling: cfg.MaxConcurrent, ReserveMB: cfg.ReserveMB, AgentMB: cfg.AgentMB, LoadFactor: cfg.LoadFactor, Probe: cfg.Probe}),
 		logger:    cfg.Logger,
 	}
 	exec.healthy.Store(true)
@@ -134,6 +141,10 @@ func validateToolArgs(cfg ExecutorConfig) error {
 	}
 	return nil
 }
+
+// HasCapacity reports whether another agent would be admitted right now. The worker checks it before
+// claiming a task, so work waits in the queue instead of sitting claimed but not started.
+func (e *AntigravityExecutor) HasCapacity() bool { return e.limiter.HasCapacity() }
 
 // ToolsEnabled reports whether the read and act tiers are active. The worker only asks for an
 // approval when this is true, so with tools off nothing changes.
@@ -218,18 +229,18 @@ type inputEnvelope struct {
 
 // Execute claims a concurrency token, provisions an isolated scratchpad, invokes the CLI, and reaps process groups.
 func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*worker.ExecutionResult, error) {
-	// 1. Acquire bounded concurrency token
-	select {
-	case e.sem <- struct{}{}:
-		defer func() { <-e.sem }()
-	case <-ctx.Done():
+	// 1. Wait until the machine has room for another agent (adaptive, not a fixed number).
+	var peakMB atomic.Int64
+	if err := e.limiter.Acquire(ctx); err != nil {
 		return &worker.ExecutionResult{
 			ProviderName: "antigravity",
 			Status:       "FAILED",
-			Error:        ctx.Err(),
+			Error:        err,
 			Retryable:    false,
-		}, ctx.Err()
+		}, err
 	}
+	// The run's measured peak memory refines the limiter's estimate of what an agent costs here.
+	defer func() { e.limiter.Release(int(peakMB.Load())) }()
 
 	execID := uuid.New()
 	start := time.Now()
@@ -345,6 +356,24 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	}
 
 	pgid := cmd.Process.Pid
+
+	// Sample the process group's memory so admission follows what agents really use.
+	stopSampling := make(chan struct{})
+	defer close(stopSampling)
+	go func() {
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-stopSampling:
+				return
+			case <-t.C:
+				if m := int64(groupRSSMB(pgid)); m > peakMB.Load() {
+					peakMB.Store(m)
+				}
+			}
+		}
+	}()
 
 	// 6. Asynchronous wait with process tree termination
 	done := make(chan error, 1)
