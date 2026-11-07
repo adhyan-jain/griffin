@@ -235,10 +235,12 @@ func (h *HostHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	if req.Output == nil {
 		req.Output = json.RawMessage("{}")
 	}
+	ah := h.svc.BeginFinish(r.Context(), host, id)
 	if err := h.engine.CompleteTask(r.Context(), id, host.WorkerID(), req.Output); err != nil {
 		httputil.ErrorJSON(w, err)
 		return
 	}
+	h.svc.EndFinish(r.Context(), host, ah, "COMPLETED", "")
 	httputil.JSON(w, http.StatusOK, map[string]string{"message": "Task completed successfully"})
 }
 
@@ -258,9 +260,11 @@ func (h *HostHandler) FailTask(w http.ResponseWriter, r *http.Request) {
 	if req.Reason == "" {
 		req.Reason = "Host reported execution failure"
 	}
+	ah := h.svc.BeginFinish(r.Context(), host, id)
 	if err := h.engine.FailTask(r.Context(), id, host.WorkerID(), req.Reason, req.Retryable); err != nil {
 		httputil.ErrorJSON(w, err)
 		return
 	}
+	h.svc.EndFinish(r.Context(), host, ah, "FAILED", req.Reason)
 	httputil.JSON(w, http.StatusOK, map[string]string{"message": "Task failure recorded successfully"})
 }

@@ -148,6 +148,15 @@ func (s *HostService) Claim(ctx context.Context, h *domain.Host) (*ClaimResult, 
 		Message:   fmt.Sprintf("Task claimed by %s host %q", h.Kind, h.Name),
 		Metadata:  meta,
 	})
+	// The Attempts tab shows host runs like any other run: one attempt per try, upserted by a stable id.
+	_ = s.tasks.RecordAttempt(ctx, &domain.TaskAttempt{
+		ID:            hostAttemptID(task.ID, task.RetryCount+1),
+		TaskID:        task.ID,
+		WorkerID:      h.WorkerID(),
+		AttemptNumber: task.RetryCount + 1,
+		Status:        "RUNNING",
+		StartedAt:     s.now(),
+	})
 	res := &ClaimResult{Task: task}
 	if deps, derr := s.tasks.GetDependencyOutputs(ctx, task.ID); derr != nil {
 		s.logger.Warn("host claim: could not load dependency outputs", "task_id", task.ID, "error", derr)
@@ -278,4 +287,54 @@ func (w *HostAwareWakeup) TriggerWakeup(ctx context.Context) error {
 		}
 	}
 	return w.inner.TriggerWakeup(ctx)
+}
+
+// hostAttemptID is the stable id of a host's attempt at a task, so claim and finish update one record.
+func hostAttemptID(taskID uuid.UUID, attemptNumber int) uuid.UUID {
+	return uuid.NewSHA1(taskID, []byte(fmt.Sprintf("host-attempt:%d", attemptNumber)))
+}
+
+// AttemptHandle identifies the attempt a host is finishing. Take it BEFORE completing or failing the
+// task: a retryable failure increments the retry count, which would change the attempt number.
+type AttemptHandle struct {
+	id      uuid.UUID
+	taskID  uuid.UUID
+	number  int
+	started time.Time
+}
+
+// BeginFinish captures the attempt for a task the host is about to finish.
+func (s *HostService) BeginFinish(ctx context.Context, h *domain.Host, taskID uuid.UUID) *AttemptHandle {
+	task, err := s.tasks.GetTaskByID(ctx, taskID)
+	if err != nil || task == nil {
+		return nil
+	}
+	ah := &AttemptHandle{id: hostAttemptID(taskID, task.RetryCount+1), taskID: taskID, number: task.RetryCount + 1, started: s.now()}
+	if attempts, err := s.tasks.GetAttempts(ctx, taskID); err == nil {
+		for _, a := range attempts {
+			if a.ID == ah.id {
+				ah.started = a.StartedAt
+			}
+		}
+	}
+	return ah
+}
+
+// EndFinish records the outcome. Call it only after the task transition succeeded, so a refused
+// completion (not the lease holder) leaves no attempt behind. A recording failure is logged, never fatal.
+func (s *HostService) EndFinish(ctx context.Context, h *domain.Host, ah *AttemptHandle, status string, errMsg string) {
+	if ah == nil {
+		return
+	}
+	now := s.now()
+	a := &domain.TaskAttempt{
+		ID: ah.id, TaskID: ah.taskID, WorkerID: h.WorkerID(), AttemptNumber: ah.number,
+		Status: status, StartedAt: ah.started, CompletedAt: &now, DurationMs: int(now.Sub(ah.started).Milliseconds()),
+	}
+	if errMsg != "" {
+		a.ErrorMessage = &errMsg
+	}
+	if err := s.tasks.RecordAttempt(ctx, a); err != nil {
+		s.logger.Error("host attempt not recorded", "task_id", ah.taskID, "error", err)
+	}
 }

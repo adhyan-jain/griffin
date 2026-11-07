@@ -488,3 +488,80 @@ func TestDependencyOutputsTravelWithTheClaim(t *testing.T) {
 		t.Fatalf("the child must carry its prerequisite's output: %v", unwrap(out))
 	}
 }
+
+func attemptsOf(t *testing.T, e *hostEnv, id uuid.UUID) []*domain.TaskAttempt {
+	t.Helper()
+	a, err := e.TaskRepo.GetAttempts(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func TestHostRunsAppearInTheAttemptsTab(t *testing.T) {
+	e := setupHostEnv(t)
+	hid, laptop := e.register(t, "laptop", "laptop", "agent")
+	e.beat(t, laptop, "agent")
+	task := e.newTask(t, "tracked")
+
+	if code, _ := e.do(t, "POST", "/api/v1/host/claim", laptop, nil); code != http.StatusOK {
+		t.Fatal("claim failed")
+	}
+	got := attemptsOf(t, e, task.ID)
+	if len(got) != 1 || got[0].Status != "RUNNING" || got[0].AttemptNumber != 1 || got[0].WorkerID != domain.HostWorkerPrefix+hid.String() {
+		t.Fatalf("a claim must open attempt 1 for this host, got %+v", got)
+	}
+
+	// Allow a retry (a task with no retries left fails for good), then fail it retryably: attempt 1 is closed as FAILED with the reason, and the retry gets attempt 2.
+	path := "/api/v1/host/tasks/" + task.ID.String()
+	if _, err := e.DB.Pool.Exec(context.Background(), `UPDATE tasks SET max_retries = 3 WHERE id = $1`, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := e.do(t, "POST", path+"/fail", laptop, map[string]any{"reason": "rate limited", "retryable": true}); code != http.StatusOK {
+		t.Fatalf("fail: %d %v", code, out)
+	}
+	got = attemptsOf(t, e, task.ID)
+	if len(got) != 1 || got[0].Status != "FAILED" || got[0].ErrorMessage == nil || *got[0].ErrorMessage != "rate limited" || got[0].CompletedAt == nil {
+		t.Fatalf("a failure must close the attempt with its reason, got %+v", got)
+	}
+
+	if _, err := e.DB.Pool.Exec(context.Background(), `UPDATE tasks SET scheduled_for = NULL WHERE id = $1`, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := e.do(t, "POST", "/api/v1/host/claim", laptop, nil); code != http.StatusOK {
+		t.Fatal("the retry must be claimable")
+	}
+	if code, out := e.do(t, "POST", path+"/complete", laptop, map[string]any{"output": map[string]any{"text": "done"}}); code != http.StatusOK {
+		t.Fatalf("complete: %d %v", code, out)
+	}
+	got = attemptsOf(t, e, task.ID)
+	if len(got) != 2 {
+		t.Fatalf("two tries => two attempts, got %+v", got)
+	}
+	done := 0
+	for _, a := range got {
+		if a.Status == "COMPLETED" && a.AttemptNumber == 2 && a.DurationMs >= 0 {
+			done++
+		}
+	}
+	if done != 1 {
+		t.Fatalf("attempt 2 must be COMPLETED, got %+v", got)
+	}
+}
+
+func TestRefusedCompletionLeavesNoAttemptBehind(t *testing.T) {
+	e := setupHostEnv(t)
+	_, a := e.register(t, "laptop-a", "laptop", "agent")
+	_, b := e.register(t, "laptop-b", "laptop", "agent")
+	e.beat(t, a, "agent")
+	e.beat(t, b, "agent")
+	task := e.newTask(t, "mine")
+	if code, _ := e.do(t, "POST", "/api/v1/host/claim", a, nil); code != http.StatusOK {
+		t.Fatal("claim failed")
+	}
+	e.do(t, "POST", "/api/v1/host/tasks/"+task.ID.String()+"/complete", b, map[string]any{"output": map[string]any{"text": "stolen"}})
+	got := attemptsOf(t, e, task.ID)
+	if len(got) != 1 || got[0].Status != "RUNNING" {
+		t.Fatalf("a refused completion must not touch the attempt, got %+v", got)
+	}
+}

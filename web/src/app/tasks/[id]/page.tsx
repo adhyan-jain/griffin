@@ -17,6 +17,7 @@ import { Kinetic } from "@/components/fx/kinetic";
 import { ResultView } from "@/components/result-view";
 import { isEmptyAnswerFailure } from "@/lib/result-text";
 import { deriveNow } from "@/lib/task-now";
+import { displayWorker } from "@/lib/hosts";
 import { usePolling } from "@/lib/use-polling";
 import { canDelete, canResume, canRunAgain, isPlan, runAgain } from "@/lib/task-actions";
 
@@ -345,7 +346,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     <StatusBadge status={a.status} />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {(a.duration_ms / 1000).toFixed(1)}s · {(a.prompt_tokens + a.completion_tokens).toLocaleString()} tokens · {a.worker_id}
+                    {(a.duration_ms / 1000).toFixed(1)}s · {(a.prompt_tokens + a.completion_tokens).toLocaleString()} tokens · {displayWorker(a.worker_id)}
                   </p>
                   {a.error_message && <p className="text-xs text-destructive">{a.error_message}</p>}
                 </li>
