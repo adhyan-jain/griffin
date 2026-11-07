@@ -78,6 +78,9 @@ Status as of 2026-11-06 14:20 UTC, after the last ship.
 - **Empty answers say so:** a run that comes back with nothing shows "No information was found for this", and the agent prompts ask it to say so in a sentence instead of returning nothing.
 - **Old tasks stay lean:** finished tasks older than 7 days lose their activity and attempt history, and a long answer is shortened to ~600 characters *only when the full answer is saved as a file*; title, goal, status and playbooks stay. Runs on the worker at start and every 6 hours (`TASK_COMPACT_AFTER_DAYS`, 0 turns it off). The task page tells you when an answer was shortened.
 - **Phone fixes:** the select-all action bar fits at 320-412 px (it pushed Delete off screen at 360 and below); task tab counts sit inline on one line; Activity, Attempts and Subtasks checked for overlap at four phone widths (none); the UI harness now checks the bar at 320, 360 and 390 px.
+- **Listen and voices:** a Listen button on results reads them aloud sentence by sentence with the phone's own voices (stops when you leave the page); Settings has a Voice section with a picker, five speeds and a Preview button, saved per device.
+- **Tabs by kind:** a plan shows Overview / Plan / Activity; a worker task shows Result / Activity / Attempts / Files.
+- **Managers are brains, enforced:** a test fails if the manager package ever imports anything that can run a provider, start a process, use the network or touch files (checked: it catches a violation).
 - **Login screen** restyled to match the app; **deploy scripts** no longer print the Lambda environment; **docs** cleaned up to the PRD, `decisions.md` and `evolution.md`; credential-rotation runbook.
 
 ### 4.3 Built, but waiting for the worker to be replaced
@@ -307,29 +310,20 @@ Three layers, each with one job.
 
 **Approve in chat (P0 for approvals).** Pending approvals appear **in the chat thread** as cards (Approve, Deny, Edit), and typed replies work too: "yes", "no", "approve all the calls to Mom and Dad". Every reply is bound to the specific pending approvals listed in that thread; "approve all" covers only those. Only the owner's signed-in session can approve; text from outside never can (7.8). The Approvals page stays as the full list.
 
-### 7.15 Execution hosts: laptop first, EC2 as backup (and your documents)
-**Idea:** the agents can run on more than one machine, and Griffin picks the best one that is awake. The laptop becomes an optional host; the EC2 worker stays as the always-available backup.
+### 7.15 Devices that are ready do the work; the cloud thinks
+The EC2 is **not** where tools, logins or apps live: setting them up and authenticating there is slow and puts credentials in the cloud. The hands are the devices that already have everything.
 
-| Host | Runs | Used when | Credentials |
-|---|---|---|---|
-| **Laptop** (optional) | `agy` and Claude Code, with the owner's own logins | The laptop is on and connected | Stay on the laptop; nothing is copied to the cloud |
-| **EC2 worker** (today) | `agy` | The laptop is off or busy | `agy` login on the instance (as now) |
-| **Phone** (experimental) | Claude Code inside a terminal app (Termux) | Only if the owner wants it | On the phone |
+| Machine | Role | Runs |
+|---|---|---|
+| **Laptop** (Linux) | Browser, local files, Ollama, and the link to the phone | `agy`, Claude Code, Playwright |
+| **Android phone** | SIM, native apps, notifications, speech | Controlled from the laptop (ADB, KDE Connect) first; its own host later |
+| **EC2 + API** | Queue, planner, approvals, storage, scheduling, text-only backup | `agy` text-only. No tools, no logins, ever |
 
-- **How the laptop connects:** a small **host agent** on the laptop connects **out** to Griffin (no open ports) and asks for work it can do; it needs no database access. Griffin gives it a **device token** scoped to the owner's tasks only (claim, heartbeat, complete): a new **Host API** on the Lambda. Today workers talk to the database directly, which a laptop must never be able to do.
-- **Routing:** when the laptop's heartbeat is fresh, tasks go there first; otherwise to the EC2 worker. **A bonus:** with the laptop online the EC2 is not woken at all (no boot wait, no instance cost).
-- **Claude steps:** run on the laptop when it is on. When it is off, the owner's policy decides: **queue** until the laptop is back, or **fall back to `agy`** (the router in ADR-059 already falls back and records which engine ran). Signing Claude in on the EC2 is the other option; it puts that login on the instance.
-- **Laptop safety:** a task running on a personal machine can touch personal files, so each task runs in its **own scratch folder**, sees only folders the owner allows (for example `Documents/Griffin`), and the agent's permission mode stays restricted. Everything the host does is logged.
-- **Phone as a host, honestly:** Claude Code is a command-line program. It may run in a phone terminal app, but that is unofficial and unverified here, phones suspend background apps (so it would drop out often), and it cannot lend the *Claude mobile app's* session. Worth a trial after the laptop host works, not something to depend on.
-- **Terms:** Claude Code run headlessly on the owner's own machine with the owner's own login is its normal use; check the current subscription terms before relying on heavy automated use.
-- **Done when:** with the laptop on, a task runs there and the EC2 stays asleep; close the lid and the same task runs on the EC2 with no manual step; the task page says which host ran it.
-
-**Your documents (resume context, role-specific resume drafts).**
-- **A Documents library** in the app: files you add once (for example `AJ_resume_context` and your rough resume per role), stored in your private S3 area, each with tags (for example `resume-context`, `role: backend`).
-- **Two ways in:** upload from the Files page (works today, 5 MB each) or, once the laptop host exists, **sync a chosen folder** (for example `Documents/Griffin`) to S3 automatically.
-- **How tasks use them:** a task names the documents it needs, or Griffin picks by tags and keywords (an application for a backend role pulls `AJ_resume_context` plus the backend resume draft). Only the relevant ones are given to the agent, long ones are condensed once and cached, and the content is never written to logs.
-- **Privacy:** documents are as sensitive as the resume they hold: they stay under your own prefix in your bucket (already per-user), are read only by the worker or host running your task, and never appear in playbooks or in anything shared.
-- **Done when:** "apply to this role" starts from your context and the matching resume draft without you attaching anything.
+- **Capabilities, not machines:** each step lists what it *requires* (`browser`, `files`, `phone_apps`, `sms`, `calls`, `messaging`, or nothing for plain text); each online machine advertises what it *can do* by heartbeat; a step is claimed by an online machine that covers it (laptop first for general agent work). If the needed device is off the step waits ("Waiting for your laptop / phone"), then resumes by itself; plain text keeps running on the EC2.
+- **Host API:** a small API (heartbeat, claim, events, complete) with a per-host key; hosts never get database credentials. Claim reuses `ClaimNextTask` with one added condition; presence is stored on an `agents` row (no migration).
+- **Safety on a personal machine:** each task runs in its own scratch folder that sees only allow-listed folders (default `Documents/Griffin`), with a restricted agent permission mode, full logging and a revocable key per host.
+- **Documents:** the laptop host reads `Documents/Griffin` (your `AJ_resume_context` and role resume drafts) and one-way syncs it to your S3 area so the phone and cloud runs can fetch the same files.
+- **Claude steps** run on a device with a Claude login; with none on, they fall back to text-only `agy` on the EC2 and say so.
 
 ---
 
@@ -358,97 +352,35 @@ The deploy user has narrow policies (Lambda update and publish; EC2 start/stop a
 
 ---
 
-## 9. Plan to finish
+## 9. Plan to finish (approved v4)
 
-**Order of work, what each step needs, and how we know it is done.** Effort: S under a day, M a few days, L about a week or more. "You" marks something only the owner can do or decide.
+Milestones in order; each ends in a demo. "You" marks what only the owner can do. Kill criteria say when to stop and re-scope.
 
-### Phase 0: Stabilize (do first; unblocks everything)
-| # | Work | Effort | Needs | Done when |
-|---|---|---|---|---|
-| 0.1 | Ship the waiting commits (`ship.sh --apply`) | S | You run it | Live checks pass: new routes 401, web has the file viewer and Save to list |
-| 0.2 | Replace the worker binary (`deploy-backend.sh worker`, dry run first) | S | You approve and run it | Worker reports the new build; plans finish the instant their last step ends; the runner reaches idle shutdown; saved files and compaction log lines appear |
-| 0.3 | Add the worker step to `ship.sh` and a build-version check (worker reports its commit; the app warns when it is older than the API) | M | none | A stale worker is visible in Settings |
-| 0.4 | Rotate the exposed credentials (PRD 8.3) | S | You | Sign-in works, one task completes, old values retired |
-| 0.5 | Make API logs readable: grant read on `/aws/lambda/griffin-api` only (a narrow policy), or ship logs to a place already readable | S | You decide on a narrow log-read policy | We can see why a wake failed |
-| 0.6 | Diagnose why the runner sometimes does not wake (likely the Lambda role's EC2 permission or a cooldown) using 0.5 | S | 0.5 | A submit on a stopped runner starts it, proven twice |
-| 0.7 | Delete your old tasks from the app (Tasks, Select all, Delete); check on your phone | S | You | Clean list; you report what feels off |
+| M | Goal | Work | Proof |
+|---|---|---|---|
+| **M0 Stabilize** (1-2 d) | Nothing stuck or leaked | Ship the waiting commits (`ship.sh --apply`); replace the worker (`deploy-backend.sh worker`, dry run first); add the worker step to `ship.sh`; worker reports its build and Settings warns when stale; **You:** rotate the leaked credentials, delete old tasks in the app, check the phone, grant read on one log group | Plans finish the instant their last step ends; runner reaches idle shutdown; a stopped runner wakes on submit twice |
+| **M1 Fast, listens, simpler** (2-3 d) | Quick wins, no new infrastructure | Worker `IDLE_SHUTDOWN_SECONDS=900`, `MAX_CONCURRENT_ANTIGRAVITY=2`; **done:** Listen + voice picker, tabs by kind, manager-purity test; fast path done; summarize-as-worker-step deferred (below) | Plain-ask p50 before/after; Playwright at 320-412 px |
+| **M2 Host protocol + laptop host** (1-2 w) | The hands exist | Host API, `cmd/griffin-host`, capability claim and routing (no EC2 wake while a device can work), waiting states, "ran on" label, live Terminal (after capturing one real `agy` stream) | Host runs a task; stop it and a text step finishes on the EC2 while a device step waits, then resumes. **Stop if** a host needs more than these endpoints |
+| **M3 Laptop hands** (1-2 w) | Browser, messaging, approvals, documents | Playwright browser; trust settings (ask/auto per action and contact; outside text can never trigger an action); approve in chat; messaging: click-to-send first, WhatsApp Web second; Ollama drafting + refusal fallback; documents folder + sync; playbooks validated; click-to-call | E2E on a fake chat page; then a real run: read-only, then one approved message to your own number. **Stop sending** on any account warning |
+| **M4 Internships** (3-5 d) | The headline journey | Search, shortlist into the tracker list, drafts from your documents, each submission approved in chat, screenshot + tracker row | Dry run on 3 postings, then one real approved application |
+| **M5 The phone, through the laptop** (1-2 w) | Phone apps and SMS | Mobilerun/DroidRun over ADB (adopt, don't build); KDE Connect for SMS and notifications (confirm delivery by reading the sent state, not the exit code) | With your phone: list notifications, read a WhatsApp message, one approved SMS to your own number. **Stop if** apps block automation |
+| **M6 Calls like companies do** (optional) | Calls without SIM cards | Telephony provider (rented number or SIP trunk) + audio stream + speech pipeline (LiveKit Agents or Pipecat): (1) speak-a-message calls, many recipients in parallel after you approve the list; (2) two-way voice agent; (3) caller ID: rented or your own verified number, never a number you do not own | Needs your approval of a paid provider; India rules (DLT, DND, consent, hours, AI disclosure) checked first. **Skip** if click-to-call is enough |
 
-### Phase 1: Fast
-| # | Work | Effort | Needs | Done when |
-|---|---|---|---|---|
-| 1.1 | One-step fast path | done | ship | Plain ask returns in one agent run |
-| 1.2 | Warm window: `IDLE_SHUTDOWN_SECONDS=900` | S | worker env change | A second task within 15 min starts without a boot |
-| 1.3 | Two agents at once: `MAX_CONCURRENT_ANTIGRAVITY=2` (hard cap 2; the instance has ~3.8 GB RAM and the worker uses well under 1 GB) | S | worker env change | Two independent steps overlap in the log |
-| 1.4 | Capture one real streaming run (`agy --output-format stream-json`) on the worker to learn the event format | S | You allow one test prompt | A saved sample of real events |
-| 1.5 | Streaming to the app: events become task activity as they happen; the app shows them live (server-sent events, falling back to the existing adaptive polling) | L | 1.4 | First words visible within 3 s of the agent starting |
-| 1.6 | Effort tiers: low reasoning effort for simple steps, default for hard ones (`AGY_EFFORT`, per-step) | S | 1.4 to judge quality | Simple answers are measurably faster with no quality loss on a sample of 10 |
-| 1.7 | Reuse a warm conversation for follow-ups (`--conversation`) | M | 1.4 | A follow-up skips the cold start |
-| 1.8 | Timing dashboard: p50 and p95 per step type from the attempts table, in Settings | M | none | Numbers on screen match section 10 targets |
-| 1.9 | **Listen** button with device voices, speed control, and a Settings voice picker with Preview (7.14) | M | none | A result is read aloud from its first sentence; you can preview and choose a voice |
+**Deferred decision (summaries):** the final answer is still stitched in code because every multi-step plan already ends in a worker-written synthesis step; a separate worker summarize step would add about 13 s for little gain. Revisit once live Terminals show whether it matters.
 
-### Phase 2: Real work (research with tools)
-| # | Work | Effort | Needs | Done when |
-|---|---|---|---|---|
-| 2.1 | Turn on `AGY_TOOLS_ENABLED=true` on the worker; run three read-only research tasks while we watch the logs | S | You | Cited sources; nothing changed; flags confirmed under `--sandbox` |
-| 2.2 | Live per-task view (built on 1.5): steps, pages visited, commands | M | 1.5 | You can watch a running task from your phone |
-| 2.3 | Playbooks observed: run the same kind of task twice | S | 2.1 | Second run is faster and shows the notes |
-| 2.4 | Browser automation: headless Chromium (Playwright) with a per-task profile on the worker; screenshots attached to the task | L | 2.1 | A task opens a site, reads a page and attaches a screenshot |
-| 2.5 | Credentials vault: SecureString parameters, worker fetches at use time, never in prompts or logs | M | 2.4 | A login works with the secret absent from every log |
-| 2.6 | Code sandbox for data tasks | M | 2.1 | A CSV task runs isolated and returns a file |
-| 2.7 | Web search and HTTP fetch tools, **with network safety first** (block private and metadata addresses, scheme and size limits) | M | 2.1 | A task cites search results; a request to the metadata address is refused (tested) |
-| 2.8 | Voice engine: Ollama on your computer over a private tunnel; "Draft for me" returns text in the app | M | You choose where it runs (7.8) | A drafting step the hosted model would decline comes back as a draft |
-| 2.9 | Refusal fallback: detect a refusal on a drafting step, re-run on the voice engine, show which engine ran | M | 2.8 | The WhatsApp-style message is drafted without asking twice |
-| 2.10 | Sub-agent fan-out and a join step (7.10) | L | 1.3, 2.1 | A five-way comparison runs five sub-agents at once |
-| 2.12 | Agent hierarchy as code (7.13): summaries and the final answer become worker steps; managers get no executor; a test enforces it | M | 1.7 helps latency | A plan's summary comes from a worker; the manager-purity test passes |
-| 2.13 | Terminals: worker live terminal and manager decision log; tabs become Plan / Summary / Log for managers and Result / Terminal / Attempts / Files for workers | L | 1.5, 2.12 | Each worker's live view and each manager's log are visible; Activity and Subtasks no longer overlap in purpose |
-| 2.14 | Neural voices on the worker (CPU) with cached audio, as a picker option | M | 1.9 | A neural voice previews and reads a result; measured memory stays within the instance |
-| 2.15 | Host API (claim, heartbeat, complete) with scoped device tokens, and the laptop host agent that connects out and runs `agy` and Claude Code in per-task scratch folders (7.15) | L | You choose the laptop and install the agent | A task runs on the laptop with no database access on it |
-| 2.16 | Host routing: laptop first when its heartbeat is fresh, EC2 otherwise; skip waking the EC2 when the laptop is online; policy for Claude when the laptop is off (queue or fall back); the task shows which host ran it | M | 2.15 | Close the lid and the same task completes on the EC2 |
-| 2.11 | App skills: skill documents keyed by app and action, replay, staleness handling (7.12) | M | 2.3, 2.4 | The second run of an app action is faster with no exploration |
-
-### Phase 3: Acts for you
-| # | Work | Effort | Needs | Done when |
-|---|---|---|---|---|
-| 3.1 | Approval UX: show the exact action, the page and a screenshot before and after | M | 2.4 | You can approve from the phone with full context |
-| 3.2 | Profile (resume, links, standard answers): a table and a Settings screen | M | a migration (approval) | Tasks can read it; nothing else can |
-| 3.3 | Tasks append to lists themselves: a `list` field on a step; on success a row is added | M | none | The internship tracker grows without you |
-| 3.4 | Web Push for "needs approval" and "finished" | M | VAPID keys and a subscription table (migration) | Phone notification arrives |
-| 3.5 | Gmail and Calendar connectors (OAuth): read and draft; send with approval | L | You create a Google Cloud OAuth client | Summary of today's mail; a drafted reply waiting for approval |
-| 3.6 | The internship journey end to end (acceptance journey 1) | M | 2.4, 3.1 to 3.3 | Shortlist, drafts, approved submissions, screenshots, tracker rows |
-| 3.9 | Documents library: tagged files in your S3 area (upload now, folder sync once the laptop host exists); tasks pick relevant ones by tags and keywords | M | none for upload; 2.15 for sync | "Apply to this role" starts from your resume context and the matching draft |
-| 3.8 | Approve in chat: approval cards and typed replies bound to the listed approvals; only the owner's session counts | M | 3.1 | "approve all" in chat approves exactly the listed items and nothing else (tested) |
-| 3.7 | Trust settings: ask / auto / off per action class and per contact (including auto for everything); untrusted-content rule enforced in the worker; kill switch; audit log | M | none | You set a class to auto and it stops asking; text read from a web page cannot trigger an action (tested); one tap pauses everything |
-
-### Phase 4: Your apps
-| # | Work | Effort | Needs | Done when |
-|---|---|---|---|---|
-| 4.1 | WhatsApp Web: pair once (QR), keep the session on the worker; read, summarise, draft; each send approved | L | You scan the QR; accept the terms risk | Acceptance journey 2 passes |
-| 4.2 | Android bridge for one chosen app (ADB over a secure tunnel, UI automation, screenshots) | L | You choose the device (spare phone, your phone, or an emulator) | One real action in one app, with before and after screenshots |
-| 4.4 | Place a call from the phone (Android bridge): scripted call with approval | M | 4.2 | An approved call is placed from the dialer; the script and length are shown first |
-| 4.5 | Calls to several people: sequential or conference, or a cloud number for true parallel (decision) | M | 4.4 | The chosen mode runs three calls as designed |
-| 4.6 | Live conversation on calls (speech to text, model, text to speech) | L | 4.4, 2.14 | A call holds a two-way exchange under about one second per turn |
-| 4.3 | iOS Shortcut "Send to JJ" and a share-sheet action | S | none | Anything shared from an iPhone arrives as a task |
-
-### Phase 5: Models and memory
-| # | Work | Effort | Needs | Done when |
-|---|---|---|---|---|
-| 5.1 | Claude for language steps: on the laptop host first (login stays on the laptop), or on the worker with a one-time CLI sign-in (`CLAUDE_ENABLED=true`) | S | You sign in on the chosen machine | A drafting step runs on Claude; falls back to agy if it is signed out or the laptop is off |
-| 5.5 | Trial Claude Code on the phone (terminal app) as an extra host | M | You try it; unofficial | Works for a day without the phone suspending it, or we drop it |
-| 5.2 | Voice engine used inside plans (a step type "draft in my tone"), built on 2.8 and 2.9 | S | 2.8 | A plan's drafting step records the voice engine as the one that ran |
-| 5.3 | Engine policy per step: tool steps to agy, hard writing to Claude, tone drafts to the voice model | M | 5.1, 5.2 | The router records which engine ran each step |
-| 5.4 | Search across results, files, lists, playbooks | M | none | One search box finds anything |
-
-### Cross-cutting (every phase)
-- **Tests:** each feature ships with Go tests (real Postgres) and a check added to `e2e-real.mjs`; CI (`.github/workflows/ci.yml`) must stay green.
-- **Docs:** update this PRD (section 4) and `decisions.md` with every change; `evolution.md` at phase ends.
-- **Security:** no secret in any log, prompt, result or chat; deploy tooling never prints configuration; secrets only in the parameter store.
-- **Verification:** nothing is called done until it is checked live (API route, bundle, worker log), and UI changes are checked at phone and desktop size; the owner confirms feel on a real phone.
-
-**Acceptance journeys**
-1. *"Apply to every internship I'm eligible for this week."* Search job boards (read); shortlist into the Internship tracker with links and deadlines; draft each application from your profile; you approve each submission (act); each submitted one gets a screenshot and a tracker row. Next week it reuses the playbook and is faster.
-2. *"What did my family group say on WhatsApp today? Draft replies."* Summary and drafts; nothing sent without per-message approval (or auto-send for allow-listed contacts once you enable it).
-3. *"Plan a weekly status report."* One step, streamed, under 15 s.
-4. *"Compare these three laptops under ₹80k with sources."* Cited table, saved as a file.
+### Every rejected idea and what replaces it
+| Rejected | Alternative | When |
+|---|---|---|
+| Tools, browser, logins or a vault on the EC2 | Devices that already have them; EC2 stays text-only | now |
+| SIM calls, many at once; live AI calls | M6: telephony provider and a speech pipeline; concurrency is the provider's (calling ten people is ten API calls) | optional |
+| WhatsApp automation risk | Click-to-send (prefilled `wa.me` link) first; WhatsApp Web second; the official Business Platform only for a business number (templates outside 24 h) | M3 |
+| A cloud Android bridge | M5: Mobilerun + ADB + KDE Connect from the laptop; a Termux host later only if laptop-off phone control is needed | M5 |
+| Neural or anime voices | Phone voices now; free open voices (Piper, Kokoro) on the laptop later; a bring-your-own model slot; no copyrighted characters shipped | later |
+| Realtime updates | Adaptive polling; Supabase Realtime later if needed | if needed |
+| Web Push | ntfy (one HTTP POST becomes a phone notification; the tap opens the approval chat) | after M3 |
+| Gmail and Calendar OAuth | The Gmail and Drive connectors your Claude account already offers, from Claude Code on the laptop | after M3 |
+| A profile table | The documents folder is the profile | M3 |
+| Sub-agent fan-out machinery | The planner already emits parallel steps; capacity is host concurrency | now |
 
 ---
 

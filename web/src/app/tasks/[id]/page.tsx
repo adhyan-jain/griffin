@@ -261,15 +261,24 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       </section>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid h-auto group-data-[orientation=horizontal]/tabs:h-auto w-full grid-cols-5 gap-0.5 bg-muted/60 p-1">
+        <TabsList
+          className={`grid h-auto group-data-[orientation=horizontal]/tabs:h-auto w-full gap-0.5 bg-muted/60 p-1 ${isPlan(task) ? "grid-cols-3" : "grid-cols-4"}`}
+        >
           {(
-            [
-              ["overview", "Overview", 0],
-              ["activity", "Activity", events.length],
-              ["attempts", "Attempts", attempts.length],
-              ["files", "Files", files.length],
-              ["subtasks", "Subtasks", children.length],
-            ] as const
+            // Each tab has one job. A plan (a manager's work) shows what it handed out; a worker task shows what
+            // it produced and how the run went. A plan has no attempts or files of its own.
+            (isPlan(task)
+              ? [
+                  ["overview", "Overview", 0],
+                  ["subtasks", "Plan", children.length],
+                  ["activity", "Activity", events.length],
+                ]
+              : [
+                  ["overview", "Result", 0],
+                  ["activity", "Activity", events.length],
+                  ["attempts", "Attempts", attempts.length],
+                  ["files", "Files", files.length],
+                ]) as ReadonlyArray<readonly [string, string, number]>
           ).map(([v, label, n]) => (
             <TabsTrigger
               key={v}
@@ -371,7 +380,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
         <TabsContent value="subtasks" className="mt-4">
           {children.length === 0 ? (
-            <EmptyState icon={<FileText />} title="No subtasks" description="When JJ splits this work up, the steps show here." />
+            <EmptyState icon={<FileText />} title="No steps yet" description="When JJ splits this work up, each step and who is on it shows here." />
           ) : (
             <div className="divide-y overflow-hidden rounded-xl border bg-card">
               {children.map((c) => (

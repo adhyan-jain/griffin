@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type Artifact } from "@/lib/api";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { Input } from "@/components/ui/input";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronDown, ChevronUp, Code2, Copy, Download, FileText, ListPlus } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Code2, Copy, Download, FileText, ListPlus, Square, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { parseResult, slug } from "@/lib/result-text";
+import { currentSpeakingId, speak, stopSpeaking, toSpeakable, useSpeakingId, useSpeechSupported } from "@/lib/speech";
 
 /** Past this many characters the reader view folds, so a long answer never takes over the page. */
 const FOLD_AT = 1400;
@@ -77,6 +78,17 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
   const [lists, setLists] = useState<Artifact[] | null>(null);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
+  const canSpeak = useSpeechSupported();
+  const speakingId = useSpeakingId();
+  const listenId = `result:${title}`;
+  const listening = speakingId === listenId;
+  // Leaving the page must not leave the phone talking.
+  useEffect(
+    () => () => {
+      if (currentSpeakingId() === listenId) stopSpeaking();
+    },
+    [listenId],
+  );
 
   const long = !!text && text.length > FOLD_AT;
   const showRaw = raw || text === null;
@@ -150,6 +162,19 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
           {text !== null && (
             <Button variant="ghost" size="sm" onClick={() => setRaw((v) => !v)} aria-pressed={raw} className={cn("h-8 gap-1.5", raw && "bg-accent text-accent-foreground")}>
               <Code2 className="size-4" /> <span className="hidden sm:inline">Raw</span>
+            </Button>
+          )}
+          {canSpeak && text !== null && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => (listening ? stopSpeaking() : speak(listenId, toSpeakable(text)))}
+              aria-pressed={listening}
+              aria-label={listening ? "Stop reading" : "Read result aloud"}
+              className={cn("h-8 gap-1.5", listening && "bg-accent text-accent-foreground")}
+            >
+              {listening ? <Square className="size-4" /> : <Volume2 className="size-4" />}
+              <span className="hidden sm:inline">{listening ? "Stop" : "Listen"}</span>
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={copy} className="h-8 gap-1.5" aria-label="Copy result">
