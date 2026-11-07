@@ -71,3 +71,20 @@ describe("deriveNow: worker truthfulness", () => {
     expect(n.stage).toBe("Finished");
   });
 });
+
+describe("deriveNow: steps that need a device", () => {
+  it("says it is waiting for the laptop, not for a worker", () => {
+    const n = deriveNow({ ...task, status: "QUEUED", input_payload: { requires: ["browser"] } } as Task, [], []);
+    expect(n.stage).toBe("Waiting for your laptop to come online");
+  });
+  it("leaves ordinary queued steps alone", () => {
+    expect(deriveNow({ ...task, status: "QUEUED", input_payload: {} } as Task, [], []).stage).toBe("Queued for a worker");
+  });
+});
+
+describe("deriveNow: device-run steps", () => {
+  it("names the device, not its raw id", () => {
+    const n = deriveNow({ ...task, status: "RUNNING", leased_by: "host:3f2a1c9e-0000-4000-8000-000000000000" } as Task, [], []);
+    expect(n.worker).toBe("Your device");
+  });
+});

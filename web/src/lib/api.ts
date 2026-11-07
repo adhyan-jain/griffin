@@ -236,6 +236,51 @@ export type JJMessageResult =
   | { kind: "conversation"; conversation_id: string; task_id: string; runner?: RunnerWake }
   | { kind: "objective"; conversation_id: string; orchestration: Orchestration; plan: OrchestrationPlan; runner?: RunnerWake };
 
+// ---------------------------------------------------------------------------
+// Devices (hosts): a laptop or phone that connects out and does work (ADR-074, ADR-077)
+// ---------------------------------------------------------------------------
+
+export type HostKind = "laptop" | "phone";
+export type HostMode = "laptop" | "phone" | "none";
+export type HostCapability = "agent" | "browser" | "files" | "shell" | "phone_apps" | "sms" | "calls" | "messaging";
+
+export interface HostView {
+  id: string;
+  name: string;
+  kind: HostKind;
+  /** Granted by you. */
+  capabilities: HostCapability[];
+  /** What the device reported it can do at its last contact. */
+  advertised: HostCapability[];
+  /** Granted AND reported: what it may actually do. */
+  effective_capabilities: HostCapability[];
+  version: string;
+  paused: boolean;
+  live: boolean;
+  last_seen_at?: string | null;
+  created_at: string;
+}
+
+export interface WaitingTask {
+  id: string;
+  title: string;
+  requires: HostCapability[];
+  /** True when a live device can take it now. */
+  covered: boolean;
+}
+
+export interface HostOverview {
+  mode: HostMode;
+  hosts: HostView[];
+  waiting: WaitingTask[];
+}
+
+export interface RegisteredHost {
+  host: HostView;
+  /** Shown once. Only its hash is kept. */
+  token: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -460,6 +505,14 @@ export const api = {
 
   /** Component health; the endpoint may not exist yet (404), callers must render "unavailable". */
   getSystemStatus: (opts?: ReqOpts) => fetchWithAuth<SystemStatus>("/api/v1/system/status", opts),
+
+  // Devices (404 means the feature is switched off on the server)
+  getHosts: (opts?: ReqOpts) => fetchWithAuth<HostOverview>("/api/v1/hosts", opts),
+  registerHost: (body: { name: string; kind: HostKind; capabilities: HostCapability[] }) =>
+    fetchWithAuth<RegisteredHost>("/api/v1/hosts", { method: "POST", body: JSON.stringify(body) }),
+  updateHost: (id: string, body: { paused?: boolean; capabilities?: HostCapability[]; set_capabilities?: boolean }) =>
+    fetchWithAuth<{ message?: string }>(`/api/v1/hosts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  revokeHost: (id: string) => fetchWithAuth<{ message?: string }>(`/api/v1/hosts/${id}`, { method: "DELETE" }),
 
   // Runner
   getRunnerStatus: (opts?: ReqOpts) => fetchWithAuth<RunnerStatus>("/api/v1/runner/status", opts),
