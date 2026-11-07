@@ -33,9 +33,15 @@ AHEAD="$(git rev-list --count origin/master..master 2>/dev/null || echo "?")"
 echo "commits to ship: $AHEAD ($(git rev-parse --short HEAD))"
 [ "$APPLY" = 1 ] || echo "DRY RUN: nothing below is executed. Add --apply to ship."
 
-say "2. restart the worker (it is idle; on start it finishes plans whose subtasks are all done)"
-run aws ssm send-command --instance-ids "$INSTANCE" --document-name AWS-RunShellScript \
-  --parameters 'commands=["systemctl restart griffin-worker"]' --query Command.CommandId --output text
+say "2. restart the worker (only if it is running; on start it finishes plans whose subtasks are all done)"
+STATE_EC2="$(aws ec2 describe-instances --instance-ids "$INSTANCE" --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || echo unknown)"
+echo "runner state: $STATE_EC2"
+if [ "$STATE_EC2" = running ]; then
+  run aws ssm send-command --instance-ids "$INSTANCE" --document-name AWS-RunShellScript \
+    --parameters 'commands=["systemctl restart griffin-worker"]' --query Command.CommandId --output text
+else
+  echo "skipped: the runner is stopped (scale-to-zero), so nothing is stuck on it; the next wake loads whatever binary is installed"
+fi
 
 say "3. deploy the API Lambda"
 run infra/ops/deploy-backend.sh lambda --apply
@@ -73,6 +79,7 @@ for p in /lists /tasks/00000000-0000-0000-0000-000000000000; do
 done
 check test "$found" = 1
 
+if [ "$STATE_EC2" = running ]; then
 echo "waiting for the worker to finish stuck plans ..."
 sleep 20
 CID="$(aws ssm send-command --instance-ids "$INSTANCE" --document-name AWS-RunShellScript \
@@ -82,5 +89,8 @@ sleep 6
 N="$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$INSTANCE" --query StandardOutputContent --output text | tr -d '[:space:]')"
 DESC="worker restarted and reconciled plans (log lines: ${N:-0})"
 check test "${N:-0}" -ge 1
+else
+  echo "skip   worker log check (runner was stopped)"
+fi
 
 [ "$FAIL" = 0 ] && say "all checks passed" || { say "some checks failed (see above)"; exit 1; }
