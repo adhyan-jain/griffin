@@ -18,11 +18,12 @@ import (
 type HostHandler struct {
 	svc    *service.HostService
 	engine *service.TaskEngine
+	policy *service.PolicyService // optional
 }
 
 // NewHostHandler builds a HostHandler.
-func NewHostHandler(svc *service.HostService, engine *service.TaskEngine) *HostHandler {
-	return &HostHandler{svc: svc, engine: engine}
+func NewHostHandler(svc *service.HostService, engine *service.TaskEngine, policy *service.PolicyService) *HostHandler {
+	return &HostHandler{svc: svc, engine: engine, policy: policy}
 }
 
 func decodeBody(r *http.Request, v any) error {
@@ -170,7 +171,15 @@ func (h *HostHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	if effective == nil {
 		effective = []string{}
 	}
+	// The host refetches the policy only when this number changes.
+	policyVersion := 0
+	if h.policy != nil {
+		if v, err := h.policy.Version(r.Context(), host.UserID); err == nil {
+			policyVersion = v
+		}
+	}
 	httputil.JSON(w, http.StatusOK, map[string]any{
+		"policy_version":         policyVersion,
 		"now":                    time.Now().UTC(),
 		"paused":                 host.Paused,
 		"granted":                host.Capabilities,

@@ -154,6 +154,7 @@ func runCheck(ctx context.Context, c *hostagent.Client, caps []string, exec work
 	}
 	// The sandbox is the gate for ever turning the permission-bypass flag on (ADR-075). This build does
 	// not use that flag, so the result is informational here; it tells you whether M3 can run on this machine.
+	fmt.Printf("Permissions:    %s\n", policyStatus(ctx, c))
 	fmt.Printf("Sandbox:        %s\n", sandboxStatus(ctx))
 	if herr != nil {
 		return fmt.Errorf("agent health check: %w", herr)
@@ -264,4 +265,16 @@ func sandboxStatus(ctx context.Context) string {
 		return "SELF-TEST FAILED: " + err.Error()
 	}
 	return "ok (bubblewrap; a file outside the allow-list is invisible from inside)"
+}
+
+// policyStatus fetches the owner's permission policy and summarizes it in one line.
+func policyStatus(ctx context.Context, c *hostagent.Client) string {
+	v, err := c.Policy(ctx)
+	if err != nil {
+		return "could not fetch (" + err.Error() + "). Until it can be fetched this host denies every outward action."
+	}
+	if v.Version == 0 {
+		return fmt.Sprintf("none saved yet; the safe default applies (read and draft allowed, everything else asks). %d rules", len(v.Policy.Rules))
+	}
+	return fmt.Sprintf("version %d, default %s, %d rules", v.Version, v.Policy.Default, len(v.Policy.Rules))
 }

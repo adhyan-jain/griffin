@@ -281,6 +281,36 @@ export interface RegisteredHost {
   token: string;
 }
 
+// ---------------------------------------------------------------------------
+// Permissions: what your devices may do (PRD 7.16, ADR-079)
+// ---------------------------------------------------------------------------
+
+export type PolicyMode = "off" | "ask" | "auto";
+export type ActionClass = "read" | "draft" | "send" | "submit" | "buy" | "delete" | "call";
+
+export interface PolicyRule {
+  device?: "laptop" | "phone";
+  capability?: HostCapability;
+  app?: string;
+  folder?: string;
+  contact?: string;
+  class?: ActionClass;
+  mode: PolicyMode;
+}
+
+export interface Policy {
+  default: PolicyMode;
+  rules: PolicyRule[];
+  /** While in the future, Full mode is on (laptop folder limits lifted). */
+  full_until?: string | null;
+}
+
+export interface PolicyView {
+  policy: Policy;
+  /** 0 means nothing saved yet: the safe default applies. */
+  version: number;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -513,6 +543,11 @@ export const api = {
   updateHost: (id: string, body: { paused?: boolean; capabilities?: HostCapability[]; set_capabilities?: boolean }) =>
     fetchWithAuth<{ message?: string }>(`/api/v1/hosts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   revokeHost: (id: string) => fetchWithAuth<{ message?: string }>(`/api/v1/hosts/${id}`, { method: "DELETE" }),
+
+  // Permissions (404 means the feature is switched off on the server; 409 means another device saved first)
+  getPermissions: (opts?: ReqOpts) => fetchWithAuth<PolicyView>("/api/v1/permissions", opts),
+  savePermissions: (policy: Policy, version: number) =>
+    fetchWithAuth<PolicyView>("/api/v1/permissions", { method: "PUT", body: JSON.stringify({ policy, version }) }),
 
   // Runner
   getRunnerStatus: (opts?: ReqOpts) => fetchWithAuth<RunnerStatus>("/api/v1/runner/status", opts),

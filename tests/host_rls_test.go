@@ -38,7 +38,7 @@ func (e *rlsEnv) hostServer(t *testing.T) *httptest.Server {
 	srv := api.NewServer(api.ServerDependencies{
 		Config: &cfg, DB: e.DB, Engine: engine, TaskRepo: taskRepo, ApprovalRepo: approvalRepo, AgentRepo: agentRepo,
 		ArtifactRepo: artifactRepo, StorageService: storageSvc, WorkerDefRepo: workerDefRepo, OrchRepo: orchRepo,
-		Orchestrator: orch, Factory: factory, ManagerRegistry: e.ManagerReg, UserTx: e.UserTx, HostRepo: hostRepo,
+		Orchestrator: orch, Factory: factory, ManagerRegistry: e.ManagerReg, UserTx: e.UserTx, HostRepo: hostRepo, PolicyRepo: repository.NewPostgresPolicyRepository(e.Scoped),
 	})
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
@@ -121,3 +121,56 @@ func TestHostsUnderRLSEnforcedRoles(t *testing.T) {
 func containsID(b []byte, id uuid.UUID) bool { return containsStr(b, id.String()) }
 
 func containsStr(b []byte, s string) bool { return strings.Contains(string(b), s) }
+
+func TestPermissionPolicyUnderRLSIsPerOwner(t *testing.T) {
+	e := setupRLS(t, 2, "")
+	ts := e.hostServer(t)
+	a := CreateTestUser(t, e.DB, "rls_pol_a@example.com")
+	b := CreateTestUser(t, e.DB, "rls_pol_b@example.com")
+	jwtA, jwtB := GenerateTestJWT(a, "rls_pol_a@example.com"), GenerateTestJWT(b, "rls_pol_b@example.com")
+
+	// A saves a strict policy as griffin_app inside an RLS transaction.
+	code, body := doJSON(t, ts, "PUT", "/api/v1/permissions", jwtA, nil, map[string]any{"version": 0, "policy": map[string]any{"default": "off", "rules": []any{}}})
+	if code != http.StatusOK {
+		t.Fatalf("A saves: %d %s", code, body)
+	}
+	// B still sees the default, not A's policy.
+	code, body = doJSON(t, ts, "GET", "/api/v1/permissions", jwtB, nil, nil)
+	if code != http.StatusOK || containsStr(body, `"default":"off"`) {
+		t.Fatalf("B must not see A's policy: %d %s", code, body)
+	}
+	// B cannot overwrite A's row: with version 0 it creates its own row, never touching A's.
+	if code, _ := doJSON(t, ts, "PUT", "/api/v1/permissions", jwtB, nil, map[string]any{"version": 0, "policy": map[string]any{"default": "auto", "rules": []any{}}}); code != http.StatusOK {
+		t.Fatalf("B saves its own: %d", code)
+	}
+	code, body = doJSON(t, ts, "GET", "/api/v1/permissions", jwtA, nil, nil)
+	if code != http.StatusOK || !containsStr(body, `"default":"off"`) {
+		t.Fatalf("A's policy must be untouched by B's save: %d %s", code, body)
+	}
+
+	// A's host is given A's policy, through the system path, and only A's.
+	_, reg := e.registerVia(t, ts, jwtA)
+	code, body = doJSON(t, ts, "GET", "/api/v1/host/policy", "", map[string]string{"Authorization": "Bearer " + reg}, nil)
+	if code != http.StatusOK || !containsStr(body, `"default":"off"`) {
+		t.Fatalf("A's host must read A's policy: %d %s", code, body)
+	}
+}
+
+// registerVia registers a laptop host through the API and returns its id and token.
+func (e *rlsEnv) registerVia(t *testing.T, ts *httptest.Server, jwt string) (uuid.UUID, string) {
+	t.Helper()
+	code, body := doJSON(t, ts, "POST", "/api/v1/hosts", jwt, nil, map[string]any{"name": "h", "kind": "laptop", "capabilities": []string{"agent"}})
+	if code != http.StatusCreated {
+		t.Fatalf("register: %d %s", code, body)
+	}
+	var env envData
+	_ = json.Unmarshal(body, &env)
+	var reg struct {
+		Host  struct{ ID uuid.UUID } `json:"host"`
+		Token string                 `json:"token"`
+	}
+	if err := json.Unmarshal(env.Data, &reg); err != nil || reg.Token == "" {
+		t.Fatalf("bad register response: %s", body)
+	}
+	return reg.Host.ID, reg.Token
+}

@@ -10,6 +10,7 @@ import {
   FolderOpen,
   LayoutDashboard,
   Laptop,
+  Lock,
   ListChecks,
   LogOut,
   MessageSquare,
@@ -44,6 +45,7 @@ const SECONDARY: NavItem[] = [
   { href: "/lists", label: "Lists", icon: Notebook },
   { href: "/artifacts", label: "Files", icon: FolderOpen },
   { href: "/devices", label: "Devices", icon: Laptop },
+  { href: "/permissions", label: "Permissions", icon: Lock },
   { href: "/workforce", label: "Workforce", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

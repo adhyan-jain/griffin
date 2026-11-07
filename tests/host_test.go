@@ -39,7 +39,7 @@ func setupHostEnv(t *testing.T) *hostEnv {
 		ApprovalRepo: env.ApprovalRepo, AgentRepo: env.AgentRepo, ArtifactRepo: env.ArtifactRepo,
 		StorageService: env.StorageService, WorkerDefRepo: env.WorkerDefRepo, OrchRepo: env.OrchRepo,
 		Orchestrator: env.Orchestrator, Factory: env.AgentFactory, ManagerRegistry: env.ManagerReg,
-		HostRepo: hostRepo,
+		HostRepo: hostRepo, PolicyRepo: repository.NewPostgresPolicyRepository(env.DB.Pool),
 	})
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -564,4 +564,18 @@ func TestRefusedCompletionLeavesNoAttemptBehind(t *testing.T) {
 	if len(got) != 1 || got[0].Status != "RUNNING" {
 		t.Fatalf("a refused completion must not touch the attempt, got %+v", got)
 	}
+}
+
+func newServerWithHostsFlag(t *testing.T, e *hostEnv, enabled bool) *httptest.Server {
+	t.Helper()
+	cfg := *e.Config
+	cfg.HostsEnabled = enabled
+	server := api.NewServer(api.ServerDependencies{
+		Config: &cfg, DB: e.DB, Engine: e.Engine, TaskRepo: e.TaskRepo,
+		ApprovalRepo: e.ApprovalRepo, AgentRepo: e.AgentRepo, ArtifactRepo: e.ArtifactRepo,
+		StorageService: e.StorageService, WorkerDefRepo: e.WorkerDefRepo, OrchRepo: e.OrchRepo,
+		Orchestrator: e.Orchestrator, Factory: e.AgentFactory, ManagerRegistry: e.ManagerReg,
+		HostRepo: e.hostRepo, PolicyRepo: repository.NewPostgresPolicyRepository(e.DB.Pool),
+	})
+	return httptest.NewServer(server.Handler())
 }
