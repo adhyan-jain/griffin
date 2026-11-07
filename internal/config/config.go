@@ -26,6 +26,7 @@ type Config struct {
 	// AI Execution Provider settings (Phase 2)
 	AIProvider                 string // "antigravity" (default) or "mock"
 	ClaudeEnabled              bool   // optional second provider for language-only steps; off by default
+	HostsEnabled               bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
 	ClaudeBinary               string
 	MaxConcurrentClaude        int
 	AgyToolsEnabled            bool     // read/act tool tiers for agy; off by default
@@ -121,6 +122,7 @@ func Load() (*Config, error) {
 		MaxConcurrentWorkers:            getEnvAsInt("MAX_CONCURRENT_WORKERS", 2),
 		AIProvider:                      getEnv("AI_PROVIDER", "antigravity"),
 		ClaudeEnabled:                   getEnvAsBool("CLAUDE_ENABLED", false),
+		HostsEnabled:                    getEnvAsBool("HOSTS_ENABLED", false),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
 		MaxConcurrentClaude:             getEnvAsInt("MAX_CONCURRENT_CLAUDE", 2),
 		AgyToolsEnabled:                 getEnvAsBool("AGY_TOOLS_ENABLED", false),

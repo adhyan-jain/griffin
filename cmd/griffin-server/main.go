@@ -120,6 +120,7 @@ func main() {
 	artifactRepo := repository.NewPostgresArtifactRepository(repoDB)
 	workerDefRepo := repository.NewPostgresWorkerDefinitionRepository(repoDB)
 	orchRepo := repository.NewPostgresOrchestrationRepository(repoDB)
+	hostRepo := repository.NewPostgresHostRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
 	var storageProvider storage.Provider
@@ -349,6 +350,7 @@ func main() {
 			Factory:         agentFactory,
 			ManagerRegistry: mgrReg,
 			Wakeup:          wakeupCtrl,
+			HostRepo:        hostRepo,
 			InstanceMgr:     instanceMgr,
 			UserTx:          userTx,
 		})
