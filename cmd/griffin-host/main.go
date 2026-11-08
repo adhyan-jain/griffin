@@ -8,7 +8,9 @@
 //	GRIFFIN_API_URL            API origin, e.g. https://api.example.com (https required except localhost)
 //	GRIFFIN_HOST_TOKEN_FILE    path to a file holding the host token (preferred; keep it mode 0600)
 //	GRIFFIN_HOST_TOKEN         the token itself (use the file form where you can)
-//	HOST_CAPABILITIES          comma list, default "agent". This build backs only "agent".
+//	HOST_CAPABILITIES          comma list, default "agent". Also backed: "messaging" (WhatsApp, when a browser or adb phone exists)
+//	                           and "web" (search and page reading). See hands.go for HOST_WHATSAPP, and HOST_WEB=off to disable web.
+//	BRAVE_SEARCH_API_KEY, SEARXNG_URL   reliable web search backends (DuckDuckGo is the keyless best-effort fallback)
 //	HOST_EXECUTOR              "agy" (default) or "mock" (development)
 //	AGY_BINARY                 path to agy (default "agy")
 //	HOST_WORKSPACE_ROOT        scratch folders, one per task (default ~/.griffin-host/workspaces)
@@ -34,6 +36,9 @@ import (
 	"time"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/gateway"
+	"github.com/griffin/core/internal/hands"
+	"github.com/griffin/core/internal/hands/web"
 	"github.com/griffin/core/internal/hostagent"
 	"github.com/griffin/core/internal/provider/antigravity"
 	"github.com/griffin/core/internal/sandbox"
@@ -59,6 +64,17 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	if args := flag.Args(); len(args) > 0 {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		err := runSubcommand(ctx, logger, args[0])
+		stop()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(logger, *check); err != nil {
 		logger.Error("griffin-host stopped", "error", err)
 		os.Exit(1)
@@ -75,6 +91,19 @@ func run(logger *slog.Logger, check bool) error {
 		return err
 	}
 	execKind := strings.ToLower(envOr("HOST_EXECUTOR", "agy"))
+	// WhatsApp hands: the messaging capability is advertised only when a driver can back it.
+	var wa *whatsappSetup
+	if execKind == "agy" {
+		if wa = newWhatsApp(logger); wa != nil {
+			backedCapabilities[domain.HostCapMessaging] = true
+		}
+	}
+	// Web search and page reading need nothing installed: the capability is backed unless switched off.
+	var webSvc *hands.WebService
+	if execKind == "agy" && strings.ToLower(envOr("HOST_WEB", "on")) != "off" {
+		webSvc = &hands.WebService{Fetcher: web.NewFetcher(web.FetcherConfig{}), Searcher: web.SearcherFromEnv()}
+		backedCapabilities[domain.HostCapWeb] = true
+	}
 	caps, err := parseCapabilities(envOr("HOST_CAPABILITIES", domain.HostCapAgent), execKind == "mock")
 	if err != nil {
 		return err
@@ -109,6 +138,18 @@ func run(logger *slog.Logger, check bool) error {
 		return fmt.Errorf("HOST_EXECUTOR must be agy or mock, got %q", execKind)
 	}
 
+	// With WhatsApp hands the executor routes: steps with a messaging action go through the permission
+	// gateway to the drivers, everything else goes to the agent. The gateway is attached once the agent
+	// exists, because the agent is where the owner's policy arrives.
+	var handsExec *hands.Executor
+	if wa != nil || webSvc != nil {
+		handsExec = &hands.Executor{Agent: exec, Web: webSvc, Logger: logger}
+		if wa != nil {
+			handsExec.WhatsApp = wa.messenger
+		}
+		exec = handsExec
+	}
+
 	client := hostagent.NewClient(apiURL, token, nil)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -128,6 +169,24 @@ func run(logger *slog.Logger, check bool) error {
 	})
 	if err != nil {
 		return err
+	}
+	if handsExec != nil {
+		if err := os.MkdirAll(stateDir(), 0o700); err != nil {
+			return fmt.Errorf("create %s: %w", stateDir(), err)
+		}
+		audit, err := gateway.NewFileAudit(filepath.Join(stateDir(), "audit.log"))
+		if err != nil {
+			return err
+		}
+		defer audit.Close()
+		handsExec.Gate = gateway.New(string(domain.HostKindLaptop), agent, audit)
+		if wa != nil {
+			logger.Info("WhatsApp hands enabled", "drivers", wa.messenger.Names())
+		}
+		if webSvc != nil {
+			logger.Info("web search and page reading enabled", "search", webSvc.Searcher.Names())
+		}
+		logger.Info("outward actions are audited", "audit_log", filepath.Join(stateDir(), "audit.log"))
 	}
 	logger.Info("griffin-host online", "version", Version, "api", apiURL, "capabilities", caps)
 	err = agent.Run(ctx)

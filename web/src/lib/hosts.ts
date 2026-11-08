@@ -8,12 +8,13 @@ export const CAPABILITY_INFO: Record<HostCapability, { label: string; help: stri
   phone_apps: { label: "Use phone apps", help: "WhatsApp, Instagram and others you enable." },
   sms: { label: "Send texts", help: "Text messages from your number." },
   calls: { label: "Make calls", help: "Always with your approval." },
-  messaging: { label: "Send messages", help: "Messages from your accounts." },
+  web: { label: "Search the web", help: "Search and read public pages. Reading only; never signs in anywhere." },
+  messaging: { label: "Use WhatsApp", help: "Read and send WhatsApp messages, through WhatsApp Web or your phone. Sending asks you first." },
 };
 
 /** Capabilities the current laptop build can actually back. Offering more would hand it steps it cannot do. */
 export const BACKED_BY_BUILD: Record<HostKind, HostCapability[]> = {
-  laptop: ["agent"],
+  laptop: ["agent", "messaging", "web"],
   phone: [],
 };
 

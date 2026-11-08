@@ -231,6 +231,7 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("POST /api/v1/host/heartbeat", hostAuth(http.HandlerFunc(hostHandler.Heartbeat)))
 		mux.Handle("POST /api/v1/host/claim", hostAuth(http.HandlerFunc(hostHandler.Claim)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/heartbeat", hostAuth(http.HandlerFunc(hostHandler.TaskHeartbeat)))
+		mux.Handle("POST /api/v1/host/tasks/{task_id}/approval", hostAuth(http.HandlerFunc(hostHandler.RequestApproval)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/complete", hostAuth(http.HandlerFunc(hostHandler.CompleteTask)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/fail", hostAuth(http.HandlerFunc(hostHandler.FailTask)))
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -200,7 +201,65 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Tell the host what the owner has already approved for this task. If this lookup fails the list is
+	// left empty, which makes the host ask again rather than act: failing closed.
+	if approved, aerr := h.engine.ApprovedActionTypes(r.Context(), res.Task); aerr == nil {
+		res.ApprovedActions = approved
+	}
 	httputil.JSON(w, http.StatusOK, res)
+}
+
+// HostApprovalRequest is a host asking the owner to approve one outward action.
+type HostApprovalRequest struct {
+	ActionType string                   `json:"action_type"`
+	Summary    string                   `json:"summary"`
+	RiskLevel  domain.ApprovalRiskLevel `json:"risk_level"`
+	Payload    json.RawMessage          `json:"payload"`
+}
+
+// RequestApproval pauses a task this host is running until the owner decides. The action type must be a
+// host action (it carries a digest of the exact action), and the approval it creates covers only that.
+func (h *HostHandler) RequestApproval(w http.ResponseWriter, r *http.Request) {
+	host := middleware.GetHost(r.Context())
+	id, err := taskIDParam(r)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	var req HostApprovalRequest
+	if err := decodeBody(r, &req); err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if !strings.HasPrefix(req.ActionType, domain.HostActionApprovalPrefix) || len(req.ActionType) > 100 {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("action_type must be a host action")))
+		return
+	}
+	req.Summary = strings.TrimSpace(req.Summary)
+	if req.Summary == "" || len(req.Summary) > 600 {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("summary is required and at most 600 characters")))
+		return
+	}
+	switch req.RiskLevel {
+	case domain.ApprovalRiskLow, domain.ApprovalRiskMedium, domain.ApprovalRiskHigh, domain.ApprovalRiskCritical:
+	default:
+		req.RiskLevel = domain.ApprovalRiskHigh
+	}
+	task, err := h.svc.LeasedTask(r.Context(), host, id)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	ah := h.svc.BeginFinish(r.Context(), host, id)
+	if err := h.engine.RequestApproval(r.Context(), id, &domain.Approval{
+		UserID: task.UserID, TaskID: id, ActionType: req.ActionType, RiskLevel: req.RiskLevel,
+		Summary: req.Summary, ActionPayload: req.Payload,
+	}); err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	h.svc.EndFinish(r.Context(), host, ah, "AWAITING_APPROVAL", "")
+	httputil.JSON(w, http.StatusOK, map[string]string{"message": "Waiting for the owner's approval"})
 }
 
 func taskIDParam(r *http.Request) (uuid.UUID, error) {

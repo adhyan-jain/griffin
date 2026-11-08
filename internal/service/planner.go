@@ -35,6 +35,12 @@ func NewRuleBasedPlanner() *RuleBasedPlanner {
 func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserRequest, mgrReg *manager.Registry) (*domain.PlanPayload, error) {
 	text := strings.ToLower(req.RequestText)
 	managerID := classifyIntent(text)
+	planKey := managerID
+	if wantsWhatsApp(text) {
+		managerID, planKey = "personal_ops", "whatsapp"
+	} else if wantsWeb(req.RequestText) {
+		managerID, planKey = "research", "web"
+	}
 
 	mgr, ok := mgrReg.Get(managerID)
 	if !ok {
@@ -53,7 +59,13 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 	var dependencies []domain.PlanDependency
 	var approvalReqs []domain.ApprovalRequirement
 
-	switch managerID {
+	switch planKey {
+	case "whatsapp":
+		childTasks, dependencies = whatsAppSteps(req)
+
+	case "web":
+		childTasks, dependencies = webSteps(req)
+
 	case "engineering":
 		childTasks = []domain.ChildTaskPlan{
 			{

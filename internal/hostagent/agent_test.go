@@ -36,10 +36,13 @@ type fakeAPI struct {
 	polVer     int
 	polBody    map[string]any
 	polFetches int
+
+	approvals      map[string]map[string]any // task id -> request body
+	refuseApproval bool
 }
 
 func newFakeAPI(t *testing.T) *fakeAPI {
-	f := &fakeAPI{completed: map[string]json.RawMessage{}, failed: map[string]map[string]any{}}
+	f := &fakeAPI{completed: map[string]json.RawMessage{}, failed: map[string]map[string]any{}, approvals: map[string]map[string]any{}}
 	mux := http.NewServeMux()
 	write := func(w http.ResponseWriter, status int, data any) {
 		w.Header().Set("Content-Type", "application/json")
@@ -106,6 +109,21 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 		f.completed[r.PathValue("id")] = body.Output
 		f.mu.Unlock()
 		write(w, 200, map[string]string{"message": "ok"})
+	}))
+	mux.HandleFunc("POST /api/v1/host/tasks/{id}/approval", guard(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		refuse := f.refuseApproval
+		if !refuse {
+			f.approvals[r.PathValue("id")] = body
+		}
+		f.mu.Unlock()
+		if refuse {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		write(w, 200, map[string]string{"message": "Waiting for the owner's approval"})
 	}))
 	mux.HandleFunc("POST /api/v1/host/tasks/{id}/fail", guard(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -247,18 +265,79 @@ func TestAgentNeverCompletesATaskThatProducedNothing(t *testing.T) {
 	}
 }
 
-func TestAgentFailsApprovalGatedStepsInsteadOfActing(t *testing.T) {
+func (f *fakeAPI) approvalRequest(id string) (map[string]any, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a, ok := f.approvals[id]
+	return a, ok
+}
+
+// A step that needs the owner's say-so is paused in the cloud with the exact action in the request; it is
+// neither completed nor failed.
+func TestAgentAsksTheOwnerWhenAStepNeedsApproval(t *testing.T) {
 	f := newFakeAPI(t)
 	task := newTask("needs approval")
 	f.enqueue(task)
 	exec := fnExec{fn: func(context.Context, *domain.Task) (*worker.ExecutionResult, error) {
-		return &worker.ExecutionResult{RequiresApproval: &domain.Approval{}}, nil
+		return &worker.ExecutionResult{RequiresApproval: &domain.Approval{
+			ActionType: "host_action:abc", Summary: "Send a WhatsApp message to Mom", RiskLevel: domain.ApprovalRiskHigh,
+		}}, nil
+	}}
+	startAgent(t, f, exec, "agent")
+	waitFor(t, "approval request", func() bool { _, ok := f.approvalRequest(task.ID.String()); return ok })
+	got, _ := f.approvalRequest(task.ID.String())
+	if got["action_type"] != "host_action:abc" || got["summary"] != "Send a WhatsApp message to Mom" || got["risk_level"] != "HIGH" {
+		t.Fatalf("approval request carries the wrong action: %v", got)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, failed := f.failure(task.ID.String()); failed {
+		t.Fatal("a step waiting for approval must not be failed")
+	}
+	if _, done := f.completedOutput(task.ID.String()); done {
+		t.Fatal("a step waiting for approval must not be completed")
+	}
+}
+
+// If the host cannot ask (the API refuses or is unreachable) the step fails and does not run: an action
+// nobody approved never goes ahead.
+func TestAgentFailsTheStepWhenItCannotAsk(t *testing.T) {
+	f := newFakeAPI(t)
+	f.refuseApproval = true
+	task := newTask("needs approval")
+	f.enqueue(task)
+	exec := fnExec{fn: func(context.Context, *domain.Task) (*worker.ExecutionResult, error) {
+		return &worker.ExecutionResult{RequiresApproval: &domain.Approval{ActionType: "host_action:abc", Summary: "x", RiskLevel: domain.ApprovalRiskHigh}}, nil
 	}}
 	startAgent(t, f, exec, "agent")
 	waitFor(t, "failure", func() bool { _, ok := f.failure(task.ID.String()); return ok })
 	got, _ := f.failure(task.ID.String())
 	if got["retryable"] != false {
-		t.Fatalf("an approval-gated step must not be retried blindly: %v", got)
+		t.Fatalf("must not be retried blindly: %v", got)
+	}
+}
+
+// After the owner approves, the claim lists the approved action and prior outputs reach the executor.
+func TestAgentPassesApprovedActionsAndPriorOutputsToTheExecutor(t *testing.T) {
+	f := newFakeAPI(t)
+	task := newTask("resumed")
+	f.mu.Lock()
+	f.queue = append(f.queue, map[string]any{
+		"task":               task,
+		"approved_actions":   []string{"host_action:abc"},
+		"dependency_outputs": []map[string]any{{"title": "compose", "output": map[string]any{"response": "hello"}}},
+	})
+	f.mu.Unlock()
+	var sawApproved bool
+	var sawDeps int
+	exec := fnExec{fn: func(ctx context.Context, _ *domain.Task) (*worker.ExecutionResult, error) {
+		sawApproved = worker.ApprovedActionsFrom(ctx)["host_action:abc"]
+		sawDeps = len(worker.DependencyContextFrom(ctx))
+		return &worker.ExecutionResult{Output: json.RawMessage(`{"response":"done"}`)}, nil
+	}}
+	startAgent(t, f, exec, "agent")
+	waitFor(t, "completion", func() bool { _, ok := f.completedOutput(task.ID.String()); return ok })
+	if !sawApproved || sawDeps != 1 {
+		t.Fatalf("executor context: approved=%v deps=%d", sawApproved, sawDeps)
 	}
 }
 

@@ -307,6 +307,22 @@ func (e *TaskEngine) HasApprovedAction(ctx context.Context, task *domain.Task, a
 	return false, nil
 }
 
+// ApprovedActionTypes lists the action types the owner has approved for this task.
+func (e *TaskEngine) ApprovedActionTypes(ctx context.Context, task *domain.Task) ([]string, error) {
+	st := domain.ApprovalStatusApproved
+	list, err := e.approvalRepo.ListApprovals(ctx, task.UserID, &st)
+	if err != nil {
+		return nil, fmt.Errorf("task_engine: list approvals: %w", err)
+	}
+	var out []string
+	for _, a := range list {
+		if a.TaskID == task.ID {
+			out = append(out, a.ActionType)
+		}
+	}
+	return out, nil
+}
+
 // RespondApproval applies a human decision to an approval, resuming or cancelling the underlying task.
 func (e *TaskEngine) RespondApproval(ctx context.Context, approvalID uuid.UUID, userID uuid.UUID, approved bool, reason string) (*domain.Approval, error) {
 	app, err := e.approvalRepo.RespondToApproval(ctx, approvalID, userID, approved, reason)

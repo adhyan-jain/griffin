@@ -107,6 +107,9 @@ func (s *HostService) Heartbeat(ctx context.Context, h *domain.Host, advertised 
 type ClaimResult struct {
 	Task         *domain.Task                  `json:"task"`
 	Dependencies []repository.DependencyOutput `json:"dependency_outputs,omitempty"`
+	// ApprovedActions lists the approval action types the owner has already granted for this task, so a
+	// host that paused to ask can tell, on its next claim, that the exact action it wanted is approved.
+	ApprovedActions []string `json:"approved_actions,omitempty"`
 }
 
 // MarshalJSON keeps dependency outputs as plain {title, output} objects.
@@ -120,9 +123,10 @@ func (c ClaimResult) MarshalJSON() ([]byte, error) {
 		deps = append(deps, dep{Title: d.Title, Output: d.Output})
 	}
 	return json.Marshal(struct {
-		Task         *domain.Task `json:"task"`
-		Dependencies []dep        `json:"dependency_outputs,omitempty"`
-	}{c.Task, deps})
+		Task            *domain.Task `json:"task"`
+		Dependencies    []dep        `json:"dependency_outputs,omitempty"`
+		ApprovedActions []string     `json:"approved_actions,omitempty"`
+	}{c.Task, deps, c.ApprovedActions})
 }
 
 // Claim leases the next task this host can do, or returns nil when there is none. Claiming counts as
@@ -337,4 +341,18 @@ func (s *HostService) EndFinish(ctx context.Context, h *domain.Host, ah *Attempt
 	if err := s.tasks.RecordAttempt(ctx, a); err != nil {
 		s.logger.Error("host attempt not recorded", "task_id", ah.taskID, "error", err)
 	}
+}
+
+// LeasedTask returns the task only if this host holds its lease and it is running. A host may ask for an
+// approval only on work it is actually doing; anything else is refused as not found so that one host
+// cannot learn about another's tasks.
+func (s *HostService) LeasedTask(ctx context.Context, h *domain.Host, taskID uuid.UUID) (*domain.Task, error) {
+	task, err := s.tasks.GetTaskByID(ctx, taskID)
+	if err != nil || task == nil {
+		return nil, domain.ErrNotFound
+	}
+	if task.UserID != h.UserID || task.LeasedBy == nil || *task.LeasedBy != h.WorkerID() || task.Status != domain.TaskStatusRunning {
+		return nil, domain.ErrNotFound
+	}
+	return task, nil
 }

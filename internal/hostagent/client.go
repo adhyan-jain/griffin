@@ -135,6 +135,8 @@ func (c *Client) Heartbeat(ctx context.Context, capabilities []string, version s
 type Claimed struct {
 	Task         *domain.Task
 	Dependencies []repository.DependencyOutput
+	// ApprovedActions are the approval action types the owner has already granted for this task.
+	ApprovedActions []string
 }
 
 // Claim leases the next task this host may do. It returns (nil, nil) when there is none.
@@ -145,12 +147,13 @@ func (c *Client) Claim(ctx context.Context) (*Claimed, error) {
 			Title  string          `json:"title"`
 			Output json.RawMessage `json:"output"`
 		} `json:"dependency_outputs"`
+		ApprovedActions []string `json:"approved_actions"`
 	}
 	ok, err := c.do(ctx, http.MethodPost, "/api/v1/host/claim", map[string]any{}, &out)
 	if err != nil || !ok || out.Task == nil {
 		return nil, err
 	}
-	cl := &Claimed{Task: out.Task}
+	cl := &Claimed{Task: out.Task, ApprovedActions: out.ApprovedActions}
 	for _, d := range out.Dependencies {
 		cl.Dependencies = append(cl.Dependencies, repository.DependencyOutput{Title: d.Title, Output: d.Output})
 	}
@@ -172,6 +175,15 @@ func (c *Client) Complete(ctx context.Context, taskID string, output json.RawMes
 // Fail reports a failed task.
 func (c *Client) Fail(ctx context.Context, taskID, reason string, retryable bool) error {
 	_, err := c.do(ctx, http.MethodPost, "/api/v1/host/tasks/"+taskID+"/fail", map[string]any{"reason": reason, "retryable": retryable}, nil)
+	return err
+}
+
+// RequestApproval pauses a running task until the owner decides on one outward action. The API creates the
+// approval; the owner sees it in the app and the task resumes (or is cancelled) when they answer.
+func (c *Client) RequestApproval(ctx context.Context, taskID string, a *domain.Approval) error {
+	_, err := c.do(ctx, http.MethodPost, "/api/v1/host/tasks/"+taskID+"/approval", map[string]any{
+		"action_type": a.ActionType, "summary": a.Summary, "risk_level": a.RiskLevel, "payload": a.ActionPayload,
+	}, nil)
 	return err
 }
 

@@ -228,7 +228,8 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 	}()
 
 	execTask := worker.WithDependencyOutputs(task, c.Dependencies)
-	res, execErr := a.cfg.Executor.Execute(taskCtx, execTask)
+	execCtx := worker.WithApprovedActions(worker.WithDependencyContext(taskCtx, c.Dependencies), c.ApprovedActions)
+	res, execErr := a.cfg.Executor.Execute(execCtx, execTask)
 	if taskCtx.Err() != nil {
 		// Either the lease was lost (the API already treats the task as abandoned and reporting would be
 		// refused) or the host is shutting down. In both cases report nothing: the lease expires and the
@@ -239,11 +240,17 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 	out := worker.InterpretResult(task, a.cfg.Executor, res, execErr)
 	switch {
 	case out.NeedsApproval != nil:
-		// Approvals are not wired through the Host API yet. Fail loudly and do not retry rather than
-		// leave the step stuck or let it act without the owner's approval.
-		if err := a.cfg.Client.Fail(report, id, "this host cannot handle approval-gated steps yet", false); err != nil {
-			a.logger.Error("could not report failure", "task_id", id, "error", err)
+		// Ask the owner. The step pauses in the cloud; when they answer it is requeued and claimed again,
+		// and the claim then lists this action as approved. If asking fails the step is failed, not run:
+		// an action nobody approved must never go ahead.
+		if err := a.cfg.Client.RequestApproval(report, id, out.NeedsApproval); err != nil {
+			a.logger.Error("could not request approval; failing the step instead of acting", "task_id", id, "error", err)
+			if ferr := a.cfg.Client.Fail(report, id, "could not ask for your approval: "+err.Error(), false); ferr != nil {
+				a.logger.Error("could not report failure", "task_id", id, "error", ferr)
+			}
+			return
 		}
+		a.logger.Info("waiting for the owner's approval", "task_id", id, "action", out.NeedsApproval.Summary)
 	case out.Failed():
 		a.logger.Warn("task failed", "task_id", id, "reason", out.FailReason)
 		if err := a.cfg.Client.Fail(report, id, out.FailReason, out.Retryable); err != nil {

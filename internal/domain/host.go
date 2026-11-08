@@ -32,6 +32,8 @@ const (
 	HostCapSMS       = "sms"
 	HostCapCalls     = "calls"
 	HostCapMessaging = "messaging"
+	// HostCapWeb is read-only access to the public web: search and fetching pages.
+	HostCapWeb = "web"
 )
 
 // AllHostCapabilities is the set of recognized host capabilities.
@@ -44,6 +46,7 @@ var AllHostCapabilities = map[string]bool{
 	HostCapSMS:       true,
 	HostCapCalls:     true,
 	HostCapMessaging: true,
+	HostCapWeb:       true,
 }
 
 const (

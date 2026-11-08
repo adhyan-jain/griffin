@@ -242,7 +242,7 @@ export type JJMessageResult =
 
 export type HostKind = "laptop" | "phone";
 export type HostMode = "laptop" | "phone" | "none";
-export type HostCapability = "agent" | "browser" | "files" | "shell" | "phone_apps" | "sms" | "calls" | "messaging";
+export type HostCapability = "agent" | "browser" | "files" | "shell" | "phone_apps" | "sms" | "calls" | "messaging" | "web";
 
 export interface HostView {
   id: string;
