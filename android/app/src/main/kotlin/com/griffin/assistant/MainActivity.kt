@@ -170,6 +170,12 @@ class MainActivity : Activity() {
         val stage = FrameLayoutCard(orb)
         root.addView(stage)
 
+        if (running) {
+            root.addView(pill("Listen now", filled = true) { listenNow() }.apply {
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) }
+            })
+            root.addView(label("Same as saying \"hey $name\", without saying it. Also in the notification and as a Quick Settings tile.", 12f, Ink.muted).apply { setPadding(dp(4), dp(6), dp(4), 0) })
+        }
         root.addView(pill(if (running) "Stop listening" else "Start listening", filled = !running) { toggleListening() }.apply {
             (layoutParams as? LinearLayout.LayoutParams) ?: run { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
             (layoutParams as LinearLayout.LayoutParams).topMargin = dp(16)
@@ -252,6 +258,11 @@ class MainActivity : Activity() {
         if (!granted(Manifest.permission.RECORD_AUDIO)) { app.log("allow the microphone first"); rebuild(); return }
         ContextCompat.startForegroundService(this, Intent(this, AssistantService::class.java))
         app.main.postDelayed({ rebuild() }, 600)
+    }
+
+    /** Wakes the assistant as if the wake phrase had been said. */
+    private fun listenNow() {
+        ContextCompat.startForegroundService(this, Intent(this, AssistantService::class.java).setAction(AssistantService.ACTION_LISTEN))
     }
 
     private fun requestScreeningRole() {

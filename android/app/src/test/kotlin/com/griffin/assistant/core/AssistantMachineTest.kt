@@ -46,13 +46,42 @@ class AssistantMachineTest {
         assertEquals(Phase.Idle, AssistantMachine.reduce(awake, AEvent.Tick(8000)).state.phase)
     }
 
-    @Test fun `thinking then speech then back to idle`() {
+    @Test fun `after a reply it listens on for a follow-up, then goes quiet`() {
         var s = heard(AState(), "hey JJ hello").state
         assertEquals(Phase.Thinking, s.phase)
         s = AssistantMachine.reduce(s, AEvent.SpeechStarted).state
         assertEquals(Phase.Speaking, s.phase)
         s = AssistantMachine.reduce(s, AEvent.SpeechEnded(5000)).state
-        assertEquals(AState(), s)
+        assertEquals(Phase.Awake, s.phase)
+        assertEquals(5000 + AssistantMachine.FOLLOWUP_MS, s.until)
+        // a follow-up needs no wake phrase
+        val next = heard(s, "and what about Spain", now = 8000)
+        assertEquals(listOf<Effect>(Effect.Handle("and what about Spain")), next.effects)
+        // silence ends it
+        assertEquals(Phase.Idle, AssistantMachine.reduce(s, AEvent.Tick(5000 + AssistantMachine.FOLLOWUP_MS)).state.phase)
+        assertEquals(listOf<Effect>(Effect.Ignore), heard(s, "so anyway", now = 20_000).effects)
+    }
+
+    @Test fun `thanks or that's all ends the conversation`() {
+        val awake = AssistantMachine.reduce(AState(phase = Phase.Awake, until = 99_000), AEvent.Tick(0)).state
+        val step = heard(awake, "thanks", now = 1000)
+        assertEquals(listOf<Effect>(Effect.Handle("thanks")), step.effects)
+        assertEquals(Command.Stop, Commands.parse("thanks"))
+        assertEquals(Command.Stop, Commands.parse("that's all"))
+        assertEquals(Phase.Idle, AssistantMachine.reduce(step.state, AEvent.WorkFinished).state.phase)
+    }
+
+    @Test fun `a button wakes it without saying anything, and cancels a pending confirmation`() {
+        val woke = AssistantMachine.reduce(AState(), AEvent.ManualWake(now = 2000))
+        assertEquals(AState(phase = Phase.Awake, until = 2000 + AssistantMachine.AWAKE_MS), woke.state)
+        assertEquals(listOf<Effect>(Effect.Beep), woke.effects)
+        // the next sentence is the request
+        assertEquals(listOf<Effect>(Effect.Handle("what's the weather")), heard(woke.state, "what's the weather", now = 3000).effects)
+        // pressing it while a text waits for "send" cancels that text
+        val confirming = AssistantMachine.reduce(AState(), AEvent.ConfirmRequested(sms, now = 0)).state
+        val pressed = AssistantMachine.reduce(confirming, AEvent.ManualWake(now = 1000)).state
+        assertNull(pressed.pending)
+        assertEquals(Phase.Awake, pressed.phase)
     }
 
     @Test fun `work that ends with nothing to say returns to idle`() {
@@ -151,7 +180,7 @@ class AssistantMachineTest {
                     4 -> AEvent.SpeechStarted
                     5 -> AEvent.SpeechEnded(now)
                     6 -> AEvent.ConfirmRequested(sms, now)
-                    else -> if (rnd.nextBoolean()) AEvent.WorkFinished else AEvent.CallRinging(now)
+                    else -> when (rnd.nextInt(3)) { 0 -> AEvent.WorkFinished; 1 -> AEvent.CallRinging(now); else -> AEvent.ManualWake(now) }
                 }
                 s = AssistantMachine.reduce(s, e).state
                 // The pending text exists while waiting for the yes, and while the question is being spoken (Speaking that

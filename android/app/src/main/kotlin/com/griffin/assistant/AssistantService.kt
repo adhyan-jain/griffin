@@ -57,9 +57,10 @@ class AssistantService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("assistant", "Listening", NotificationManager.IMPORTANCE_MIN))
         val stop = PendingIntent.getService(this, 1, Intent(this, AssistantService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
+        val listenNow = PendingIntent.getService(this, 2, Intent(this, AssistantService::class.java).setAction(ACTION_LISTEN), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification: Notification = NotificationCompat.Builder(this, "assistant").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Griffin is listening")
-            .setContentText("Say \"hey\" and the manager's name. Tap Stop to pause.").setOngoing(true).setContentIntent(open).addAction(0, "Stop", stop).build()
+            .setContentText("Say \"hey\" and the manager's name, or tap Listen now.").setOngoing(true).setContentIntent(open).addAction(0, "Listen now", listenNow).addAction(0, "Stop", stop).build()
         startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
 
         app.assistantRunning = true
@@ -78,9 +79,10 @@ class AssistantService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            // From the button, the notification or the tile: the same as hearing "hey <name>" on its own.
+            ACTION_LISTEN -> { app.log("woke by button"); dispatch(AEvent.ManualWake(System.currentTimeMillis())); beepSoon() }
         }
         return START_STICKY
     }
@@ -171,6 +173,8 @@ class AssistantService : Service() {
     }
 
     private fun finished() = dispatch(AEvent.WorkFinished)
+
+    private fun beepSoon() = beep()
 
     private fun beep() {
         try {
@@ -308,6 +312,7 @@ class AssistantService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.griffin.assistant.STOP"
+        const val ACTION_LISTEN = "com.griffin.assistant.LISTEN"
         const val ACTION_DEBUG_UTTERANCE = "com.griffin.assistant.DEBUG_UTTERANCE"
     }
 }

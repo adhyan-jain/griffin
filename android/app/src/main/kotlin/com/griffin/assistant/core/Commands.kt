@@ -62,7 +62,7 @@ object Commands {
         when (s) {
             "answer", "answer it", "answer the call", "pick up", "pick it up", "pick up the call", "accept", "accept the call" -> return Command.Answer
             "reject", "reject it", "reject the call", "decline", "decline the call", "hang up", "ignore", "ignore it", "cut the call" -> return Command.Reject
-            "stop", "be quiet", "quiet", "shut up", "cancel", "never mind", "nevermind" -> return Command.Stop
+            "stop", "be quiet", "quiet", "shut up", "cancel", "never mind", "nevermind", "that's all", "thats all", "that is all", "thanks", "thank you", "okay thanks", "ok thanks", "no thanks", "i'm done", "done" -> return Command.Stop
         }
 
         Regex("^(?:please )?(?:call|phone|ring|dial) (.+)$").find(s)?.let { m ->

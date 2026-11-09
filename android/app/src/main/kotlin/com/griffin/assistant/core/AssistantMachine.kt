@@ -9,9 +9,10 @@ package com.griffin.assistant.core
  *  - the whole behaviour is testable on a laptop, with no phone and no speech engine;
  *  - a person or an agent changing the assistant has one table to read and one place to change.
  *
- * Idle ──"hey <name>"──▶ Awake ──request──▶ Thinking ──reply spoken──▶ Speaking ──▶ Idle
- *   ▲                       │ timeout                                      │
- *   └───────────────────────┘                          Confirming ◀────────┘ (a text or reply waiting for "send")
+ * Idle ──"hey <name>" or a button──▶ Awake ──request──▶ Thinking ──reply──▶ Speaking ──▶ Awake (follow-up window)
+ *   ▲                                   │ timeout                                          │ timeout
+ *   └───────────────────────────────────┴──────────────────────────────────────────────────┘
+ *                                              Confirming ◀── (a text or reply waiting for "send")
  *
  * Time is passed in, never read, so tests control it.
  */
@@ -43,6 +44,8 @@ sealed class AEvent {
     data class Tick(val now: Long) : AEvent()
     /** A command wants the owner's yes before it acts. */
     data class ConfirmRequested(val action: PendingAction, val now: Long) : AEvent()
+    /** The owner woke it with a button, a notification action or a tile instead of saying the wake phrase. */
+    data class ManualWake(val now: Long) : AEvent()
     /** The thinking ended and there is nothing to say. */
     object WorkFinished : AEvent()
 }
@@ -64,6 +67,8 @@ data class Step(val state: AState, val effects: List<Effect> = emptyList())
 
 object AssistantMachine {
     const val AWAKE_MS = 8_000L
+    /** After it has spoken, it keeps listening this long for a follow-up, so a conversation needs the wake phrase once. */
+    const val FOLLOWUP_MS = 7_000L
     const val CONFIRM_MS = 20_000L
     const val RINGING_MS = 25_000L
 
@@ -81,10 +86,12 @@ object AssistantMachine {
     fun reduce(s: AState, e: AEvent): Step = when (e) {
         is AEvent.Tick -> Step(expire(s, e.now))
         is AEvent.CallRinging -> Step(s.copy(ringingUntil = e.now + RINGING_MS))
+        // Same as hearing "hey <name>" on its own, and it also cancels anything waiting for a yes.
+        is AEvent.ManualWake -> Step(s.copy(phase = Phase.Awake, until = e.now + AWAKE_MS, pending = null, resume = Phase.Idle), listOf(Effect.Beep))
         is AEvent.ConfirmRequested -> Step(s.copy(phase = Phase.Confirming, until = e.now + CONFIRM_MS, pending = e.action, resume = Phase.Idle))
         AEvent.WorkFinished -> Step(if (s.phase == Phase.Thinking) s.copy(phase = Phase.Idle) else s)
         // Speech that starts while nothing is going on (a call announcement, an alarm) stays invisible.
-        AEvent.SpeechStarted -> Step(if (s.phase == Phase.Idle || s.phase == Phase.Speaking) s else s.copy(phase = Phase.Speaking, resume = if (s.phase == Phase.Thinking) Phase.Idle else s.phase))
+        AEvent.SpeechStarted -> Step(if (s.phase == Phase.Idle || s.phase == Phase.Speaking) s else s.copy(phase = Phase.Speaking, resume = if (s.phase == Phase.Thinking) Phase.Awake else s.phase))
         is AEvent.SpeechEnded -> Step(if (s.phase == Phase.Speaking) back(s, e.now) else s)
         is AEvent.Heard -> heard(expire(s, e.now), e)
     }
@@ -93,7 +100,8 @@ object AssistantMachine {
         if ((s.phase == Phase.Awake || s.phase == Phase.Confirming) && now >= s.until) s.copy(phase = Phase.Idle, until = 0, pending = null) else s
 
     private fun back(s: AState, now: Long): AState = when {
-        s.resume == Phase.Awake && now < s.until -> s.copy(phase = Phase.Awake)
+        // After a reply it listens on for a follow-up (the animation stays up while it does, so it is never a hidden mic).
+        s.resume == Phase.Awake -> s.copy(phase = Phase.Awake, until = if (s.until > now) s.until else now + FOLLOWUP_MS)
         s.resume == Phase.Confirming && s.pending != null && now < s.until -> s.copy(phase = Phase.Confirming)
         else -> s.copy(phase = Phase.Idle, until = 0, pending = null, resume = Phase.Idle)
     }
