@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -147,64 +148,65 @@ func (t *Task) IsTerminal() bool {
 	return t.Status == TaskStatusCompleted || t.Status == TaskStatusFailed || t.Status == TaskStatusCancelled
 }
 
+// taskTransitions is the task lifecycle: which status a task may move to from each status, by any path. It is
+// the written form of what internal/repository/task_repo.go enforces in SQL (each UPDATE names the statuses it
+// accepts), and it was brought into line with that SQL on 2026-11-09 after a review found the two had drifted.
+// When a transition changes, change this table, its test, and the SQL together.
+//
+//	claim            QUEUED | RETRYING            -> RUNNING          ClaimNextTask
+//	complete         RUNNING | VERIFYING          -> COMPLETED        CompleteTask
+//	fail, will retry RUNNING | VERIFYING          -> RETRYING         FailTask (retry_count + 1 < max_retries)
+//	fail, final      RUNNING | VERIFYING          -> FAILED           FailTask
+//	lease expired    RUNNING                      -> RETRYING|FAILED  ReapExpiredLeases
+//	cancel           any non-terminal             -> CANCELLED        CancelTask
+//	resume           FAILED | CANCELLED (roots)   -> QUEUED | WAITING_FOR_DEPENDENCY   ResumeTask
+//	unblock          WAITING_FOR_DEPENDENCY       -> QUEUED           UnblockTaskIfEligible
+//	ask the owner    RUNNING | QUEUED | WAITING   -> AWAITING_APPROVAL
+//	owner answers    AWAITING_APPROVAL            -> QUEUED | WAITING_FOR_DEPENDENCY | RUNNING | CANCELLED
+//
+// A terminal task (COMPLETED, FAILED, CANCELLED) is finished, with one exception: a failed or cancelled
+// standalone task can be resumed in place. Whether a task is such a root is decided where it is resumed (the
+// SQL and the app), not by this table.
+var taskTransitions = map[TaskStatus][]TaskStatus{
+	TaskStatusCreated:              {TaskStatusRouted, TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusCancelled},
+	TaskStatusRouted:               {TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusCancelled},
+	TaskStatusWaitingForDependency: {TaskStatusQueued, TaskStatusAwaitingApproval, TaskStatusCancelled},
+	TaskStatusQueued:               {TaskStatusRunning, TaskStatusAwaitingApproval, TaskStatusCancelled},
+	TaskStatusRunning:              {TaskStatusVerifying, TaskStatusCompleted, TaskStatusAwaitingApproval, TaskStatusRetrying, TaskStatusFailed, TaskStatusCancelled},
+	TaskStatusVerifying:            {TaskStatusCompleted, TaskStatusFailed, TaskStatusRetrying, TaskStatusCancelled},
+	TaskStatusAwaitingApproval:     {TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusRunning, TaskStatusCancelled},
+	TaskStatusRetrying:             {TaskStatusQueued, TaskStatusRunning, TaskStatusCancelled},
+	TaskStatusCompleted:            {},
+	TaskStatusFailed:               {TaskStatusQueued, TaskStatusWaitingForDependency},
+	TaskStatusCancelled:            {TaskStatusQueued, TaskStatusWaitingForDependency},
+}
+
+// AllTaskStatuses lists every status, so tools and tests can be sure they have covered them all.
+func AllTaskStatuses() []TaskStatus {
+	out := make([]TaskStatus, 0, len(taskTransitions))
+	for s := range taskTransitions {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// TaskTransitionsFrom lists where a task in status from may go next.
+func TaskTransitionsFrom(from TaskStatus) []TaskStatus {
+	return append([]TaskStatus(nil), taskTransitions[from]...)
+}
+
 // IsValidTransition returns whether transitioning from 'from' to 'to' is allowed.
 func IsValidTransition(from, to TaskStatus) bool {
 	if from == to {
 		return true
 	}
-
-	switch from {
-	case TaskStatusCreated:
-		return to == TaskStatusRouted ||
-			to == TaskStatusQueued ||
-			to == TaskStatusWaitingForDependency ||
-			to == TaskStatusCancelled
-
-	case TaskStatusRouted:
-		return to == TaskStatusQueued ||
-			to == TaskStatusWaitingForDependency ||
-			to == TaskStatusCancelled
-
-	case TaskStatusWaitingForDependency:
-		return to == TaskStatusQueued ||
-			to == TaskStatusAwaitingApproval ||
-			to == TaskStatusCancelled
-
-	case TaskStatusQueued:
-		return to == TaskStatusRunning ||
-			to == TaskStatusAwaitingApproval ||
-			to == TaskStatusCancelled
-
-	case TaskStatusRunning:
-		return to == TaskStatusVerifying ||
-			to == TaskStatusCompleted ||
-			to == TaskStatusAwaitingApproval ||
-			to == TaskStatusRetrying ||
-			to == TaskStatusFailed ||
-			to == TaskStatusCancelled
-
-	case TaskStatusVerifying:
-		return to == TaskStatusCompleted ||
-			to == TaskStatusFailed ||
-			to == TaskStatusRetrying
-
-	case TaskStatusAwaitingApproval:
-		return to == TaskStatusQueued ||
-			to == TaskStatusWaitingForDependency ||
-			to == TaskStatusRunning ||
-			to == TaskStatusCancelled
-
-	case TaskStatusRetrying:
-		return to == TaskStatusQueued ||
-			to == TaskStatusCancelled
-
-	case TaskStatusCompleted, TaskStatusFailed, TaskStatusCancelled:
-		// Terminal states cannot transition
-		return false
-
-	default:
-		return false
+	for _, next := range taskTransitions[from] {
+		if next == to {
+			return true
+		}
 	}
+	return false
 }
 
 // TaskDependency links a dependent task to its prerequisite.

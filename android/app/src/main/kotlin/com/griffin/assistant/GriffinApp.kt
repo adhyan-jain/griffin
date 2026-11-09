@@ -16,8 +16,8 @@ class GriffinApp : Application() {
     private val lines = ArrayDeque<String>()
     var onLog: (() -> Unit)? = null
 
-    /** Set while a call is ringing and the assistant is listening, so "answer" and "reject" mean the call. */
-    @Volatile var callWindowUntil = 0L
+    /** The running assistant's door for events from outside it (a call ringing). Null while it is not running. */
+    @Volatile var assistantEvents: ((com.griffin.assistant.core.AEvent) -> Unit)? = null
     @Volatile var assistantRunning = false
 
     override fun onCreate() {
@@ -82,7 +82,7 @@ class GriffinApp : Application() {
         }
         val prompt = if (assistantRunning) "Call from $who. Say answer or reject." else "Call from $who."
         log("incoming call announced")
-        if (assistantRunning) callWindowUntil = System.currentTimeMillis() + 25_000
+        assistantEvents?.let { send -> main.post { send(com.griffin.assistant.core.AEvent.CallRinging(System.currentTimeMillis())) } }
         main.post { speaker.say(prompt) }
     }
 }

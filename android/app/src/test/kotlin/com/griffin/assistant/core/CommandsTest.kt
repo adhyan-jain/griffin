@@ -73,4 +73,34 @@ class CommandsTest {
         assertEquals(null, Commands.parseDuration("soon"))
         assertEquals(null, Commands.parseDuration("0 minutes"))
     }
+
+    @Test fun `reading messages`() {
+        assertEquals(Command.ReadMessages(null), p("read my messages"))
+        assertEquals(Command.ReadMessages(null), p("read new messages"))
+        assertEquals(Command.ReadMessages(null), p("check my messages"))
+        assertEquals(Command.ReadMessages(null), p("do I have any messages"))
+        assertEquals(Command.ReadMessages(null), p("any new messages"))
+        assertEquals(Command.ReadMessages("bro"), p("read messages from bro"))
+        assertEquals(Command.ReadMessages("bro"), p("what did bro say"))
+        assertEquals(Command.ReadMessages("rahul"), p("read Rahul's messages"))
+        assertEquals(Command.None, p("read a book"))
+        assertEquals(Command.None, p("I read the messages yesterday"))
+    }
+
+    @Test fun `replying`() {
+        assertEquals(Command.Reply("i'll be there in five"), p("reply saying I'll be there in five"))
+        assertEquals(Command.Reply("ok", "bro"), p("reply to bro saying ok"))
+        assertEquals(Command.Reply("yes", null), p("reply yes"))
+        assertEquals(Command.Reply("on my way", "bro", "WhatsApp"), p("reply to bro on whatsapp saying on my way"))
+        assertEquals(Command.None, p("reply"))
+        assertEquals(Command.None, p("I need to reply to that email"))
+    }
+
+    @Test fun `messaging in a named app`() {
+        assertEquals(Command.MessageVia("bro", "i'm late", "WhatsApp"), p("message bro on whatsapp saying I'm late"))
+        assertEquals(Command.MessageVia("sam", "hello", "Instagram"), p("dm sam on insta saying hello"))
+        assertEquals(Command.MessageVia("mom", "call me", "Telegram"), p("tell mom on telegram that call me"))
+        // no app named: still the plain text message
+        assertEquals(Command.Text("mom", "i'll be late"), p("text mom that I'll be late"))
+    }
 }

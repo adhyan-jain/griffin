@@ -45,13 +45,21 @@ func TestTaskStatusTransitions(t *testing.T) {
 		{"AWAITING_APPROVAL -> CANCELLED", domain.TaskStatusAwaitingApproval, domain.TaskStatusCancelled, true},
 
 		{"RETRYING -> QUEUED", domain.TaskStatusRetrying, domain.TaskStatusQueued, true},
+		{"RETRYING -> RUNNING (a worker claims a retry)", domain.TaskStatusRetrying, domain.TaskStatusRunning, true},
 		{"RETRYING -> CANCELLED", domain.TaskStatusRetrying, domain.TaskStatusCancelled, true},
+		{"VERIFYING -> CANCELLED", domain.TaskStatusVerifying, domain.TaskStatusCancelled, true},
 
-		// Terminal states cannot transition
+		// Resume: a failed or cancelled standalone task continues in place
+		{"FAILED -> QUEUED (resume)", domain.TaskStatusFailed, domain.TaskStatusQueued, true},
+		{"CANCELLED -> QUEUED (resume)", domain.TaskStatusCancelled, domain.TaskStatusQueued, true},
+		{"FAILED -> WAITING_FOR_DEPENDENCY (resume)", domain.TaskStatusFailed, domain.TaskStatusWaitingForDependency, true},
+
+		// Otherwise terminal states are finished
 		{"COMPLETED -> RUNNING", domain.TaskStatusCompleted, domain.TaskStatusRunning, false},
 		{"COMPLETED -> QUEUED", domain.TaskStatusCompleted, domain.TaskStatusQueued, false},
 		{"FAILED -> RUNNING", domain.TaskStatusFailed, domain.TaskStatusRunning, false},
-		{"CANCELLED -> QUEUED", domain.TaskStatusCancelled, domain.TaskStatusQueued, false},
+		{"FAILED -> COMPLETED", domain.TaskStatusFailed, domain.TaskStatusCompleted, false},
+		{"CANCELLED -> RUNNING", domain.TaskStatusCancelled, domain.TaskStatusRunning, false},
 
 		// Invalid leaps
 		{"CREATED -> COMPLETED", domain.TaskStatusCreated, domain.TaskStatusCompleted, false},
@@ -66,6 +74,47 @@ func TestTaskStatusTransitions(t *testing.T) {
 				t.Errorf("IsValidTransition(%s, %s) = %v; want %v", tc.from, tc.to, got, tc.allowed)
 			}
 		})
+	}
+}
+
+// Every status has an entry, every target is a real status, only COMPLETED is a dead end, and the statuses a task
+// can be cancelled from are exactly the non-terminal ones (what CancelTask's SQL accepts).
+func TestTaskLifecycleTableIsComplete(t *testing.T) {
+	all := domain.AllTaskStatuses()
+	if len(all) != 11 {
+		t.Fatalf("expected 11 statuses, got %d: %v", len(all), all)
+	}
+	known := map[domain.TaskStatus]bool{}
+	for _, s := range all {
+		known[s] = true
+	}
+	for _, from := range all {
+		for _, to := range domain.TaskTransitionsFrom(from) {
+			if !known[to] {
+				t.Errorf("%s -> %s: not a real status", from, to)
+			}
+		}
+		isTerminal := (&domain.Task{Status: from}).IsTerminal()
+		cancellable := domain.IsValidTransition(from, domain.TaskStatusCancelled) && from != domain.TaskStatusCancelled
+		if cancellable == isTerminal && from != domain.TaskStatusCancelled {
+			t.Errorf("%s: cancellable=%v but terminal=%v; CancelTask accepts exactly the non-terminal statuses", from, cancellable, isTerminal)
+		}
+	}
+	if got := domain.TaskTransitionsFrom(domain.TaskStatusCompleted); len(got) != 0 {
+		t.Errorf("a completed task is finished, got %v", got)
+	}
+	for _, s := range []domain.TaskStatus{domain.TaskStatusFailed, domain.TaskStatusCancelled} {
+		for _, to := range domain.TaskTransitionsFrom(s) {
+			if to != domain.TaskStatusQueued && to != domain.TaskStatusWaitingForDependency {
+				t.Errorf("%s may only be resumed, not moved to %s", s, to)
+			}
+		}
+	}
+	// the returned slice is a copy: callers cannot corrupt the table
+	got := domain.TaskTransitionsFrom(domain.TaskStatusQueued)
+	got[0] = domain.TaskStatusCompleted
+	if domain.IsValidTransition(domain.TaskStatusQueued, domain.TaskStatusCompleted) {
+		t.Error("TaskTransitionsFrom must return a copy")
 	}
 }
 

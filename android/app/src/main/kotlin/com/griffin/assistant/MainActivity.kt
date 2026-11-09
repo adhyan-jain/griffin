@@ -143,11 +143,13 @@ class MainActivity : Activity() {
         val screening = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
         val battery = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
         val overlay = Settings.canDrawOverlays(this)
+        val notifications = androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
         return listOf(
             Step("Microphone, contacts, calls and texts", "So it can hear \"hey\", find people and act for you.", perms, "Allow") { requestPermissions(permissions, 1) },
             Step("Say who is calling", "Reads out the caller's name. It never blocks or changes a call.", screening, "Allow") { requestScreeningRole() },
             Step("Keep listening in the background", "Stops the phone's battery saver from switching it off.", battery, "Allow") { allowBackground() },
             Step("Show the listening animation", "The wave along the bottom when it wakes, over any app.", overlay, "Allow") { allowOverlay() },
+            Step("Read and reply to your messages", "Lets it read chats out and reply through WhatsApp, Instagram and the rest, without opening them.", notifications, "Allow") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
         )
     }
 

@@ -15,30 +15,39 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.griffin.assistant.core.AEvent
+import com.griffin.assistant.core.AState
+import com.griffin.assistant.core.AssistantMachine
+import com.griffin.assistant.core.Chat
 import com.griffin.assistant.core.Command
 import com.griffin.assistant.core.Commands
-import com.griffin.assistant.core.WakeMatcher
+import com.griffin.assistant.core.Effect
+import com.griffin.assistant.core.MessageBook
+import com.griffin.assistant.core.PendingAction
+import com.griffin.assistant.core.Phase
 
 /**
- * The assistant. It listens in the background, wakes on the manager's name, does what the phone can do by itself
- * (calls, timers, texts, the flashlight), answers conversation through Griffin's fast voice route, and hands real
- * work to the manager. Everything it hears stays on the phone except the words sent to Griffin for an answer.
+ * The assistant. It listens in the background, wakes on "hey" and the manager's name, does what the phone can do by
+ * itself, reads out and replies to chats through the chat apps' own notifications (so nothing opens on screen and a
+ * game keeps running), answers conversation through Griffin, and hands real work to the manager.
+ *
+ * Every decision about *what state it is in* is made by [AssistantMachine]; this class only feeds it events and
+ * carries out the effects it returns. All of it runs on the main thread.
  */
 class AssistantService : Service() {
     private val app get() = application as GriffinApp
     private lateinit var listener: Listener
     private lateinit var actions: Actions
-    private var name = "JJ"
-    private var awakeUntil = 0L
-    private val history = ArrayList<Pair<String, String>>()
-    private data class PendingText(val who: String, val number: String, val message: String, val expires: Long)
-    private var pendingText: PendingText? = null
-    private var debugReceiver: BroadcastReceiver? = null
     private lateinit var overlay: ListeningOverlay
-    private val orbListener: () -> Unit = {
-        if (app.mode == OrbView.Mode.Hidden) overlay.hide() else { overlay.show(); overlay.update(app.mode, app.level) }
-    }
-    private val idleTimeout = Runnable { if (System.currentTimeMillis() >= awakeUntil && app.mode == OrbView.Mode.Listening) app.showMode(OrbView.Mode.Hidden) }
+    private var name = "JJ"
+    private var state = AState()
+    private val history = ArrayList<Pair<String, String>>()
+    private var lastRead: String? = null
+    private var debugReceiver: BroadcastReceiver? = null
+
+    private val timer = Runnable { dispatch(AEvent.Tick(System.currentTimeMillis())) }
+    private val watchdog = Runnable { dispatch(if (state.phase == Phase.Speaking) AEvent.SpeechEnded(System.currentTimeMillis()) else AEvent.WorkFinished) }
+    private val orbListener: () -> Unit = { if (app.mode == OrbView.Mode.Hidden) overlay.hide() else { overlay.show(); overlay.update(app.mode, app.level) } }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -50,19 +59,18 @@ class AssistantService : Service() {
         val stop = PendingIntent.getService(this, 1, Intent(this, AssistantService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification: Notification = NotificationCompat.Builder(this, "assistant").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Griffin is listening")
-            .setContentText("Say the manager's name to start. Tap Stop to pause.").setOngoing(true).setContentIntent(open).addAction(0, "Stop", stop).build()
+            .setContentText("Say \"hey\" and the manager's name. Tap Stop to pause.").setOngoing(true).setContentIntent(open).addAction(0, "Stop", stop).build()
         startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
 
         app.assistantRunning = true
         overlay = ListeningOverlay(this)
         app.addModeListener(orbListener)
+        app.assistantEvents = { e -> dispatch(e) }
         app.speaker.onSpeaking = { speaking ->
             if (::listener.isInitialized) { if (speaking) listener.pause() else listener.resume() }
-            // While it talks the animation pulses; when it stops it goes quiet, or listens on if a follow-up is expected.
-            if (speaking) { if (app.mode != OrbView.Mode.Hidden) app.showMode(OrbView.Mode.Speaking) }
-            else if (app.mode != OrbView.Mode.Hidden) afterSpeaking()
+            dispatch(if (speaking) AEvent.SpeechStarted else AEvent.SpeechEnded(System.currentTimeMillis()))
         }
-        listener = Listener(this, ::onHeard, { status -> app.log("mic: $status") }, { level -> if (app.mode == OrbView.Mode.Listening) app.showLevel(level) })
+        listener = Listener(this, { text -> dispatch(AEvent.Heard(text, System.currentTimeMillis(), name)) }, { status -> app.log("mic: $status") }, { level -> if (app.mode == OrbView.Mode.Listening) app.showLevel(level) })
         listener.start()
         refreshName()
         if (BuildConfig.DEBUG) registerDebugReceiver()
@@ -79,8 +87,11 @@ class AssistantService : Service() {
 
     override fun onDestroy() {
         app.assistantRunning = false
+        app.assistantEvents = null
         app.speaker.onSpeaking = null
         app.speaker.stop()
+        app.main.removeCallbacks(timer)
+        app.main.removeCallbacks(watchdog)
         if (::listener.isInitialized) listener.stop()
         debugReceiver?.let { unregisterReceiver(it) }
         app.removeModeListener(orbListener)
@@ -89,6 +100,49 @@ class AssistantService : Service() {
         app.log("assistant stopped")
         super.onDestroy()
     }
+
+    // ---- the state machine ------------------------------------------------------------------------------------
+
+    private fun dispatch(e: AEvent) {
+        val step = AssistantMachine.reduce(state, e)
+        val before = state.phase
+        state = step.state
+        if (before != state.phase) {
+            app.showMode(when (AssistantMachine.orb(state.phase)) { "listening" -> OrbView.Mode.Listening; "thinking" -> OrbView.Mode.Thinking; "speaking" -> OrbView.Mode.Speaking; else -> OrbView.Mode.Hidden })
+            if (state.phase == Phase.Awake || state.phase == Phase.Confirming) app.showLevel(0f)
+        }
+        step.effects.forEach(::perform)
+        app.main.removeCallbacks(timer)
+        app.main.removeCallbacks(watchdog)
+        val now = System.currentTimeMillis()
+        when (state.phase) {
+            Phase.Awake, Phase.Confirming -> app.main.postDelayed(timer, maxOf(0L, state.until - now) + 20)
+            Phase.Thinking -> app.main.postDelayed(watchdog, 30_000)   // never stay "thinking" forever
+            Phase.Speaking -> app.main.postDelayed(watchdog, 45_000)   // nor "speaking"
+            Phase.Idle -> {}
+        }
+    }
+
+    private fun perform(effect: Effect) {
+        when (effect) {
+            Effect.Ignore -> {}
+            Effect.Beep -> { app.log("woke"); beep() }
+            is Effect.Handle -> handle(effect.request)
+            is Effect.Confirmed -> carryOut(effect.action)
+            is Effect.Declined -> say("Okay, not sending it.")
+            Effect.AnswerCall -> actions.answer()?.let { say(it) }
+            Effect.RejectCall -> actions.reject()?.let { say(it) }
+        }
+    }
+
+    private fun carryOut(a: PendingAction) {
+        when (a.kind) {
+            PendingAction.Kind.Sms -> say(actions.sendSms(a.target, a.text) ?: "Sent to ${a.who}.")
+            PendingAction.Kind.Reply -> say(Inbox.reply(this, a.target, a.text) ?: "Replied to ${a.who} on ${a.via}.")
+        }
+    }
+
+    // ---- helpers ----------------------------------------------------------------------------------------------
 
     private fun refreshName() {
         app.net.execute {
@@ -105,7 +159,7 @@ class AssistantService : Service() {
     private fun registerDebugReceiver() {
         debugReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                intent.getStringExtra("text")?.let { onHeard(it) }
+                intent.getStringExtra("text")?.let { dispatch(AEvent.Heard(it, System.currentTimeMillis(), name)) }
             }
         }
         ContextCompat.registerReceiver(this, debugReceiver, IntentFilter(ACTION_DEBUG_UTTERANCE), ContextCompat.RECEIVER_EXPORTED)
@@ -116,84 +170,42 @@ class AssistantService : Service() {
         app.speaker.say(text)
     }
 
+    private fun finished() = dispatch(AEvent.WorkFinished)
+
     private fun beep() {
         try {
             android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 60).startTone(android.media.ToneGenerator.TONE_PROP_ACK, 140)
         } catch (_: Exception) {}
     }
 
-    private fun afterSpeaking() {
-        if (System.currentTimeMillis() < awakeUntil) listenOn() else app.showMode(OrbView.Mode.Hidden)
+    private fun hasPermission(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    private fun confirm(action: PendingAction, spoken: String) {
+        dispatch(AEvent.ConfirmRequested(action, System.currentTimeMillis()))
+        say(spoken)
     }
 
-    /** Actively listening for the owner's request, with the animation showing, for a few seconds. */
-    private fun listenOn() {
-        app.showLevel(0f)
-        app.showMode(OrbView.Mode.Listening)
-        app.main.removeCallbacks(idleTimeout)
-        app.main.postDelayed(idleTimeout, 8_000)
-    }
-
-    /**
-     * Everything the recogniser hears arrives here. Anything that does not start with "hey" and the name is dropped
-     * on the spot: it is not logged, not stored and not sent anywhere. Only after the wake phrase does the
-     * assistant become active (with the animation), and what follows is used for the request and not kept.
-     */
-    private fun onHeard(heard: String) {
-        val now = System.currentTimeMillis()
-        app.dlog("input of ${heard.length} characters; wake name is ${name.length} characters")
-
-        // A text waiting for a yes.
-        pendingText?.let { p ->
-            pendingText = null
-            if (now < p.expires) {
-                when (heard.lowercase().trim(' ', '.', '!')) {
-                    "yes", "send", "send it", "confirm", "yes send it", "yep", "yeah" -> { app.showMode(OrbView.Mode.Thinking); say(actions.sendSms(p.number, p.message) ?: "Sent to ${p.who}."); return }
-                    "no", "cancel", "don't", "do not send", "nope", "stop" -> { say("Okay, not sending it."); return }
-                }
-            }
-        }
-
-        // A call that is ringing: "answer" and "reject" mean the call, with no need for the wake phrase.
-        if (now < app.callWindowUntil) {
-            when (Commands.parse(heard)) {
-                Command.Answer -> { app.callWindowUntil = 0; actions.answer()?.let { say(it) }; return }
-                Command.Reject -> { app.callWindowUntil = 0; actions.reject()?.let { say(it) }; return }
-                else -> {}
-            }
-        }
-
-        val wake = WakeMatcher.match(heard, name)
-        app.dlog("wake match: ${wake != null}")
-        val request = when {
-            wake != null && wake.rest.isEmpty() -> { awakeUntil = now + 8_000; app.log("woke"); beep(); listenOn(); return }
-            wake != null -> { app.log("woke"); beep(); wake.rest }
-            now < awakeUntil -> heard
-            else -> return // not for the assistant: dropped
-        }
-        awakeUntil = 0
-        app.showMode(OrbView.Mode.Thinking)
-        handle(request)
-    }
+    // ---- what the owner asked ---------------------------------------------------------------------------------
 
     private fun handle(request: String) {
         when (val cmd = Commands.parse(request)) {
             is Command.Call -> placeCall(cmd.who)
-            is Command.Text -> prepareText(cmd.who, cmd.message)
+            is Command.Text -> textOrReply(cmd.who, cmd.message)
             is Command.Timer -> say(actions.timer(cmd.seconds))
             is Command.Alarm -> say(actions.alarm(cmd.hour, cmd.minute))
             is Command.Flashlight -> say(actions.flashlight(cmd.on))
             is Command.Volume -> say(actions.volume(cmd.up))
             is Command.OpenApp -> say(actions.openApp(cmd.name))
-            Command.Stop -> app.speaker.stop()
+            is Command.ReadMessages -> readMessages(cmd.from)
+            is Command.Reply -> replyTo(cmd.who, cmd.app, cmd.text)
+            is Command.MessageVia -> messageVia(cmd.who, cmd.app, cmd.text)
+            Command.Stop -> { app.speaker.stop(); finished() }
             Command.Answer, Command.Reject -> say("There is no call ringing.")
             Command.None -> askGriffin(request)
         }
     }
 
-    private fun hasPermission(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
-
-    private fun pick(who: String): Contacts.Match? {
+    private fun pickContact(who: String): Contacts.Match? {
         if (!hasPermission(Manifest.permission.READ_CONTACTS)) { say("I need permission to read your contacts."); return null }
         val found = Contacts.find(this, who)
         return when {
@@ -204,18 +216,64 @@ class AssistantService : Service() {
     }
 
     private fun placeCall(who: String) {
-        val m = pick(who) ?: return
+        val m = pickContact(who) ?: return
         say("Calling ${m.name}.")
         actions.call(m.number)?.let { say(it) }
     }
 
-    private fun prepareText(who: String, message: String) {
-        val m = pick(who) ?: return
-        pendingText = PendingText(m.name, m.number, message, System.currentTimeMillis() + 20_000)
-        awakeUntil = 0
-        say("Text ${m.name}: $message. Say send to confirm.")
-        // The next thing heard is taken as the answer even without the name.
+    private fun textOrReply(who: String, message: String) {
+        // If that person has just messaged in a chat app, a text means "answer them there"; otherwise a plain text message.
+        val chats = Inbox.book.replyTarget(who, null, System.currentTimeMillis())
+        if (chats.size == 1) { confirmReply(chats[0], message); return }
+        val m = pickContact(who) ?: return
+        confirm(PendingAction(PendingAction.Kind.Sms, m.name, m.number, message, "text message"), "Text ${m.name}: $message. Say send to confirm.")
     }
+
+    private fun confirmReply(chat: Chat, text: String) {
+        confirm(PendingAction(PendingAction.Kind.Reply, chat.title, chat.key, text, chat.appName), "Reply to ${chat.title} on ${chat.appName}: $text. Say send to confirm.")
+    }
+
+    private fun readMessages(from: String?) {
+        if (!notificationAccess()) { say("I need access to your notifications to read messages. Turn it on in the Griffin app."); return }
+        val now = System.currentTimeMillis()
+        val chats = if (from == null) Inbox.book.unread(now) else Inbox.book.from(from, now)
+        if (chats.isEmpty()) { say(if (from == null) "You have no new messages." else "I have no recent messages from $from."); return }
+        Inbox.book.markRead(chats.map { it.key })
+        lastRead = chats.first().key
+        say(MessageBook.spoken(chats))
+    }
+
+    private fun replyTo(who: String?, appSaid: String?, text: String) {
+        if (!notificationAccess()) { say("I need access to your notifications to reply. Turn it on in the Griffin app."); return }
+        val now = System.currentTimeMillis()
+        val justRead = if (who == null) lastRead?.let { k -> Inbox.book.all(now).firstOrNull { it.key == k && it.canReply } } else null
+        val candidates = if (justRead != null) listOf(justRead) else Inbox.book.replyTarget(who, appSaid, now)
+        when {
+            candidates.isEmpty() -> say(if (who == null) "There is no chat to reply to. Say who, for example: reply to Bro saying I am on my way." else "I have no recent chat with $who that I can reply to.")
+            candidates.size > 1 && who != null && candidates.map { it.appName }.distinct().size > 1 -> say("I found ${candidates.joinToString(" and ") { "${it.title} on ${it.appName}" }}. Say which app.")
+            else -> confirmReply(candidates[0], text)
+        }
+    }
+
+    private fun messageVia(who: String, appName: String, text: String) {
+        val chats = if (notificationAccess()) Inbox.book.replyTarget(who, appName, System.currentTimeMillis()) else emptyList()
+        when {
+            chats.size == 1 -> confirmReply(chats[0], text)
+            appName == "Messages" -> textOrReply(who, text)
+            appName == "WhatsApp" && app.api.signedIn -> app.net.execute {
+                // No open chat to reply to: let Griffin send it from the laptop's WhatsApp Web, with the usual approval.
+                try {
+                    app.api.sendMessage("Send a WhatsApp message to $who: $text", emptyList())
+                    app.main.post { say("There is no open WhatsApp chat with $who, so I asked Griffin to send it from your laptop. You will be asked to approve it.") }
+                } catch (e: Exception) {
+                    app.main.post { say("I could not reach Griffin to send that.") }
+                }
+            }
+            else -> say("I can reply to $appName chats that have just messaged you, but I cannot start a new one in $appName yet.")
+        }
+    }
+
+    private fun notificationAccess() = androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
 
     private fun askGriffin(request: String) {
         if (!app.api.signedIn) { say("Please sign in in the Griffin app first."); return }
@@ -225,7 +283,7 @@ class AssistantService : Service() {
                 val r = app.api.voiceTurn(request, past)
                 name = r.managerName
                 app.main.post {
-                    if (r.reply.isNotBlank()) say(r.reply)
+                    if (r.reply.isNotBlank()) say(r.reply) else if (!r.handoff) finished()
                     history += "user" to request
                     if (r.reply.isNotBlank()) history += "assistant" to r.reply
                 }

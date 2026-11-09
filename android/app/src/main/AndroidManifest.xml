@@ -51,6 +51,16 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".NotificationReader"
+            android:exported="true"
+            android:label="Griffin message reader"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver android:name=".AlarmReceiver" android:exported="false" />
     </application>
 </manifest>

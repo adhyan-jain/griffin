@@ -12,6 +12,12 @@ import java.util.Locale
 sealed class Command {
     data class Call(val who: String) : Command()
     data class Text(val who: String, val message: String) : Command()
+    /** Read out new messages, from one person or from everyone. */
+    data class ReadMessages(val from: String?) : Command()
+    /** Reply to the chat just read (who is null) or to a named person, optionally in a named app. */
+    data class Reply(val text: String, val who: String? = null, val app: String? = null) : Command()
+    /** Message someone in a named app ("message bro on whatsapp saying ..."). */
+    data class MessageVia(val who: String, val text: String, val app: String) : Command()
     data class Timer(val seconds: Int) : Command()
     data class Alarm(val hour: Int, val minute: Int) : Command()
     data class Flashlight(val on: Boolean) : Command()
@@ -29,6 +35,17 @@ object Commands {
         "nine" to 9, "ten" to 10, "eleven" to 11, "twelve" to 12, "fifteen" to 15, "twenty" to 20, "thirty" to 30, "forty" to 40,
         "forty five" to 45, "sixty" to 60, "half" to 0,
     )
+
+    /** The name an app goes by, as the owner says it. */
+    fun appName(said: String): String? = when (said.trim().lowercase(Locale.ROOT)) {
+        "whatsapp" -> "WhatsApp"
+        "instagram", "insta" -> "Instagram"
+        "messenger" -> "Messenger"
+        "telegram" -> "Telegram"
+        "signal" -> "Signal"
+        "sms" -> "Messages"
+        else -> null
+    }
 
     private fun clean(s: String) = s.lowercase(Locale.ROOT).replace(Regex("[,.!?]"), " ").replace(Regex("\\s+"), " ").trim()
 
@@ -51,6 +68,21 @@ object Commands {
         Regex("^(?:please )?(?:call|phone|ring|dial) (.+)$").find(s)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").trim()
             if (who.isNotEmpty() && who !in notAName && who.split(" ").first() !in notAName) return Command.Call(who)
+        }
+
+        // Reading and replying to chats (the apps' own notifications), and messaging in a named app.
+        Regex("^(?:please )?(?:read|check)(?: out)?(?: me)?(?: my| the)?(?: new| unread)? (?:messages?|texts?|chats?|dms?|notifications?)(?: from (.+))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
+        Regex("^(?:do i have |are there |any |have i got )(?:any )?(?:new |unread )?(?:messages?|texts?|dms?)(?: from (.+))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
+        Regex("^what did (.+?) (?:say|text|send|write)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
+        Regex("^read (?:me )?(.+?)'?s? (?:messages?|texts?|chats?)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
+        Regex("^(?:please )?reply(?: to (.+?))?(?: (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms))?(?: saying| with| that| say)?:? (.+)$").find(s)?.let { m ->
+            val text = m.groupValues[3].trim()
+            if (text.isNotEmpty()) return Command.Reply(text, m.groupValues[1].ifEmpty { null }?.removePrefix("my "), appName(m.groupValues[2]))
+        }
+        Regex("^(?:please )?(?:message|dm|whatsapp|text|tell|send (?:a )?(?:message |text |dm )?to) ([a-z0-9' ]+?) (?:on|in|via|using) (whatsapp|instagram|insta|messenger|telegram|signal|sms)(?: that| saying| say| to say|:)\\s*(.+)$").find(s)?.let { m ->
+            val who = m.groupValues[1].removePrefix("my ").trim()
+            val text = m.groupValues[3].trim()
+            if (who.isNotEmpty() && text.isNotEmpty() && who !in notAName) return Command.MessageVia(who, text, appName(m.groupValues[2])!!)
         }
 
         Regex("^(?:please )?(?:text|message|sms|send (?:a )?(?:text|message|sms) to) ([a-z0-9' ]+?) (?:that|saying|say|to say|tell(?:ing)? (?:him|her|them)|:)\\s*(.+)$").find(s)?.let { m ->
