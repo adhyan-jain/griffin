@@ -68,6 +68,7 @@ type fakeObjectives struct {
 	runnable int
 	err      error
 	last     *domain.UserRequest
+	plan     *domain.OrchestrationPlan
 }
 
 func (f *fakeObjectives) SubmitRequest(_ context.Context, req *domain.UserRequest) (*domain.OrchestrationRecord, *domain.OrchestrationPlan, error) {
@@ -75,6 +76,9 @@ func (f *fakeObjectives) SubmitRequest(_ context.Context, req *domain.UserReques
 	f.last = req
 	if f.err != nil {
 		return nil, nil, f.err
+	}
+	if f.plan != nil {
+		return &domain.OrchestrationRecord{ID: uuid.New(), UserID: req.UserID}, f.plan, nil
 	}
 	return &domain.OrchestrationRecord{ID: uuid.New(), UserID: req.UserID}, &domain.OrchestrationPlan{ID: uuid.New()}, nil
 }

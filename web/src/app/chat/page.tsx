@@ -222,6 +222,12 @@ export default function ChatPage() {
                     Plan only: {managerName}&apos;s direct answers are not available yet, so this is a plan for your team, not a reply.
                   </p>
                 )}
+                {t.reply.needsDevice && (
+                  <div data-testid="needs-device-note" className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs leading-relaxed text-foreground">
+                    <p className="font-semibold text-warning">Device needed</p>
+                    <p className="mt-0.5 text-muted-foreground">{t.reply.needsDevice.message}</p>
+                  </div>
+                )}
                 <PlanCard result={t.reply.result} />
               </div>
             )}

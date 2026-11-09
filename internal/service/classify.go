@@ -53,7 +53,38 @@ func ClassifyMessageWithReason(text string) (MessageKind, string) {
 			return MessageKindObjective, reason
 		}
 	}
+	// Work on the owner's own devices or the web is never a chat answer: a chat reply can only say it cannot do it.
+	// These requests must reach the planner, which hands them to a device that can.
+	if reason := deviceRequestReason(t); reason != "" {
+		return MessageKindObjective, reason
+	}
 	return MessageKindConversation, "default-conversation"
+}
+
+// deviceRequestReason spots a request for WhatsApp or a web search (the planner's own detectors decide what counts),
+// and leaves questions about them ("how does WhatsApp Web work?") as conversation.
+func deviceRequestReason(t string) string {
+	s := strings.Trim(leadFillerRe.ReplaceAllString(t, ""), " \t.!?")
+	polite := false
+	if loc := politePrefixRe.FindString(s); loc != "" {
+		polite = true
+		s = strings.TrimSpace(strings.TrimPrefix(s, loc))
+		s = strings.TrimSpace(leadFillerRe.ReplaceAllString(s, ""))
+	}
+	asked := strings.HasSuffix(strings.TrimSpace(t), "?") || questionOpenerRe.MatchString(s)
+	if asked && !polite {
+		return ""
+	}
+	if polite && questionOpenerRe.MatchString(s) {
+		return ""
+	}
+	switch {
+	case wantsWhatsApp(t):
+		return "whatsapp-request"
+	case wantsWeb(t):
+		return "web-request"
+	}
+	return ""
 }
 
 // objectiveSentenceReason returns a non-empty reason when the sentence asks for a deliverable

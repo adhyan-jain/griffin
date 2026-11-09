@@ -77,6 +77,13 @@ describe("reduceReply", () => {
     if (r.phase === "plan") expect(r.planOnly).toBe(false);
   });
 
+  it("carries needs_device through to the plan phase", () => {
+    const note = { capabilities: ["messaging"], message: "WhatsApp needs your laptop" };
+    const r = reduceReply(sending, { type: "accepted", result: { ...fixtures.jjObjective, needs_device: note } as never });
+    expect(r.phase).toBe("plan");
+    if (r.phase === "plan") expect(r.needsDevice).toEqual(note);
+  });
+
   it("fallback result is labelled plan only", () => {
     const r = reduceReply(sending, { type: "fallback", result: fixtures.submitResult as never });
     expect(r).toMatchObject({ phase: "plan", planOnly: true });

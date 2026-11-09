@@ -81,3 +81,43 @@ func TestClassifyMessageReportIsNotRepo(t *testing.T) {
 		t.Fatal("report must not route to engineering")
 	}
 }
+
+// Requests for WhatsApp or a web search must reach the planner. They used to be classified as conversation, so
+// the owner got "I cannot send messages on WhatsApp" from a chat answer and the WhatsApp worker never ran.
+func TestDeviceRequestsAreWorkNotConversation(t *testing.T) {
+	work := []string{
+		"text bhai wassup on whatsapp",
+		"Text bhai wassup on WhatsApp",
+		"message bro on whatsapp saying I'm late",
+		"send a whatsapp to mom",
+		"check my unread whatsapp chats",
+		"read my whatsapp messages from Sam",
+		"tell Rahul on whatsapp that I will be late",
+		"can you text bhai on whatsapp?",
+		"please message mom on whatsapp that dinner is ready",
+		"search the web for the best laptops under 60000",
+		"google best pizza in Pune",
+		"summarise https://example.com/article",
+	}
+	for _, s := range work {
+		if k, why := ClassifyMessageWithReason(s); k != MessageKindObjective {
+			t.Errorf("%q should be work, got %s (%s)", s, k, why)
+		}
+	}
+	conversation := []string{
+		"how does whatsapp web work?",
+		"what is whatsapp",
+		"why did whatsapp change its logo?",
+		"explain how a web search engine works",
+		"is whatsapp safe to use",
+		"I like whatsapp",
+		"hello",
+		"what is the weather in Pune",
+		"write a whatsapp bot in python", // building something, not sending a message
+	}
+	for _, s := range conversation {
+		if k, why := ClassifyMessageWithReason(s); k == MessageKindObjective && why == "whatsapp-request" || k == MessageKindObjective && why == "web-request" {
+			t.Errorf("%q must stay a conversation, got %s (%s)", s, k, why)
+		}
+	}
+}

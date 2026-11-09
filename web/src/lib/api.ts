@@ -289,10 +289,15 @@ export interface JJSuggestion {
   reason: string;
 }
 
+export interface DeviceNote {
+  capabilities: string[];
+  message: string;
+}
+
 /** 201 body of POST /api/v1/jj/messages. */
 export type JJMessageResult = (
   | { kind: "conversation"; conversation_id: string; task_id: string; runner?: RunnerWake }
-  | { kind: "objective"; conversation_id: string; orchestration: Orchestration; plan: OrchestrationPlan; runner?: RunnerWake }
+  | { kind: "objective"; conversation_id: string; orchestration: Orchestration; plan: OrchestrationPlan; runner?: RunnerWake; needs_device?: DeviceNote }
 ) & { continued?: JJContinued; suggestion?: JJSuggestion };
 
 // ---------------------------------------------------------------------------

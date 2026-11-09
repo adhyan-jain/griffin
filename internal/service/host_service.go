@@ -219,6 +219,15 @@ func (s *HostService) Overview(ctx context.Context, userID uuid.UUID) (*HostOver
 	return out, nil
 }
 
+// CanCover reports whether one of the owner's live devices can do work that needs these capabilities.
+func (s *HostService) CanCover(ctx context.Context, userID uuid.UUID, required []string) bool {
+	hosts, err := s.hosts.ListHosts(ctx, userID)
+	if err != nil {
+		return true // if we cannot tell, do not claim a device is missing
+	}
+	return domain.AnyHostCovers(hosts, required, s.now())
+}
+
 // SetPaused pauses or resumes a host.
 func (s *HostService) SetPaused(ctx context.Context, userID, id uuid.UUID, paused bool) error {
 	return s.hosts.SetPaused(ctx, userID, id, paused)

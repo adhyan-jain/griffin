@@ -58,6 +58,58 @@ type JJChatHandler struct {
 	profiles ProfileStore
 	// threads enables follow-ups on an existing task; nil disables them.
 	threads ThreadStore
+	// deviceCheck says whether one of the owner's live devices covers these capabilities; nil skips the check.
+	deviceCheck func(ctx context.Context, userID uuid.UUID, caps []string) bool
+}
+
+// WithDeviceCheck lets the handler tell the owner when their request needs a device (the laptop's WhatsApp or web
+// access, say) and none is online, instead of leaving the step to wait without a word.
+func (h *JJChatHandler) WithDeviceCheck(f func(ctx context.Context, userID uuid.UUID, caps []string) bool) *JJChatHandler {
+	h.deviceCheck = f
+	return h
+}
+
+// missingDevices lists the capabilities the plan's steps need that no live device offers.
+func (h *JJChatHandler) missingDevices(ctx context.Context, userID uuid.UUID, plan *domain.OrchestrationPlan) []string {
+	if h.deviceCheck == nil || plan == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var missing []string
+	for _, step := range plan.PlanPayload.ChildTasks {
+		req := domain.RequiredCapabilities(step.InputPayload)
+		if len(req) == 0 || h.deviceCheck(ctx, userID, req) {
+			continue
+		}
+		for _, c := range req {
+			if !seen[c] {
+				seen[c] = true
+				missing = append(missing, c)
+			}
+		}
+	}
+	return missing
+}
+
+// deviceNote is what the owner reads when a device they need is offline.
+func deviceNote(missing []string) map[string]any {
+	what := map[string]string{
+		domain.HostCapMessaging: "WhatsApp", domain.HostCapWeb: "Web search", domain.HostCapBrowser: "The browser", domain.HostCapFiles: "Your files",
+		domain.HostCapShell: "Commands on your computer", domain.HostCapPhoneApps: "Your phone's apps", domain.HostCapSMS: "Text messages", domain.HostCapCalls: "Calls",
+	}
+	names := make([]string, 0, len(missing))
+	for _, c := range missing {
+		if n, ok := what[c]; ok {
+			names = append(names, n)
+		} else {
+			names = append(names, c)
+		}
+	}
+	return map[string]any{
+		"capabilities": missing,
+		"message": strings.Join(names, " and ") + " needs your laptop or phone running the Griffin host, and none is online right now. " +
+			"I have made the plan and it will wait; start the host (see Devices) and it will carry on by itself.",
+	}
 }
 
 // WithProfiles lets the handler address and answer as the manager the owner named.
@@ -318,6 +370,9 @@ func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, 
 	}
 	for k, v := range respExtra {
 		body[k] = v
+	}
+	if missing := h.missingDevices(r.Context(), userID, plan); len(missing) > 0 {
+		body["needs_device"] = deviceNote(missing)
 	}
 	httputil.JSON(w, http.StatusCreated, body)
 }

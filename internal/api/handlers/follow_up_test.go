@@ -342,3 +342,44 @@ type failingThreads struct{ *fakeThreads }
 func (failingThreads) ListTasks(context.Context, repository.TaskFilter) ([]*domain.Task, error) {
 	return nil, assert.AnError
 }
+
+// ---- work that needs a device that is not online ----
+
+func TestObjective_SaysSoWhenTheDeviceItNeedsIsOffline(t *testing.T) {
+	user := uuid.New()
+	h, store, obj, _ := setup()
+	obj.plan = &domain.OrchestrationPlan{PlanPayload: domain.PlanPayload{ChildTasks: []domain.ChildTaskPlan{
+		{Key: "compose", InputPayload: json.RawMessage(`{}`)},
+		{Key: "do", InputPayload: json.RawMessage(`{"requires":["messaging"]}`)},
+	}}}
+
+	// no device check wired: nothing extra is said
+	_, out := sendRaw(t, h, user, `{"message":"research the best laptops and compare them"}`)
+	assert.Nil(t, out["needs_device"])
+
+	// a device offers it: nothing to warn about
+	h.WithDeviceCheck(func(context.Context, uuid.UUID, []string) bool { return true })
+	_, out = sendRaw(t, h, user, `{"message":"research the best laptops and compare them"}`)
+	assert.Nil(t, out["needs_device"])
+
+	// none does: the owner is told what is missing and what to do, in plain words
+	h.WithDeviceCheck(func(_ context.Context, _ uuid.UUID, caps []string) bool { return len(caps) == 0 })
+	code, out := sendRaw(t, h, user, `{"message":"research the best laptops and compare them"}`)
+	require.Equal(t, http.StatusCreated, code)
+	note := out["needs_device"].(map[string]any)
+	assert.Contains(t, note["message"], "WhatsApp needs your laptop")
+	assert.Contains(t, note["message"], "Devices")
+	assert.Equal(t, []any{"messaging"}, note["capabilities"])
+	assert.Empty(t, store.tasks)
+}
+
+func sendRaw(t *testing.T, h *JJChatHandler, user uuid.UUID, body string) (int, map[string]any) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jj/messages", strings.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, user))
+	rec := httptest.NewRecorder()
+	h.PostMessage(rec, req)
+	var env struct{ Data map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &env)
+	return rec.Code, env.Data
+}

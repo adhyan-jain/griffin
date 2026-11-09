@@ -190,6 +190,9 @@ func NewServer(deps ServerDependencies) *Server {
 		profiles = deps.ProfileRepo
 	}
 	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero).WithProfiles(profiles).WithThreads(deps.Engine)
+	if hostSvc != nil {
+		jjChatHandler.WithDeviceCheck(hostSvc.CanCover)
+	}
 	mux.Handle("POST /api/v1/jj/messages", userAuth(http.HandlerFunc(jjChatHandler.PostMessage)))
 	mux.Handle("POST /api/v1/tasks/{id}/follow-ups", userAuth(http.HandlerFunc(jjChatHandler.PostFollowUp)))
 	if profiles != nil {
