@@ -436,6 +436,8 @@ Many tasks cannot finish in one shot. A task has a **thread**; the agent, the ow
 
 **Order of work.** S1 (server, testable now): `manager_name` everywhere, the fast voice route with handoff. S2: the Vault. S3: Android app v1 (listener, speech, local actions, calls, texts). S4: phone as host. S5: coding with no laptop (needs the decision above). S6: calls through a telephony provider (paid, optional).
 
+**Android toolchain (no Android Studio) - set up 2026-11-09.** JDK 17 (Temurin), the SDK command-line tools, platform-tools, Android 35 and build-tools 35.0.0, and Gradle 8.9 live in `~/Android` (about 1 GB; no sudo, no system changes; each download checked against its published checksum). `source scripts/android-env.sh` then `cd android && ./gradlew assembleDebug` builds the APK (about a minute); `adb install -r android/app/build/outputs/apk/debug/app-debug.apk` installs it on the phone over USB or wireless debugging. Logic that does not need a device is unit-tested on the JVM with `./gradlew test`. The system's JDK 26 is too new for Android's build tools, which is why JDK 17 is separate. An emulator is optional (KVM is available) and cannot do real calls or a real microphone, so the OnePlus is the test device.
+
 **Needed from the owner:** a Gemini API key (kept in the Lambda's settings only); permission to install the Android SDK on the build machine before S3; the phone model and Android version; the S5 decision.
 
 ## 8. Operations

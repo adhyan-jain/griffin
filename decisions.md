@@ -593,3 +593,10 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why not only at 2%**: a push needs the network and seconds, and a laptop can die from 2% almost at once. 2% is kept as the last call, and the thresholds are configurable.
 - **Rejected**: committing on the owner's current branch (it rewrites their history and index); `git stash` (it touches the working tree); pushing everything with `git add -A` into a real index (a secret could ride along).
 - **Known limits**: Linux only; unsaved editor buffers are not covered; `--no-verify` is used on the throwaway branch's push so a slow hook cannot block it; a task handed back uses one of its retries.
+
+#### ADR-087: Build the Android app with the SDK command-line tools and Gradle, not Android Studio
+- **Status**: toolchain BUILT and proven (a minimal APK builds in about a minute); the real app is not written.
+- **Decision**: JDK 17, the SDK command-line tools and Gradle 8.9 under `~/Android`, driven by `scripts/android-env.sh`; the project is `android/` (Kotlin, AGP 8.7.3, minSdk 29, compileSdk 35). Tests that need no device run on the JVM. The app is installed on the owner's OnePlus over adb.
+- **Why not Android Studio**: it is an IDE around the same three tools; the command line does the build and VS Code edits Kotlin. The SDK is a few hundred MB against several GB.
+- **Why a real phone first**: an emulator has no real calls, SIM or microphone, which are the point of this app.
+- **Limit**: no IDE layout editor or profiler; the UI is written in code.
