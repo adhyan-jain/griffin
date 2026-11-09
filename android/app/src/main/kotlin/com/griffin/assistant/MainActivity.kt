@@ -5,12 +5,17 @@ import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputType
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -18,15 +23,27 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 
-/** One plain screen: sign in, allow what the assistant needs, start or stop listening, and see what it heard. */
+/**
+ * One screen, three questions: is it ready, is it listening, and what do I need to do. The setup steps show
+ * as a checklist that disappears once everything is allowed, so a working assistant looks like a button and an
+ * animation, not a settings page.
+ */
 class MainActivity : Activity() {
     private val app get() = application as GriffinApp
-    private lateinit var status: TextView
-    private lateinit var log: TextView
-    private lateinit var email: EditText
-    private lateinit var password: EditText
-    private lateinit var signInButton: Button
-    private lateinit var toggle: Button
+
+    private object Ink {
+        val bg = Color.parseColor("#0D0E13")
+        val card = Color.parseColor("#171923")
+        val line = Color.parseColor("#262A38")
+        val text = Color.parseColor("#F2F3F7")
+        val muted = Color.parseColor("#9AA0B4")
+        val accent = Color.parseColor("#7C5CFF")
+        val accentSoft = Color.parseColor("#2A2150")
+        val good = Color.parseColor("#4ADE80")
+        val warn = Color.parseColor("#FBBF24")
+    }
+
+    private lateinit var root: LinearLayout
     private lateinit var orb: OrbView
     private val modeListener: () -> Unit = { orb.level = app.level; if (orb.mode != app.mode) orb.mode = app.mode }
 
@@ -37,59 +54,78 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun text(s: String, size: Float = 15f, bold: Boolean = false) = TextView(this).apply {
-        this.text = s
-        textSize = size
-        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(0, dp(6), 0, dp(6))
+    private fun round(color: Int, radius: Int, stroke: Int? = null) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radius).toFloat()
+        stroke?.let { setStroke(dp(1), it) }
     }
 
-    private fun button(s: String, onClick: () -> Unit) = Button(this).apply {
+    private fun label(s: String, size: Float, color: Int = Ink.text, bold: Boolean = false) = TextView(this).apply {
         text = s
+        textSize = size
+        setTextColor(color)
+        if (bold) setTypeface(typeface, Typeface.BOLD)
+    }
+
+    private fun card(vararg views: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = round(Ink.card, 20, Ink.line)
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+        views.forEach { addView(it) }
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14) }
+    }
+
+    private fun pill(text: String, filled: Boolean, onClick: () -> Unit) = Button(this).apply {
+        this.text = text
         isAllCaps = false
+        textSize = 16f
+        setTextColor(if (filled) Color.WHITE else Ink.text)
+        background = round(if (filled) Ink.accent else Color.TRANSPARENT, 28, if (filled) null else Ink.line)
+        stateListAnimator = null
+        minHeight = dp(54)
         setOnClickListener { onClick() }
-        minHeight = dp(52)
+    }
+
+    private fun small(text: String, onClick: () -> Unit) = Button(this).apply {
+        this.text = text
+        isAllCaps = false
+        textSize = 14f
+        setTextColor(Ink.text)
+        background = round(Ink.accentSoft, 18)
+        stateListAnimator = null
+        minHeight = dp(40)
+        minimumWidth = dp(84)
+        setPadding(dp(14), 0, dp(14), 0)
+        setOnClickListener { onClick() }
+    }
+
+    private fun input(hint: String, password: Boolean = false) = EditText(this).apply {
+        this.hint = hint
+        setHintTextColor(Ink.muted)
+        setTextColor(Ink.text)
+        textSize = 16f
+        setSingleLine()
+        inputType = if (password) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        background = round(Color.parseColor("#10121A"), 14, Ink.line)
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(28), dp(20), dp(28)) }
-        col.addView(text("Griffin", 28f, true))
-        status = text("")
-        col.addView(status)
-
-        email = EditText(this).apply { hint = "Email"; inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS or InputType.TYPE_CLASS_TEXT; setSingleLine() }
-        password = EditText(this).apply { hint = "Password"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD; setSingleLine() }
-        signInButton = button("Sign in") { signInOrOut() }
-        col.addView(email)
-        col.addView(password)
-        col.addView(signInButton)
-
-        col.addView(text("Allow", 18f, true))
-        col.addView(button("1. Microphone, contacts, calls and texts") { requestPermissions(permissions, 1) })
-        col.addView(button("2. Announce who is calling") { requestScreeningRole() })
-        col.addView(button("3. Keep listening in the background") { allowBackground() })
-
-        toggle = button("Start listening") { toggleListening() }
-        col.addView(button("4. Show the animation over other apps") { allowOverlay() })
-        col.addView(text("Listening", 18f, true))
-        col.addView(toggle)
+        window.statusBarColor = Ink.bg
+        window.navigationBarColor = Ink.bg
+        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(28), dp(20), dp(32)) }
+        setContentView(ScrollView(this).apply { setBackgroundColor(Ink.bg); addView(root); isFillViewport = true })
         orb = OrbView(this)
-        col.addView(orb, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(120)))
-        col.addView(button("Preview the animation") { previewAnimation() })
-
-        col.addView(text("What it heard and said", 18f, true))
-        log = text("", 13f).apply { setTextIsSelectable(true) }
-        col.addView(log)
-        setContentView(ScrollView(this).apply { addView(col); isFillViewport = true })
     }
 
     override fun onResume() {
         super.onResume()
         app.addModeListener(modeListener)
+        app.onLog = { rebuild() }
+        rebuild()
         modeListener()
-        app.onLog = { log.text = app.logText() }
-        refresh()
     }
 
     override fun onPause() {
@@ -100,34 +136,100 @@ class MainActivity : Activity() {
 
     private fun granted(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
 
-    private fun refresh() {
-        val missing = permissions.filter { !granted(it) }.map { it.substringAfterLast('.').lowercase().replace('_', ' ') }
+    private data class Step(val title: String, val why: String, val done: Boolean, val action: String, val run: () -> Unit)
+
+    private fun steps(): List<Step> {
+        val perms = permissions.all { granted(it) }
         val screening = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
         val battery = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
-        status.text = buildString {
-            append(if (app.api.signedIn) "Signed in as ${app.api.email.ifEmpty { "you" }}" else "Not signed in")
-            append("\n${if (missing.isEmpty()) "Permissions: all granted" else "Missing: ${missing.joinToString(", ")}"}")
-            append("\nCall announcements: ${if (screening) "on" else "off"}    Background: ${if (battery) "allowed" else "may be stopped by battery saving"}")
-            append("\nAnimation over other apps: ${if (Settings.canDrawOverlays(this@MainActivity)) "on" else "off (it shows only inside this app)"}")
-            append("\nWake phrase: hey ${app.api.cachedName()}. Nothing you say is kept unless it starts with that.")
-        }
-        signInButton.text = if (app.api.signedIn) "Sign out" else "Sign in"
-        email.visibility = if (app.api.signedIn) View.GONE else View.VISIBLE
-        password.visibility = email.visibility
-        toggle.text = if (app.assistantRunning) "Stop listening" else "Start listening"
-        log.text = app.logText()
+        val overlay = Settings.canDrawOverlays(this)
+        return listOf(
+            Step("Microphone, contacts, calls and texts", "So it can hear \"hey\", find people and act for you.", perms, "Allow") { requestPermissions(permissions, 1) },
+            Step("Say who is calling", "Reads out the caller's name. It never blocks or changes a call.", screening, "Allow") { requestScreeningRole() },
+            Step("Keep listening in the background", "Stops the phone's battery saver from switching it off.", battery, "Allow") { allowBackground() },
+            Step("Show the listening animation", "The wave along the bottom when it wakes, over any app.", overlay, "Allow") { allowOverlay() },
+        )
     }
 
-    private fun signInOrOut() {
-        if (app.api.signedIn) {
-            app.api.signOut()
-            refresh()
-            return
+    private fun rebuild() {
+        root.removeAllViews()
+        val name = app.api.cachedName()
+        val running = app.assistantRunning
+        val all = steps()
+        val ready = app.api.signedIn && all.all { it.done }
+
+        // Header: the wake phrase is the product.
+        root.addView(label("Griffin", 15f, Ink.muted, true))
+        root.addView(label("Say \"hey $name\"", 30f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
+        root.addView(label(if (running) "Listening on this phone. Nothing is kept unless it starts with that." else "Not listening right now.", 14f, Ink.muted).apply { setPadding(0, dp(6), 0, 0) })
+
+        // The animation stage.
+        (orb.parent as? ViewGroup)?.removeView(orb)
+        val stage = FrameLayoutCard(orb)
+        root.addView(stage)
+
+        root.addView(pill(if (running) "Stop listening" else "Start listening", filled = !running) { toggleListening() }.apply {
+            (layoutParams as? LinearLayout.LayoutParams) ?: run { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(16)
+            isEnabled = app.api.signedIn
+            alpha = if (isEnabled) 1f else 0.4f
+        })
+        root.addView(small("Preview the animation") { previewAnimation() }.apply {
+            (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.topMargin = dp(10); it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it }
+            visibility = if (running) View.GONE else View.VISIBLE
+        })
+
+        // Account.
+        if (!app.api.signedIn) {
+            val email = input("Email")
+            val password = input("Password", password = true)
+            val go = pill("Sign in", filled = true) { signIn(email, password) }.apply { (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(14) }
+            root.addView(card(label("Sign in", 18f, Ink.text, true), label("Use the same email and password as the Griffin web app.", 13f, Ink.muted).apply { setPadding(0, dp(4), 0, 0) }, email, password, go))
         }
+
+        // Setup: only what is still missing.
+        val missing = all.filter { !it.done }
+        if (missing.isNotEmpty()) {
+            val rows = missing.map { step ->
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(10), 0, dp(10))
+                    val text = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(label(step.title, 15f, Ink.text, true))
+                        addView(label(step.why, 13f, Ink.muted).apply { setPadding(0, dp(2), dp(8), 0) })
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+                    addView(text)
+                    addView(small(step.action) { step.run() })
+                }
+            }
+            root.addView(card(label("Finish setting up", 18f, Ink.warn, true), *rows.toTypedArray()))
+        } else if (ready) {
+            root.addView(card(label("All set", 16f, Ink.good, true), label("Everything it needs is allowed.", 13f, Ink.muted).apply { setPadding(0, dp(2), 0, 0) }))
+        }
+
+        // Activity: what it did, never what anyone said.
+        val lines = app.logText().lines().filter { it.isNotBlank() }.take(8)
+        if (lines.isNotEmpty()) {
+            root.addView(card(label("Recent activity", 14f, Ink.muted, true), label(lines.joinToString("\n"), 13f, Ink.muted).apply { setPadding(0, dp(6), 0, 0) }))
+        }
+        root.addView(label(if (app.api.signedIn) "Signed in as ${app.api.email.ifEmpty { "you" }}" else "Not signed in", 12f, Ink.muted).apply { setPadding(0, dp(18), 0, 0); gravity = Gravity.CENTER_HORIZONTAL })
+        if (app.api.signedIn) root.addView(small("Sign out") { app.api.signOut(); rebuild() }.apply { (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it } })
+    }
+
+    /** The orb sits in a dark rounded stage. */
+    private fun FrameLayoutCard(orb: OrbView): View = LinearLayout(this).apply {
+        background = round(Color.parseColor("#10121A"), 24, Ink.line)
+        addView(orb, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(150)))
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(18) }
+    }
+
+    private fun signIn(email: EditText, password: EditText) {
         val e = email.text.toString().trim()
         val p = password.text.toString()
         if (e.isEmpty() || p.isEmpty()) { app.log("enter your email and password"); return }
-        signInButton.isEnabled = false
         app.net.execute {
             try {
                 app.api.signIn(e, p)
@@ -135,59 +237,53 @@ class MainActivity : Activity() {
             } catch (ex: Exception) {
                 app.log("sign-in failed: ${ex.message}")
             }
-            app.main.post { password.text.clear(); signInButton.isEnabled = true; refresh() }
+            app.main.post { rebuild() }
         }
     }
 
     private fun toggleListening() {
         if (app.assistantRunning) {
             startService(Intent(this, AssistantService::class.java).setAction(AssistantService.ACTION_STOP))
-            app.main.postDelayed({ refresh() }, 400)
+            app.main.postDelayed({ rebuild() }, 400)
             return
         }
-        if (!granted(Manifest.permission.RECORD_AUDIO)) { app.log("allow the microphone first (step 1)"); return }
+        if (!granted(Manifest.permission.RECORD_AUDIO)) { app.log("allow the microphone first"); rebuild(); return }
         ContextCompat.startForegroundService(this, Intent(this, AssistantService::class.java))
-        app.main.postDelayed({ refresh() }, 600)
+        app.main.postDelayed({ rebuild() }, 600)
     }
 
     private fun requestScreeningRole() {
         val rm = getSystemService(RoleManager::class.java)
-        if (rm.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) { app.log("call announcements are already on"); return }
+        if (rm.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) return
         startActivityForResult(rm.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING), 2)
     }
 
+    private fun allowBackground() {
+        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+    }
+
     private fun allowOverlay() {
-        if (Settings.canDrawOverlays(this)) { app.log("the animation can already show over other apps"); return }
         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
     }
 
-    /** Shows each state for a moment, so the owner can see what listening, thinking and speaking look like. */
+    /** Shows each state for a moment, so you can see what listening, thinking and speaking look like. */
     private fun previewAnimation() {
         val steps = listOf(OrbView.Mode.Listening to 2500L, OrbView.Mode.Thinking to 1800L, OrbView.Mode.Speaking to 2200L, OrbView.Mode.Hidden to 0L)
         var at = 0L
         steps.forEach { (m, d) ->
-            app.main.postDelayed({ if (!app.assistantRunning) { app.showMode(m); if (m == OrbView.Mode.Listening) pulseLevel() } }, at)
+            app.main.postDelayed({ if (!app.assistantRunning) { app.showMode(m); if (m == OrbView.Mode.Listening) for (i in 0 until 12) app.main.postDelayed({ app.showLevel(if (i % 3 == 0) 0.9f else 0.35f) }, i * 200L) } }, at)
             at += d
         }
     }
 
-    private fun pulseLevel() {
-        for (i in 0 until 12) app.main.postDelayed({ app.showLevel(if (i % 3 == 0) 0.9f else 0.35f) }, i * 200L)
-    }
-
-    private fun allowBackground() {
-        if (getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)) { app.log("background use is already allowed"); return }
-        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
-    }
-
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        refresh()
+        rebuild()
     }
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        refresh()
+        rebuild()
     }
 }

@@ -28,9 +28,22 @@ android {
         buildConfig = true
     }
 
+    // The release signing key lives in ~/Android (never in the repo). Without it a release build is unsigned.
+    val signing = Properties().apply { file(System.getProperty("user.home") + "/Android/griffin-release.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+    signingConfigs {
+        if (signing.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = file(signing.getProperty("storeFile"))
+                storePassword = signing.getProperty("storePassword")
+                keyAlias = signing.getProperty("keyAlias")
+                keyPassword = signing.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
     compileOptions {

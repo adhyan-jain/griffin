@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- The real API is https only. Plain http is allowed to localhost alone, for testing through adb reverse. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">127.0.0.1</domain>
-    </domain-config>
+    <!-- Release builds talk to https only. The debug build adds localhost for testing (src/debug). -->
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>
