@@ -147,7 +147,8 @@ function ThemeToggle({ className }: { className?: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isLogin = pathname === "/login";
+  // Pages you can open before signing in: the sign-in page and the one a password recovery email opens.
+  const isLogin = pathname === "/login" || pathname === "/reset-password";
   const [authed, setAuthed] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -157,6 +158,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navLabel = (href: string, label: string) => (href === "/chat" ? `Ask ${managerName}` : label);
 
   useEffect(() => {
+    // A recovery email's link opens the site root with the token after the #: send it to the page that can use it.
+    if (/[#&]type=recovery/.test(window.location.hash) && pathname !== "/reset-password") {
+      router.replace("/reset-password" + window.location.hash);
+      return;
+    }
     if (isLogin) {
       setAuthed(false);
       return;
