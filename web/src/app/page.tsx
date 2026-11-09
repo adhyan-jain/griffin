@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useManagerName } from "@/lib/manager-name";
 import Link from "next/link";
 import { useState } from "react";
 import { usePolling } from "@/lib/use-polling";
@@ -21,6 +22,7 @@ import { useFxActivity } from "@/lib/fx";
 const Hero3D = dynamic(() => import("@/components/hero-3d"), { ssr: false });
 
 export default function DashboardPage() {
+  const managerName = useManagerName();
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [pending, setPending] = useState(0);
@@ -54,8 +56,8 @@ export default function DashboardPage() {
 
   const headline = running > 0 ? `${running} running now` : queued > 0 ? `${queued} waiting to start` : list.length ? "All quiet" : "Ready when you are";
   const sub = list.length
-    ? `${done} finished${failed ? `, ${failed} failed` : ""}. Hand JJ something new.`
-    : "Ask JJ to plan some work, or create a task yourself.";
+    ? `${done} finished${failed ? `, ${failed} failed` : ""}. Hand ${managerName} something new.`
+    : `Ask ${managerName} to plan some work, or create a task yourself.`;
 
   return (
     <>
@@ -80,7 +82,7 @@ export default function DashboardPage() {
             <Magnetic>
               <Button asChild size="lg" className="h-12 rounded-full px-6 text-base">
                 <Link href="/chat">
-                  <MessageSquare /> Ask JJ
+                  <MessageSquare /> Ask {managerName}
                 </Link>
               </Button>
             </Magnetic>
@@ -144,10 +146,10 @@ export default function DashboardPage() {
           <EmptyState
             icon={<MessageSquare />}
             title="No tasks yet"
-            description="Describe an outcome and JJ will break it into steps."
+            description={`Describe an outcome and ${managerName} will break it into steps.`}
             action={
               <Button onClick={() => router.push("/chat")}>
-                <MessageSquare /> Ask JJ
+                <MessageSquare /> Ask {managerName}
               </Button>
             }
           />

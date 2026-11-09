@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api, clearAuthToken, getCurrentUser, type RunnerStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { saveManagerName, useManagerName } from "@/lib/manager-name";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SystemStatusList, useSystemStatus } from "@/components/system-status";
@@ -20,6 +22,54 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="text-sm font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/** The top manager's name: spoken, shown and used in prompts everywhere. */
+function ManagerNameField() {
+  const saved = useManagerName();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const value = draft ?? saved;
+  const changed = value.trim() !== saved;
+  const save = async () => {
+    setBusy(true);
+    try {
+      const name = await saveManagerName(value);
+      setDraft(null);
+      toast.success(`Your manager is now ${name}.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save the name.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed && !busy) void save();
+      }}
+    >
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          onChange={(e) => setDraft(e.target.value)}
+          maxLength={30}
+          autoComplete="off"
+          aria-label="Manager name"
+          className="h-11 min-w-0 flex-1"
+        />
+        <Button type="submit" className="h-11" disabled={!changed || busy || value.trim() === ""}>
+          {busy && <Loader2 className="animate-spin" />} Save
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Chat, tasks and voice all use this name. Letters, digits, spaces, hyphens and apostrophes; up to 30 characters.
+        Longer names are easier to recognize when spoken.
+      </p>
+    </form>
   );
 }
 
@@ -160,6 +210,10 @@ export default function SettingsPage() {
               </TabsList>
             </Tabs>
           )}
+        </Section>
+
+        <Section title="Your manager">
+          <ManagerNameField />
         </Section>
 
         <Section title="Visual effects">

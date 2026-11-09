@@ -394,6 +394,48 @@ Many tasks cannot finish in one shot. A task has a **thread**; the agent, the ow
 
 ---
 
+### 7.18 JJ as a voice assistant on the phone (the Siri job), and the Vault
+**Status (2026-11-09): S1 BUILT, the rest PLANNED.** Built: the `manager_name` setting (`GET/PUT /api/v1/settings/manager-name`, Settings page, used by chat, titles, prompts and the web labels) and the fast voice route `POST /api/v1/voice/turn` (Gemini `gemini-flash-lite-latest`, about 1 s; falls back to the worker on any failure; work is handed off with the conversation so far). `HOSTS_ENABLED` and `GEMINI_API_KEY` are set on the production Lambda. Not built: the Vault, the Android app, phone host, coding with no laptop, the battery handover. Not verified: the voice route has been exercised against a stand-in and the real Gemini API from a script, not from a phone.
+
+**What a phone page cannot do.** The installed web app cannot listen in the background, cannot hear a name when the screen is off, cannot see incoming calls and cannot answer them. Android allows those only to a native app. So the Siri job needs a small **native Android app (Kotlin, installed from an APK, not from a store)**. The web app stays as it is for everything else.
+
+**Not reverse engineering Siri.** Its internals are closed and not needed. The job is its features, each mapped to an Android mechanism:
+| Siri feature | Android way | Needs an LLM |
+|---|---|---|
+| Wake by name, hands free | A foreground service listening on the device for the manager's name | No |
+| Speak and be understood | Android speech recognition (on-device where the phone has it) | No |
+| Call, text, alarms, timers, open an app, flashlight, volume, do-not-disturb, navigate | Standard intents and system services, run on the phone | No |
+| Say who is calling | Phone-state listener plus a contacts lookup plus text to speech | No |
+| Answer or reject a call by voice | The answer-calls permission (Android 9+) | No |
+| Read missed calls and call history | Call-log permission (allowed for an installed APK, not for a store app) | No |
+| Chat like a normal assistant ("JJ wassup") | A fast model reached through the API | Yes |
+| Do real work (plans, research, coding, documents) | A task for the manager and the worker, the same as the chat today | Yes |
+
+**Hard limits, stated plainly.**
+- Android blocks other apps from recording or speaking into a normal call. Griffin can announce, answer, reject, place and log calls, but **cannot talk to the person on the line** over the SIM. A live AI conversation needs a telephony provider (7.14, M6).
+- A short name such as "JJ" is hard for any listener: it fires on look-alike sounds. "Hey JJ" is safer, and a name of three or more syllables is best. Expect to tune it on the real phone.
+- Listening all day costs battery. It runs as a visible notification and can be paused.
+
+**Manager name.** A setting, `manager_name` (default "JJ"). It is the one place the name comes from: chat labels, prompts, task titles, spoken greetings and the wake name. Changing it changes all of them; the phone app rebuilds its listener from the new name, with no training step. Old tasks keep their stored text.
+
+**Fast voice path (no cold start).** A voice turn goes to a new API route. A fast hosted model (Gemini, key kept on the server only) answers chat and small questions in about a second while the EC2 worker stays asleep. When the turn becomes real work ("find internships and draft applications"), the route creates the normal task and attaches the conversation so far (what was said and what was answered) so the worker continues from it and the owner does not repeat anything. Small phone actions (calls, timers, texts) never wait for any model: the app parses them itself and the permission engine (7.16) still gates every outward one. The spoken transcript goes to the model provider; the owner can switch the fast path off, and then chat waits for the worker as today.
+
+**Phone as its own host.** The app speaks the host protocol (7.15): heartbeat, claim, complete, with capabilities such as `phone_apps`, `sms`, `calls`, `files`. It acts for the owner with no laptop at all.
+
+**When the laptop is off.**
+- Steps that need the laptop (files, browser, shell, coding) show "Waiting for your laptop" and resume on their own. This stays the default.
+- Reading, reviewing and planning code can run on the worker from a GitHub clone with no credentials (read tier).
+- Writing code with no laptop would need the worker to run with tools. That reverses "the EC2 stays text-only", so it is an **owner decision**: if allowed, it works only in a scratch clone, pushes a branch (never master), and the owner reviews it on the phone.
+
+**The Vault (files you need on the phone).** An S3 area per user, `vault/`, with a manifest. The phone downloads a file by a short-lived link and opens it inside Griffin or saves it; a copy cached on the phone is removed after a few minutes.
+- **Sensitive documents** (PAN, Aadhaar, passport, licence, bank papers) are encrypted on the device before upload with a key derived from a passphrase the owner holds. S3 holds ciphertext only. A lost passphrase means a lost file, by design.
+- **How files get there without uploading by hand:** (1) the laptop host mirrors the folders the owner allows (`Documents/Griffin` with the career context, resume drafts); (2) a one-time **filename-only scan** of allowed folders lists likely documents (names like resume, cv, pan, aadhaar, passport, marksheet, certificate, offer, licence) and the owner ticks which to mirror; nothing is uploaded before that; (3) **learning from misses:** when a task or voice request needs a file that is not in the Vault, Griffin records it ("PAN card image"), and when the laptop is next on it finds the best match and asks "add this to the Vault?" with one tap; (4) the phone camera can scan a document straight into the Vault.
+- Never uploaded without a tick: sensitive classes, anything outside allowed folders, repos. Contents never reach logs, results or playbooks.
+
+**Order of work.** S1 (server, testable now): `manager_name` everywhere, the fast voice route with handoff. S2: the Vault. S3: Android app v1 (listener, speech, local actions, calls, texts). S4: phone as host. S5: coding with no laptop (needs the decision above). S6: calls through a telephony provider (paid, optional).
+
+**Needed from the owner:** a Gemini API key (kept in the Lambda's settings only); permission to install the Android SDK on the build machine before S3; the phone model and Android version; the S5 decision.
+
 ## 8. Operations
 
 ### 8.1 Ship

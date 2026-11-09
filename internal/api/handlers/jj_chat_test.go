@@ -67,10 +67,12 @@ type fakeObjectives struct {
 	calls    int
 	runnable int
 	err      error
+	last     *domain.UserRequest
 }
 
 func (f *fakeObjectives) SubmitRequest(_ context.Context, req *domain.UserRequest) (*domain.OrchestrationRecord, *domain.OrchestrationPlan, error) {
 	f.calls++
+	f.last = req
 	if f.err != nil {
 		return nil, nil, f.err
 	}

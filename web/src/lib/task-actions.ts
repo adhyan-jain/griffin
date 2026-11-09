@@ -2,7 +2,8 @@ import { api, type Task } from "@/lib/api";
 import { isDone } from "@/components/StatusBadge";
 
 /** A JJ plan root (its own orchestration record) as opposed to a standalone or chat task. */
-export const isPlan = (t: Task) => t.manager_domain === "JJ" && (t.title ?? "").startsWith("JJ Orchestration");
+// A plan's title is "<manager name> Orchestration: <request>". Names cannot contain a colon, so a chat title never matches.
+export const isPlan = (t: Task) => t.manager_domain === "JJ" && /^[^:]{1,30} Orchestration: /.test(t.title ?? "");
 const isChat = (t: Task) => (t.input_payload as { kind?: string } | null | undefined)?.kind === "chat";
 
 /** Failed or cancelled standalone tasks continue in place. The server enforces the same rule. */

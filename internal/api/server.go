@@ -38,7 +38,11 @@ type ServerDependencies struct {
 	// HostRepo enables the host API (laptop/phone hosts) when set.
 	HostRepo repository.HostRepository
 	// PolicyRepo stores the owner's permission policy; used with HostRepo.
-	PolicyRepo      repository.PolicyRepository
+	PolicyRepo repository.PolicyRepository
+	// ProfileRepo holds the owner's settings (the manager's name).
+	ProfileRepo repository.ProfileRepository
+	// VoiceBrain is the fast model for voice chat; nil means every voice turn hands off to the worker.
+	VoiceBrain      handlers.VoiceBrain
 	ArtifactRepo    repository.ArtifactRepository
 	StorageService  *storage.StorageService
 	WorkerDefRepo   repository.WorkerDefinitionRepository
@@ -179,8 +183,20 @@ func NewServer(deps ServerDependencies) *Server {
 	if deps.Orchestrator != nil {
 		objectives = deps.Orchestrator
 	}
-	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero)
+	var profiles handlers.ProfileStore
+	if deps.ProfileRepo != nil {
+		profiles = deps.ProfileRepo
+	}
+	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero).WithProfiles(profiles)
 	mux.Handle("POST /api/v1/jj/messages", userAuth(http.HandlerFunc(jjChatHandler.PostMessage)))
+	if profiles != nil {
+		settingsHandler := handlers.NewSettingsHandler(profiles)
+		mux.Handle("GET /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.GetManagerName)))
+		mux.Handle("PUT /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.PutManagerName)))
+	}
+	// A nil client is fine here: its Enabled reports false, so every voice turn hands off.
+	voiceHandler := handlers.NewVoiceHandler(deps.VoiceBrain, profiles)
+	mux.Handle("POST /api/v1/voice/turn", userAuth(http.HandlerFunc(voiceHandler.PostTurn)))
 
 	// Worker Definition / Agent Factory routes
 	if deps.Factory != nil {

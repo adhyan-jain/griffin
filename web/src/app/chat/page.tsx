@@ -4,6 +4,7 @@ import { Kinetic } from "@/components/fx/kinetic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, Loader2, RotateCcw, Sparkles, WifiOff } from "lucide-react";
 import { api, JJEndpointUnavailable, type Task } from "@/lib/api";
+import { useManagerName } from "@/lib/manager-name";
 import { buildHistory, pollIntervalMs, reduceReply, type Provider, type ReplyEvent, type Turn } from "@/lib/jj-chat";
 import { usePolling } from "@/lib/use-polling";
 import { useOnline } from "@/lib/use-online";
@@ -59,6 +60,7 @@ function ReplyPoller({ taskId, onTask, onGiveUp }: { taskId: string; onTask: (t:
 }
 
 export default function ChatPage() {
+  const managerName = useManagerName();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState("");
   const online = useOnline();
@@ -132,7 +134,7 @@ export default function ChatPage() {
       {!online && (
         <div data-testid="offline-banner" role="status" className="mt-3 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-warning">
           <WifiOff className="size-4 shrink-0" />
-          You are offline. JJ will be available again when your connection returns.
+          You are offline. {managerName} will be available again when your connection returns.
         </div>
       )}
 
@@ -143,8 +145,8 @@ export default function ChatPage() {
               <Sparkles className="size-5" />
             </div>
             <div>
-              <Kinetic as="h1" text="Ask JJ anything" className="font-display text-3xl font-bold tracking-[-0.04em] text-balance md:text-4xl" />
-              <p className="mt-1 text-sm text-muted-foreground text-pretty">JJ answers questions directly and plans bigger goals into steps for your team.</p>
+              <Kinetic as="h1" text={`Ask ${managerName} anything`} className="font-display text-3xl font-bold tracking-[-0.04em] text-balance md:text-4xl" />
+              <p className="mt-1 text-sm text-muted-foreground text-pretty">{managerName} answers questions directly and plans bigger goals into steps for your team.</p>
             </div>
             <div className="flex w-full flex-col gap-2">
               {SUGGESTIONS.map((s) => (
@@ -171,12 +173,12 @@ export default function ChatPage() {
             {(t.reply.phase === "sending" || t.reply.phase === "waiting") && (
               <div className="space-y-1.5" role="status">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin motion-reduce:animate-none" /> JJ is thinking
+                  <Loader2 className="size-4 animate-spin motion-reduce:animate-none" /> {managerName} is thinking
                 </div>
                 {t.reply.phase === "waiting" && t.reply.wake?.wake === "failed" && (
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-warning">
                     <span>
-                      The worker could not start{t.reply.wake.detail ? `: ${t.reply.wake.detail}` : ""}; JJ will keep trying, or tap Wake.
+                      The worker could not start{t.reply.wake.detail ? `: ${t.reply.wake.detail}` : ""}; {managerName} will keep trying, or tap Wake.
                     </span>
                     <Button variant="outline" size="sm" className="h-11" disabled={wakeBusy || !online} onClick={() => void wake()}>
                       Wake
@@ -214,7 +216,7 @@ export default function ChatPage() {
               <div className="space-y-1.5">
                 {t.reply.planOnly && (
                   <p data-testid="plan-only-label" className="text-xs text-warning">
-                    Plan only: JJ&apos;s direct answers are not available yet, so this is a plan for your team, not a reply.
+                    Plan only: {managerName}&apos;s direct answers are not available yet, so this is a plan for your team, not a reply.
                   </p>
                 )}
                 <PlanCard result={t.reply.result} />
@@ -233,7 +235,7 @@ export default function ChatPage() {
         }}
       >
         <Textarea
-          aria-label="Message JJ"
+          aria-label={`Message ${managerName}`}
           value={text}
           disabled={!online}
           onChange={(e) => setText(e.target.value)}
@@ -243,7 +245,7 @@ export default function ChatPage() {
               send(text);
             }
           }}
-          placeholder={online ? "Message JJ" : "Offline"}
+          placeholder={online ? `Message ${managerName}` : "Offline"}
           rows={1}
           className="max-h-32 min-h-11 resize-none"
         />

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/provider/gemini"
 	"log/slog"
 	"net/http"
 	"os"
@@ -122,6 +123,7 @@ func main() {
 	orchRepo := repository.NewPostgresOrchestrationRepository(repoDB)
 	hostRepo := repository.NewPostgresHostRepository(repoDB)
 	policyRepo := repository.NewPostgresPolicyRepository(repoDB)
+	profileRepo := repository.NewPostgresProfileRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
 	var storageProvider storage.Provider
@@ -353,6 +355,8 @@ func main() {
 			Wakeup:          wakeupCtrl,
 			HostRepo:        hostRepo,
 			PolicyRepo:      policyRepo,
+			ProfileRepo:     profileRepo,
+			VoiceBrain:      voiceBrain(cfg),
 			InstanceMgr:     instanceMgr,
 			UserTx:          userTx,
 		})
@@ -384,4 +388,12 @@ func main() {
 	}
 
 	logger.Info("Griffin Core Engine shutdown complete")
+}
+
+// voiceBrain is the fast chat model, or nil when no key is configured (every voice turn then hands off).
+func voiceBrain(cfg *config.Config) *gemini.Client {
+	if cfg.GeminiAPIKey == "" {
+		return nil
+	}
+	return &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: cfg.GeminiModel}
 }

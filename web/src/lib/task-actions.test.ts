@@ -43,6 +43,9 @@ describe("task action eligibility", () => {
 
   it("recognises a plan root by its title and domain", () => {
     expect(isPlan(task({ manager_domain: "JJ", title: "JJ Orchestration: weekly" }))).toBe(true);
+    expect(isPlan(task({ manager_domain: "JJ", title: "Jarvis Orchestration: weekly" }))).toBe(true);
+    expect(isPlan(task({ manager_domain: "JJ", title: "Chat: how is Orchestration: done" }))).toBe(false);
+    expect(isPlan(task({ manager_domain: "JJ", title: "Orchestration: weekly" }))).toBe(false);
     expect(isPlan(task({ manager_domain: "JJ", title: "chat" }))).toBe(false);
   });
 });

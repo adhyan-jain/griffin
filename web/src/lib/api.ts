@@ -218,6 +218,12 @@ export interface RunnerWake {
   detail?: string;
 }
 
+export interface ManagerNameSetting {
+  manager_name: string;
+  default: string;
+  is_default: boolean;
+}
+
 export interface JJHistoryTurn {
   role: "user" | "assistant";
   text: string;
@@ -612,6 +618,14 @@ export const api = {
     }
   },
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
+
+  // The top manager's name (JJ by default)
+  getManagerName: () => fetchWithAuth<ManagerNameSetting>("/api/v1/settings/manager-name"),
+  putManagerName: (name: string) =>
+    fetchWithAuth<ManagerNameSetting>("/api/v1/settings/manager-name", {
+      method: "PUT",
+      body: JSON.stringify({ manager_name: name }),
+    }),
 
   // Approvals
   listApprovals: (status?: ApprovalStatus, opts?: ReqOpts) =>

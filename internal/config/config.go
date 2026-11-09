@@ -26,6 +26,8 @@ type Config struct {
 	// AI Execution Provider settings (Phase 2)
 	AIProvider                 string // "antigravity" (default) or "mock"
 	ClaudeEnabled              bool   // optional second provider for language-only steps; off by default
+	GeminiAPIKey               string // fast voice model key; empty disables the fast path (chat then waits for the worker)
+	GeminiModel                string // default gemini-flash-lite-latest
 	HostsEnabled               bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
 	ClaudeBinary               string
 	MaxConcurrentClaude        int
@@ -123,6 +125,8 @@ func Load() (*Config, error) {
 		AIProvider:                      getEnv("AI_PROVIDER", "antigravity"),
 		ClaudeEnabled:                   getEnvAsBool("CLAUDE_ENABLED", false),
 		HostsEnabled:                    getEnvAsBool("HOSTS_ENABLED", false),
+		GeminiAPIKey:                    getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:                     getEnv("GEMINI_MODEL", ""),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
 		MaxConcurrentClaude:             getEnvAsInt("MAX_CONCURRENT_CLAUDE", 2),
 		AgyToolsEnabled:                 getEnvAsBool("AGY_TOOLS_ENABLED", false),

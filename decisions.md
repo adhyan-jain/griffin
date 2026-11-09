@@ -563,3 +563,26 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Rejected**: browsing with the owner's logged-in browser for plain search (mixes the owner's sessions into untrusted pages); a keyless scraper presented as reliable.
 - **Location**: `internal/domain/webaction.go`, `internal/hands/web/`, `internal/hands/webjob.go`, `internal/service/planner_web.go`.
 
+
+#### ADR-082: The Siri job needs a native Android app; the web app stays
+- **Status**: PLANNED. `HOSTS_ENABLED=true` was set on the production Lambda on 2026-11-09 (migrations 000005 and 000006 applied first).
+- **Decision**: Wake-by-name listening, caller announcements, answering and placing calls and reading the call log are done by a small Kotlin Android app installed from an APK. Each Siri feature maps to a standard Android mechanism (PRD 7.18); there is no reverse engineering of Siri.
+- **Why**: a web page cannot listen in the background or see calls. An installed APK may use the call-log permission that a store app may not.
+- **Limit**: Android blocks apps from recording or speaking into a normal call, so Griffin cannot converse with the person on the line over the SIM. That needs a telephony provider (M6).
+- **Rejected**: a web-only voice mode (cannot run with the screen off); store distribution (call-log permission is restricted there).
+
+#### ADR-083: The manager's name is one setting; the listener is built from it, not trained
+- **Status**: the setting is BUILT (stored in `profiles.settings`, no migration; letters, digits, spaces, hyphens and apostrophes, at most 30, no control characters, so a name cannot carry an instruction into a prompt). Chat, task titles, prompts and web labels use it; a request that opens with the name is classified without it but stored as the owner wrote it. The phone listener is PLANNED.
+- **Decision**: `manager_name` (default "JJ") is the only source of the name for chat labels, prompts, titles, greetings and the wake name. The phone listener is a recognizer limited to the name (plus "hey"), so a rename needs no training.
+- **Trade-off**: a limited-vocabulary recognizer is less accurate than a trained wake-word engine and short names mis-fire. A trained engine would need a new model per name. Revisit if false triggers are too high on the real phone.
+
+#### ADR-084: A fast hosted model covers chat while the worker is cold, with a handoff of the conversation
+- **Status**: BUILT (`internal/provider/gemini`, `internal/api/handlers/voice.go`); key set on the Lambda. The route never creates a task: it answers small talk, says "On it." for work, and returns `handoff: true` so the client posts the text and the conversation to `/api/v1/jj/messages`, where history now also reaches plan steps. On any Gemini failure (no key, rate limit, declined, error) the turn is handed to the worker instead of failing.
+- **Decision**: A voice route answers chat and small questions from a fast hosted model; work becomes a normal task that carries the conversation so far. Calls, timers and texts are parsed on the phone and never wait for a model. The key lives only on the server.
+- **Cost**: spoken text goes to the model provider; a setting turns the fast path off.
+
+#### ADR-085: The Vault: S3 files that appear by rule, by scan and by learning from misses; sensitive ones encrypted on the device
+- **Status**: PLANNED.
+- **Decision**: See PRD 7.18. Mirrors only allowed folders, one-time filename-only scan with the owner ticking, misses recorded and resolved on the laptop's next run, camera scan from the phone. PAN, Aadhaar, passport and similar are encrypted before upload with a passphrase key the owner holds.
+- **Rejected**: syncing whole folders (leaks everything on one mistake); server-side encryption alone for identity documents (the cloud account would hold both lock and key).
+- **Open**: coding with no laptop reverses "the EC2 stays text-only" and waits for the owner's decision.

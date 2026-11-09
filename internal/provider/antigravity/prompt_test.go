@@ -191,3 +191,45 @@ func TestToolPreambles_AskForAPlaybookTextOnlyDoesNot(t *testing.T) {
 	assert.Contains(t, preambleFor(domain.ToolRead), "Never put passwords")
 	assert.NotContains(t, preambleFor(domain.ToolNone), "Playbook", "the text-only tier never asks for one")
 }
+
+func TestPromptSpeaksAsTheChosenManager(t *testing.T) {
+	task := &domain.Task{Goal: "plan my week", InputPayload: json.RawMessage(`{"manager_name":"Jarvis"}`)}
+	got := buildPromptWith(preamble, task, 1, RuntimeFacts{})
+	if !strings.HasPrefix(got, "You are Jarvis, the orchestrator of Griffin") {
+		t.Fatalf("prompt should speak as the chosen manager, got: %.80s", got)
+	}
+	if strings.Contains(got, "You are JJ") {
+		t.Error("the default name must be replaced everywhere it introduces the manager")
+	}
+	for _, p := range []string{readPreamble, actPreamble} {
+		if g := buildPromptWith(p, task, 1, RuntimeFacts{}); !strings.HasPrefix(g, "You are Jarvis,") {
+			t.Errorf("tool-tier preamble was not renamed: %.60s", g)
+		}
+	}
+	// No name, an invalid name or the default keeps the original text.
+	for _, payload := range []string{``, `{"manager_name":"bad\nname"}`, `{"manager_name":"JJ"}`} {
+		g := buildPromptWith(preamble, &domain.Task{Goal: "x", InputPayload: json.RawMessage(payload)}, 1, RuntimeFacts{})
+		if !strings.HasPrefix(g, "You are JJ,") {
+			t.Errorf("payload %q should keep the default name, got %.40s", payload, g)
+		}
+	}
+}
+
+func TestStepsThatContinueAConversationSeeIt(t *testing.T) {
+	task := &domain.Task{Goal: "find internships", InputPayload: json.RawMessage(
+		`{"history":[{"role":"user","text":"JJ wassup"},{"role":"assistant","text":"Not much!"},{"role":"user","text":"find internships"}]}`)}
+	got := buildPromptWith(preamble, task, 1, RuntimeFacts{})
+	for _, want := range []string{"Conversation so far:", "User: JJ wassup", "Assistant: Not much!"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a handed-over conversation should reach the step; missing %q in:\n%s", want, got)
+		}
+	}
+	if !strings.HasSuffix(got, "find internships") {
+		t.Errorf("the task itself must come last, got tail %q", got[max(0, len(got)-40):])
+	}
+	// A plain step without history is unchanged.
+	plain := buildPromptWith(preamble, &domain.Task{Goal: "just this"}, 1, RuntimeFacts{})
+	if strings.Contains(plain, "Conversation so far") {
+		t.Error("no history, no conversation block")
+	}
+}

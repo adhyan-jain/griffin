@@ -54,6 +54,14 @@ type JJChatHandler struct {
 	objectives         ObjectiveSubmitter
 	wakeup             RunnerWakeup
 	scaleToZeroEnabled bool
+	// profiles supplies the owner's chosen manager name; nil means the default name.
+	profiles ProfileStore
+}
+
+// WithProfiles lets the handler address and answer as the manager the owner named.
+func (h *JJChatHandler) WithProfiles(p ProfileStore) *JJChatHandler {
+	h.profiles = p
+	return h
 }
 
 // NewJJChatHandler constructs a JJChatHandler. objectives may be nil, in which case every
@@ -139,17 +147,24 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kind, reason := service.ClassifyMessageWithReason(message)
+	managerName := ResolveManagerName(r.Context(), h.profiles, userID)
+	// "Jarvis research X" is addressed to the manager; classify what was asked, but store the owner's own words.
+	toClassify := message
+	if stripped := service.StripLeadingName(message, managerName); stripped != "" {
+		toClassify = stripped
+	}
+
+	kind, reason := service.ClassifyMessageWithReason(toClassify)
 	if h.objectives == nil {
 		kind, reason = service.MessageKindConversation, "no-orchestrator"
 	}
 	slog.Info("jj chat: message classified", "user_id", userID, "conversation_id", conversationID, "kind", kind, "reason", reason)
 
 	if kind == service.MessageKindObjective {
-		h.postObjective(w, r, userID, conversationID, message, req)
+		h.postObjective(w, r, userID, conversationID, message, req, history, managerName)
 		return
 	}
-	h.postConversation(w, r, userID, conversationID, message, history, req.IdempotencyKey)
+	h.postConversation(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName)
 }
 
 func normalizeHistory(in []chatTurn) ([]chatTurn, error) {
@@ -170,7 +185,7 @@ func normalizeHistory(in []chatTurn) ([]chatTurn, error) {
 	return out, nil
 }
 
-func (h *JJChatHandler) postConversation(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, history []chatTurn, key *string) {
+func (h *JJChatHandler) postConversation(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, history []chatTurn, key *string, managerName string) {
 	// A repeated idempotency key returns the original task; never a second one.
 	if key != nil {
 		if existing, err := h.tasks.GetTaskByIdempotencyKey(r.Context(), userID, *key); err == nil {
@@ -186,6 +201,7 @@ func (h *JJChatHandler) postConversation(w http.ResponseWriter, r *http.Request,
 		"kind":            "chat",
 		"conversation_id": conversationID.String(),
 		"history":         history,
+		"manager_name":    managerName,
 	})
 	title := "Chat: " + truncateRunes(strings.Join(strings.Fields(message), " "), chatMaxTitleChars)
 	task := &domain.Task{
@@ -236,8 +252,13 @@ func (h *JJChatHandler) writeDuplicate(w http.ResponseWriter, existing *domain.T
 	})
 }
 
-func (h *JJChatHandler) postObjective(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest) {
-	ctxPayload, _ := json.Marshal(map[string]any{"conversation_id": conversationID.String(), "source": "jj_messages"})
+func (h *JJChatHandler) postObjective(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string) {
+	ctxMap := map[string]any{"conversation_id": conversationID.String(), "source": "jj_messages", "manager_name": managerName}
+	if len(history) > 0 {
+		// A conversation that became work (for example a voice chat) carries what was already said.
+		ctxMap["history"] = history
+	}
+	ctxPayload, _ := json.Marshal(ctxMap)
 	orch, plan, err := h.objectives.SubmitRequest(r.Context(), &domain.UserRequest{
 		UserID:      userID,
 		RequestText: message,

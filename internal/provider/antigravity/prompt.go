@@ -96,6 +96,10 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 	if env.Prompt != "" {
 		body = env.Prompt
 	}
+	// The preambles are written for the default name; speak as the manager the owner chose.
+	if name := domain.ManagerNameFrom(task.InputPayload); name != domain.DefaultManagerName {
+		pre = strings.Replace(pre, "You are "+domain.DefaultManagerName+",", "You are "+name+",", 1)
+	}
 
 	var b strings.Builder
 	b.WriteString(pre)
@@ -106,6 +110,11 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 	}
 
 	if env.Kind != "chat" {
+		// A step that continues a conversation (for example a voice chat that became work) must see it.
+		if hist := historyBlock(env.History); hist != "" {
+			b.WriteString("\n")
+			b.WriteString(hist)
+		}
 		b.WriteString("\n")
 		b.WriteString(body)
 		return b.String()
@@ -125,7 +134,18 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 	fmt.Fprintf(&b, "\nRuntime facts:\n- provider: %s\n- version: %s\n- model: %s\n", name, version, model)
 	b.WriteString("State the provider, version and model only from the Runtime facts block. If a value is unknown, say you do not know; do not guess.\n")
 
-	turns := env.History
+	if hist := historyBlock(env.History); hist != "" {
+		b.WriteString("\n")
+		b.WriteString(hist)
+	}
+	b.WriteString("\nCurrent user message:\n")
+	b.WriteString(body)
+	return b.String()
+}
+
+// historyBlock renders the role-labelled conversation so far, or "" when there is none.
+func historyBlock(all []chatTurn) string {
+	turns := all
 	if len(turns) > maxChatTurns {
 		turns = turns[len(turns)-maxChatTurns:]
 	}
@@ -142,14 +162,10 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 		}
 		hist = append(hist, fmt.Sprintf("%s: %s", label, truncateRunes(t.Text, maxChatTurnChars)))
 	}
-	if len(hist) > 0 {
-		b.WriteString("\nConversation so far:\n")
-		b.WriteString(strings.Join(hist, "\n"))
-		b.WriteString("\n")
+	if len(hist) == 0 {
+		return ""
 	}
-	b.WriteString("\nCurrent user message:\n")
-	b.WriteString(body)
-	return b.String()
+	return "Conversation so far:\n" + strings.Join(hist, "\n") + "\n"
 }
 
 // detectVersion runs `<binary> --version` once with a bounded timeout.

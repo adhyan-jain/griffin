@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { usePolling } from "@/lib/use-polling";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useManagerName } from "@/lib/manager-name";
 import { SystemStatusDot } from "@/components/system-status";
 
 const DeepField = dynamic(() => import("@/components/fx/deep-field"), { ssr: false });
@@ -149,6 +150,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const { runner, pending } = useShellData(authed);
+  const managerName = useManagerName();
+  // The chat entry is named after the owner's manager; every other entry keeps its fixed label.
+  const navLabel = (href: string, label: string) => (href === "/chat" ? `Ask ${managerName}` : label);
 
   useEffect(() => {
     if (isLogin) {
@@ -218,7 +222,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 )}
               >
                 <Icon className="size-4" />
-                <span className="flex-1">{label}</span>
+                <span className="flex-1">{navLabel(href, label)}</span>
                 {n > 0 && (
                   <span className="rounded-full bg-primary px-1.5 text-xs font-semibold tabular-nums text-primary-foreground">{n}</span>
                 )}
@@ -277,7 +281,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               )}
             >
               <Icon className="size-5" />
-              {label}
+              <span className="max-w-full truncate px-1">{navLabel(href, label)}</span>
               {n > 0 && (
                 <span className="absolute right-[calc(50%-1.4rem)] top-1.5 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-bold leading-4 tabular-nums text-primary-foreground">
                   {n}

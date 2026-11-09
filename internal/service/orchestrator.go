@@ -118,7 +118,7 @@ func (o *JJOrchestrator) SubmitRequest(ctx context.Context, req *domain.UserRequ
 		UserID:        req.UserID,
 		WorkspaceID:   req.WorkspaceID,
 		ManagerDomain: "JJ",
-		Title:         fmt.Sprintf("JJ Orchestration: %s", truncateString(req.RequestText, 60)),
+		Title:         fmt.Sprintf("%s Orchestration: %s", domain.ManagerNameFrom(req.Context), truncateString(req.RequestText, 60)),
 		Goal:          req.RequestText,
 		InputPayload:  req.Context,
 		Priority:      req.Priority,
@@ -192,7 +192,7 @@ func (o *JJOrchestrator) SubmitRequest(ctx context.Context, req *domain.UserRequ
 	createdOrch.ManagerID = planPayload.ManagerID
 
 	// 5. DELEGATE: Break into child tasks and register in task engine
-	delegationRecords, hasPendingApprovals, err := o.delegatePlan(ctx, createdOrch, createdRoot.ID, planPayload)
+	delegationRecords, hasPendingApprovals, err := o.delegatePlan(ctx, createdOrch, createdRoot.ID, planPayload, domain.ManagerNameFrom(req.Context))
 	if err != nil {
 		o.failOrchestration(ctx, createdOrch.ID, createdRoot.ID, fmt.Sprintf("Delegation failed: %v", err))
 		return nil, nil, fmt.Errorf("jj: delegation failed: %w", err)
@@ -452,6 +452,7 @@ func (o *JJOrchestrator) delegatePlan(
 	orch *domain.OrchestrationRecord,
 	rootTaskID uuid.UUID,
 	plan *domain.PlanPayload,
+	managerName string,
 ) ([]*domain.DelegationRecord, bool, error) {
 	hasPendingApproval := false
 	taskKeyToID := make(map[string]uuid.UUID)
@@ -481,6 +482,10 @@ func (o *JJOrchestrator) delegatePlan(
 		ct.InputPayload = domain.WithProviderHint(ct.InputPayload, ct.Title, ct.Goal)
 		// Suggest read-only tools for work that touches the outside world (never act: that needs approval).
 		ct.InputPayload = domain.WithToolMode(ct.InputPayload, ct.Title, ct.Goal)
+		// Steps speak as the manager the owner chose (the default name needs no marker).
+		if managerName != domain.DefaultManagerName {
+			ct.InputPayload = domain.WithManagerName(ct.InputPayload, managerName)
+		}
 
 		var task *domain.Task
 		// Check if specialist worker is specified and exists in AgentFactory
