@@ -8,6 +8,7 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
   FolderOpen,
+  LockKeyhole,
   LayoutDashboard,
   Laptop,
   Lock,
@@ -45,6 +46,7 @@ const PRIMARY: NavItem[] = [
 const SECONDARY: NavItem[] = [
   { href: "/lists", label: "Lists", icon: Notebook },
   { href: "/artifacts", label: "Files", icon: FolderOpen },
+  { href: "/vault", label: "Vault", icon: LockKeyhole },
   { href: "/devices", label: "Devices", icon: Laptop },
   { href: "/permissions", label: "Permissions", icon: Lock },
   { href: "/workforce", label: "Workforce", icon: Users },

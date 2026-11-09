@@ -218,6 +218,29 @@ export interface RunnerWake {
   detail?: string;
 }
 
+export type VaultCategory = "id" | "finance" | "resume" | "certificate" | "other";
+
+export interface VaultEntry {
+  id: string;
+  label: string;
+  category: VaultCategory;
+  sensitive: boolean;
+  encrypted: boolean;
+  filename?: string;
+  size_bytes: number;
+  source?: string;
+  fingerprint?: string;
+  created_at: string;
+}
+
+export interface VaultMiss {
+  id: string;
+  query: string;
+  task_id?: string;
+  count: number;
+  at: string;
+}
+
 export interface ManagerNameSetting {
   manager_name: string;
   default: string;
@@ -651,6 +674,19 @@ export const api = {
     if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
     return res.text();
   },
+  /** A file's bytes, through the API (the storage bucket needs no browser access rules this way). */
+  async getArtifactBytes(id: string, opts?: ReqOpts): Promise<{ bytes: Uint8Array; contentType: string }> {
+    const token = await resolveAuthToken();
+    const res = await fetch(`${API_BASE_URL}/api/v1/artifacts/${id}/download`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: opts?.signal });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: res.headers.get("Content-Type") ?? "application/octet-stream" };
+  },
+
+  // The Vault: documents you may need on your phone (sensitive ones are encrypted on your device first)
+  listVault: (opts?: ReqOpts) => fetchList<VaultEntry>("/api/v1/vault", opts),
+  addVault: (form: FormData) => fetchWithAuth<{ duplicate: boolean; entry: VaultEntry }>("/api/v1/vault", { method: "POST", body: form }),
+  listVaultMisses: (opts?: ReqOpts) => fetchList<VaultMiss>("/api/v1/vault/misses", opts),
+  resolveVaultMiss: (id: string) => fetchWithAuth<unknown>(`/api/v1/vault/misses/${id}`, { method: "DELETE" }),
   deleteArtifact: (id: string) => fetchWithAuth<unknown>(`/api/v1/artifacts/${id}`, { method: "DELETE" }),
   async uploadArtifact(file: File, taskId?: string): Promise<Artifact> {
     const form = new FormData();

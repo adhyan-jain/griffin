@@ -66,12 +66,17 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) (bo
 		}
 		rd = bytes.NewReader(b)
 	}
+	return c.doBody(ctx, method, path, rd, "application/json", out)
+}
+
+// doBody is do with a ready-made body and content type (a file upload, for example).
+func (c *Client) doBody(ctx context.Context, method, path string, rd io.Reader, contentType string, out any) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rd)
 	if err != nil {
 		return false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("%s %s: %w", method, path, scrub(err, c.token))

@@ -51,3 +51,9 @@ func GetHost(ctx context.Context) *domain.Host {
 	h, _ := ctx.Value(hostKey).(*domain.Host)
 	return h
 }
+
+// WithHost returns ctx carrying h as the authenticated host. AuthenticateHost does this for real requests;
+// handler tests use it to stand in for one.
+func WithHost(ctx context.Context, h *domain.Host) context.Context {
+	return context.WithValue(ctx, hostKey, h)
+}

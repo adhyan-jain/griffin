@@ -40,7 +40,8 @@ export default function FilesPage() {
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (files ?? []).filter((f) => !q || `${f.title} ${f.artifact_type}`.toLowerCase().includes(q));
+    // Vault documents have their own page (and sensitive ones are ciphertext here).
+    return (files ?? []).filter((f) => f.metadata?.kind !== "vault").filter((f) => !q || `${f.title} ${f.artifact_type}`.toLowerCase().includes(q));
   }, [files, query]);
 
   const download = async (a: Artifact) => {

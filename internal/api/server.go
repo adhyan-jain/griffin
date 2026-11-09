@@ -194,6 +194,15 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("GET /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.GetManagerName)))
 		mux.Handle("PUT /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.PutManagerName)))
 	}
+	var vaultHandler *handlers.VaultHandler
+	if deps.StorageService != nil && deps.ProfileRepo != nil {
+		vaultHandler = handlers.NewVaultHandler(deps.StorageService, deps.ProfileRepo, deps.Config.MaxUploadBytes)
+		mux.Handle("GET /api/v1/vault", userAuth(http.HandlerFunc(vaultHandler.List)))
+		mux.Handle("POST /api/v1/vault", userAuth(http.HandlerFunc(vaultHandler.Add)))
+		mux.Handle("GET /api/v1/vault/misses", userAuth(http.HandlerFunc(vaultHandler.ListMisses)))
+		mux.Handle("POST /api/v1/vault/misses", userAuth(http.HandlerFunc(vaultHandler.AddMiss)))
+		mux.Handle("DELETE /api/v1/vault/misses/{id}", userAuth(http.HandlerFunc(vaultHandler.ResolveMiss)))
+	}
 	// A nil client is fine here: its Enabled reports false, so every voice turn hands off.
 	voiceHandler := handlers.NewVoiceHandler(deps.VoiceBrain, profiles)
 	mux.Handle("POST /api/v1/voice/turn", userAuth(http.HandlerFunc(voiceHandler.PostTurn)))
@@ -244,6 +253,12 @@ func NewServer(deps ServerDependencies) *Server {
 		}
 
 		hostAuth := middleware.AuthenticateHost(hostSvc)
+		if vaultHandler != nil { // a host with the files capability can mirror documents and answer misses
+			mux.Handle("GET /api/v1/host/vault", hostAuth(http.HandlerFunc(vaultHandler.List)))
+			mux.Handle("POST /api/v1/host/vault", hostAuth(http.HandlerFunc(vaultHandler.Add)))
+			mux.Handle("GET /api/v1/host/vault/misses", hostAuth(http.HandlerFunc(vaultHandler.ListMisses)))
+			mux.Handle("DELETE /api/v1/host/vault/misses/{id}", hostAuth(http.HandlerFunc(vaultHandler.ResolveMiss)))
+		}
 		mux.Handle("POST /api/v1/host/heartbeat", hostAuth(http.HandlerFunc(hostHandler.Heartbeat)))
 		mux.Handle("POST /api/v1/host/claim", hostAuth(http.HandlerFunc(hostHandler.Claim)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/heartbeat", hostAuth(http.HandlerFunc(hostHandler.TaskHeartbeat)))

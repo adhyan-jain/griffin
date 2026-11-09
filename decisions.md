@@ -582,7 +582,7 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Cost**: spoken text goes to the model provider; a setting turns the fast path off.
 
 #### ADR-085: The Vault: S3 files that appear by rule, by scan and by learning from misses; sensitive ones encrypted on the device
-- **Status**: PLANNED.
+- **Status**: BUILT and tested (server rules mutation-tested; Go and browser encryption checked against one vector; the laptop client run against the real handler over HTTP). Not yet used from a phone or against production. Built on artifacts (metadata kind `vault`), so there is no migration; the miss list lives in `profiles.settings`. A wrong-document bug found in testing ("card" matched the wrong ID) was fixed by dropping filler words and refusing to guess between equally good matches.
 - **Decision**: See PRD 7.18. Mirrors only allowed folders, one-time filename-only scan with the owner ticking, misses recorded and resolved on the laptop's next run, camera scan from the phone. PAN, Aadhaar, passport and similar are encrypted before upload with a passphrase key the owner holds.
 - **Rejected**: syncing whole folders (leaks everything on one mistake); server-side encryption alone for identity documents (the cloud account would hold both lock and key).
 - **Open**: coding with no laptop reverses "the EC2 stays text-only" and waits for the owner's decision.

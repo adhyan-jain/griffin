@@ -17,6 +17,9 @@ type ProfileRepository interface {
 	// ManagerName returns the chosen name, or "" when none was ever set.
 	ManagerName(ctx context.Context, userID uuid.UUID) (string, error)
 	SetManagerName(ctx context.Context, userID uuid.UUID, name string) error
+	// VaultMisses returns the stored list of documents that were needed and were not there (JSON array).
+	VaultMisses(ctx context.Context, userID uuid.UUID) ([]byte, error)
+	SetVaultMisses(ctx context.Context, userID uuid.UUID, misses []byte) error
 }
 
 // PostgresProfileRepository implements ProfileRepository on profiles.settings (no schema change).
@@ -48,6 +51,31 @@ func (r *PostgresProfileRepository) SetManagerName(ctx context.Context, userID u
 		WHERE id = $1`, userID, name)
 	if err != nil {
 		return fmt.Errorf("save manager name: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresProfileRepository) VaultMisses(ctx context.Context, userID uuid.UUID) ([]byte, error) {
+	var raw []byte
+	err := r.pool.QueryRow(ctx, `SELECT COALESCE(settings->'vault_misses', '[]'::jsonb) FROM profiles WHERE id = $1`, userID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []byte("[]"), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read vault misses: %w", err)
+	}
+	return raw, nil
+}
+
+func (r *PostgresProfileRepository) SetVaultMisses(ctx context.Context, userID uuid.UUID, misses []byte) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE profiles SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{vault_misses}', $2::jsonb, true), updated_at = NOW()
+		WHERE id = $1`, userID, misses)
+	if err != nil {
+		return fmt.Errorf("save vault misses: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
