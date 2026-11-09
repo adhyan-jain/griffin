@@ -652,3 +652,10 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Decision**: read and reply through a notification listener and each notification's own Reply action, with spoken confirmation before any send, ducking audio focus, and a non-touchable overlay, so nothing interrupts a game. New chats with no notification go to Griffin's WhatsApp Web hands (laptop, with approval) for WhatsApp and are refused elsewhere.
 - **Why**: it uses the apps as they are built (their own sending, their own accounts) and needs no screen, no accessibility service and no default role.
 - **Rejected for now**: driving each app's screen with an accessibility service (takes over the screen, brittle, a far more powerful permission); opening the app with a prefilled message (interrupts whatever is on screen).
+
+#### ADR-096: Voice task and approval commands live on the server, with signed confirmations and an unlocked-device rule
+- **Status**: BUILT and tested (parser, listing, confirmation security, ambiguity, route integration, Android handling); not deployed or tried on a device.
+- **Decision**: one implementation (`service.VoiceCommands`) behind the existing voice route, used by the phone and the web app. Changes are two-step: the server answers with a question and an HMAC-signed token (owner, action, exact ids, two-minute expiry; no server state), and acts only when the token returns with a yes and `unlocked: true`.
+- **Why**: a spoken "yes" cannot prove who spoke, so the unlocked-device rule and the exact-ids token stand in for authentication; and one copy of the rules means the two apps cannot drift.
+- **Rejected**: client-side command parsing in each app (two copies); a server-stored pending action (state to expire and clean); allowing approvals while locked.
+- **Known limits**: the parser is strict and phrase-based, so unusual wording falls through to conversation; the token secret is the Supabase JWT secret (a random per-process key when it is absent, as in local runs).

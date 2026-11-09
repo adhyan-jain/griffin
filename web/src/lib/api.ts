@@ -247,6 +247,15 @@ export interface ManagerNameSetting {
   is_default: boolean;
 }
 
+export interface VoiceTurnResult {
+  kind: "wake" | "conversation" | "objective" | "command";
+  reply: string;
+  handoff: boolean;
+  manager_name: string;
+  fallback?: string;
+  confirm_token?: string;
+}
+
 export interface JJHistoryTurn {
   role: "user" | "assistant";
   text: string;
@@ -662,6 +671,12 @@ export const api = {
     }
   },
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
+  /**
+   * One spoken turn: a quick answer, a task command (list, cancel, delete, approvals) or a hand-off of real work.
+   * A change comes back with a confirm_token; send it back with {confirm: {token, yes}} when the owner answers.
+   */
+  voiceTurn: (body: { text?: string; history?: JJHistoryTurn[]; confirm?: { token: string; yes: boolean } }) =>
+    fetchWithAuth<VoiceTurnResult>("/api/v1/voice/turn", { method: "POST", body: JSON.stringify({ ...body, unlocked: true }) }),
   /** A few seconds of speech about a task, for the Listen page (what a notification tap plays). */
   getSpokenSummary: (taskId: string) =>
     fetchWithAuth<{ text: string; case: "answer" | "summary" | "empty" | "failed" | "approval" | "running"; task_id: string; title: string; status: TaskStatus }>(

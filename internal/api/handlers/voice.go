@@ -28,6 +28,13 @@ type VoiceBrain interface {
 type VoiceHandler struct {
 	brain    VoiceBrain
 	profiles ProfileStore
+	commands *service.VoiceCommands
+}
+
+// WithCommands lets the voice route list, cancel and delete tasks and handle approvals (see service.VoiceCommands).
+func (h *VoiceHandler) WithCommands(c *service.VoiceCommands) *VoiceHandler {
+	h.commands = c
+	return h
 }
 
 // NewVoiceHandler constructs a VoiceHandler. brain may be nil: every turn then hands off.
@@ -39,6 +46,13 @@ func NewVoiceHandler(brain VoiceBrain, profiles ProfileStore) *VoiceHandler {
 type VoiceTurnRequest struct {
 	Text    string     `json:"text"`
 	History []chatTurn `json:"history,omitempty"`
+	// Unlocked says the owner is at an unlocked device. Changes (cancel, delete, approve) are refused without it.
+	Unlocked bool `json:"unlocked,omitempty"`
+	// Confirm answers an earlier "say yes to confirm": the token that came back, and the owner's yes or no.
+	Confirm *struct {
+		Token string `json:"token"`
+		Yes   bool   `json:"yes"`
+	} `json:"confirm,omitempty"`
 }
 
 // VoiceTurnResponse says what to speak and whether the worker must take over.
@@ -52,6 +66,8 @@ type VoiceTurnResponse struct {
 	ManagerName string `json:"manager_name"`
 	// Fallback explains why the fast path was skipped, for logs and the app's status line.
 	Fallback string `json:"fallback,omitempty"`
+	// ConfirmToken is set when the reply asks the owner to confirm a change; send it back with their answer.
+	ConfirmToken string `json:"confirm_token,omitempty"`
 }
 
 const (
@@ -80,6 +96,14 @@ func (h *VoiceHandler) PostTurn(w http.ResponseWriter, r *http.Request) {
 		httputil.ErrorJSON(w, badRequestFromDecode(err))
 		return
 	}
+	if req.Confirm != nil && h.commands != nil {
+		res, err := h.commands.Confirm(r.Context(), userID, req.Confirm.Token, req.Confirm.Yes, req.Unlocked)
+		if err != nil {
+			res = service.Result{Reply: "I could not do that right now."}
+		}
+		httputil.JSON(w, http.StatusOK, VoiceTurnResponse{Kind: "command", Reply: res.Reply, ManagerName: ResolveManagerName(r.Context(), h.profiles, userID)})
+		return
+	}
 	text := strings.TrimSpace(req.Text)
 	switch {
 	case text == "":
@@ -103,6 +127,25 @@ func (h *VoiceHandler) PostTurn(w http.ResponseWriter, r *http.Request) {
 		out.Kind, out.Reply = "wake", "Yes?"
 		httputil.JSON(w, http.StatusOK, out)
 		return
+	}
+
+	// Tasks and approvals by voice: answered here, the same for every client. A sentence that only looked like one
+	// (it names none of the owner's tasks) carries on as ordinary conversation or work.
+	if h.commands != nil {
+		if cmd := service.ParseTaskCommand(message); cmd.Kind != service.CmdNone {
+			res, err := h.commands.Run(r.Context(), userID, cmd, req.Unlocked)
+			switch {
+			case err != nil:
+				slog.Warn("voice: task command failed", "user_id", userID, "error", err)
+				out.Kind, out.Reply = "command", "I could not read your tasks right now."
+				httputil.JSON(w, http.StatusOK, out)
+				return
+			case !res.NotHandled:
+				out.Kind, out.Reply, out.ConfirmToken = "command", res.Reply, res.ConfirmToken
+				httputil.JSON(w, http.StatusOK, out)
+				return
+			}
+		}
 	}
 
 	if service.ClassifyMessage(message) == service.MessageKindObjective {

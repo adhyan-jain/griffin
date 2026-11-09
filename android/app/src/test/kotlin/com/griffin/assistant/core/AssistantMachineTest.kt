@@ -116,6 +116,13 @@ class AssistantMachineTest {
         assertNull(no.state.pending)
     }
 
+    @Test fun `a change Griffin asked about is confirmed the same way as a text`() {
+        val ask = PendingAction(PendingAction.Kind.Server, "", "token-123", "", "")
+        val s = AssistantMachine.reduce(AState(phase = Phase.Thinking), AEvent.ConfirmRequested(ask, now = 0)).state
+        assertEquals(listOf<Effect>(Effect.Confirmed(ask)), heard(s, "yes", now = 2000).effects)
+        assertEquals(listOf<Effect>(Effect.Declined(ask)), heard(s, "no", now = 2000).effects)
+    }
+
     @Test fun `any other sentence cancels the wait and is treated as ordinary input`() {
         val s = AssistantMachine.reduce(AState(), AEvent.ConfirmRequested(sms, now = 0)).state
         val step = heard(s, "hey JJ what time is it", now = 1000)

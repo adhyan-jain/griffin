@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +17,8 @@ import (
 	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/provider/gemini"
+	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/service"
 )
 
 type fakeProfiles struct {
@@ -208,4 +211,92 @@ func TestJJChat_UsesAndCarriesTheManagerName(t *testing.T) {
 	require.NoError(t, json.Unmarshal(obj.last.Context, &ctx))
 	require.Len(t, ctx.History, 2, "a conversation that became work carries what was already said")
 	assert.Equal(t, "hello", ctx.History[1].Text)
+}
+
+// ---- task commands through the voice route ----
+
+type voiceFakeStore struct {
+	tasks   []*domain.Task
+	deleted []uuid.UUID
+}
+
+func (f *voiceFakeStore) ListTasks(_ context.Context, flt repository.TaskFilter) ([]*domain.Task, error) {
+	var out []*domain.Task
+	for _, t := range f.tasks {
+		if flt.UserID == nil || t.UserID == *flt.UserID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+func (f *voiceFakeStore) CancelTask(context.Context, uuid.UUID, string) error { return nil }
+func (f *voiceFakeStore) DeleteTask(_ context.Context, id uuid.UUID) error {
+	f.deleted = append(f.deleted, id)
+	return nil
+}
+func (f *voiceFakeStore) ListApprovals(context.Context, uuid.UUID, *domain.ApprovalStatus) ([]*domain.Approval, error) {
+	return nil, nil
+}
+func (f *voiceFakeStore) RespondApproval(context.Context, uuid.UUID, uuid.UUID, bool, string) (*domain.Approval, error) {
+	return nil, nil
+}
+
+func postVoiceFull(t *testing.T, h *VoiceHandler, user uuid.UUID, body string) VoiceTurnResponse {
+	t.Helper()
+	code, env := postVoice(t, h, user, body)
+	require.Equal(t, http.StatusOK, code)
+	return env.Data
+}
+
+func TestVoice_TasksCanBeListedAndDeletedByVoiceWithAConfirmation(t *testing.T) {
+	user := uuid.New()
+	mk := func(title string, st domain.TaskStatus) *domain.Task {
+		return &domain.Task{ID: uuid.New(), UserID: user, Title: title, Goal: title, Status: st, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	}
+	store := &voiceFakeStore{tasks: []*domain.Task{mk("Cover letter", domain.TaskStatusCompleted), mk("Report", domain.TaskStatusCompleted), mk("Research", domain.TaskStatusRunning)}}
+	brain := &fakeBrain{enabled: true, reply: "from the brain"}
+	h := NewVoiceHandler(brain, &fakeProfiles{}).WithCommands(&service.VoiceCommands{Tasks: store, Approvals: store, Secret: []byte("k")})
+
+	// reading is immediate and never reaches the model
+	r := postVoiceFull(t, h, user, `{"text":"hey JJ list my tasks"}`)
+	assert.Equal(t, "command", r.Kind)
+	assert.Contains(t, r.Reply, "You have 3 tasks.")
+	assert.Empty(t, r.ConfirmToken)
+	assert.Zero(t, brain.calls)
+
+	// a change asks first, and only on an unlocked device
+	r = postVoiceFull(t, h, user, `{"text":"delete finished tasks"}`)
+	assert.Contains(t, r.Reply, "Unlock your phone")
+	r = postVoiceFull(t, h, user, `{"text":"delete finished tasks","unlocked":true}`)
+	require.NotEmpty(t, r.ConfirmToken)
+	assert.Equal(t, "Delete 2 finished tasks? Say yes to confirm.", r.Reply)
+	assert.Empty(t, store.deleted, "nothing is deleted until the owner agrees")
+
+	no := postVoiceFull(t, h, user, `{"confirm":{"token":"`+r.ConfirmToken+`","yes":false},"unlocked":true}`)
+	assert.Equal(t, "Okay, I will leave it.", no.Reply)
+	assert.Empty(t, store.deleted)
+	yes := postVoiceFull(t, h, user, `{"confirm":{"token":"`+r.ConfirmToken+`","yes":true},"unlocked":true}`)
+	assert.Equal(t, "Deleted 2.", yes.Reply)
+	assert.Len(t, store.deleted, 2)
+
+	// another person's token is useless to them
+	r2 := postVoiceFull(t, h, user, `{"text":"delete finished tasks","unlocked":true}`)
+	other := postVoiceFull(t, h, uuid.New(), `{"confirm":{"token":"`+r2.ConfirmToken+`","yes":true},"unlocked":true}`)
+	assert.NotContains(t, other.Reply, "Deleted")
+	assert.Len(t, store.deleted, 2)
+}
+
+func TestVoice_ASentenceThatOnlyLooksLikeATaskCommandCarriesOn(t *testing.T) {
+	user := uuid.New()
+	store := &voiceFakeStore{}
+	brain := &fakeBrain{enabled: true, reply: "Sure."}
+	h := NewVoiceHandler(brain, &fakeProfiles{}).WithCommands(&service.VoiceCommands{Tasks: store, Approvals: store})
+	// "delete the moon" names none of their tasks: ordinary conversation, answered by the model
+	r := postVoiceFull(t, h, user, `{"text":"delete the moon photos","unlocked":true}`)
+	assert.Equal(t, "conversation", r.Kind)
+	assert.Equal(t, "Sure.", r.Reply)
+	assert.Equal(t, 1, brain.calls)
+	// and without the commands wired, task words are just conversation too
+	plain := NewVoiceHandler(&fakeBrain{enabled: true, reply: "ok"}, &fakeProfiles{})
+	assert.Equal(t, "conversation", postVoiceFull(t, plain, user, `{"text":"list my tasks"}`).Kind)
 }

@@ -20,7 +20,8 @@ enum class Phase { Idle, Awake, Thinking, Speaking, Confirming }
 
 /** Something the assistant asked the owner to confirm before doing it. */
 data class PendingAction(val kind: Kind, val who: String, val target: String, val text: String, val via: String) {
-    enum class Kind { Sms, Reply }
+    /** Sms and Reply are done on the phone; Server is a change Griffin asked the owner to confirm (the token is in [target]). */
+    enum class Kind { Sms, Reply, Server }
 }
 
 data class AState(

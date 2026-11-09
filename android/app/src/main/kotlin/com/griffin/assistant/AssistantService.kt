@@ -131,7 +131,7 @@ class AssistantService : Service() {
             Effect.Beep -> { app.log("woke"); beep() }
             is Effect.Handle -> handle(effect.request)
             is Effect.Confirmed -> carryOut(effect.action)
-            is Effect.Declined -> say("Okay, not sending it.")
+            is Effect.Declined -> say(if (effect.action.kind == PendingAction.Kind.Server) "Okay, I will leave it." else "Okay, not sending it.")
             Effect.AnswerCall -> actions.answer()?.let { say(it) }
             Effect.RejectCall -> actions.reject()?.let { say(it) }
         }
@@ -141,6 +141,14 @@ class AssistantService : Service() {
         when (a.kind) {
             PendingAction.Kind.Sms -> say(actions.sendSms(a.target, a.text) ?: "Sent to ${a.who}.")
             PendingAction.Kind.Reply -> say(Inbox.reply(this, a.target, a.text) ?: "Replied to ${a.who} on ${a.via}.")
+            PendingAction.Kind.Server -> app.net.execute {
+                try {
+                    val r = app.api.voiceConfirm(a.target, true, unlocked())
+                    app.main.post { say(r.reply.ifBlank { "Done." }) }
+                } catch (e: Exception) {
+                    app.main.post { say("I could not reach Griffin to do that.") }
+                }
+            }
         }
     }
 
@@ -173,6 +181,9 @@ class AssistantService : Service() {
     }
 
     private fun finished() = dispatch(AEvent.WorkFinished)
+
+    /** Changes to tasks and approvals by voice need the phone unlocked: a spoken yes does not prove who said it. */
+    private fun unlocked() = !(getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked ?: true)
 
     private fun beepSoon() = beep()
 
@@ -282,11 +293,14 @@ class AssistantService : Service() {
     private fun askGriffin(request: String) {
         if (!app.api.signedIn) { say("Please sign in in the Griffin app first."); return }
         val past = history.takeLast(8).toList()
+        val unlocked = unlocked()
         app.net.execute {
             try {
-                val r = app.api.voiceTurn(request, past)
+                val r = app.api.voiceTurn(request, past, unlocked)
                 name = r.managerName
                 app.main.post {
+                    // Griffin asked for a yes before changing anything: wait for it with the animation showing.
+                    r.confirmToken?.let { dispatch(AEvent.ConfirmRequested(PendingAction(PendingAction.Kind.Server, "", it, "", ""), System.currentTimeMillis())) }
                     if (r.reply.isNotBlank()) say(r.reply) else if (!r.handoff) finished()
                     history += "user" to request
                     if (r.reply.isNotBlank()) history += "assistant" to r.reply

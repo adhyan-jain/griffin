@@ -2,7 +2,7 @@
 
 import { Kinetic } from "@/components/fx/kinetic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2, RotateCcw, Sparkles, WifiOff } from "lucide-react";
+import { ArrowUp, Loader2, Mic, RotateCcw, Sparkles, WifiOff } from "lucide-react";
 import { api, JJEndpointUnavailable, type Task } from "@/lib/api";
 import { useManagerName } from "@/lib/manager-name";
 import { buildHistory, pollIntervalMs, reduceReply, type Provider, type ReplyEvent, type Turn } from "@/lib/jj-chat";
@@ -10,6 +10,7 @@ import { usePolling } from "@/lib/use-polling";
 import { useOnline } from "@/lib/use-online";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { VoicePanel } from "@/components/voice-panel";
 import { ErrorNote } from "@/components/page";
 import { ChatText } from "@/components/chat-text";
 import { PlanCard } from "@/components/plan-card";
@@ -97,6 +98,8 @@ export default function ChatPage() {
       dispatch(id, { type: "error", reason: errText(e) });
     }
   };
+
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const send = (raw: string) => {
     const message = raw.trim();
@@ -227,6 +230,7 @@ export default function ChatPage() {
         <div ref={endRef} />
       </div>
 
+      {voiceOpen && <VoicePanel onHandoff={(t) => send(t)} />}
       <form
         className="flex items-end gap-2 border-t bg-background py-3"
         onSubmit={(e) => {
@@ -234,6 +238,9 @@ export default function ChatPage() {
           send(text);
         }}
       >
+        <Button type="button" size="icon" variant={voiceOpen ? "secondary" : "ghost"} className="size-11 shrink-0 rounded-full" onClick={() => setVoiceOpen((v) => !v)} aria-label={voiceOpen ? "Hide voice" : "Talk instead of typing"} aria-pressed={voiceOpen}>
+          <Mic />
+        </Button>
         <Textarea
           aria-label={`Message ${managerName}`}
           value={text}

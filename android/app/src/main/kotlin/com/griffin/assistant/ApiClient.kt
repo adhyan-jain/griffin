@@ -8,7 +8,7 @@ import java.net.URL
 import java.util.UUID
 
 /** What the voice route answered. */
-data class VoiceReply(val kind: String, val reply: String, val handoff: Boolean, val managerName: String, val fallback: String?)
+data class VoiceReply(val kind: String, val reply: String, val handoff: Boolean, val managerName: String, val fallback: String?, val confirmToken: String? = null)
 
 class ApiException(message: String, val status: Int = 0) : Exception(message)
 
@@ -16,7 +16,7 @@ class ApiException(message: String, val status: Int = 0) : Exception(message)
 fun parseVoiceReply(body: String): VoiceReply {
     val root = JSONObject(body)
     val d = root.optJSONObject("data") ?: root
-    return VoiceReply(d.optString("kind", "conversation"), d.optString("reply", ""), d.optBoolean("handoff", false), d.optString("manager_name", "JJ"), d.optString("fallback").ifEmpty { null })
+    return VoiceReply(d.optString("kind", "conversation"), d.optString("reply", ""), d.optBoolean("handoff", false), d.optString("manager_name", "JJ"), d.optString("fallback").ifEmpty { null }, d.optString("confirm_token").ifEmpty { null })
 }
 
 /** Talks to Griffin's API with the owner's own sign-in. All calls block: run them off the main thread. */
@@ -123,8 +123,12 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     private fun historyJson(history: List<Pair<String, String>>) = JSONArray().apply { history.forEach { put(JSONObject().put("role", it.first).put("text", it.second)) } }
 
     /** A quick spoken answer, or a hand-off when the request is real work. */
-    fun voiceTurn(text: String, history: List<Pair<String, String>>): VoiceReply =
-        parseVoiceReply(api("POST", "/api/v1/voice/turn", JSONObject().put("text", text).put("history", historyJson(history))))
+    fun voiceTurn(text: String, history: List<Pair<String, String>>, unlocked: Boolean = false): VoiceReply =
+        parseVoiceReply(api("POST", "/api/v1/voice/turn", JSONObject().put("text", text).put("history", historyJson(history)).put("unlocked", unlocked)))
+
+    /** Answers a "say yes to confirm" from Griffin (cancel, delete, approve ...) with the owner's yes or no. */
+    fun voiceConfirm(token: String, yes: Boolean, unlocked: Boolean): VoiceReply =
+        parseVoiceReply(api("POST", "/api/v1/voice/turn", JSONObject().put("unlocked", unlocked).put("confirm", JSONObject().put("token", token).put("yes", yes))))
 
     /** Sends real work to the manager with the conversation so far. */
     fun sendMessage(text: String, history: List<Pair<String, String>>) {

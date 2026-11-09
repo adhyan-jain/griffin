@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
+	"github.com/griffin/core/internal/domain"
 	"log/slog"
 	"net/http"
 	"time"
@@ -208,6 +210,9 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	// A nil client is fine here: its Enabled reports false, so every voice turn hands off.
 	voiceHandler := handlers.NewVoiceHandler(deps.VoiceBrain, profiles)
+	if deps.Engine != nil && deps.ApprovalRepo != nil {
+		voiceHandler.WithCommands(&service.VoiceCommands{Tasks: deps.Engine, Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine}, Secret: []byte(deps.Config.SupabaseJWTSecret)})
+	}
 	mux.Handle("POST /api/v1/voice/turn", userAuth(http.HandlerFunc(voiceHandler.PostTurn)))
 
 	// Worker Definition / Agent Factory routes
@@ -357,4 +362,18 @@ func summaryBrain(b handlers.VoiceBrain) service.PlanBrain {
 		return pb
 	}
 	return nil
+}
+
+// voiceApprovals joins the approval list (a repository) and the decision (the engine) for the voice commands.
+type voiceApprovals struct {
+	repo   repository.ApprovalRepository
+	engine *service.TaskEngine
+}
+
+func (v voiceApprovals) ListApprovals(ctx context.Context, user uuid.UUID, st *domain.ApprovalStatus) ([]*domain.Approval, error) {
+	return v.repo.ListApprovals(ctx, user, st)
+}
+
+func (v voiceApprovals) RespondApproval(ctx context.Context, id, user uuid.UUID, ok bool, reason string) (*domain.Approval, error) {
+	return v.engine.RespondApproval(ctx, id, user, ok, reason)
 }
