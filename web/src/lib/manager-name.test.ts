@@ -7,11 +7,27 @@ vi.mock("@/lib/api", () => ({
 import { api } from "@/lib/api";
 import { DEFAULT_MANAGER_NAME, refreshManagerName, resetManagerNameForTests, saveManagerName } from "@/lib/manager-name";
 
+// Newer Node versions ship a global localStorage that does not work without a file and hides jsdom's own, so the
+// test brings an in-memory one. The code under test reads and writes it exactly as a browser's.
+function memoryStorage(): Storage {
+  const data = new Map<string, string>();
+  return {
+    get length() { return data.size; },
+    clear: () => data.clear(),
+    getItem: (k) => (data.has(k) ? data.get(k)! : null),
+    key: (i) => Array.from(data.keys())[i] ?? null,
+    removeItem: (k) => void data.delete(k),
+    setItem: (k, v) => void data.set(k, String(v)),
+  };
+}
+
 const getMock = vi.mocked(api.getManagerName);
 const putMock = vi.mocked(api.putManagerName);
 const setting = (manager_name: string) => ({ manager_name, default: "JJ", is_default: manager_name === "JJ" });
 
 beforeEach(() => {
+  vi.stubGlobal("localStorage", memoryStorage());
+  Object.defineProperty(window, "localStorage", { value: memoryStorage(), configurable: true });
   resetManagerNameForTests();
   getMock.mockReset();
   putMock.mockReset();
