@@ -530,3 +530,56 @@ func TestGatewayFollowsThePolicyTheAgentReceived(t *testing.T) {
 		t.Fatalf("after the owner turns everything off the gateway must refuse, got %v", err)
 	}
 }
+
+func TestDrainHandsARunningTaskBackAsRetryableAndStopsClaiming(t *testing.T) {
+	f := newFakeAPI(t)
+	task := newTask("long job")
+	f.enqueue(task)
+	started := make(chan struct{})
+	var once sync.Once
+	exec := fnExec{fn: func(ctx context.Context, _ *domain.Task) (*worker.ExecutionResult, error) {
+		once.Do(func() { close(started) })
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	a, _, _ := startAgent(t, f, exec, "agent")
+	<-started
+	if got := a.RunningTasks(); len(got) != 1 || got[0].Title != "long job" || got[0].ID != task.ID.String() {
+		t.Fatalf("the handover note needs to know what is running, got %+v", got)
+	}
+
+	if n := a.Drain("laptop battery is at 5%"); n != 1 {
+		t.Fatalf("Drain should ask the one running task to stop, asked %d", n)
+	}
+	waitFor(t, "task handed back", func() bool { _, ok := f.failure(task.ID.String()); return ok })
+	got, _ := f.failure(task.ID.String())
+	if got["retryable"] != true || got["reason"] != "paused: laptop battery is at 5%" {
+		t.Fatalf("a drained task must come back retryable with the reason, got %v", got)
+	}
+	waitFor(t, "nothing running", func() bool { return a.InFlight() == 0 && len(a.RunningTasks()) == 0 })
+
+	// While draining nothing new is claimed.
+	f.enqueue(newTask("waits"))
+	time.Sleep(150 * time.Millisecond)
+	f.mu.Lock()
+	queued := len(f.queue)
+	f.mu.Unlock()
+	if queued == 0 || !a.Draining() {
+		t.Fatalf("a draining host must leave queued work alone (queued=%d draining=%v)", queued, a.Draining())
+	}
+
+	a.Resume()
+	waitFor(t, "work claimed again after Resume", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.queue) == 0 })
+}
+
+func TestDrainWithNothingRunningIsHarmless(t *testing.T) {
+	f := newFakeAPI(t)
+	a, _, _ := startAgent(t, f, fnExec{fn: func(context.Context, *domain.Task) (*worker.ExecutionResult, error) { return nil, nil }}, "agent")
+	if n := a.Drain("x"); n != 0 {
+		t.Fatalf("nothing was running, asked %d", n)
+	}
+	a.Resume()
+	if a.Draining() {
+		t.Fatal("Resume must clear the pause")
+	}
+}

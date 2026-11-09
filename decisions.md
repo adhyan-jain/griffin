@@ -586,3 +586,10 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Decision**: See PRD 7.18. Mirrors only allowed folders, one-time filename-only scan with the owner ticking, misses recorded and resolved on the laptop's next run, camera scan from the phone. PAN, Aadhaar, passport and similar are encrypted before upload with a passphrase key the owner holds.
 - **Rejected**: syncing whole folders (leaks everything on one mistake); server-side encryption alone for identity documents (the cloud account would hold both lock and key).
 - **Open**: coding with no laptop reverses "the EC2 stays text-only" and waits for the owner's decision.
+
+#### ADR-086: Low-battery handover saves open work to a new branch and hands tasks back, in three stages
+- **Status**: BUILT (`internal/handover`, `griffin-host` with `HOST_HANDOVER=1`); tested against real git repositories and a bare remote, including breaking the secret filter and the fast-forward rule on purpose to confirm the tests fail. Not yet observed on a real draining battery.
+- **Decision**: 15% saves locally, 5% hands running tasks back (retryable, with the reason) and pushes, 2% saves and pushes once more. A snapshot uses a temporary git index and `commit-tree`, so it cannot change the owner's branch, index or files; it only creates or continues `griffin/handover-<time>` and pushes that one branch without force. Secret-like and large files are skipped.
+- **Why not only at 2%**: a push needs the network and seconds, and a laptop can die from 2% almost at once. 2% is kept as the last call, and the thresholds are configurable.
+- **Rejected**: committing on the owner's current branch (it rewrites their history and index); `git stash` (it touches the working tree); pushing everything with `git add -A` into a real index (a secret could ride along).
+- **Known limits**: Linux only; unsaved editor buffers are not covered; `--no-verify` is used on the throwaway branch's push so a slow hook cannot block it; a task handed back uses one of its retries.

@@ -188,6 +188,13 @@ func run(logger *slog.Logger, check bool) error {
 		}
 		logger.Info("outward actions are audited", "audit_log", filepath.Join(stateDir(), "audit.log"))
 	}
+	if handoverEnabled() {
+		h, herr := newHandover(logger, agent)
+		if herr != nil {
+			return herr
+		}
+		h.start(ctx, logger)
+	}
 	logger.Info("griffin-host online", "version", Version, "api", apiURL, "capabilities", caps)
 	err = agent.Run(ctx)
 	if errors.Is(err, hostagent.ErrUnauthorized) {

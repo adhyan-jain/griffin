@@ -42,6 +42,14 @@ type Agent struct {
 	inFlight atomic.Int32
 	wg       sync.WaitGroup
 
+	// draining is a local pause (for example a low laptop battery): nothing new is claimed and running
+	// tasks are asked to stop and requeue. It is separate from paused, which the owner sets in the app
+	// and every heartbeat overwrites.
+	draining    atomic.Bool
+	drainReason atomic.Value // string
+	runMu       sync.Mutex
+	running     map[string]*runningTask
+
 	polMu   sync.RWMutex
 	pol     policy.Policy
 	polVer  int
@@ -113,6 +121,48 @@ func (a *Agent) syncPolicy(ctx context.Context, serverVersion int) {
 // InFlight is the number of tasks currently running.
 func (a *Agent) InFlight() int { return int(a.inFlight.Load()) }
 
+type runningTask struct {
+	title  string
+	cancel context.CancelFunc
+}
+
+// RunningTask names a task this host is working on right now.
+type RunningTask struct {
+	ID    string
+	Title string
+}
+
+// RunningTasks lists what the host is doing, for a handover note.
+func (a *Agent) RunningTasks() []RunningTask {
+	a.runMu.Lock()
+	defer a.runMu.Unlock()
+	out := make([]RunningTask, 0, len(a.running))
+	for id, t := range a.running {
+		out = append(out, RunningTask{ID: id, Title: t.title})
+	}
+	return out
+}
+
+// Drain stops claiming work and asks every running task to stop. Each stopped task is reported as a
+// retryable failure carrying reason, so the cloud requeues it at once instead of waiting for the lease to
+// run out. It returns how many tasks were asked to stop. Resume undoes it.
+func (a *Agent) Drain(reason string) int {
+	a.drainReason.Store(reason)
+	a.draining.Store(true)
+	a.runMu.Lock()
+	defer a.runMu.Unlock()
+	for _, t := range a.running {
+		t.cancel()
+	}
+	return len(a.running)
+}
+
+// Resume lets the host claim work again after a Drain.
+func (a *Agent) Resume() { a.draining.Store(false) }
+
+// Draining reports whether a local pause is in effect.
+func (a *Agent) Draining() bool { return a.draining.Load() }
+
 // Paused reports whether the owner has paused this host.
 func (a *Agent) Paused() bool { return a.paused.Load() }
 
@@ -134,7 +184,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			a.wg.Wait()
 			return err
 		case <-t.C:
-			if a.paused.Load() || int(a.inFlight.Load()) >= a.cfg.MaxConcurrent {
+			if a.paused.Load() || a.draining.Load() || int(a.inFlight.Load()) >= a.cfg.MaxConcurrent {
 				continue
 			}
 			claimed, err := a.cfg.Client.Claim(ctx)
@@ -208,6 +258,17 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 
 	taskCtx, cancelTask := context.WithCancel(ctx)
 	defer cancelTask()
+	a.runMu.Lock()
+	if a.running == nil {
+		a.running = map[string]*runningTask{}
+	}
+	a.running[id] = &runningTask{title: task.Title, cancel: cancelTask}
+	a.runMu.Unlock()
+	defer func() {
+		a.runMu.Lock()
+		delete(a.running, id)
+		a.runMu.Unlock()
+	}()
 	done := make(chan struct{})
 	defer close(done)
 	go func() { // keep the lease alive; losing it means someone else may be given the task
@@ -230,6 +291,18 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 	execTask := worker.WithDependencyOutputs(task, c.Dependencies)
 	execCtx := worker.WithApprovedActions(worker.WithDependencyContext(taskCtx, c.Dependencies), c.ApprovedActions)
 	res, execErr := a.cfg.Executor.Execute(execCtx, execTask)
+	if taskCtx.Err() != nil && ctx.Err() == nil && a.draining.Load() {
+		// A local pause asked this task to stop. Hand it back now, as retryable, so it does not sit until
+		// the lease runs out. The reason says why, for the owner and for whoever takes it next.
+		reason, _ := a.drainReason.Load().(string)
+		if reason == "" {
+			reason = "this device paused the task"
+		}
+		if err := a.cfg.Client.Fail(report, id, "paused: "+reason, true); err != nil {
+			a.logger.Error("could not hand the paused task back", "task_id", id, "error", err)
+		}
+		return
+	}
 	if taskCtx.Err() != nil {
 		// Either the lease was lost (the API already treats the task as abandoned and reporting would be
 		// refused) or the host is shutting down. In both cases report nothing: the lease expires and the

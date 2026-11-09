@@ -94,8 +94,12 @@ func runSubcommand(ctx context.Context, logger *slog.Logger, name string) error 
 		return whatsappLogin(ctx, logger)
 	case "whatsapp-check":
 		return whatsappCheck(ctx, logger)
+	case "handover-check":
+		return handoverCheck(ctx, logger)
+	case "handover-test":
+		return handoverTest(ctx, logger)
 	}
-	return fmt.Errorf("unknown command %q (expected whatsapp-login or whatsapp-check)", name)
+	return fmt.Errorf("unknown command %q (expected whatsapp-login, whatsapp-check, handover-check or handover-test)", name)
 }
 
 func whatsappLogin(ctx context.Context, logger *slog.Logger) error {
