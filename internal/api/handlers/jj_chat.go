@@ -84,6 +84,10 @@ type JJMessageRequest struct {
 	History        []chatTurn          `json:"history,omitempty"`
 	Priority       domain.TaskPriority `json:"priority,omitempty"`
 	IdempotencyKey *string             `json:"idempotency_key,omitempty"`
+	// NewTask forces a fresh task even when the message looks like a continuation.
+	NewTask bool `json:"new_task,omitempty"`
+	// ContinueTaskID continues that finished task, as when the owner taps "continue in ..." on a suggestion.
+	ContinueTaskID string `json:"continue_task_id,omitempty"`
 }
 
 type runnerOutcome struct {
@@ -150,6 +154,13 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	managerName := ResolveManagerName(r.Context(), h.profiles, userID)
+	var respExtra map[string]any
+	if h.threads != nil && !req.NewTask {
+		var handled bool
+		if handled, respExtra = h.tryContinue(w, r, userID, message, req, managerName, history); handled {
+			return
+		}
+	}
 	// "Jarvis research X" is addressed to the manager; classify what was asked, but store the owner's own words.
 	toClassify := message
 	if stripped := service.StripLeadingName(message, managerName); stripped != "" {
@@ -163,10 +174,10 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	slog.Info("jj chat: message classified", "user_id", userID, "conversation_id", conversationID, "kind", kind, "reason", reason)
 
 	if kind == service.MessageKindObjective {
-		h.postObjective(w, r, userID, conversationID, message, req, history, managerName)
+		h.postObjectiveIn(w, r, userID, conversationID, message, req, history, managerName, nil, respExtra)
 		return
 	}
-	h.postConversation(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName)
+	h.postConversationIn(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName, nil, "Chat: ", respExtra)
 }
 
 func normalizeHistory(in []chatTurn) ([]chatTurn, error) {
@@ -187,13 +198,9 @@ func normalizeHistory(in []chatTurn) ([]chatTurn, error) {
 	return out, nil
 }
 
-func (h *JJChatHandler) postConversation(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, history []chatTurn, key *string, managerName string) {
-	h.postConversationIn(w, r, userID, conversationID, message, history, key, managerName, nil, "Chat: ")
-}
-
 // postConversationIn is postConversation for a message that may belong to a thread (extra holds the thread
 // fields) and with its own title prefix.
-func (h *JJChatHandler) postConversationIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, history []chatTurn, key *string, managerName string, extra map[string]any, titlePrefix string) {
+func (h *JJChatHandler) postConversationIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, history []chatTurn, key *string, managerName string, extra map[string]any, titlePrefix string, respExtra map[string]any) {
 	// A repeated idempotency key returns the original task; never a second one.
 	if key != nil {
 		if existing, err := h.tasks.GetTaskByIdempotencyKey(r.Context(), userID, *key); err == nil {
@@ -240,12 +247,16 @@ func (h *JJChatHandler) postConversationIn(w http.ResponseWriter, r *http.Reques
 
 	// The task is persisted; now wake the runner (never fails the request).
 	runnerOut := h.wakeRunner(created.ID, 1)
-	httputil.JSON(w, http.StatusCreated, map[string]any{
+	out := map[string]any{
 		"kind":            string(service.MessageKindConversation),
 		"conversation_id": conversationID.String(),
 		"task_id":         created.ID.String(),
 		"runner":          runnerOut,
-	})
+	}
+	for k, v := range respExtra {
+		out[k] = v
+	}
+	httputil.JSON(w, http.StatusCreated, out)
 }
 
 func (h *JJChatHandler) writeDuplicate(w http.ResponseWriter, existing *domain.Task, fallbackConv uuid.UUID) {
@@ -264,12 +275,8 @@ func (h *JJChatHandler) writeDuplicate(w http.ResponseWriter, existing *domain.T
 	})
 }
 
-func (h *JJChatHandler) postObjective(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string) {
-	h.postObjectiveIn(w, r, userID, conversationID, message, req, history, managerName, nil)
-}
-
 // postObjectiveIn is postObjective for a request that may belong to a thread (extra holds the thread fields).
-func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string, extra map[string]any) {
+func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string, extra map[string]any, respExtra map[string]any) {
 	ctxMap := map[string]any{"conversation_id": conversationID.String(), "source": "jj_messages", "manager_name": managerName}
 	if len(history) > 0 {
 		// A conversation that became work (for example a voice chat) carries what was already said.
@@ -302,13 +309,17 @@ func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, 
 		out = h.wakeRunner(orch.ID, n)
 	}
 
-	httputil.JSON(w, http.StatusCreated, map[string]any{
+	body := map[string]any{
 		"kind":            string(service.MessageKindObjective),
 		"conversation_id": conversationID.String(),
 		"orchestration":   orch,
 		"plan":            plan,
 		"runner":          out,
-	})
+	}
+	for k, v := range respExtra {
+		body[k] = v
+	}
+	httputil.JSON(w, http.StatusCreated, body)
 }
 
 // wakeRunner synchronously (bounded; Lambda freezes after the response) wakes a scale-to-zero

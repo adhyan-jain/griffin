@@ -207,3 +207,138 @@ func TestFollowUp_Validation(t *testing.T) {
 	code, _ = followUp(t, noThreads, user, done.ID, `{"message":"hi"}`)
 	assert.Equal(t, http.StatusNotFound, code, "a server without follow-ups says so")
 }
+
+// ---- automatic continuation of messages sent to /jj/messages ----
+
+type chatReply struct {
+	Data struct {
+		Kind      string         `json:"kind"`
+		TaskID    string         `json:"task_id"`
+		Continued map[string]any `json:"continued"`
+		Suggest   map[string]any `json:"suggestion"`
+	} `json:"data"`
+}
+
+func sendMsg(t *testing.T, h *JJChatHandler, user uuid.UUID, body string) (int, chatReply) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jj/messages", strings.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, user))
+	rec := httptest.NewRecorder()
+	h.PostMessage(rec, req)
+	var out chatReply
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return rec.Code, out
+}
+
+func recent(user uuid.UUID, goal, answer, payload string, ago time.Duration) *domain.Task {
+	t := mk(user, goal, answer, domain.TaskStatusCompleted, payload, 0)
+	done := time.Now().Add(-ago)
+	t.CreatedAt, t.UpdatedAt, t.CompletedAt = done.Add(-time.Minute), done, &done
+	return t
+}
+
+func TestAutoThread_AMessageThatContinuesJoinsTheThreadAndSaysWhy(t *testing.T) {
+	user := uuid.New()
+	letter := recent(user, "Draft a cover letter for the Acme internship", "Dear Acme team, I am excited to apply.", `{"kind":"chat"}`, 3*time.Minute)
+	h, store, _, _ := setup(letter)
+
+	code, out := sendMsg(t, h, user, `{"message":"make it shorter"}`)
+	require.Equal(t, http.StatusCreated, code)
+	require.Len(t, store.tasks, 1)
+	assert.Equal(t, letter.ID.String(), payloadOf(t, store.tasks[0])["thread_id"], "it joined the letter's thread")
+	require.NotNil(t, out.Data.Continued)
+	assert.Equal(t, letter.Title, out.Data.Continued["title"])
+	assert.NotEmpty(t, out.Data.Continued["reason"], "the owner is told why")
+	assert.NotEmpty(t, out.Data.TaskID)
+}
+
+func TestAutoThread_SomethingNewIsANewTaskAndNewTaskForcesIt(t *testing.T) {
+	user := uuid.New()
+	letter := recent(user, "Draft a cover letter for the Acme internship", "Dear Acme team.", `{}`, 3*time.Minute)
+	h, store, _, _ := setup(letter)
+
+	_, out := sendMsg(t, h, user, `{"message":"what is the weather in Pune tomorrow"}`)
+	require.Len(t, store.tasks, 1)
+	assert.False(t, domain.IsFollowUp(store.tasks[0]), "an unrelated question is its own task")
+	assert.Nil(t, out.Data.Continued)
+
+	_, out = sendMsg(t, h, user, `{"message":"make it shorter","new_task":true}`)
+	require.Len(t, store.tasks, 2)
+	assert.False(t, domain.IsFollowUp(store.tasks[1]), "new_task wins over the guess")
+	assert.Nil(t, out.Data.Continued)
+}
+
+func TestAutoThread_TheOwnerCanPickWhatToContinue(t *testing.T) {
+	user := uuid.New()
+	a := recent(user, "Draft a cover letter", "Dear team.", `{}`, 5*time.Hour)
+	b := recent(user, "Compare laptops", "The Acer wins.", `{}`, time.Minute)
+	running := mk(user, "Still going", "", domain.TaskStatusRunning, `{}`, 0)
+	h, store, _, _ := setup(a, b, running)
+
+	code, out := sendMsg(t, h, user, `{"message":"unrelated words entirely","continue_task_id":"`+a.ID.String()+`"}`)
+	require.Equal(t, http.StatusCreated, code)
+	assert.Equal(t, a.ID.String(), payloadOf(t, store.tasks[0])["thread_id"], "continue_task_id overrides the guess")
+	assert.Equal(t, "you chose to continue it", out.Data.Continued["reason"])
+
+	code, _ = sendMsg(t, h, user, `{"message":"hi","continue_task_id":"`+running.ID.String()+`"}`)
+	assert.Equal(t, http.StatusConflict, code, "a task that is still running cannot be continued")
+	code, _ = sendMsg(t, h, user, `{"message":"hi","continue_task_id":"nope"}`)
+	assert.Equal(t, http.StatusBadRequest, code)
+	code, _ = sendMsg(t, h, uuid.New(), `{"message":"hi","continue_task_id":"`+a.ID.String()+`"}`)
+	assert.Equal(t, http.StatusNotFound, code, "someone else's task")
+}
+
+func TestAutoThread_AChatConversationIsOneThreadUnlessItIsStillAnswering(t *testing.T) {
+	user := uuid.New()
+	conv := uuid.NewString()
+	first := recent(user, "hello there", "Hi! How can I help?", `{"kind":"chat","conversation_id":"`+conv+`"}`, 2*time.Minute)
+	h, store, _, th := setup(first)
+
+	_, out := sendMsg(t, h, user, `{"message":"tell me a joke","conversation_id":"`+conv+`"}`)
+	require.Len(t, store.tasks, 1)
+	assert.Equal(t, first.ID.String(), payloadOf(t, store.tasks[0])["thread_id"], "the second chat message continues the conversation's thread")
+	assert.Equal(t, "the same conversation", out.Data.Continued["reason"])
+
+	// while that follow-up is still running, the next message is a task of its own, as chat always worked
+	store.tasks[0].Status = domain.TaskStatusRunning
+	th.tasks = append(th.tasks, store.tasks[0])
+	code, out := sendMsg(t, h, user, `{"message":"and another","conversation_id":"`+conv+`"}`)
+	require.Equal(t, http.StatusCreated, code)
+	require.Len(t, store.tasks, 2)
+	assert.False(t, domain.IsFollowUp(store.tasks[1]))
+	assert.Nil(t, out.Data.Continued)
+
+	// a brand-new conversation is simply new
+	_, out = sendMsg(t, h, user, `{"message":"hello","conversation_id":"`+uuid.NewString()+`"}`)
+	assert.Nil(t, out.Data.Continued)
+}
+
+func TestAutoThread_AnUncertainMatchStartsANewTaskAndOffersTheOldOne(t *testing.T) {
+	user := uuid.New()
+	laptops := recent(user, "Compare laptops under 60000", "The Acer Swift Go 14 has the best screen. The Lenovo is quieter.", `{}`, 20*time.Minute)
+	h, store, _, _ := setup(laptops)
+	_, out := sendMsg(t, h, user, `{"message":"which of those laptops is the quietest"}`)
+	require.Len(t, store.tasks, 1)
+	if out.Data.Continued != nil {
+		return // judged confident enough to continue: also acceptable behaviour
+	}
+	require.NotNil(t, out.Data.Suggest, "a near miss should offer the earlier task")
+	assert.Equal(t, laptops.ID.String(), out.Data.Suggest["task_id"])
+	assert.False(t, domain.IsFollowUp(store.tasks[0]))
+}
+
+func TestAutoThread_ItNeverGetsInTheWayOfSending(t *testing.T) {
+	user := uuid.New()
+	h, store, _, th := setup()
+	h.WithThreads(failingThreads{th})
+	code, out := sendMsg(t, h, user, `{"message":"make it shorter"}`)
+	require.Equal(t, http.StatusCreated, code, "a failure to look at earlier tasks must not stop the message")
+	require.Len(t, store.tasks, 1)
+	assert.Nil(t, out.Data.Continued)
+}
+
+type failingThreads struct{ *fakeThreads }
+
+func (failingThreads) ListTasks(context.Context, repository.TaskFilter) ([]*domain.Task, error) {
+	return nil, assert.AnError
+}

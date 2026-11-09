@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/notify"
 	"github.com/griffin/core/internal/provider/gemini"
 	"log/slog"
 	"net/http"
@@ -156,7 +157,20 @@ func main() {
 	engine := service.NewTaskEngine(taskRepo, approvalRepo, logger)
 	mgrReg := manager.NewDefaultRegistry()
 	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, logger)
-	jjOrchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, nil, logger)
+	if topic := cfg.NtfyTopic; topic != "" {
+		engine.SetNotifier(&service.TaskNotifier{
+			Sender: &notify.Ntfy{Server: cfg.NtfyServer, Topic: topic, Token: cfg.NtfyToken},
+			Summ:   &service.Summarizer{Brain: summaryBrainFor(cfg)},
+			AppURL: cfg.AppURL,
+			ManagerName: func(ctx context.Context, userID uuid.UUID) string {
+				name, _ := profileRepo.ManagerName(ctx, userID)
+				return name
+			},
+			Logger: logger,
+		})
+		logger.Info("finish notifications are on", "server", cfg.NtfyServer)
+	}
+	jjOrchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, newPlanner(cfg, logger), logger)
 
 	// 7. Initialize Wakeup Controller for scale-to-zero
 	var instanceMgr runner.InstanceManager
@@ -255,6 +269,10 @@ func main() {
 					MaxConcurrent: cfg.MaxConcurrentClaude,
 					Timeout:       time.Duration(cfg.ExecutionTimeoutSeconds) * time.Second,
 					WorkspaceRoot: cfg.WorkspaceRoot,
+					LeadModel:     cfg.ClaudeLeadModel,
+					Effort:        cfg.ClaudeEffort,
+					LeadBudgetUSD: cfg.ClaudeLeadBudgetUSD,
+					BudgetCapUSD:  cfg.ClaudeBudgetCapUSD,
 					Logger:        logger,
 				})
 				if cerr != nil {
@@ -396,4 +414,36 @@ func voiceBrain(cfg *config.Config) *gemini.Client {
 		return nil
 	}
 	return &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: cfg.GeminiModel}
+}
+
+// newPlanner is the standard planner, upgraded when asked: with CLAUDE_LEAD a whole job goes to one Claude lead
+// that picks its own sub-agents; with DYNAMIC_PLANNER and a Gemini key a fast model writes a team of workers for
+// each request. Both fall back to the standard plan on any failure.
+func newPlanner(cfg *config.Config, logger *slog.Logger) service.Planner {
+	base := service.NewRuleBasedPlanner()
+	brain := voiceBrain(cfg)
+	useBrain := cfg.DynamicPlanner && brain != nil && brain.Enabled()
+	if !cfg.ClaudeLead && !useBrain {
+		return base
+	}
+	dp := &service.DynamicPlanner{Base: base, Logger: logger}
+	if useBrain {
+		dp.Brain = brain
+	}
+	if cfg.ClaudeLead {
+		dp.ClaudeLead = func() bool { return true }
+		logger.Info("Claude lead planning is on: whole jobs go to one Claude lead with its own sub-agents")
+	}
+	if useBrain {
+		logger.Info("dynamic planning is on: a team of workers is written for each request, with the standard plan as fallback")
+	}
+	return dp
+}
+
+// summaryBrainFor is the fast model for notification summaries, or nil without a key.
+func summaryBrainFor(cfg *config.Config) service.PlanBrain {
+	if b := voiceBrain(cfg); b != nil && b.Enabled() {
+		return b
+	}
+	return nil
 }

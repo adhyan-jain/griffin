@@ -26,6 +26,16 @@ type Config struct {
 	// AI Execution Provider settings (Phase 2)
 	AIProvider                 string // "antigravity" (default) or "mock"
 	ClaudeEnabled              bool   // optional second provider for language-only steps; off by default
+	ClaudeLead                 bool   // the planner hands whole jobs to one Claude lead with its own sub-agents (needs a signed-in claude on a worker)
+	ClaudeLeadModel            string // model alias for lead steps (sonnet by default)
+	ClaudeEffort               string // low, medium, high, xhigh or max
+	ClaudeLeadBudgetUSD        float64
+	ClaudeBudgetCapUSD         float64
+	DynamicPlanner             bool   // the fast model writes a team of workers per request (agy path); falls back to the standard plan
+	NtfyServer                 string // push service for finish notifications (default https://ntfy.sh)
+	NtfyTopic                  string // the private topic the phone subscribes to; empty turns notifications off
+	NtfyToken                  string // optional access token for a protected topic
+	AppURL                     string // the web app's address, used for the tap link
 	GeminiAPIKey               string // fast voice model key; empty disables the fast path (chat then waits for the worker)
 	GeminiModel                string // default gemini-flash-lite-latest
 	HostsEnabled               bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
@@ -125,6 +135,16 @@ func Load() (*Config, error) {
 		AIProvider:                      getEnv("AI_PROVIDER", "antigravity"),
 		ClaudeEnabled:                   getEnvAsBool("CLAUDE_ENABLED", false),
 		HostsEnabled:                    getEnvAsBool("HOSTS_ENABLED", false),
+		ClaudeLead:                      getEnvAsBool("CLAUDE_LEAD", false),
+		ClaudeLeadModel:                 getEnv("CLAUDE_LEAD_MODEL", "sonnet"),
+		ClaudeEffort:                    getEnv("CLAUDE_EFFORT", "medium"),
+		ClaudeLeadBudgetUSD:             getEnvAsFloat("CLAUDE_LEAD_BUDGET_USD", 0.50),
+		ClaudeBudgetCapUSD:              getEnvAsFloat("CLAUDE_BUDGET_CAP_USD", 2.00),
+		DynamicPlanner:                  getEnvAsBool("DYNAMIC_PLANNER", true),
+		NtfyServer:                      getEnv("NTFY_SERVER", "https://ntfy.sh"),
+		NtfyTopic:                       getEnv("NTFY_TOPIC", ""),
+		NtfyToken:                       getEnv("NTFY_TOKEN", ""),
+		AppURL:                          getEnv("APP_URL", "https://griffin-pwa.vercel.app"),
 		GeminiAPIKey:                    getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:                     getEnv("GEMINI_MODEL", ""),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),

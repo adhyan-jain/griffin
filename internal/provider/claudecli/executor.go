@@ -16,6 +16,9 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -40,7 +43,14 @@ type Config struct {
 	MaxConcurrent int    // default 2; Claude steps run beside the serialized agy ones
 	Timeout       time.Duration
 	WorkspaceRoot string
-	Model         string // optional
+	Model         string // default model alias for ordinary steps (optional)
+	// LeadModel and Effort apply to lead steps (see domain.ClaudeStepOptions). Empty means the CLI's default.
+	LeadModel string
+	Effort    string
+	// LeadBudgetUSD is the spend limit for one lead step (default 0.50). BudgetCapUSD is the most a step may
+	// ask for in its own options (default 2.00): the payload can lower the limit, never raise it past this.
+	LeadBudgetUSD float64
+	BudgetCapUSD  float64
 	Logger        *slog.Logger
 }
 
@@ -71,6 +81,12 @@ func New(cfg Config) (*Executor, error) {
 	if cfg.WorkspaceRoot == "" {
 		cfg.WorkspaceRoot = os.TempDir()
 	}
+	if cfg.LeadBudgetUSD <= 0 {
+		cfg.LeadBudgetUSD = 0.50
+	}
+	if cfg.BudgetCapUSD <= 0 {
+		cfg.BudgetCapUSD = 2.00
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -94,6 +110,39 @@ type taskPrompt struct {
 	Prompt string `json:"prompt"`
 }
 
+// leadPreamble is for a step where Claude runs the whole job with its own sub-agents.
+const leadPreamble = `You are the lead of a small team inside Griffin, an AI workforce. Do the whole job you are given.
+Plan briefly, then hand each independent part to the sub-agent best suited to it, choosing the cheapest one that can do that part well, and run independent parts at the same time. Do the final checking and writing yourself.
+You may read and search the web; you cannot run commands, change files or contact anyone. If you lack a fact, say so; never invent sources or URLs, and cite the address of every source you used.
+Answer in clear Markdown: a one-line answer first, then short sections, bullets for lists, tables for comparisons.
+If you find no relevant information, say so in one plain sentence instead of returning nothing.`
+
+// roster is the team a lead can delegate to. Models are aliases, so each follows Anthropic's current model
+// of that tier. The lead decides who to use; these are the choices and their tools, and every tool is read-only.
+const roster = `{
+  "researcher": {
+    "description": "Finds and reads sources and returns facts with their web addresses. Use for lookups, fetching pages and gathering evidence. Fast and cheap: run several at once for independent questions.",
+    "prompt": "You gather facts for the lead. Search, open the most relevant pages, and report only what the sources say, with each source's address. Say plainly what you could not find.",
+    "model": "haiku",
+    "tools": ["WebSearch", "WebFetch", "Read", "Grep", "Glob"]
+  },
+  "analyst": {
+    "description": "Compares, reasons over and drafts from material that has already been gathered. Use for analysis, comparisons and first drafts.",
+    "prompt": "You analyse the material the lead gives you and return a clear, well-organised result. Do not invent facts that are not in the material.",
+    "model": "sonnet",
+    "tools": ["Read", "Grep", "Glob"]
+  },
+  "critic": {
+    "description": "Checks a conclusion or draft for mistakes, unsupported claims and gaps. Use once, at the end, for answers that matter.",
+    "prompt": "You review the lead's draft. List concrete errors, unsupported claims and missing points, most important first. If it is sound, say so briefly.",
+    "model": "opus",
+    "tools": ["Read", "Grep", "Glob"]
+  }
+}`
+
+// leadTools is everything a lead step may use: read-only tools and the right to delegate.
+const leadTools = "Agent,WebSearch,WebFetch,Read,Grep,Glob"
+
 func buildPrompt(task *domain.Task) string {
 	body := task.Goal
 	var p taskPrompt
@@ -101,6 +150,10 @@ func buildPrompt(task *domain.Task) string {
 		body = p.Prompt
 	}
 	return preamble + "\n\n" + body
+}
+
+func buildLeadPrompt(task *domain.Task) string {
+	return leadPreamble + "\n\n" + strings.TrimPrefix(buildPrompt(task), preamble+"\n\n")
 }
 
 // childEnv drops every variable that could switch Claude to API-key or cloud billing.
@@ -117,6 +170,15 @@ func childEnv(env []string) []string {
 }
 
 type cliResult struct {
+	TotalCostUSD float64 `json:"total_cost_usd"`
+	NumTurns     int     `json:"num_turns"`
+	// ModelUsage is keyed by the models that actually ran, the lead's and its sub-agents'.
+	ModelUsage    map[string]json.RawMessage `json:"modelUsage"`
+	SubagentStats struct {
+		Spawned int            `json:"spawned"`
+		Failed  int            `json:"failed"`
+		ByType  map[string]int `json:"by_type"`
+	} `json:"subagent_stats"`
 	IsError   bool   `json:"is_error"`
 	Subtype   string `json:"subtype"`
 	Result    string `json:"result"`
@@ -167,9 +229,43 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 	}
 	defer func() { _ = os.RemoveAll(ws) }()
 
+	opts := domain.ParseClaudeOptions(task.InputPayload)
 	args := []string{"-p", buildPrompt(task), "--output-format", "json"}
-	if e.cfg.Model != "" {
-		args = append(args, "--model", e.cfg.Model)
+	model := e.cfg.Model
+	if opts.Model != "" {
+		model = opts.Model
+	}
+	effort := ""
+	if opts.Lead {
+		args[1] = buildLeadPrompt(task)
+		if opts.Model == "" && e.cfg.LeadModel != "" {
+			model = e.cfg.LeadModel
+		}
+		effort = opts.Effort
+		if effort == "" {
+			effort = e.cfg.Effort
+		}
+		budget := e.cfg.LeadBudgetUSD
+		if opts.Budget > 0 {
+			budget = opts.Budget
+		}
+		if budget > e.cfg.BudgetCapUSD {
+			budget = e.cfg.BudgetCapUSD // a step may lower its limit, never raise it past the owner's cap
+		}
+		rosterPath := filepath.Join(ws, "agents.json")
+		if err := os.WriteFile(rosterPath, []byte(roster), 0o600); err != nil {
+			return fail(execID, err, false)
+		}
+		// dontAsk refuses anything not listed, so a lead can use these read-only tools and nothing else, and
+		// bypassPermissions is never used.
+		args = append(args, "--agents", rosterPath, "--allowedTools", leadTools, "--permission-mode", "dontAsk",
+			"--max-budget-usd", strconv.FormatFloat(budget, 'f', 2, 64))
+	}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
 	}
 
 	procCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
@@ -208,7 +304,21 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 	}
 
 	text := strings.TrimSpace(res.Result)
-	out, _ := json.Marshal(map[string]string{"response": text})
+	var out []byte
+	if opts.Lead {
+		// Record who did the work and what it cost, so Attempts can show it and the owner can tune the budget.
+		models := make([]string, 0, len(res.ModelUsage))
+		for m := range res.ModelUsage {
+			models = append(models, m)
+		}
+		sort.Strings(models)
+		out, _ = json.Marshal(map[string]any{"response": text, "claude": map[string]any{
+			"lead": true, "cost_usd": res.TotalCostUSD, "turns": res.NumTurns, "models": models, "effort": effort,
+			"subagents": map[string]any{"spawned": res.SubagentStats.Spawned, "failed": res.SubagentStats.Failed, "by_type": res.SubagentStats.ByType},
+		}})
+	} else {
+		out, _ = json.Marshal(map[string]string{"response": text})
+	}
 	r := &worker.ExecutionResult{
 		ExecutionID:      execID,
 		ProviderName:     "claude",

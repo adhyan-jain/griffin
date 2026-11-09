@@ -195,6 +195,8 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("GET /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.GetManagerName)))
 		mux.Handle("PUT /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.PutManagerName)))
 	}
+	spokenHandler := handlers.NewSpokenHandler(deps.Engine, &service.Summarizer{Brain: summaryBrain(deps.VoiceBrain)}, profiles)
+	mux.Handle("GET /api/v1/tasks/{id}/spoken-summary", userAuth(http.HandlerFunc(spokenHandler.Get)))
 	var vaultHandler *handlers.VaultHandler
 	if deps.StorageService != nil && deps.ProfileRepo != nil {
 		vaultHandler = handlers.NewVaultHandler(deps.StorageService, deps.ProfileRepo, deps.Config.MaxUploadBytes)
@@ -344,4 +346,15 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Gracefully shutting down HTTP server")
 	return s.httpServer.Shutdown(ctx)
+}
+
+// summaryBrain adapts the fast voice model for summaries; nil stays nil so summaries fall back to the answer's own sentences.
+func summaryBrain(b handlers.VoiceBrain) service.PlanBrain {
+	if b == nil {
+		return nil
+	}
+	if pb, ok := b.(service.PlanBrain); ok {
+		return pb
+	}
+	return nil
 }

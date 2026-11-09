@@ -258,12 +258,33 @@ export interface JJMessageRequest {
   history?: JJHistoryTurn[];
   priority?: TaskPriority;
   idempotency_key?: string;
+  /** Force a fresh task even if the message looks like a continuation. */
+  new_task?: boolean;
+  /** Continue that finished task (the owner's choice, overriding the guess). */
+  continue_task_id?: string;
+}
+
+/** Set when the message was added to an earlier task's thread instead of becoming a new task. */
+export interface JJContinued {
+  task_id: string;
+  root_id: string;
+  title: string;
+  /** Why it was judged a continuation, in words the owner can read. */
+  reason: string;
+}
+
+/** Set when the message became a new task but might continue an earlier one. */
+export interface JJSuggestion {
+  task_id: string;
+  title: string;
+  reason: string;
 }
 
 /** 201 body of POST /api/v1/jj/messages. */
-export type JJMessageResult =
+export type JJMessageResult = (
   | { kind: "conversation"; conversation_id: string; task_id: string; runner?: RunnerWake }
-  | { kind: "objective"; conversation_id: string; orchestration: Orchestration; plan: OrchestrationPlan; runner?: RunnerWake };
+  | { kind: "objective"; conversation_id: string; orchestration: Orchestration; plan: OrchestrationPlan; runner?: RunnerWake }
+) & { continued?: JJContinued; suggestion?: JJSuggestion };
 
 // ---------------------------------------------------------------------------
 // Devices (hosts): a laptop or phone that connects out and does work (ADR-074, ADR-077)
@@ -641,6 +662,11 @@ export const api = {
     }
   },
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
+  /** A few seconds of speech about a task, for the Listen page (what a notification tap plays). */
+  getSpokenSummary: (taskId: string) =>
+    fetchWithAuth<{ text: string; case: "answer" | "summary" | "empty" | "failed" | "approval" | "running"; task_id: string; title: string; status: TaskStatus }>(
+      `/api/v1/tasks/${taskId}/spoken-summary`,
+    ),
   /** Continues a finished task: the message joins that task's thread and starts from what was said. */
   followUp: (taskId: string, message: string) =>
     fetchWithAuth<{ kind: "conversation" | "objective"; conversation_id: string; task_id?: string; orchestration?: { id: string; root_task_id?: string } }>(

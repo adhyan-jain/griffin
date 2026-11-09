@@ -24,6 +24,32 @@ type TaskEngine struct {
 	taskRepo     repository.TaskRepository
 	approvalRepo repository.ApprovalRepository
 	logger       *slog.Logger
+	notifier     FinishNotifier
+}
+
+// FinishNotifier is told when a top-level task finishes, so the owner can be told. It must be quick and must
+// never fail the task: errors are its own to log.
+type FinishNotifier interface {
+	TaskFinished(ctx context.Context, t *domain.Task)
+}
+
+// SetNotifier turns on finish notifications.
+func (e *TaskEngine) SetNotifier(n FinishNotifier) { e.notifier = n }
+
+// notifyFinished tells the notifier about a task that has just reached a final state. Steps of a plan are not
+// announced (the plan is), and a task that is being retried is not final.
+func (e *TaskEngine) notifyFinished(ctx context.Context, taskID uuid.UUID) {
+	if e.notifier == nil {
+		return
+	}
+	t, err := e.taskRepo.GetTaskByID(ctx, taskID)
+	if err != nil || t == nil || t.ParentID != nil || !t.IsTerminal() {
+		return
+	}
+	// The request may end the moment its response is sent; give the notification its own short deadline.
+	nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second)
+	defer cancel()
+	e.notifier.TaskFinished(nctx, t)
 }
 
 // NewTaskEngine constructs a new TaskEngine.
@@ -181,6 +207,7 @@ func (e *TaskEngine) CompleteTask(ctx context.Context, taskID uuid.UUID, workerI
 		}
 	}
 
+	e.notifyFinished(ctx, taskID)
 	return nil
 }
 
@@ -199,9 +226,11 @@ func (e *TaskEngine) FailTask(ctx context.Context, taskID uuid.UUID, workerID st
 		return fmt.Errorf("task_engine: fail task update: %w", err)
 	}
 
+	permanent := false
 	eventType := "RETRY"
 	msg := fmt.Sprintf("Task failed (retryable): %s. Scheduled retry in %s", reason, backoff)
 	if !retryable || task.RetryCount+1 >= task.MaxRetries {
+		permanent = true
 		eventType = "STATUS_CHANGE"
 		msg = fmt.Sprintf("Task failed permanently: %s", reason)
 
@@ -216,6 +245,9 @@ func (e *TaskEngine) FailTask(ctx context.Context, taskID uuid.UUID, workerID st
 		Metadata:  json.RawMessage("{}"),
 	})
 
+	if permanent {
+		e.notifyFinished(ctx, taskID)
+	}
 	return nil
 }
 

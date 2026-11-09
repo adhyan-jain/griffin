@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -125,7 +124,13 @@ func (h *JJChatHandler) PostFollowUp(w http.ResponseWriter, r *http.Request) {
 		httputil.ErrorJSON(w, fmt.Errorf("%w: wait for this task to finish (or cancel it) before following up", domain.ErrConflict))
 		return
 	}
+	h.continueTask(w, r, userID, target, message, req.IdempotencyKey, ResolveManagerName(r.Context(), h.profiles, userID), nil)
+}
 
+// continueTask adds message to the thread of a finished task and answers the request. respExtra is merged into
+// the response (how an automatic continuation tells the owner what it did).
+func (h *JJChatHandler) continueTask(w http.ResponseWriter, r *http.Request, userID uuid.UUID, target *domain.Task, message string, key *string, managerName string, respExtra map[string]any) {
+	var err error
 	// The thread's root: a plan's step continues its plan; a follow-up continues its own thread.
 	rootID, _ := domain.ThreadOf(target)
 	if target.ParentID != nil {
@@ -155,7 +160,6 @@ func (h *JJChatHandler) PostFollowUp(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(followUps, func(i, j int) bool { return followUps[i].CreatedAt.Before(followUps[j].CreatedAt) })
 	history := threadHistory(root, followUps)
 
-	managerName := ResolveManagerName(r.Context(), h.profiles, userID)
 	toClassify := message
 	if stripped := service.StripLeadingName(message, managerName); stripped != "" {
 		toClassify = stripped
@@ -167,10 +171,8 @@ func (h *JJChatHandler) PostFollowUp(w http.ResponseWriter, r *http.Request) {
 	thread := map[string]any{domain.ThreadIDKey: root.ID.String(), domain.FollowUpOfKey: target.ID.String()}
 
 	if kind == service.MessageKindObjective {
-		h.postObjectiveIn(w, r, userID, root.ID, message, JJMessageRequest{Message: message}, history, managerName, thread)
+		h.postObjectiveIn(w, r, userID, root.ID, message, JJMessageRequest{Message: message}, history, managerName, thread, respExtra)
 		return
 	}
-	h.postConversationIn(w, r, userID, root.ID, message, history, req.IdempotencyKey, managerName, thread, "Follow-up: ")
+	h.postConversationIn(w, r, userID, root.ID, message, history, key, managerName, thread, "Follow-up: ", respExtra)
 }
-
-var _ = errors.New

@@ -70,6 +70,11 @@ type chatEnvelope struct {
 	Kind    string     `json:"kind"`
 	Prompt  string     `json:"prompt"`
 	History []chatTurn `json:"history"`
+	// Role is a team role written for this request (see service.DynamicPlanner).
+	Role struct {
+		Name         string `json:"name"`
+		Instructions string `json:"instructions"`
+	} `json:"role"`
 }
 
 func truncateRunes(s string, n int) string {
@@ -104,6 +109,10 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 	var b strings.Builder
 	b.WriteString(pre)
 	b.WriteString("\n")
+	if role := roleLine(env.Role.Name, env.Role.Instructions); role != "" {
+		b.WriteString(role)
+		b.WriteString("\n")
+	}
 	if attemptNumber > 1 {
 		b.WriteString(retryPreamble)
 		b.WriteString("\n")
@@ -141,6 +150,28 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 	b.WriteString("\nCurrent user message:\n")
 	b.WriteString(body)
 	return b.String()
+}
+
+// roleLine tells a worker which part of the team it is. Both fields were written by the planner for one
+// request, so they are length-limited and stripped of control characters before they reach a prompt.
+func roleLine(name, instructions string) string {
+	clean := func(s string, max int) string {
+		s = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+			if r < 32 || r == 127 {
+				return -1
+			}
+			return r
+		}, s)), " ")
+		return truncateRunes(s, max)
+	}
+	n, i := clean(name, 40), clean(instructions, 600)
+	if n == "" {
+		return ""
+	}
+	if i == "" {
+		return "Your role on this team: " + n + "."
+	}
+	return "Your role on this team: " + n + ". " + i
 }
 
 // historyBlock renders the role-labelled conversation so far, or "" when there is none.

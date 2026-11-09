@@ -609,7 +609,19 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Known limits**: the transcript is the requests and the readable answers, not files; a thread's history keeps the first request and the latest turns once it passes ten; chat-page messages are still separate tasks.
 
 #### ADR-089: Use Claude's own sub-agents inside a step, and an LLM planner across steps
-- **Status**: DESIGN only; the order is waiting for the owner. Facts checked: `claude` 2.1.319 on this machine offers `--agents`, `--model`, `--effort`, `--permission-mode`, `--allowedTools` and `--max-budget-usd`.
+- **Status**: BUILT (`internal/provider/claudecli` lead mode, `internal/service/dynamic_planner.go`, `internal/domain/claude_options.go`); budget cap, read-only tool list, plan validation and the "never rewrite plans with rules" rule are mutation-tested. Owner's decision: Claude's sub-agents replace Griffin-made workers whenever Claude runs a job; with `agy`, the manager writes ephemeral role workers that imitate it. `CLAUDE_LEAD` is off until a Claude login exists on a worker. Facts checked: `claude` 2.1.319 on this machine offers `--agents`, `--model`, `--effort`, `--permission-mode`, `--allowedTools` and `--max-budget-usd`.
 - **Decision**: see PRD 7.10. Griffin sets tools, budget and effort ceilings; Claude chooses the sub-agents and their models within them. The keyword planner stays as the fallback for the LLM planner.
 - **Why**: the model is better than a word list at splitting work and picking a cheap model for easy parts, and the CLI exposes the controls needed to bound it.
 - **Risks**: cost (hence a hard budget per step and a daily cap), a planner that over-splits (a step limit and a measured comparison against the keyword planner), sub-agents with tools the owner did not intend (allow-list by tier), and unverified behaviour (capture real runs first).
+
+#### ADR-090: Finish notifications through ntfy, with a spoken summary on tap
+- **Status**: BUILT (`internal/notify`, `internal/service/spoken.go`, `finish_notifier.go`, `/listen/[id]`); not yet received on a phone.
+- **Decision**: the task engine tells a notifier when a top-level task reaches a final state; the notifier publishes a short, case-specific summary to the owner's ntfy topic, with the Listen page as the tap target. Ntfy was already the plan's choice over Web Push (no service worker, no keys, no subscription storage).
+- **Why a page and not audio in the notification**: a notification cannot play sound by itself; the page speaks it, and a browser needs a touch first, hence the Play button fallback.
+- **Rejected**: Web Push (more moving parts for the same result); a long notification body (it should be heard in seconds).
+
+#### ADR-091: Decide new task versus continuing one by explainable signals, and say why
+- **Status**: BUILT (`internal/service/thread_match.go`, `internal/api/handlers/auto_thread.go`); tested on made-up phrasings only.
+- **Decision**: continuation words, editing words about existing things, back-references, topic overlap, and recency are added up; fresh-request wording subtracts; at 0.60 or more the message joins the thread, from 0.35 a new task is made and the earlier one offered. A chat conversation the page holds is one thread unless it is still answering. The response always carries the reason.
+- **Why not a model**: it would add a call and a cold-start to every message, and a score can be explained and tuned; a model tie-break for the middle band is a possible later step.
+- **Known limits**: the weights are guesses until used for real; the chat page does not show the notes or an override yet.
