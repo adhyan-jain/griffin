@@ -21,19 +21,33 @@ fun parseVoiceReply(body: String): VoiceReply {
 
 /** Talks to Griffin's API with the owner's own sign-in. All calls block: run them off the main thread. */
 class ApiClient(private val store: SecretStore, private val prefs: android.content.SharedPreferences) {
+    // A different server (a test stand-in) is honoured only in debug builds, and signing out puts the real one back.
+    // A release build ignores any saved address, so a stale test setting can never leave it talking to nothing.
     var apiUrl: String
-        get() = prefs.getString("api_url", null)?.takeIf { it.isNotBlank() } ?: BuildConfig.API_URL
+        get() = (if (BuildConfig.DEBUG) prefs.getString("api_url", null)?.takeIf { it.isNotBlank() } else null) ?: BuildConfig.API_URL
         set(v) = prefs.edit().putString("api_url", v.trim().trimEnd('/')).apply()
     var authUrl: String
-        get() = prefs.getString("auth_url", null)?.takeIf { it.isNotBlank() } ?: BuildConfig.SUPABASE_URL
+        get() = (if (BuildConfig.DEBUG) prefs.getString("auth_url", null)?.takeIf { it.isNotBlank() } else null) ?: BuildConfig.SUPABASE_URL
         set(v) = prefs.edit().putString("auth_url", v.trim().trimEnd('/')).apply()
+
+    /** True while the app is pointed at something other than the real server (debug builds only). */
+    val usingTestServer: Boolean get() = apiUrl != BuildConfig.API_URL || authUrl != BuildConfig.SUPABASE_URL
 
     val signedIn: Boolean get() = store.get("refresh") != null
     var email: String
         get() = prefs.getString("email", "") ?: ""
         private set(v) = prefs.edit().putString("email", v).apply()
 
-    private fun call(method: String, url: String, headers: Map<String, String>, body: String?): Pair<Int, String> {
+    private fun call(method: String, url: String, headers: Map<String, String>, body: String?): Pair<Int, String> =
+        try {
+            callOnce(method, url, headers, body)
+        } catch (e: java.io.IOException) {
+            // Say where it could not connect and why, in words (never the request, which may hold a password).
+            val host = runCatching { URL(url).let { "${it.host}${if (it.port > 0) ":${it.port}" else ""}" } }.getOrDefault("the server")
+            throw ApiException("could not connect to $host (${e.javaClass.simpleName.replace("Exception", "").lowercase().ifEmpty { "network" }})", 0)
+        }
+
+    private fun callOnce(method: String, url: String, headers: Map<String, String>, body: String?): Pair<Int, String> {
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 8000
@@ -77,6 +91,7 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     fun signOut() {
         store.put("access", null)
         store.put("refresh", null)
+        prefs.edit().remove("api_url").remove("auth_url").remove("email").remove("manager_name").remove("expires_at").apply()
     }
 
     @Synchronized

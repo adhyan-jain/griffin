@@ -303,7 +303,14 @@ class AssistantService : Service() {
                     }
                 }
             } catch (e: ApiException) {
-                app.main.post { say(if (e.status == 401) "Your sign-in has expired. Please sign in again." else "I could not reach Griffin. ${e.message}") }
+                app.log("griffin: ${e.message}")
+                app.main.post {
+                    say(when {
+                        e.status == 401 -> "Your sign-in has expired. Please sign in again."
+                        e.status == 0 -> "I could not reach Griffin. Check the connection."
+                        else -> "Griffin answered with an error. ${e.message}"
+                    })
+                }
             } catch (e: Exception) {
                 app.main.post { say("I could not reach Griffin. Check the connection.") }
             }

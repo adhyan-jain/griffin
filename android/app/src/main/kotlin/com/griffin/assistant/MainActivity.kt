@@ -165,6 +165,10 @@ class MainActivity : Activity() {
         root.addView(label("Say \"hey $name\"", 30f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
         root.addView(label(if (running) "Listening on this phone. Nothing is kept unless it starts with that." else "Not listening right now.", 14f, Ink.muted).apply { setPadding(0, dp(6), 0, 0) })
 
+        if (app.api.usingTestServer) {
+            root.addView(card(label("Test server in use", 15f, Ink.warn, true), label("This build is talking to ${app.api.apiUrl}, not the real Griffin. Tap Sign out at the bottom to go back to the real one.", 13f, Ink.muted).apply { setPadding(0, dp(4), 0, 0) }))
+        }
+
         // The animation stage.
         (orb.parent as? ViewGroup)?.removeView(orb)
         val stage = FrameLayoutCard(orb)
