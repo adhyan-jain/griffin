@@ -56,6 +56,8 @@ type JJChatHandler struct {
 	scaleToZeroEnabled bool
 	// profiles supplies the owner's chosen manager name; nil means the default name.
 	profiles ProfileStore
+	// threads enables follow-ups on an existing task; nil disables them.
+	threads ThreadStore
 }
 
 // WithProfiles lets the handler address and answer as the manager the owner named.
@@ -186,6 +188,12 @@ func normalizeHistory(in []chatTurn) ([]chatTurn, error) {
 }
 
 func (h *JJChatHandler) postConversation(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, history []chatTurn, key *string, managerName string) {
+	h.postConversationIn(w, r, userID, conversationID, message, history, key, managerName, nil, "Chat: ")
+}
+
+// postConversationIn is postConversation for a message that may belong to a thread (extra holds the thread
+// fields) and with its own title prefix.
+func (h *JJChatHandler) postConversationIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, history []chatTurn, key *string, managerName string, extra map[string]any, titlePrefix string) {
 	// A repeated idempotency key returns the original task; never a second one.
 	if key != nil {
 		if existing, err := h.tasks.GetTaskByIdempotencyKey(r.Context(), userID, *key); err == nil {
@@ -197,13 +205,17 @@ func (h *JJChatHandler) postConversation(w http.ResponseWriter, r *http.Request,
 		}
 	}
 
-	payload, _ := json.Marshal(map[string]any{
+	body := map[string]any{
 		"kind":            "chat",
 		"conversation_id": conversationID.String(),
 		"history":         history,
 		"manager_name":    managerName,
-	})
-	title := "Chat: " + truncateRunes(strings.Join(strings.Fields(message), " "), chatMaxTitleChars)
+	}
+	for k, v := range extra {
+		body[k] = v
+	}
+	payload, _ := json.Marshal(body)
+	title := titlePrefix + truncateRunes(strings.Join(strings.Fields(message), " "), chatMaxTitleChars)
 	task := &domain.Task{
 		UserID:         userID,
 		ManagerDomain:  "JJ",
@@ -253,10 +265,18 @@ func (h *JJChatHandler) writeDuplicate(w http.ResponseWriter, existing *domain.T
 }
 
 func (h *JJChatHandler) postObjective(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string) {
+	h.postObjectiveIn(w, r, userID, conversationID, message, req, history, managerName, nil)
+}
+
+// postObjectiveIn is postObjective for a request that may belong to a thread (extra holds the thread fields).
+func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string, extra map[string]any) {
 	ctxMap := map[string]any{"conversation_id": conversationID.String(), "source": "jj_messages", "manager_name": managerName}
 	if len(history) > 0 {
 		// A conversation that became work (for example a voice chat) carries what was already said.
 		ctxMap["history"] = history
+	}
+	for k, v := range extra {
+		ctxMap[k] = v
 	}
 	ctxPayload, _ := json.Marshal(ctxMap)
 	orch, plan, err := h.objectives.SubmitRequest(r.Context(), &domain.UserRequest{

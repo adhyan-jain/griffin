@@ -600,3 +600,16 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why not Android Studio**: it is an IDE around the same three tools; the command line does the build and VS Code edits Kotlin. The SDK is a few hundred MB against several GB.
 - **Why a real phone first**: an emulator has no real calls, SIM or microphone, which are the point of this app.
 - **Limit**: no IDE layout editor or profiler; the UI is written in code.
+
+#### ADR-088: A follow-up joins the thread of the task it continues
+- **Status**: BUILT (`internal/domain/thread.go`, `internal/api/handlers/follow_up.go`, `web/src/components/thread.tsx`); mutation-tested on the server rules; not yet used in the live app.
+- **Decision**: continuing a finished task creates a linked step (payload `thread_id` = the root task, `follow_up_of` = the task it continues) that starts with the thread's transcript. The thread root is the first task; a plan step's follow-up belongs to its plan. Follow-ups are listed inside the thread, not as separate tasks. A running task cannot be continued.
+- **Why no schema change**: the thread is two payload fields; collecting a thread filters the owner's recent tasks (at most 500), which is fine at one owner's scale.
+- **Rejected**: appending to the finished task itself (it would rewrite a result the owner already saw and break the attempt history); a separate threads table (a migration for something two fields can say).
+- **Known limits**: the transcript is the requests and the readable answers, not files; a thread's history keeps the first request and the latest turns once it passes ten; chat-page messages are still separate tasks.
+
+#### ADR-089: Use Claude's own sub-agents inside a step, and an LLM planner across steps
+- **Status**: DESIGN only; the order is waiting for the owner. Facts checked: `claude` 2.1.319 on this machine offers `--agents`, `--model`, `--effort`, `--permission-mode`, `--allowedTools` and `--max-budget-usd`.
+- **Decision**: see PRD 7.10. Griffin sets tools, budget and effort ceilings; Claude chooses the sub-agents and their models within them. The keyword planner stays as the fallback for the LLM planner.
+- **Why**: the model is better than a word list at splitting work and picking a cheap model for easy parts, and the CLI exposes the controls needed to bound it.
+- **Risks**: cost (hence a hard budget per step and a daily cap), a planner that over-splits (a step limit and a measured comparison against the keyword planner), sub-agents with tools the owner did not intend (allow-list by tier), and unverified behaviour (capture real runs first).

@@ -641,6 +641,12 @@ export const api = {
     }
   },
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
+  /** Continues a finished task: the message joins that task's thread and starts from what was said. */
+  followUp: (taskId: string, message: string) =>
+    fetchWithAuth<{ kind: "conversation" | "objective"; conversation_id: string; task_id?: string; orchestration?: { id: string; root_task_id?: string } }>(
+      `/api/v1/tasks/${taskId}/follow-ups`,
+      { method: "POST", body: JSON.stringify({ message, idempotency_key: crypto.randomUUID() }) },
+    ),
 
   // The top manager's name (JJ by default)
   getManagerName: () => fetchWithAuth<ManagerNameSetting>("/api/v1/settings/manager-name"),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { isFollowUp } from "@/lib/threads";
 import { usePolling } from "@/lib/use-polling";
 import { useRouter } from "next/navigation";
 import { ListChecks, Play, Plus, Search, Square, Trash2, X } from "lucide-react";
@@ -69,6 +70,7 @@ export default function TasksPage() {
     const q = query.trim().toLowerCase();
     const rows = all
       .filter((t) => !t.parent_id)
+      .filter((t) => !isFollowUp(t)) // continued tasks live inside the thread of the task they continue
       .filter((t) => matches(t, filter))
       .filter((t) => filter !== "done" || inPeriod(t, period))
       .filter((t) => !q || `${t.title} ${t.goal} ${t.manager_domain} ${t.id}`.toLowerCase().includes(q));

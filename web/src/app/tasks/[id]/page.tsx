@@ -15,6 +15,7 @@ import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
 import { Kinetic } from "@/components/fx/kinetic";
 import { ResultView } from "@/components/result-view";
+import { Thread } from "@/components/thread";
 import { isEmptyAnswerFailure } from "@/lib/result-text";
 import { deriveNow } from "@/lib/task-now";
 import { displayWorker } from "@/lib/hosts";
@@ -306,6 +307,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           {hasJSON(task.output_payload) && (
             <ResultView payload={task.output_payload} title={task.title || task.goal} />
           )}
+          <Thread task={task} />
           {hasJSON(task.input_payload) && (
             <section>
               <h2 className="mb-1.5 text-sm font-semibold">Input</h2>
