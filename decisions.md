@@ -625,3 +625,11 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Decision**: continuation words, editing words about existing things, back-references, topic overlap, and recency are added up; fresh-request wording subtracts; at 0.60 or more the message joins the thread, from 0.35 a new task is made and the earlier one offered. A chat conversation the page holds is one thread unless it is still answering. The response always carries the reason.
 - **Why not a model**: it would add a call and a cold-start to every message, and a score can be explained and tuned; a model tie-break for the middle band is a possible later step.
 - **Known limits**: the weights are guesses until used for real; the chat page does not show the notes or an override yet.
+
+#### ADR-092: The Android assistant listens with the system recogniser and acts through standard Android services
+- **Status**: BUILT as v0.1, installed on the phone; voice behaviour awaiting the owner's permission grants and a trial.
+- **Decision**: a foreground microphone service runs the on-device speech recogniser continuously and matches the manager's name on its text (no trained wake-word model, so a rename needs no training). Calls go through the telephony service, texts need a spoken yes, timers and alarms are the app's own, and callers are announced through the call-screening role (the only reliable way Android shows an app who is calling). Real conversation goes to the existing voice route; work is handed to the manager with the conversation so far.
+- **Why not a trained wake-word engine**: it needs a model per name; the owner wants to rename the manager freely. Revisit if false triggers are too frequent.
+- **Why the app schedules its own alarms**: Android 15 blocks starting the Clock app from a background service.
+- **Testing**: `cmd/griffin-devstub` is a local stand-in for the API (real voice handler, optional Gemini) used through `adb reverse`; debug builds accept a sign-in and test sentences by broadcast, release builds do not.
+- **Limits**: see PRD 7.18. Permission consent is the owner's: adb on this phone cannot grant runtime permissions, and the app does not try to work around that.
