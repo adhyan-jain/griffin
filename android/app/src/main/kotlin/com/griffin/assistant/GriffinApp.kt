@@ -43,8 +43,26 @@ class GriffinApp : Application() {
         androidx.core.content.ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter("com.griffin.assistant.DEBUG_SIGNIN"), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
     }
 
+    /** What the assistant is doing, for the animation. Idle means it is only waiting for "hey" and the name. */
+    @Volatile var mode = OrbView.Mode.Hidden
+    @Volatile var level = 0f
+    private val modeListeners = ArrayList<() -> Unit>()
+    fun addModeListener(l: () -> Unit) { modeListeners += l }
+    fun removeModeListener(l: () -> Unit) { modeListeners -= l }
+    private fun notifyMode() = modeListeners.toList().forEach { it() }
+
+    fun showMode(m: OrbView.Mode) { main.post { mode = m; notifyMode() } }
+    fun showLevel(l: Float) { main.post { level = l; notifyMode() } }
+
+    /** Debug builds only, and only to the developer log: what the assistant itself said. Never shown or kept. */
+    fun dlog(line: String) { if (BuildConfig.DEBUG) android.util.Log.d("Griffin", line) }
+
+    /**
+     * Status lines for the screen. They say what the assistant did, never what anyone said: sentences that did not
+     * start with the wake phrase are not recorded or logged anywhere, and even the ones that did are not kept.
+     */
     fun log(line: String) {
-        android.util.Log.i("Griffin", line)
+        if (BuildConfig.DEBUG) android.util.Log.i("Griffin", line)
         main.post {
             lines.addFirst(line)
             while (lines.size > 40) lines.removeLast()
@@ -63,7 +81,7 @@ class GriffinApp : Application() {
             else -> "an unknown number"
         }
         val prompt = if (assistantRunning) "Call from $who. Say answer or reject." else "Call from $who."
-        log("incoming call: $who")
+        log("incoming call announced")
         if (assistantRunning) callWindowUntil = System.currentTimeMillis() + 25_000
         main.post { speaker.say(prompt) }
     }

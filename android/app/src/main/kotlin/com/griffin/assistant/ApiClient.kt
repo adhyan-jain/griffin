@@ -100,6 +100,10 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     }
 
     fun managerName(): String = JSONObject(api("GET", "/api/v1/settings/manager-name")).let { (it.optJSONObject("data") ?: it).optString("manager_name", "JJ") }
+        .also { prefs.edit().putString("manager_name", it).apply() }
+
+    /** The last name seen, for showing the wake phrase without a network call. */
+    fun cachedName(): String = prefs.getString("manager_name", "JJ") ?: "JJ"
 
     private fun historyJson(history: List<Pair<String, String>>) = JSONArray().apply { history.forEach { put(JSONObject().put("role", it.first).put("text", it.second)) } }
 

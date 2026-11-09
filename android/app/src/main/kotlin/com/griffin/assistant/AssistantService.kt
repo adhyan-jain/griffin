@@ -34,6 +34,11 @@ class AssistantService : Service() {
     private data class PendingText(val who: String, val number: String, val message: String, val expires: Long)
     private var pendingText: PendingText? = null
     private var debugReceiver: BroadcastReceiver? = null
+    private lateinit var overlay: ListeningOverlay
+    private val orbListener: () -> Unit = {
+        if (app.mode == OrbView.Mode.Hidden) overlay.hide() else { overlay.show(); overlay.update(app.mode, app.level) }
+    }
+    private val idleTimeout = Runnable { if (System.currentTimeMillis() >= awakeUntil && app.mode == OrbView.Mode.Listening) app.showMode(OrbView.Mode.Hidden) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -41,7 +46,7 @@ class AssistantService : Service() {
         super.onCreate()
         actions = Actions(this)
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("assistant", "Listening", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel("assistant", "Listening", NotificationManager.IMPORTANCE_MIN))
         val stop = PendingIntent.getService(this, 1, Intent(this, AssistantService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification: Notification = NotificationCompat.Builder(this, "assistant").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Griffin is listening")
@@ -49,8 +54,15 @@ class AssistantService : Service() {
         startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
 
         app.assistantRunning = true
-        app.speaker.onSpeaking = { speaking -> if (::listener.isInitialized) { if (speaking) listener.pause() else listener.resume() } }
-        listener = Listener(this, ::onHeard) { status -> app.log("mic: $status") }
+        overlay = ListeningOverlay(this)
+        app.addModeListener(orbListener)
+        app.speaker.onSpeaking = { speaking ->
+            if (::listener.isInitialized) { if (speaking) listener.pause() else listener.resume() }
+            // While it talks the animation pulses; when it stops it goes quiet, or listens on if a follow-up is expected.
+            if (speaking) { if (app.mode != OrbView.Mode.Hidden) app.showMode(OrbView.Mode.Speaking) }
+            else if (app.mode != OrbView.Mode.Hidden) afterSpeaking()
+        }
+        listener = Listener(this, ::onHeard, { status -> app.log("mic: $status") }, { level -> if (app.mode == OrbView.Mode.Listening) app.showLevel(level) })
         listener.start()
         refreshName()
         if (BuildConfig.DEBUG) registerDebugReceiver()
@@ -71,6 +83,9 @@ class AssistantService : Service() {
         app.speaker.stop()
         if (::listener.isInitialized) listener.stop()
         debugReceiver?.let { unregisterReceiver(it) }
+        app.removeModeListener(orbListener)
+        app.showMode(OrbView.Mode.Hidden)
+        if (::overlay.isInitialized) overlay.hide()
         app.log("assistant stopped")
         super.onDestroy()
     }
@@ -79,9 +94,9 @@ class AssistantService : Service() {
         app.net.execute {
             try {
                 name = app.api.managerName()
-                app.log("manager name: $name")
+                app.log("manager name loaded")
             } catch (e: Exception) {
-                app.log("could not read the manager name (${e.message}); using $name")
+                app.log("could not read the manager name; using the last one")
             }
         }
     }
@@ -90,33 +105,56 @@ class AssistantService : Service() {
     private fun registerDebugReceiver() {
         debugReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                intent.getStringExtra("text")?.let { app.log("debug input: $it"); onHeard(it) }
+                intent.getStringExtra("text")?.let { onHeard(it) }
             }
         }
         ContextCompat.registerReceiver(this, debugReceiver, IntentFilter(ACTION_DEBUG_UTTERANCE), ContextCompat.RECEIVER_EXPORTED)
     }
 
     private fun say(text: String) {
-        app.log("said: $text")
+        app.dlog("said: $text")
         app.speaker.say(text)
     }
 
+    private fun beep() {
+        try {
+            android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 60).startTone(android.media.ToneGenerator.TONE_PROP_ACK, 140)
+        } catch (_: Exception) {}
+    }
+
+    private fun afterSpeaking() {
+        if (System.currentTimeMillis() < awakeUntil) listenOn() else app.showMode(OrbView.Mode.Hidden)
+    }
+
+    /** Actively listening for the owner's request, with the animation showing, for a few seconds. */
+    private fun listenOn() {
+        app.showLevel(0f)
+        app.showMode(OrbView.Mode.Listening)
+        app.main.removeCallbacks(idleTimeout)
+        app.main.postDelayed(idleTimeout, 8_000)
+    }
+
+    /**
+     * Everything the recogniser hears arrives here. Anything that does not start with "hey" and the name is dropped
+     * on the spot: it is not logged, not stored and not sent anywhere. Only after the wake phrase does the
+     * assistant become active (with the animation), and what follows is used for the request and not kept.
+     */
     private fun onHeard(heard: String) {
-        app.log("heard: $heard")
         val now = System.currentTimeMillis()
+        app.dlog("input of ${heard.length} characters; wake name is ${name.length} characters")
 
         // A text waiting for a yes.
         pendingText?.let { p ->
             pendingText = null
             if (now < p.expires) {
                 when (heard.lowercase().trim(' ', '.', '!')) {
-                    "yes", "send", "send it", "confirm", "yes send it", "yep", "yeah" -> { say(actions.sendSms(p.number, p.message) ?: "Sent to ${p.who}."); return }
+                    "yes", "send", "send it", "confirm", "yes send it", "yep", "yeah" -> { app.showMode(OrbView.Mode.Thinking); say(actions.sendSms(p.number, p.message) ?: "Sent to ${p.who}."); return }
                     "no", "cancel", "don't", "do not send", "nope", "stop" -> { say("Okay, not sending it."); return }
                 }
             }
         }
 
-        // A call that is ringing: "answer" and "reject" mean the call, with no need for the name.
+        // A call that is ringing: "answer" and "reject" mean the call, with no need for the wake phrase.
         if (now < app.callWindowUntil) {
             when (Commands.parse(heard)) {
                 Command.Answer -> { app.callWindowUntil = 0; actions.answer()?.let { say(it) }; return }
@@ -126,13 +164,15 @@ class AssistantService : Service() {
         }
 
         val wake = WakeMatcher.match(heard, name)
+        app.dlog("wake match: ${wake != null}")
         val request = when {
-            wake != null && wake.rest.isEmpty() -> { awakeUntil = now + 8_000; say("Yes?"); return }
-            wake != null -> wake.rest
+            wake != null && wake.rest.isEmpty() -> { awakeUntil = now + 8_000; app.log("woke"); beep(); listenOn(); return }
+            wake != null -> { app.log("woke"); beep(); wake.rest }
             now < awakeUntil -> heard
-            else -> return // not for the assistant
+            else -> return // not for the assistant: dropped
         }
         awakeUntil = 0
+        app.showMode(OrbView.Mode.Thinking)
         handle(request)
     }
 
@@ -193,7 +233,7 @@ class AssistantService : Service() {
                     app.net.execute {
                         try {
                             app.api.sendMessage(request, past + listOfNotNull("user" to request, if (r.reply.isNotBlank()) "assistant" to r.reply else null))
-                            app.log("handed to ${r.managerName}: $request")
+                            app.log("handed to the manager")
                             if (r.reply.isBlank()) app.main.post { say("One moment.") }
                         } catch (e: Exception) {
                             app.main.post { say("I could not reach ${r.managerName}. ${e.message}") }

@@ -14,7 +14,7 @@ import android.speech.SpeechRecognizer
  * the phone's on-device recogniser (private and works offline) and restarts itself after the silences and
  * hiccups that speech recognisers produce constantly. Everything runs on the main thread.
  */
-class Listener(private val context: Context, private val onHeard: (String) -> Unit, private val onStatus: (String) -> Unit) {
+class Listener(private val context: Context, private val onHeard: (String) -> Unit, private val onStatus: (String) -> Unit, private val onLevel: (Float) -> Unit = {}) {
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var active = false
@@ -67,15 +67,13 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
     }
 
     private fun create(): SpeechRecognizer? {
-        val r = when {
-            android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context) -> SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-            SpeechRecognizer.isRecognitionAvailable(context) -> SpeechRecognizer.createSpeechRecognizer(context)
-            else -> null
-        }
+        // Only the recogniser that runs on the phone is used. The ordinary one can stream audio to a server, and an
+        // always-on microphone must never do that: waiting for "hey" stays entirely on the device.
+        val r = if (android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) SpeechRecognizer.createOnDeviceSpeechRecognizer(context) else null
         r?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = onStatus("listening")
             override fun onBeginningOfSpeech() = onStatus("hearing you")
-            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onRmsChanged(rmsdB: Float) = onLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onPartialResults(partialResults: Bundle?) {}
@@ -103,7 +101,7 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
         if (recognizer == null) recognizer = create()
         val r = recognizer
         if (r == null) {
-            onStatus("this phone has no speech recogniser")
+            onStatus("needs the offline speech pack: install it in the Google app, Settings, Voice, Offline speech recognition")
             return
         }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {

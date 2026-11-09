@@ -27,6 +27,8 @@ class MainActivity : Activity() {
     private lateinit var password: EditText
     private lateinit var signInButton: Button
     private lateinit var toggle: Button
+    private lateinit var orb: OrbView
+    private val modeListener: () -> Unit = { orb.level = app.level; if (orb.mode != app.mode) orb.mode = app.mode }
 
     private val permissions = arrayOf(
         Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE, Manifest.permission.ANSWER_PHONE_CALLS,
@@ -69,8 +71,12 @@ class MainActivity : Activity() {
         col.addView(button("3. Keep listening in the background") { allowBackground() })
 
         toggle = button("Start listening") { toggleListening() }
+        col.addView(button("4. Show the animation over other apps") { allowOverlay() })
         col.addView(text("Listening", 18f, true))
         col.addView(toggle)
+        orb = OrbView(this)
+        col.addView(orb, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(120)))
+        col.addView(button("Preview the animation") { previewAnimation() })
 
         col.addView(text("What it heard and said", 18f, true))
         log = text("", 13f).apply { setTextIsSelectable(true) }
@@ -80,11 +86,14 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        app.addModeListener(modeListener)
+        modeListener()
         app.onLog = { log.text = app.logText() }
         refresh()
     }
 
     override fun onPause() {
+        app.removeModeListener(modeListener)
         app.onLog = null
         super.onPause()
     }
@@ -99,6 +108,8 @@ class MainActivity : Activity() {
             append(if (app.api.signedIn) "Signed in as ${app.api.email.ifEmpty { "you" }}" else "Not signed in")
             append("\n${if (missing.isEmpty()) "Permissions: all granted" else "Missing: ${missing.joinToString(", ")}"}")
             append("\nCall announcements: ${if (screening) "on" else "off"}    Background: ${if (battery) "allowed" else "may be stopped by battery saving"}")
+            append("\nAnimation over other apps: ${if (Settings.canDrawOverlays(this@MainActivity)) "on" else "off (it shows only inside this app)"}")
+            append("\nWake phrase: hey ${app.api.cachedName()}. Nothing you say is kept unless it starts with that.")
         }
         signInButton.text = if (app.api.signedIn) "Sign out" else "Sign in"
         email.visibility = if (app.api.signedIn) View.GONE else View.VISIBLE
@@ -143,6 +154,25 @@ class MainActivity : Activity() {
         val rm = getSystemService(RoleManager::class.java)
         if (rm.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) { app.log("call announcements are already on"); return }
         startActivityForResult(rm.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING), 2)
+    }
+
+    private fun allowOverlay() {
+        if (Settings.canDrawOverlays(this)) { app.log("the animation can already show over other apps"); return }
+        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+    }
+
+    /** Shows each state for a moment, so the owner can see what listening, thinking and speaking look like. */
+    private fun previewAnimation() {
+        val steps = listOf(OrbView.Mode.Listening to 2500L, OrbView.Mode.Thinking to 1800L, OrbView.Mode.Speaking to 2200L, OrbView.Mode.Hidden to 0L)
+        var at = 0L
+        steps.forEach { (m, d) ->
+            app.main.postDelayed({ if (!app.assistantRunning) { app.showMode(m); if (m == OrbView.Mode.Listening) pulseLevel() } }, at)
+            at += d
+        }
+    }
+
+    private fun pulseLevel() {
+        for (i in 0 until 12) app.main.postDelayed({ app.showLevel(if (i % 3 == 0) 0.9f else 0.35f) }, i * 200L)
     }
 
     private fun allowBackground() {

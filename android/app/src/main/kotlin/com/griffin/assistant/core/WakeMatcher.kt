@@ -3,7 +3,10 @@ package com.griffin.assistant.core
 import java.util.Locale
 
 /**
- * Finds the manager's name at the start of what was heard and returns what follows it.
+ * The wake phrase is "hey" followed by the manager's name. The name alone does not wake the assistant: a
+ * three-letter name said in any sentence would otherwise trigger it constantly.
+ *
+ * Finds that phrase at the start of what was heard and returns what follows it.
  *
  * A speech recogniser does not know the name, so it mishears it: "JJ" arrives as "J J", "jay jay" or "Jay-Jay",
  * and "Jarvis" as "Jarvis" or "Jarvas". The matcher therefore compares sound-alike forms, not exact text:
@@ -17,7 +20,8 @@ object WakeMatcher {
     /** What was heard after the name, or "" when only the name was said. */
     data class Wake(val rest: String)
 
-    private val fillers = setOf("hey", "hi", "hello", "ok", "okay", "yo")
+    /** How a recogniser writes "hey". Only these start the wake phrase. */
+    private val heys = setOf("hey", "hay", "hei", "heya", "hae")
 
     /** How a letter-name sounds when spoken: "jj" can be heard as "jay jay". */
     private val spokenLetters = mapOf(
@@ -45,10 +49,11 @@ object WakeMatcher {
         if (forms.isEmpty()) return null
         val words = heard.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty()) return null
-        var start = 0
-        while (start < words.size && norm(words[start]) in fillers) start++
+        if (norm(words[0]) !in heys) return null // "hey" is required
+        val start = 1
         // The name is one to four words ("J J", "jay jay", "Mr Stark"); try the shortest span that matches.
         val maxSpan = minOf(4, words.size - start)
+        if (maxSpan <= 0) return null
         for (span in 1..maxSpan) {
             val said = norm(words.subList(start, start + span).joinToString(""))
             if (forms.any { sounds(said, it) }) {
