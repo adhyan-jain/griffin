@@ -59,6 +59,15 @@ describe("deriveNow: worker truthfulness", () => {
     expect(n.stage).toBe("Coordinating: 0 of 2 steps done, waiting for a worker");
   });
 
+  it("a coordinating parent whose queued step needs a device says it is waiting for that device", () => {
+    const steps = [
+      step(1, { status: "COMPLETED" }),
+      step(2, { status: "QUEUED", input_payload: { requires: ["messaging"] } }),
+    ];
+    const n = deriveNow(parent, [], [], steps);
+    expect(n.stage).toBe("Coordinating: 1 of 2 steps done, waiting for your laptop to come online");
+  });
+
   it("counts completed steps and never shows the orchestrator lease as a worker", () => {
     const steps = [step(1, { status: "COMPLETED" }), step(2, { status: "RUNNING", leased_by: "griffin-worker-2" })];
     const n = deriveNow(parent, [], [], steps);

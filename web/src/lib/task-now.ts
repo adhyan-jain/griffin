@@ -49,7 +49,9 @@ export function deriveNow(task: Task, events: TaskEvent[], attempts: TaskAttempt
       const done = children.filter((c) => c.status === "COMPLETED").length;
       const idle = !children.some((c) => EXECUTING.includes(c.status) || c.status === "RETRYING");
       const queued = children.some((c) => c.status === "QUEUED" || c.status === "CREATED" || c.status === "ROUTED");
-      stage = `Coordinating: ${done} of ${children.length} steps done${idle && queued ? ", waiting for a worker" : ""}`;
+      const waitingChild = children.find((c) => (c.status === "QUEUED" || c.status === "RETRYING") && waitingForDevice(c));
+      const waitingDev = waitingChild ? waitingForDevice(waitingChild) : null;
+      stage = `Coordinating: ${done} of ${children.length} steps done${waitingDev ? `, waiting for ${waitingDev} to come online` : idle && queued ? ", waiting for a worker" : ""}`;
     }
   } else {
     const lease = EXECUTING.includes(task.status) && task.leased_by && task.leased_by !== ORCHESTRATOR_LEASE ? task.leased_by : null;

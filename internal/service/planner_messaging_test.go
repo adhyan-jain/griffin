@@ -21,6 +21,12 @@ func TestWantsWhatsApp(t *testing.T) {
 		"check my unread whatsapp chats",
 		"read the last 5 messages from Dad on WhatsApp",
 		"tell dad on whats app that I reached",
+		"whatsapp hello to bhai",
+		"whatsapp bhai hello",
+		"whatsapp to bhai saying hello",
+		"can you whatsapp bhai?",
+		"please whatsapp mom that dinner is ready",
+		"whatsapp Sam Lee saying test 123",
 	}
 	no := []string{
 		"write code for a WhatsApp bot",
@@ -28,6 +34,9 @@ func TestWantsWhatsApp(t *testing.T) {
 		"explain how whatsapp end to end encryption works", // no messaging verb
 		"send an email to my professor",                    // not whatsapp
 		"develop a webhook for whatsapp notifications",
+		"whatsapp is safe to use",
+		"whatsapp web is not working",
+		"whatsapp status update",
 		"",
 	}
 	for _, s := range yes {
@@ -45,6 +54,12 @@ func TestIntentContactFromTheOwnersWords(t *testing.T) {
 		"tell Dad I'll be late":                                    "Dad",
 		"message my brother about dinner on whatsapp":              "brother",
 		"read the last 5 messages from Dad on WhatsApp":            "", // names no recipient after a verb
+		"whatsapp hello to bhai":                                   "bhai",
+		"whatsapp bhai hello":                                      "bhai",
+		"whatsapp to bhai saying hello":                            "bhai",
+		"can you whatsapp bhai?":                                   "bhai",
+		"please whatsapp mom that dinner is ready":                 "mom",
+		"whatsapp Sam Lee saying test 123":                         "Sam Lee",
 	}
 	for in, want := range cases {
 		assert.Equal(t, want, intentContactFrom(in), in)

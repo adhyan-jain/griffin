@@ -18,7 +18,7 @@ import { ResultView } from "@/components/result-view";
 import { Thread } from "@/components/thread";
 import { isEmptyAnswerFailure } from "@/lib/result-text";
 import { deriveNow } from "@/lib/task-now";
-import { displayWorker } from "@/lib/hosts";
+import { capabilityLabel, displayWorker, requiredCapabilities, waitingForDevice } from "@/lib/hosts";
 import { usePolling } from "@/lib/use-polling";
 import { canDelete, canResume, canRunAgain, isPlan, runAgain } from "@/lib/task-actions";
 
@@ -256,6 +256,32 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             <dt className="text-xs text-muted-foreground">Retries</dt>
             <dd className="tabular-nums">{now.retry ? `${now.retry.count} of ${now.retry.max}` : `None (up to ${task.max_retries})`}</dd>
           </div>
+          {requiredCapabilities(task).length > 0 && (
+            <div className="col-span-2">
+              <dt className="text-xs text-muted-foreground">Device needed</dt>
+              <dd className="text-sm">
+                Needs {requiredCapabilities(task).map(capabilityLabel).join(", ")} on {waitingForDevice(task) ?? "your device"}.{" "}
+                <Link href="/devices" className="text-primary underline">
+                  See Devices
+                </Link>
+              </dd>
+            </div>
+          )}
+          {isPlan(task) && children.some((c) => requiredCapabilities(c).length > 0) && (
+            <div className="col-span-2">
+              <dt className="text-xs text-muted-foreground">Device needed</dt>
+              <dd className="text-sm">
+                Step requires{" "}
+                {Array.from(new Set(children.flatMap(requiredCapabilities)))
+                  .map(capabilityLabel)
+                  .join(", ")}
+                .{" "}
+                <Link href="/devices" className="text-primary underline">
+                  See Devices
+                </Link>
+              </dd>
+            </div>
+          )}
         </dl>
         {now.failureReason && (
           <p className="mt-3 break-words rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{now.failureReason}</p>
