@@ -29,6 +29,9 @@ func TestClassifyIntent(t *testing.T) {
 		{"open a pull request on github", "engineering"},
 		{"tailor my resume for this job", "career"},
 		{"prepare for the interview next week", "career"},
+		{"find software engineering internships", "career"},
+		{"apply for backend internship at stripe", "career"},
+		{"make a list of summer intern roles", "career"},
 		{"find a hackathon with a bounty", "hackathon"},
 		{"write a freelance proposal for the gig", "freelance"},
 		{"set up outreach and update the crm", "networking"},
@@ -76,5 +79,46 @@ func TestRuleBasedPlanner_FastPathForPlainAsks(t *testing.T) {
 		if n, _ := steps(research); n != 2 {
 			t.Errorf("%q: explicit research keeps two steps, got %d", research, n)
 		}
+	}
+}
+
+func TestRuleBasedPlanner_CareerInternship(t *testing.T) {
+	reg := manager.NewDefaultRegistry()
+	p := NewRuleBasedPlanner()
+
+	// Finding/making internships without applying: 2 steps (research + tailor), no approval required.
+	findReq := &domain.UserRequest{
+		RequestText: "Find software engineering internships for summer 2025",
+		Priority:    domain.TaskPriorityNormalP2,
+	}
+	findPlan, err := p.GeneratePlan(context.Background(), findReq, reg)
+	if err != nil {
+		t.Fatalf("GeneratePlan find: %v", err)
+	}
+	if len(findPlan.ChildTasks) != 2 {
+		t.Fatalf("expected 2 child tasks, got %d", len(findPlan.ChildTasks))
+	}
+	if len(findPlan.ApprovalRequirements) != 0 {
+		t.Fatalf("expected 0 approvals for finding internships, got %d", len(findPlan.ApprovalRequirements))
+	}
+
+	// Applying for internship: 2 steps, approval required on tailor step with ActionTypeJobApply and ApprovalRiskHigh.
+	applyReq := &domain.UserRequest{
+		RequestText: "Apply for backend internship at Stripe",
+		Priority:    domain.TaskPriorityNormalP2,
+	}
+	applyPlan, err := p.GeneratePlan(context.Background(), applyReq, reg)
+	if err != nil {
+		t.Fatalf("GeneratePlan apply: %v", err)
+	}
+	if len(applyPlan.ApprovalRequirements) != 1 {
+		t.Fatalf("expected 1 approval for applying to internship, got %d", len(applyPlan.ApprovalRequirements))
+	}
+	app := applyPlan.ApprovalRequirements[0]
+	if app.ActionType != domain.ActionTypeJobApply {
+		t.Errorf("expected ActionType %q, got %q", domain.ActionTypeJobApply, app.ActionType)
+	}
+	if app.RiskLevel != domain.ApprovalRiskHigh {
+		t.Errorf("expected RiskLevel %q, got %q", domain.ApprovalRiskHigh, app.RiskLevel)
 	}
 }

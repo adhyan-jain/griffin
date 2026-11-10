@@ -265,7 +265,7 @@ type intentRule struct {
 // intentRules are evaluated in order; the first match wins. Requests that match nothing go to
 // the general research manager.
 var intentRules = []intentRule{
-	{"career", regexp.MustCompile(`\b(jobs?|resumes?|interview\w*|recruiters?|career\w*)\b`)},
+	{"career", regexp.MustCompile(`\b(jobs?|resumes?|interview\w*|recruiters?|career\w*|intern\w*)\b`)},
 	{"engineering", regexp.MustCompile(`\b(code|codes|coding|codebase|bugs?|bugfix\w*|debug\w*|refactor\w*|tests?|testing|git|github|repos?|repositor(y|ies))\b`)},
 	{"hackathon", regexp.MustCompile(`\b(hackathons?|bount(y|ies)|grants?)\b`)},
 	{"freelance", regexp.MustCompile(`\b(freelanc\w*|gigs?|proposals?|contracts?)\b`)},

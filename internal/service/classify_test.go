@@ -58,6 +58,8 @@ func TestClassifyMessage(t *testing.T) {
 		{"greeting then task", "Hi JJ. Research Go task queues and compare them.", o},
 		{"report is not repo", "Write a report about the repo layout", o},
 		{"multi sentence", "Thanks. Find the top 5 remote Go jobs and draft a cover letter for each.", o},
+		{"apply for internship", "Apply for software engineering internships at Google", o},
+		{"make a list", "Make a list of top 10 remote tech internships", o},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
