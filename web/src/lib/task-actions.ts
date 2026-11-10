@@ -15,7 +15,7 @@ export const canDelete = (t: Task) => isDone(t.status);
 export const canCancel = (t: Task) => !isDone(t.status) && !t.parent_id;
 
 export async function runAgain(t: Task): Promise<Task | null> {
-  if (isPlan(t)) {
+  if (isPlan(t) || t.manager_domain === "JJ") {
     await api.submitOrchestratorRequest(t.goal, t.priority);
     return null;
   }

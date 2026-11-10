@@ -57,6 +57,14 @@ type TaskHandler struct {
 	reconciler    PlanReconciler
 	reconcileMu   sync.Mutex
 	lastReconcile map[uuid.UUID]time.Time
+
+	objectives ObjectiveSubmitter
+}
+
+// WithObjectives lets the handler route top-level objective requests through the orchestrator.
+func (h *TaskHandler) WithObjectives(o ObjectiveSubmitter) *TaskHandler {
+	h.objectives = o
+	return h
 }
 
 // WithPlanReconciler makes task-list reads finish plans whose subtasks have all completed.
@@ -130,6 +138,45 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	// Support idempotency key via header as well
 	if headerKey := r.Header.Get("Idempotency-Key"); headerKey != "" && req.IdempotencyKey == nil {
 		req.IdempotencyKey = &headerKey
+	}
+
+	// Route top-level JJ objective requests through the orchestrator so they get broken down into a plan
+	// with proper capability constraints (e.g., messaging device hands) rather than running un-orchestrated.
+	managerDomain := strings.TrimSpace(req.ManagerDomain)
+	isJJ := managerDomain == "" || managerDomain == "JJ" || managerDomain == domain.DefaultManagerName
+	if req.ParentID == nil && len(req.Dependencies) == 0 && h.objectives != nil && isJJ {
+		goalText := strings.TrimSpace(req.Goal)
+		if goalText == "" {
+			goalText = strings.TrimSpace(req.Title)
+		}
+		if goalText != "" && service.ClassifyMessage(goalText) == service.MessageKindObjective {
+			userReq := &domain.UserRequest{
+				UserID:      userID,
+				WorkspaceID: req.WorkspaceID,
+				RequestText: goalText,
+				Context:     req.InputPayload,
+				Priority:    req.Priority,
+			}
+			orch, _, err := h.objectives.SubmitRequest(r.Context(), userReq)
+			if err != nil {
+				httputil.ErrorJSON(w, err)
+				return
+			}
+			rootTask, err := h.engine.GetTaskForUser(r.Context(), orch.RootTaskID, userID)
+			if err != nil {
+				httputil.ErrorJSON(w, err)
+				return
+			}
+			if h.scaleToZeroEnabled && h.wakeup != nil {
+				if n, err := h.objectives.RunnableChildCount(r.Context(), orch.ID); err == nil && n > 0 {
+					wakeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+					_ = h.wakeup.TriggerWakeup(wakeCtx)
+					cancel()
+				}
+			}
+			httputil.JSON(w, http.StatusCreated, rootTask)
+			return
+		}
 	}
 
 	task := &domain.Task{

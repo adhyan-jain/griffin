@@ -140,6 +140,7 @@ func NewServer(deps ServerDependencies) *Server {
 	taskHandler := handlers.NewTaskHandler(deps.Engine, deps.TaskRepo, deps.Wakeup, scaleToZero)
 	if deps.Orchestrator != nil {
 		taskHandler.WithPlanReconciler(deps.Orchestrator)
+		taskHandler.WithObjectives(deps.Orchestrator)
 	}
 	mux.Handle("POST /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.CreateTask)))
 	mux.Handle("GET /api/v1/tasks", userAuth(http.HandlerFunc(taskHandler.ListTasks)))

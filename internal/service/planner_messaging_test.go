@@ -27,6 +27,11 @@ func TestWantsWhatsApp(t *testing.T) {
 		"can you whatsapp bhai?",
 		"please whatsapp mom that dinner is ready",
 		"whatsapp Sam Lee saying test 123",
+		"sned a whatsapp message to bhai saying hello",
+		"snd a watsapp message to bhai saying hello",
+		"send a wapp message to bhai saying hellooo",
+		"txt bhai on watsp saying wassup",
+		"forward whatsapp message to dad",
 	}
 	no := []string{
 		"write code for a WhatsApp bot",
