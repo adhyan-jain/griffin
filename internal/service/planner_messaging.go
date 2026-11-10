@@ -139,10 +139,7 @@ func messagingSteps(channel string, req *domain.UserRequest) ([]domain.ChildTask
 		do["intent_contact"] = c
 	}
 	doPayload, _ := json.Marshal(do)
-	composePayload := req.Context
-	if len(composePayload) == 0 {
-		composePayload = json.RawMessage(`{}`)
-	}
+	composePayload := domain.WithExplicitProviderHint(req.Context, domain.ProviderAgy)
 	prefix := "WhatsApp"
 	composeKey := "wa_compose"
 	doKey := "wa_do"

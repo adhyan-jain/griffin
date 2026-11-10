@@ -187,3 +187,26 @@ func vaultSync(ctx context.Context, logger *slog.Logger) error {
 	}
 	return nil
 }
+
+// docCacheStatus reports the files Griffin has observed across tasks and whether they are cached in S3.
+func docCacheStatus(_ context.Context, logger *slog.Logger) error {
+	tracker := vault.NewDocTracker(filepath.Join(stateDir(), "doc_usage.json"), logger)
+	usages := tracker.ListUsages()
+	if len(usages) == 0 {
+		fmt.Println("No documents tracked yet (blind slate).")
+		fmt.Println("As independent files (.md, .pdf, .docx, .txt outside coding repos) are used across tasks,")
+		fmt.Println("they are automatically tracked and cached in your encrypted S3 Vault when used >1 time.")
+		return nil
+	}
+	fmt.Printf("Tracked Context Documents (%d total):\n", len(usages))
+	for _, u := range usages {
+		syncStatus := "[pending: used 1 time]"
+		if u.Synced {
+			syncStatus = fmt.Sprintf("[cached in S3 Vault at %s]", u.SyncedAt.Format("2006-01-02 15:04:05"))
+		} else if u.AccessCount > 1 {
+			syncStatus = "[qualifies for S3 Vault cache]"
+		}
+		fmt.Printf("  %-8s %-40s accessed %2d times  %s\n", u.Category, filepath.Base(u.Path), u.AccessCount, syncStatus)
+	}
+	return nil
+}

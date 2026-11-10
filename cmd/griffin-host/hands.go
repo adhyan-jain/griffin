@@ -140,8 +140,10 @@ func runSubcommand(ctx context.Context, logger *slog.Logger, name string) error 
 		return vaultScan(ctx, logger)
 	case "vault-sync":
 		return vaultSync(ctx, logger)
+	case "vault-tracker", "doc-cache":
+		return docCacheStatus(ctx, logger)
 	}
-	return fmt.Errorf("unknown command %q (expected whatsapp-login, whatsapp-check, handover-check, handover-test, vault-scan or vault-sync)", name)
+	return fmt.Errorf("unknown command %q (expected whatsapp-login, whatsapp-check, handover-check, handover-test, vault-scan, vault-sync, or doc-cache)", name)
 }
 
 func whatsappLogin(ctx context.Context, logger *slog.Logger) error {

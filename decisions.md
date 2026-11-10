@@ -659,3 +659,34 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: a spoken "yes" cannot prove who spoke, so the unlocked-device rule and the exact-ids token stand in for authentication; and one copy of the rules means the two apps cannot drift.
 - **Rejected**: client-side command parsing in each app (two copies); a server-stored pending action (state to expire and clean); allowing approvals while locked.
 - **Known limits**: the parser is strict and phrase-based, so unusual wording falls through to conversation; the token secret is the Supabase JWT secret (a random per-process key when it is absent, as in local runs).
+
+#### ADR-097: Smart Model Allocation between AGY Pro and Claude Pro CLI
+- **Status**: IMPLEMENTED (`internal/domain/providerhint.go`, `internal/service/planner.go`, `internal/provider/router/router.go`).
+- **Decision**: Differentiate AI provider allocation by capability and task characteristics:
+  - **Google Antigravity CLI (`agy`)**: Assigned to all machine-side tasks, web search, page crawling, multi-company data gathering (`career_research`), and simple daily drafting (such as WhatsApp/Instagram greetings and messaging action formulation `wa_compose`, `insta_compose`).
+  - **Claude Pro CLI (`claude`)**: Assigned to high-depth language reasoning tasks, specifically keyword-optimized resume and CV tailoring (`career_tailor`), building upon prior resume versions and target company requirements.
+  - **Fallback Invariant**: If Claude is disabled, unauthenticated, or unhealthy, tasks gracefully fall back to `agy` without losing work or incurring API billing fees.
+
+#### ADR-098: Client-Side Document Usage Tracking & Encrypted S3 Vault Auto-Caching
+- **Status**: IMPLEMENTED (`internal/vault/tracker.go`, `cmd/griffin-host/main.go`, `cmd/griffin-host/vault.go`).
+- **Decision**: Treat local desktop storage as a blank slate initially. As independent document files (`.pdf`, `.docx`, `.doc`, `.md`, `.txt`) are referenced across tasks:
+  - Track file access frequency persistently in `~/.griffin-host/doc_usage.json` (chmod 0600).
+  - Strict Exclusion: Never track or upload source code repositories, build artifacts, or dependency trees (`.git`, `go.mod`, `package.json`, `node_modules`, `vendor`, `target`, `dist`, `.venv`).
+  - Auto-Cache Trigger: When an independent document is accessed more than once (`count > 1`), automatically evaluate and cache it to the user's S3 Vault:
+    - Fails closed on symlinks, empty files, or files > 5 MB (`MaxFileBytes`).
+    - Computes SHA-256 fingerprint for deduplication.
+    - Encrypts client-side using AES-256-GCM (PBKDF2-HMAC-SHA256, 600,000 iterations) if classified as sensitive (`VaultID` or `VaultFinance`) or if a passphrase is provided.
+    - Authenticated upload via `/api/v1/vault` into tenant-isolated S3 storage (`users/<user_id>/artifacts/`).
+
+#### ADR-099: Dual-Interface Topology (Web PWA as Primary Console vs. Android Companion App)
+- **Status**: IMPLEMENTED & DOCUMENTED.
+- **Decision**: Clarify roles between the Web Application and the Android Native Companion:
+  - **Web Application (Progressive Web App at `griffin-pwa.vercel.app`)**: The single primary user interface for all devices (laptop, desktop, phone). Provides full chat with JJ, task tree inspection, manual approvals, device status, file/vault explorer, and audio TTS. Can be installed directly on Android via Chrome ("Add to Home screen").
+  - **Android Native App (`android/`)**: Built strictly as a background device bridge for voice wake-word listening ("Hey Griffin"), Quick Settings tile, call screening, and notification reply hooks. Users do NOT need the Android native app for standard task and chat interactions.
+
+#### ADR-100: Multi-Channel Messaging Device Hands (WhatsApp & Instagram over Android ADB and Web Fallback)
+- **Status**: IMPLEMENTED (`internal/domain/messaging.go`, `internal/hands/instagram/android.go`, `internal/hands/whatsapp/`, `cmd/griffin-host/hands.go`).
+- **Decision**: Messaging tasks (`personal_ops` manager) route outward communication through user-owned devices:
+  - **Priority 1 (Android Phone via ADB)**: `griffin-host` auto-detects connected Android devices via ADB (`findADB` discovers SDK toolchains at `$HOME/Android/Sdk/platform-tools/adb` and `$HOME/.local/share/axis-toolchain/android-sdk/platform-tools/adb`). Sends via WhatsApp (`com.whatsapp`) or Instagram Direct (`com.instagram.android` via `https://ig.me/m/<username>`).
+  - **Priority 2 (Web Browser Fallback)**: For WhatsApp, falls back to WhatsApp Web on the laptop if no phone is connected.
+  - **Security Gate**: Outward sends require human approval unless explicitly auto-approved by the owner's policy in the Permissions dashboard.

@@ -18,6 +18,10 @@ func TestClassify_ByWhatTheStepNeeds(t *testing.T) {
 		{"Log in to LinkedIn and apply", "submit the application form", domain.ProviderAgy},
 		{"Search the web and summarise", "find reviews then summarise", domain.ProviderAgy}, // touches the world: stays on agy
 		{"Draft a cover letter", "tailor it to the role", domain.ProviderClaude},
+		{"Tailor resume and draft application materials", "Format customized resume and cover letter", domain.ProviderClaude},
+		{"Tailor resume for Google to match keywords", "Apply keywords to CV", domain.ProviderClaude},
+		{"Scout role requirements and company details", "Research role across target companies", domain.ProviderAgy},
+		{"Draft a greeting on whatsapp and send to bhai on happy diwali", "Send greeting on whatsapp", domain.ProviderAgy},
 		{"Summarise the findings", "one-page brief", domain.ProviderClaude},
 		{"Compare the three offers", "pros and cons", domain.ProviderClaude},
 		{"Do the thing", "", domain.ProviderAgy}, // unclear defaults to the always-available provider
@@ -47,6 +51,12 @@ func TestWithHint(t *testing.T) {
 	arr := json.RawMessage(`[1,2]`)
 	if string(domain.WithProviderHint(arr, "Draft", "")) != string(arr) {
 		t.Fatal("a non-object payload must be returned unchanged")
+	}
+
+	explicit := domain.WithExplicitProviderHint(pinned, domain.ProviderClaude)
+	_ = json.Unmarshal(explicit, &m)
+	if m[domain.ProviderHintKey] != "claude" {
+		t.Fatalf("expected explicit hint to override, got: %s", explicit)
 	}
 }
 

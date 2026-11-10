@@ -111,6 +111,8 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 
 	case "career":
 		requiresSend := strings.Contains(text, "send") || strings.Contains(text, "apply")
+		researchPayload := domain.WithExplicitProviderHint(req.Context, domain.ProviderAgy)
+		tailorPayload := domain.WithExplicitProviderHint(req.Context, domain.ProviderClaude)
 		childTasks = []domain.ChildTaskPlan{
 			{
 				Key:                  "career_research",
@@ -118,7 +120,7 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 				Goal:                 fmt.Sprintf("Research role for: %s", req.RequestText),
 				ManagerDomain:        "career",
 				WorkerKey:            "career_researcher",
-				InputPayload:         req.Context,
+				InputPayload:         researchPayload,
 				Priority:             req.Priority,
 				CapabilitiesRequired: []string{domain.CapabilityResearchRead, domain.CapabilityWebRead},
 			},
@@ -128,7 +130,7 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 				Goal:                 "Format customized resume and cover letter",
 				ManagerDomain:        "career",
 				WorkerKey:            "resume_tailorer",
-				InputPayload:         req.Context,
+				InputPayload:         tailorPayload,
 				Priority:             req.Priority,
 				CapabilitiesRequired: []string{domain.CapabilityEmailDraft},
 				ApprovalRequired:     requiresSend,

@@ -42,6 +42,7 @@ import (
 	"github.com/griffin/core/internal/hostagent"
 	"github.com/griffin/core/internal/provider/antigravity"
 	"github.com/griffin/core/internal/sandbox"
+	"github.com/griffin/core/internal/vault"
 	"github.com/griffin/core/internal/worker"
 )
 
@@ -151,6 +152,16 @@ func run(logger *slog.Logger, check bool) error {
 	}
 
 	client := hostagent.NewClient(apiURL, token, nil)
+
+	pass, _ := vaultPassphrase(logger)
+	docTracker := vault.NewDocTracker(filepath.Join(stateDir(), "doc_usage.json"), logger)
+	exec = &docTrackingExecutor{
+		inner:    exec,
+		tracker:  docTracker,
+		uploader: hostVaultUploader{client},
+		pass:     pass,
+		logger:   logger,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -343,4 +354,49 @@ func policyStatus(ctx context.Context, c *hostagent.Client) string {
 		return fmt.Sprintf("none saved yet; the safe default applies (read and draft allowed, everything else asks). %d rules", len(v.Policy.Rules))
 	}
 	return fmt.Sprintf("version %d, default %s, %d rules", v.Version, v.Policy.Default, len(v.Policy.Rules))
+}
+
+type docTrackingExecutor struct {
+	inner    worker.TaskExecutor
+	tracker  *vault.DocTracker
+	uploader vault.Uploader
+	pass     string
+	logger   *slog.Logger
+}
+
+func (d *docTrackingExecutor) Name() string { return d.inner.Name() }
+func (d *docTrackingExecutor) IsHealthy(ctx context.Context) (bool, error) {
+	return d.inner.IsHealthy(ctx)
+}
+func (d *docTrackingExecutor) HasCapacity() bool {
+	if cc, ok := d.inner.(worker.CapacityChecker); ok {
+		return cc.HasCapacity()
+	}
+	return true
+}
+func (d *docTrackingExecutor) ToolsEnabled() bool {
+	if tc, ok := d.inner.(worker.ToolCapable); ok {
+		return tc.ToolsEnabled()
+	}
+	return false
+}
+
+func (d *docTrackingExecutor) Execute(ctx context.Context, task *domain.Task) (*worker.ExecutionResult, error) {
+	d.scanAndTrack(ctx, task.Title+" "+task.Goal+" "+string(task.InputPayload))
+	res, err := d.inner.Execute(ctx, task)
+	if res != nil {
+		d.scanAndTrack(ctx, res.TextOutput+" "+string(res.Output))
+	}
+	return res, err
+}
+
+func (d *docTrackingExecutor) scanAndTrack(ctx context.Context, text string) {
+	paths := vault.ExtractDocPaths(text)
+	for _, p := range paths {
+		if _, synced, err := d.tracker.RecordAndMaybeSync(ctx, p, d.uploader, d.pass); err != nil {
+			d.logger.Warn("context document tracking error", "path", p, "error", err)
+		} else if synced {
+			d.logger.Info("context document cached to S3 Vault", "path", p)
+		}
+	}
 }
