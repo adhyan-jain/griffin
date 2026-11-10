@@ -691,3 +691,19 @@ This document is the canonical ledger of all architectural, product, engineering
   - **Priority 2 (Web Browser Fallback)**: For WhatsApp, falls back to WhatsApp Web on the laptop if no phone is connected.
   - **Security Gate**: Outward sends require human approval unless explicitly auto-approved by the owner's policy in the Permissions dashboard.
   - **Orchestrator Routing Invariant**: Top-level tasks submitted via chat, "New task" modal, or "Run again" with objective goals (including mobile keyboard slips such as `sned`, `snd`, `wapp`, `watsp`) are automatically routed to JJ Orchestrator (`whatsAppSteps`), generating `wa_compose` and `wa_do` (`requires: ["messaging"]`). Cloud workers (`griffin-worker`) are strictly prevented from claiming `wa_do` (`needsHandsSQL`), ensuring that messaging is never answered with a text-only "cannot send" on EC2.
+
+#### ADR-101: Personal Lingo & Implicit Messaging Resolution with habit.md Profile
+- **Status**: IMPLEMENTED (`habit.md`, `internal/domain/habit.go`, `internal/domain/habit_test.go`, `internal/service/planner_messaging.go`, `internal/service/planner_messaging_test.go`, `internal/service/classify_test.go`).
+- **Decision**: Users communicate crudely, make keyboard slips (`sned`, `snd`, `wapp`, `watsp`), and use implicit shorthand without explicitly naming apps (e.g. "message bhai wassup", "tell bhai I will be late", "ping bhai wassup", "text bhai wassup"):
+  - Root [`habit.md`](file:///home/adhyan/Desktop/griffin/habit.md) documents user lingo, behavioral habits, common contact aliases (`bhai` -> default brother contact, `maa`/`mom`, `papa`/`dad`), implicit messaging defaults, model allocation preferences (`agy` for research/search/composing vs `claude` for resumes/deep language), locked phone posture, and auto-caching rules.
+  - `internal/domain/habit.go` defines `HabitProfile` with normalization routines (`NormalizeLingo`, `ResolveContact`).
+  - `internal/service/planner_messaging.go` introduces `isImplicitMessaging` and layered contact extraction (`intentContactFrom` with `to <person>` prioritized before direct verbs and WhatsApp references). When a user asks to message/text/ping/tell a person, Griffin defaults to WhatsApp for personal messaging delivery while vetoing deliverables (reports, invoices, code, emails).
+- **Why**: Eliminates friction and UX failure where informal voice/text inputs were misclassified or rejected due to lack of the exact word "whatsapp" or proper syntax.
+
+#### ADR-102: Locked Phone Keyguard Dismissal and Seamless WhatsApp Web Fallback
+- **Status**: IMPLEMENTED (`internal/hands/whatsapp/android.go`, `internal/hands/whatsapp/android_test.go`, `internal/hands/whatsapp/e2e_verification_test.go`).
+- **Decision**: Real-world phone usage requires operating while the phone is locked with screen off, connected only via mobile data or Wi-Fi (the user will not keep the phone screen permanently unlocked or awake):
+  - In `android.go` `ready(ctx)`, Griffin detects whether the device is locked (`mDnsKeyguardShowing=true`, `isStatusBarKeyguard=true`, or `mShowing=true`).
+  - Attempt 1: Automatically wake and dismiss standard keyguards using `adb shell wm dismiss-keyguard` and `input keyevent 82` (KEYCODE_MENU). If `GRIFFIN_PHONE_PIN` is configured, automatically unlock via secure PIN input.
+  - Fallback 2: If the screen remains locked behind secure biometrics/credentials, Android hand returns `ErrNotReady` with explanation. `whatsapp.Messenger` seamlessly falls back to WhatsApp Web on the laptop. Since WhatsApp multi-device syncs over cloud WebSockets, messages send reliably and headlessly without requiring the phone screen to be on or unlocked.
+  - Automated Verification: End-to-end hermetic tests (`e2e_verification_test.go`) confirm that sent messages (`MessagingSend`) are verified and read back via `MessagingReadRecent` to guarantee delivery across both Android ADB and Web fallback paths.

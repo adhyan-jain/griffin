@@ -19,21 +19,28 @@ var (
 	messagingVerb        = regexp.MustCompile(`\b(send|sned|snd|text|txt|message|msg|tell|ping|reply|respond|read|check|show|list|summari[sz]e|unread|chats?|inbox|dm|forward|fwd)\b`)
 	buildingVerb         = regexp.MustCompile(`\b(code|coding|bot|bots|api|apis|webhook\w*|sdk|build|develop\w*|implement\w*|integrat\w*|librar(y|ies)|script|scrape\w*|automation framework)\b`)
 	whatsAppLead         = regexp.MustCompile(`(?i)(?:^|\b(?:can|could|would|will)\s+you\s+(?:please\s+)?|\b(?:please|lets|let's|go ahead and)\s+|\bto\s+)(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\b\s*(.*)$`)
-	contactStop          = map[string]bool{"on": true, "in": true, "via": true, "using": true, "through": true, "that": true, "about": true, "saying": true, "sayin": true, "with": true, "and": true, "a": true, "an": true, "the": true, "whatsapp": true, "instagram": true, "insta": true, "ig": true, "i": true, "i'm": true, "i'll": true, "im": true, "ill": true, "we": true, "to": true, "my": true, "from": true, "if": true, "when": true, "please": true, "message": true, "msg": true, "dm": true, "now": true, "phone": true, "laptop": true, "hello": true, "hi": true, "hey": true, "wassup": true}
-	contactAfter         = regexp.MustCompile(`(?i)\b(?:to|tell|text|txt|message|msg|ping|reply to|respond to|dm)\s+(?:my\s+)?([^\n,.:;!?]+)`)
+	contactStop          = map[string]bool{"on": true, "in": true, "via": true, "using": true, "through": true, "that": true, "about": true, "saying": true, "sayin": true, "with": true, "and": true, "a": true, "an": true, "the": true, "whatsapp": true, "instagram": true, "insta": true, "ig": true, "i": true, "i'm": true, "i'll": true, "im": true, "ill": true, "we": true, "to": true, "my": true, "from": true, "if": true, "when": true, "please": true, "message": true, "msg": true, "dm": true, "now": true, "phone": true, "laptop": true, "hello": true, "hellooo": true, "hi": true, "hey": true, "wassup": true, "sup": true, "yo": true, "me": true, "us": true, "myself": true, "yourself": true, "someone": true, "anyone": true}
+	contactAfter         = regexp.MustCompile(`(?i)\b(?:to|tell|text|txt|message|msg|ping|reply to|respond to|dm|send to|sned to|snd to|send|sned|snd)\s+(?:my\s+)?([^\n,.:;!?]+)`)
 	contactAfterWhatsApp = regexp.MustCompile(`(?i)(?:^|\b(?:please|can you(?: please)?|could you(?: please)?|would you(?: please)?|i want you to|i need you to|let's|lets|go ahead and)\s+)(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\s+(?:my\s+)?([^\n,.:;!?]+)`)
 	nonVerbAfterWhatsApp = map[string]bool{
 		"is": true, "are": true, "was": true, "were": true, "has": true, "have": true, "had": true,
 		"does": true, "did": true, "do": true, "will": true, "would": true, "can": true, "could": true,
 		"web": true, "app": true, "status": true, "account": true,
 	}
+	emailWord       = regexp.MustCompile(`\b(?:email|emails|mail|mails|gmail|outlook)\b`)
+	deliverableWord = regexp.MustCompile(`\b(?:reports?|tables?|documents?|proposals?|spreadsheets?|presentations?|slide deck|whitepaper|dossier|essay|article|brief|spec|readme|program|plan|comparison|sources|citations|references|roadmap|checklist)\b`)
+	checkUnreadRe   = regexp.MustCompile(`(?i)\b(?:check|read|show|list)\s+(?:my\s+)?(?:unread\s+)?(?:messages|msgs|texts|chats|inbox)\b`)
 )
 
 func wantsWhatsApp(text string) bool {
 	lower := strings.ToLower(text)
-	if buildingVerb.MatchString(lower) {
+	if buildingVerb.MatchString(lower) || emailWord.MatchString(lower) {
 		return false
 	}
+	if wantsInstagram(text) {
+		return false
+	}
+	// Explicit WhatsApp mentions
 	if whatsAppWord.MatchString(lower) && messagingVerb.MatchString(lower) {
 		return true
 	}
@@ -50,6 +57,28 @@ func wantsWhatsApp(text string) bool {
 		if strings.HasPrefix(rest, "to ") || strings.Contains(rest, " to ") {
 			return true
 		}
+		return true
+	}
+	// Implicit messaging: when the user asks to message/text/msg/ping/tell a contact without
+	// specifying a platform (e.g. "message bhai wassup", "text bhai wassup", "tell bhai I'm late"),
+	// WhatsApp is the user's primary daily messaging hand.
+	if isImplicitMessaging(lower) {
+		return true
+	}
+	return false
+}
+
+func isImplicitMessaging(lower string) bool {
+	if buildingVerb.MatchString(lower) || emailWord.MatchString(lower) || deliverableWord.MatchString(lower) {
+		return false
+	}
+	if wantsWeb(lower) {
+		return false
+	}
+	if checkUnreadRe.MatchString(lower) {
+		return true
+	}
+	if messagingVerb.MatchString(lower) && intentContactFrom(lower) != "" {
 		return true
 	}
 	return false
@@ -69,51 +98,71 @@ func wantsInstagram(text string) bool {
 	return false
 }
 
+func extractContactWords(s string) string {
+	var words []string
+	for _, w := range strings.Fields(s) {
+		w = strings.Trim(w, `"'`)
+		low := strings.ToLower(w)
+		if len(words) == 0 && (low == "to" || low == "my" || low == "a" || low == "an" || low == "the") {
+			continue // filler before the name
+		}
+		if contactStop[low] {
+			break
+		}
+		words = append(words, w)
+		if len(words) == 3 {
+			break
+		}
+	}
+	if len(words) > 0 {
+		cand := strings.Join(words, " ")
+		lowCand := strings.ToLower(cand)
+		if contactStop[lowCand] || lowCand == "me" || lowCand == "us" {
+			return ""
+		}
+		return cand
+	}
+	return ""
+}
+
+var (
+	toContactRe  = regexp.MustCompile(`(?i)\bto\s+(?:my\s+)?([^\n,.:;!?]+)`)
+	directVerbRe = regexp.MustCompile(`(?i)\b(?:tell|text|txt|message|msg|ping|reply to|respond to|dm)\s+(?:my\s+)?([^\n,.:;!?]+)`)
+	sendDirectRe = regexp.MustCompile(`(?i)\b(?:send|sned|snd)\s+(?:my\s+)?([^\n,.:;!?]+)`)
+)
+
 // intentContactFrom is the person the owner's own words name, found after "to", "tell", "text" and
 // similar. It is recorded on the plan so an action an agent composes can be matched against what the
 // owner said. When unsure it returns "", and the send then asks for approval, which is the safe side.
 func intentContactFrom(text string) string {
-	for _, m := range contactAfter.FindAllStringSubmatch(text, -1) {
-		var words []string
-		for _, w := range strings.Fields(m[1]) {
-			w = strings.Trim(w, `"'`)
-			low := strings.ToLower(w)
-			if len(words) == 0 && (low == "to" || low == "my" || low == "a" || low == "an" || low == "the") {
-				continue // filler before the name
-			}
-			if contactStop[low] {
-				break
-			}
-			words = append(words, w)
-			if len(words) == 3 {
-				break
-			}
-		}
-		if len(words) > 0 {
-			return strings.Join(words, " ")
+	// 1. "to <person>": e.g. "Send a WhatsApp message to Sam Lee", "whatsapp to bhai", "send text to mom"
+	for _, m := range toContactRe.FindAllStringSubmatch(text, -1) {
+		if c := extractContactWords(m[1]); c != "" {
+			return c
 		}
 	}
-	// Fallback when "whatsapp" is used directly as the verb with no "to": e.g. "whatsapp bhai hello"
+
+	// 2. "whatsapp <person>": e.g. "whatsapp bhai message wassup", "whatsapp Sam Lee saying test 123"
 	for _, m := range contactAfterWhatsApp.FindAllStringSubmatch(text, -1) {
-		var words []string
-		for _, w := range strings.Fields(m[1]) {
-			w = strings.Trim(w, `"'`)
-			low := strings.ToLower(w)
-			if len(words) == 0 && (low == "to" || low == "my" || low == "a" || low == "an" || low == "the") {
-				continue // filler before the name
-			}
-			if contactStop[low] {
-				break
-			}
-			words = append(words, w)
-			if len(words) == 3 {
-				break
-			}
-		}
-		if len(words) > 0 {
-			return strings.Join(words, " ")
+		if c := extractContactWords(m[1]); c != "" {
+			return c
 		}
 	}
+
+	// 3. Direct verbs: "message bhai wassup", "text bhai wassup", "tell dad I'll be late", "msg bhai hello", "ping bhai"
+	for _, m := range directVerbRe.FindAllStringSubmatch(text, -1) {
+		if c := extractContactWords(m[1]); c != "" {
+			return c
+		}
+	}
+
+	// 4. "send/sned/snd <person> <text>": e.g. "send bhai wassup", "sned bhai hello"
+	for _, m := range sendDirectRe.FindAllStringSubmatch(text, -1) {
+		if c := extractContactWords(m[1]); c != "" {
+			return c
+		}
+	}
+
 	return ""
 }
 

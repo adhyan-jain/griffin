@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -263,7 +264,27 @@ func (a *Android) ready(ctx context.Context) error {
 		}
 	})
 	if locked {
-		return notReady("the phone is locked; unlock it and try again")
+		// Attempt automated keyguard dismissal via Android Window Manager / menu keyevent
+		_, _ = a.cfg.ADB.Run(ctx, "shell", "wm", "dismiss-keyguard")
+		_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "keyevent", "82") // KEYCODE_MENU unlocks non-secure swipe lockscreens
+		if pin := os.Getenv("GRIFFIN_PHONE_PIN"); pin != "" {
+			_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "text", pin)
+			_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "keyevent", "66") // KEYCODE_ENTER
+		}
+		// Re-evaluate lockscreen state
+		s2, err2 := a.dump(ctx)
+		if err2 == nil {
+			stillLocked := false
+			s2.walk(func(n, _ *uiNode) {
+				if n.Package == "com.android.systemui" && strings.Contains(strings.ToLower(n.ResourceID), "keyguard") {
+					stillLocked = true
+				}
+			})
+			if !stillLocked {
+				return nil
+			}
+		}
+		return notReady("the phone is locked; unlock it or use WhatsApp Web on laptop")
 	}
 	return nil
 }

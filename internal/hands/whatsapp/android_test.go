@@ -114,7 +114,7 @@ func (p *fakePhone) Run(_ context.Context, args ...string) (string, error) {
 			return "package:" + pkg + "\n", nil
 		}
 		return "", nil
-	case strings.HasPrefix(cmd, "shell input keyevent"), strings.HasPrefix(cmd, "shell uiautomator dump"):
+	case strings.HasPrefix(cmd, "shell input keyevent"), strings.HasPrefix(cmd, "shell uiautomator dump"), strings.HasPrefix(cmd, "shell wm dismiss-keyguard"):
 		return "", nil
 	case cmd == "exec-out cat /sdcard/griffin_ui.xml":
 		return p.render(), nil

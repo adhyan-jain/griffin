@@ -226,3 +226,15 @@ griffin-host vault-scan
 # Sync approved documents to encrypted S3 Vault
 griffin-host vault-sync
 ```
+
+---
+
+## 10. User Habits, Lingo Resolution & Locked Phone Posture
+
+Griffin incorporates an adaptive user habit profile documented in [`habit.md`](file:///home/adhyan/Desktop/griffin/habit.md):
+- **Typo Tolerance & Crude Lingo**: Normalizes keyboard slips (`sned`, `snd`, `wapp`, `watsp`) and parses informal greetings (`wassup`, `sup`, `yo`, `hellooo`).
+- **Implicit Messaging Routing**: Phrasing like *"message bhai wassup"*, *"text bhai wassup"*, or *"ping bhai"* automatically routes to WhatsApp personal messaging hands without requiring explicit app naming.
+- **Contact Alias Resolution**: Common vernacular relationships (`bhai`, `bro`, `brother`, `maa`, `mom`, `papa`, `dad`) resolve seamlessly to user contact book targets.
+- **Locked Phone Posture**: The Android hand attempts keyguard wake and dismissal via `adb shell wm dismiss-keyguard` and `input keyevent 82` (plus `GRIFFIN_PHONE_PIN` if configured). If the phone screen is securely locked, messaging automatically falls back to WhatsApp Web on the laptop, which communicates headlessly over multi-device cloud WebSockets as long as the phone has power and mobile data/Wi-Fi.
+- **Verification Guarantee**: Delivery is confirmed through direct UI checks (`MessagingSend`) and verified via recent message read-backs (`MessagingReadRecent`).
+
