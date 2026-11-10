@@ -97,7 +97,7 @@ func (e *Executor) messagingAction(ctx context.Context, task *domain.Task) (*dom
 		return nil, false, err
 	}
 	if act == nil {
-		return nil, false, errors.New("this step needs a WhatsApp action but the earlier step did not produce a usable one")
+		return nil, false, errors.New("this step needs a messaging action but the earlier step did not produce a usable one")
 	}
 	return act, true, nil
 }
@@ -147,8 +147,12 @@ func (e *Executor) runMessaging(ctx context.Context, task *domain.Task, act *dom
 	if act.Op != domain.MessagingUnread {
 		target = act.Target()
 	}
-	action := policy.Action{Capability: domain.HostCapMessaging, App: "whatsapp", Contact: target, Class: class}
-	intent := policy.Intent{Capability: domain.HostCapMessaging, App: "whatsapp", Class: class, Contact: target}
+	app := act.Channel
+	if app == "" {
+		app = "whatsapp"
+	}
+	action := policy.Action{Capability: domain.HostCapMessaging, App: app, Contact: target, Class: class}
+	intent := policy.Intent{Capability: domain.HostCapMessaging, App: app, Class: class, Contact: target}
 	if derived {
 		// Written by an agent from text: only the contact the owner named themselves counts as intended.
 		intent.Contact = intentContact(task.InputPayload)

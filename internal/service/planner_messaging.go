@@ -14,11 +14,13 @@ import (
 // must not send anything, so those words veto the match.
 var (
 	whatsAppWord         = regexp.MustCompile(`\bwhats\s?app\b`)
-	messagingVerb        = regexp.MustCompile(`\b(send|text|message|msg|tell|ping|reply|respond|read|check|show|list|summari[sz]e|unread|chats?|inbox)\b`)
+	instaWord            = regexp.MustCompile(`\b(insta|instagram|ig)\b`)
+	dmWord               = regexp.MustCompile(`\b(dm|dms|direct message)\b`)
+	messagingVerb        = regexp.MustCompile(`\b(send|text|message|msg|tell|ping|reply|respond|read|check|show|list|summari[sz]e|unread|chats?|inbox|dm)\b`)
 	buildingVerb         = regexp.MustCompile(`\b(code|coding|bot|bots|api|apis|webhook\w*|sdk|build|develop\w*|implement\w*|integrat\w*|librar(y|ies)|script|scrape\w*|automation framework)\b`)
 	whatsAppLead         = regexp.MustCompile(`(?i)(?:^|\b(?:can|could|would|will)\s+you\s+(?:please\s+)?|\b(?:please|lets|let's|go ahead and)\s+|\bto\s+)whats\s?app\b\s*(.*)$`)
-	contactStop          = map[string]bool{"on": true, "in": true, "via": true, "using": true, "through": true, "that": true, "about": true, "saying": true, "with": true, "and": true, "a": true, "an": true, "the": true, "whatsapp": true, "i": true, "i'm": true, "i'll": true, "im": true, "ill": true, "we": true, "to": true, "my": true, "from": true, "if": true, "when": true, "please": true, "message": true, "msg": true, "now": true, "phone": true, "laptop": true, "hello": true, "hi": true, "hey": true, "wassup": true}
-	contactAfter         = regexp.MustCompile(`(?i)\b(?:to|tell|text|message|msg|ping|reply to|respond to)\s+(?:my\s+)?([^\n,.:;!?]+)`)
+	contactStop          = map[string]bool{"on": true, "in": true, "via": true, "using": true, "through": true, "that": true, "about": true, "saying": true, "with": true, "and": true, "a": true, "an": true, "the": true, "whatsapp": true, "instagram": true, "insta": true, "ig": true, "i": true, "i'm": true, "i'll": true, "im": true, "ill": true, "we": true, "to": true, "my": true, "from": true, "if": true, "when": true, "please": true, "message": true, "msg": true, "dm": true, "now": true, "phone": true, "laptop": true, "hello": true, "hi": true, "hey": true, "wassup": true}
+	contactAfter         = regexp.MustCompile(`(?i)\b(?:to|tell|text|message|msg|ping|reply to|respond to|dm)\s+(?:my\s+)?([^\n,.:;!?]+)`)
 	contactAfterWhatsApp = regexp.MustCompile(`(?i)(?:^|\b(?:please|can you(?: please)?|could you(?: please)?|would you(?: please)?|i want you to|i need you to|let's|lets|go ahead and)\s+)whats\s?app\s+(?:my\s+)?([^\n,.:;!?]+)`)
 	nonVerbAfterWhatsApp = map[string]bool{
 		"is": true, "are": true, "was": true, "were": true, "has": true, "have": true, "had": true,
@@ -48,6 +50,20 @@ func wantsWhatsApp(text string) bool {
 		if strings.HasPrefix(rest, "to ") || strings.Contains(rest, " to ") {
 			return true
 		}
+		return true
+	}
+	return false
+}
+
+func wantsInstagram(text string) bool {
+	lower := strings.ToLower(text)
+	if buildingVerb.MatchString(lower) {
+		return false
+	}
+	if instaWord.MatchString(lower) && (messagingVerb.MatchString(lower) || dmWord.MatchString(lower)) {
+		return true
+	}
+	if dmWord.MatchString(lower) {
 		return true
 	}
 	return false
@@ -101,25 +117,23 @@ func intentContactFrom(text string) string {
 	return ""
 }
 
-const composePrompt = `You turn a request into ONE WhatsApp action for a program to carry out.
+const composePrompt = `You turn a request into ONE messaging action for a program to carry out.
 Reply with ONLY a JSON object and nothing else.
 
 Fields:
+  "channel": %q
   "op":      "send", "read_recent" or "unread"
-  "contact": the person's name exactly as the owner wrote it (leave out if a phone number is given)
-  "phone":   digits with the country code, only if the owner gave a number
+  "contact": the person's name or username exactly as the owner wrote it (leave out if a phone number is given)
+  "phone":   digits with the country code, only if the owner gave a number (for WhatsApp only)
   "text":    for send only: the message, in the owner's voice, saying only what they asked for
   "limit":   for read_recent only: how many recent messages
-  "prefer":  "phone" only if the owner asked to use their phone, "laptop" only if they asked for the laptop
+  "prefer":  "phone" (default for mobile/messaging apps, unless the owner explicitly asked to use laptop)
 
 Never invent a recipient or a number. If you cannot tell who to message, reply {"error":"no recipient"}.
 
 Request: %q`
 
-// whatsAppSteps plans a WhatsApp job as two steps: an agent turns the sentence into a strict action, and a
-// step that needs the owner's device carries it out. The second step is where permissions and approval
-// apply, not the first.
-func whatsAppSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency) {
+func messagingSteps(channel string, req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency) {
 	do := map[string]any{"requires": []string{domain.HostCapMessaging}}
 	if c := intentContactFrom(req.RequestText); c != "" {
 		do["intent_contact"] = c
@@ -129,23 +143,42 @@ func whatsAppSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.Pl
 	if len(composePayload) == 0 {
 		composePayload = json.RawMessage(`{}`)
 	}
+	prefix := "WhatsApp"
+	composeKey := "wa_compose"
+	doKey := "wa_do"
+	if channel == domain.MessagingChannelInstagram {
+		prefix = "Instagram"
+		composeKey = "insta_compose"
+		doKey = "insta_do"
+	}
 	steps := []domain.ChildTaskPlan{
 		{
-			Key:           "wa_compose",
-			Title:         "Work out the WhatsApp action",
-			Goal:          fmt.Sprintf(composePrompt, req.RequestText),
+			Key:           composeKey,
+			Title:         fmt.Sprintf("Work out the %s action", prefix),
+			Goal:          fmt.Sprintf(composePrompt, channel, req.RequestText),
 			ManagerDomain: "personal_ops",
 			InputPayload:  composePayload,
 			Priority:      req.Priority,
 		},
 		{
-			Key:           "wa_do",
-			Title:         truncateString("WhatsApp: "+req.RequestText, 60),
+			Key:           doKey,
+			Title:         truncateString(prefix+": "+req.RequestText, 60),
 			Goal:          req.RequestText,
 			ManagerDomain: "personal_ops",
 			InputPayload:  doPayload,
 			Priority:      req.Priority,
 		},
 	}
-	return steps, []domain.PlanDependency{{TaskKey: "wa_do", DependsOnKey: "wa_compose"}}
+	return steps, []domain.PlanDependency{{TaskKey: doKey, DependsOnKey: composeKey}}
+}
+
+// whatsAppSteps plans a WhatsApp job as two steps: an agent turns the sentence into a strict action, and a
+// step that needs the owner's device carries it out. The second step is where permissions and approval
+// apply, not the first.
+func whatsAppSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency) {
+	return messagingSteps(domain.MessagingChannelWhatsApp, req)
+}
+
+func instagramSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency) {
+	return messagingSteps(domain.MessagingChannelInstagram, req)
 }

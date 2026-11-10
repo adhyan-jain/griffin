@@ -38,6 +38,8 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 	planKey := managerID
 	if wantsWhatsApp(text) {
 		managerID, planKey = "personal_ops", "whatsapp"
+	} else if wantsInstagram(text) {
+		managerID, planKey = "personal_ops", "instagram"
 	} else if wantsWeb(req.RequestText) {
 		managerID, planKey = "research", "web"
 	}
@@ -62,6 +64,9 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 	switch planKey {
 	case "whatsapp":
 		childTasks, dependencies = whatsAppSteps(req)
+
+	case "instagram":
+		childTasks, dependencies = instagramSteps(req)
 
 	case "web":
 		childTasks, dependencies = webSteps(req)

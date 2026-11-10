@@ -37,6 +37,13 @@ func TestParseMessagingAction_SendNormalizes(t *testing.T) {
 	assert.Equal(t, "running late", m.Text)
 	assert.True(t, m.Outward())
 	assert.Equal(t, "Mom", m.Target())
+
+	mInsta, err := ParseMessagingAction(payload(t, map[string]any{"messaging": map[string]any{
+		"channel": "instagram", "op": "send", "contact": "sam_lee", "text": "hey",
+	}}))
+	require.NoError(t, err)
+	assert.Equal(t, MessagingChannelInstagram, mInsta.Channel)
+	assert.Equal(t, "sam_lee", mInsta.Contact)
 }
 
 func TestMessagingAction_Rejects(t *testing.T) {

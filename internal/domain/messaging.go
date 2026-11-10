@@ -26,8 +26,11 @@ const (
 	MessagingUnread     MessagingOp = "unread"      // list chats with unread messages
 )
 
-// MessagingChannelWhatsApp is the only channel this build drives.
-const MessagingChannelWhatsApp = "whatsapp"
+// Supported messaging channels.
+const (
+	MessagingChannelWhatsApp  = "whatsapp"
+	MessagingChannelInstagram = "instagram"
+)
 
 const (
 	maxMessageText   = 4000
@@ -86,8 +89,8 @@ func (m *MessagingAction) Validate() error {
 	if m.Channel == "" {
 		m.Channel = MessagingChannelWhatsApp
 	}
-	if m.Channel != MessagingChannelWhatsApp {
-		return fmt.Errorf("%w: messaging channel %q is not supported (only whatsapp)", ErrValidation, m.Channel)
+	if m.Channel != MessagingChannelWhatsApp && m.Channel != MessagingChannelInstagram {
+		return fmt.Errorf("%w: messaging channel %q is not supported (only whatsapp and instagram)", ErrValidation, m.Channel)
 	}
 	m.Op = MessagingOp(strings.ToLower(strings.TrimSpace(string(m.Op))))
 	m.Prefer = strings.ToLower(strings.TrimSpace(m.Prefer))

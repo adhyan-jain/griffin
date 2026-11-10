@@ -177,6 +177,9 @@ type session struct {
 
 // Do implements Driver.
 func (w *Web) Do(ctx context.Context, act *domain.MessagingAction) (*Result, error) {
+	if act.Channel != "" && act.Channel != domain.MessagingChannelWhatsApp {
+		return nil, notReady("whatsapp-web driver does not handle %q", act.Channel)
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

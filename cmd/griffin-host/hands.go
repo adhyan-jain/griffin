@@ -11,18 +11,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/griffin/core/internal/hands/instagram"
 	"github.com/griffin/core/internal/hands/whatsapp"
 )
 
-// Configuration for the WhatsApp hands (environment):
+// Configuration for the messaging hands (environment):
 //
-//	HOST_WHATSAPP         drivers in order of preference: "web,android" (default), "android,web", "web", "android", "off"
+//	HOST_WHATSAPP         drivers in order of preference: "android,web" (default), "android", "web", "off"
+//	HOST_INSTAGRAM        drivers in order of preference: "android" (default), "off"
 //	WHATSAPP_BROWSER      Chrome, Chromium or Brave binary (default: first one found on PATH)
 //	WHATSAPP_PROFILE_DIR  browser profile folder holding the WhatsApp Web login (default ~/.griffin-host/whatsapp-profile)
 //	WHATSAPP_HEADLESS     "false" to show the browser window while it works (default true)
-//	ADB_BINARY            adb binary (default adb)
+//	ADB_BINARY            adb binary (default auto-detected: PATH, ~/Android/Sdk/platform-tools/adb, etc.)
 //	ANDROID_SERIAL        which phone when several are attached
 //	WHATSAPP_PACKAGE      WhatsApp's package on the phone (default com.whatsapp; com.whatsapp.w4b for Business)
+//	INSTAGRAM_PACKAGE     Instagram's package on the phone (default com.instagram.android)
 
 // whatsappSetup is the drivers this machine can use.
 type whatsappSetup struct {
@@ -32,14 +35,35 @@ type whatsappSetup struct {
 	adbBinary string
 }
 
+func findADB(custom string) string {
+	if custom != "" {
+		return custom
+	}
+	if p, err := exec.LookPath("adb"); err == nil {
+		return p
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates := []string{
+			filepath.Join(home, "Android", "Sdk", "platform-tools", "adb"),
+			filepath.Join(home, ".local", "share", "axis-toolchain", "android-sdk", "platform-tools", "adb"),
+		}
+		for _, c := range candidates {
+			if _, err := os.Stat(c); err == nil {
+				return c
+			}
+		}
+	}
+	return "adb"
+}
+
 // newWhatsApp builds the drivers the machine can back. It returns nil when there are none, in which case
 // the host must not advertise the messaging capability.
 func newWhatsApp(logger *slog.Logger) *whatsappSetup {
-	mode := strings.ToLower(strings.ReplaceAll(envOr("HOST_WHATSAPP", "web,android"), " ", ""))
+	mode := strings.ToLower(strings.ReplaceAll(envOr("HOST_WHATSAPP", "android,web"), " ", ""))
 	if mode == "" || mode == "off" {
 		return nil
 	}
-	s := &whatsappSetup{adbBinary: envOr("ADB_BINARY", "adb")}
+	s := &whatsappSetup{adbBinary: findADB(os.Getenv("ADB_BINARY"))}
 	var drivers []whatsapp.Driver
 	for _, name := range strings.Split(mode, ",") {
 		switch name {
@@ -71,6 +95,20 @@ func newWhatsApp(logger *slog.Logger) *whatsappSetup {
 			logger.Warn("unknown WhatsApp driver in HOST_WHATSAPP, ignoring", "name", name)
 		}
 	}
+
+	// Instagram driver on Android
+	instaMode := strings.ToLower(strings.ReplaceAll(envOr("HOST_INSTAGRAM", "android"), " ", ""))
+	if instaMode == "android" {
+		if _, err := exec.LookPath(s.adbBinary); err == nil {
+			instaDriver := instagram.NewAndroid(instagram.AndroidConfig{
+				ADB:     whatsapp.ExecADB{Binary: s.adbBinary, Serial: os.Getenv("ANDROID_SERIAL")},
+				Package: envOr("INSTAGRAM_PACKAGE", "com.instagram.android"),
+				Logger:  logger,
+			})
+			drivers = append(drivers, instaDriver)
+		}
+	}
+
 	if len(drivers) == 0 {
 		return nil
 	}

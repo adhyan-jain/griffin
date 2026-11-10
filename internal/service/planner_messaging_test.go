@@ -171,3 +171,40 @@ func TestGoogleAsAProductNameIsNotASearchCommand(t *testing.T) {
 	assert.True(t, wantsWeb("Google the best rust tutorials"))
 	assert.True(t, wantsWeb("please google how tall the eiffel tower is"))
 }
+
+func TestWantsInstagram(t *testing.T) {
+	yes := []string{
+		"dm sam on insta saying hello",
+		"message bro on instagram saying wassup",
+		"send an instagram message to mom",
+		"dm rahul on ig saying dinner is ready",
+		"check my unread instagram chats",
+	}
+	no := []string{
+		"write a bot for instagram",
+		"explain how instagram reels work",
+		"send an email to my professor",
+	}
+	for _, s := range yes {
+		assert.True(t, wantsInstagram(s), s)
+	}
+	for _, s := range no {
+		assert.False(t, wantsInstagram(s), s)
+	}
+}
+
+func TestInstagramRequestsPlanAsComposeThenDo(t *testing.T) {
+	req := &domain.UserRequest{UserID: uuid.New(), RequestText: "dm sam on insta saying running late", Priority: domain.TaskPriorityNormalP2}
+	plan, err := NewRuleBasedPlanner().GeneratePlan(context.Background(), req, manager.NewDefaultRegistry())
+	require.NoError(t, err)
+	require.Len(t, plan.ChildTasks, 2)
+	assert.Equal(t, "personal_ops", plan.ManagerID)
+
+	compose, do := plan.ChildTasks[0], plan.ChildTasks[1]
+	assert.Equal(t, "insta_compose", compose.Key)
+	assert.Equal(t, "insta_do", do.Key)
+	assert.Contains(t, compose.Goal, "ONLY a JSON object")
+	assert.Contains(t, compose.Goal, "instagram")
+	assert.NoError(t, domain.ValidateRequires(do.InputPayload))
+	assert.NoError(t, domain.ValidateMessaging(do.InputPayload))
+}

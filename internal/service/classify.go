@@ -81,6 +81,8 @@ func deviceRequestReason(t string) string {
 	switch {
 	case wantsWhatsApp(t):
 		return "whatsapp-request"
+	case wantsInstagram(t):
+		return "instagram-request"
 	case wantsWeb(t):
 		return "web-request"
 	}

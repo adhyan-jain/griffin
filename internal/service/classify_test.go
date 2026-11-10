@@ -103,6 +103,8 @@ func TestDeviceRequestsAreWorkNotConversation(t *testing.T) {
 		"can you whatsapp bhai?",
 		"please whatsapp mom that dinner is ready",
 		"whatsapp Sam Lee saying test 123",
+		"dm sam on insta saying hello",
+		"message bro on instagram saying wassup",
 		"search the web for the best laptops under 60000",
 		"google best pizza in Pune",
 		"summarise https://example.com/article",

@@ -272,6 +272,9 @@ func (a *Android) ready(ctx context.Context) error {
 
 // Do implements Driver.
 func (a *Android) Do(ctx context.Context, act *domain.MessagingAction) (*Result, error) {
+	if act.Channel != "" && act.Channel != domain.MessagingChannelWhatsApp {
+		return nil, notReady("whatsapp-android driver does not handle %q", act.Channel)
+	}
 	if err := a.ready(ctx); err != nil {
 		return nil, err
 	}
