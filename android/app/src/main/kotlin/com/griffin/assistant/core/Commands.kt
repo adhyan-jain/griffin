@@ -23,6 +23,11 @@ sealed class Command {
     data class Flashlight(val on: Boolean) : Command()
     data class OpenApp(val name: String) : Command()
     data class Volume(val up: Boolean) : Command()
+    object MediaNext : Command()
+    object MediaPrevious : Command()
+    object MediaPlay : Command()
+    object MediaPause : Command()
+    object MediaPlayPause : Command()
     object Answer : Command()
     object Reject : Command()
     object Stop : Command()
@@ -101,6 +106,11 @@ object Commands {
             "flashlight off", "turn off the flashlight", "turn the flashlight off", "torch off", "turn off the torch", "turn off flashlight" -> return Command.Flashlight(false)
             "volume up", "turn it up", "turn the volume up", "louder", "increase the volume" -> return Command.Volume(true)
             "volume down", "turn it down", "turn the volume down", "quieter", "lower the volume", "decrease the volume" -> return Command.Volume(false)
+            "next song", "next track", "skip song", "skip track", "skip", "change song", "change the song", "change spotify song", "spotify next", "next" -> return Command.MediaNext
+            "previous song", "previous track", "prev song", "prev track", "last song", "replay song" -> return Command.MediaPrevious
+            "play music", "play song", "resume music", "resume song", "play spotify", "resume spotify", "play", "resume" -> return Command.MediaPlay
+            "pause music", "pause song", "stop music", "pause spotify", "pause" -> return Command.MediaPause
+            "play pause", "toggle music", "toggle playback" -> return Command.MediaPlayPause
         }
 
         Regex("^(?:please )?(?:open|launch|start) ([a-z0-9' ]+)$").find(s)?.let { m ->

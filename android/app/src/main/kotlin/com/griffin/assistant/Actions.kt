@@ -89,6 +89,37 @@ class Actions(private val context: Context) {
         return if (up) "Louder." else "Quieter."
     }
 
+    fun mediaNext(): String {
+        dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+        return "Skipping to next song."
+    }
+
+    fun mediaPrevious(): String {
+        dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+        return "Previous song."
+    }
+
+    fun mediaPlay(): String {
+        dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+        return "Playing music."
+    }
+
+    fun mediaPause(): String {
+        dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PAUSE)
+        return "Paused music."
+    }
+
+    fun mediaPlayPause(): String {
+        dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        return "Toggled playback."
+    }
+
+    private fun dispatchMediaKey(keyCode: Int) {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode))
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode))
+    }
+
     fun openApp(name: String): String {
         val pm = context.packageManager
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)

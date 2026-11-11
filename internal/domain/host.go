@@ -34,6 +34,8 @@ const (
 	HostCapMessaging = "messaging"
 	// HostCapWeb is read-only access to the public web: search and fetching pages.
 	HostCapWeb = "web"
+	// HostCapDesktop is headless desktop app launching, media control, and OS environment awareness.
+	HostCapDesktop = "desktop"
 )
 
 // AllHostCapabilities is the set of recognized host capabilities.
@@ -47,6 +49,7 @@ var AllHostCapabilities = map[string]bool{
 	HostCapCalls:     true,
 	HostCapMessaging: true,
 	HostCapWeb:       true,
+	HostCapDesktop:   true,
 }
 
 const (

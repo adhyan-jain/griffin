@@ -38,6 +38,7 @@ import (
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/gateway"
 	"github.com/griffin/core/internal/hands"
+	"github.com/griffin/core/internal/hands/desktop"
 	"github.com/griffin/core/internal/hands/web"
 	"github.com/griffin/core/internal/hostagent"
 	"github.com/griffin/core/internal/provider/antigravity"
@@ -105,6 +106,12 @@ func run(logger *slog.Logger, check bool) error {
 		webSvc = &hands.WebService{Fetcher: web.NewFetcher(web.FetcherConfig{}), Searcher: web.SearcherFromEnv()}
 		backedCapabilities[domain.HostCapWeb] = true
 	}
+	// Desktop app launcher, media playback, and OS awareness:
+	var deskSvc *desktop.Service
+	if execKind == "agy" && strings.ToLower(envOr("HOST_DESKTOP", "on")) != "off" {
+		deskSvc = desktop.NewService(logger)
+		backedCapabilities[domain.HostCapDesktop] = true
+	}
 	caps, err := parseCapabilities(envOr("HOST_CAPABILITIES", domain.HostCapAgent), execKind == "mock")
 	if err != nil {
 		return err
@@ -143,8 +150,8 @@ func run(logger *slog.Logger, check bool) error {
 	// gateway to the drivers, everything else goes to the agent. The gateway is attached once the agent
 	// exists, because the agent is where the owner's policy arrives.
 	var handsExec *hands.Executor
-	if wa != nil || webSvc != nil {
-		handsExec = &hands.Executor{Agent: exec, Web: webSvc, Logger: logger}
+	if wa != nil || webSvc != nil || deskSvc != nil {
+		handsExec = &hands.Executor{Agent: exec, Web: webSvc, Desktop: deskSvc, Logger: logger}
 		if wa != nil {
 			handsExec.WhatsApp = wa.messenger
 		}
@@ -196,6 +203,9 @@ func run(logger *slog.Logger, check bool) error {
 		}
 		if webSvc != nil {
 			logger.Info("web search and page reading enabled", "search", webSvc.Searcher.Names())
+		}
+		if deskSvc != nil {
+			logger.Info("desktop apps and media control enabled", "os", deskSvc.Env.OS, "distro", deskSvc.Env.Distro, "tools", deskSvc.Env.Tools)
 		}
 		logger.Info("outward actions are audited", "audit_log", filepath.Join(stateDir(), "audit.log"))
 	}

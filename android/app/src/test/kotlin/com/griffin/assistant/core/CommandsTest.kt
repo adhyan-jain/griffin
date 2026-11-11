@@ -62,6 +62,16 @@ class CommandsTest {
         assertEquals(Command.None, p("open a timer"))
     }
 
+    @Test fun `media controls`() {
+        assertEquals(Command.MediaNext, p("next song"))
+        assertEquals(Command.MediaNext, p("skip track"))
+        assertEquals(Command.MediaNext, p("change spotify song"))
+        assertEquals(Command.MediaPrevious, p("previous song"))
+        assertEquals(Command.MediaPlay, p("play music"))
+        assertEquals(Command.MediaPause, p("pause music"))
+        assertEquals(Command.MediaPlayPause, p("play pause"))
+    }
+
     @Test fun `call handling words`() {
         for (s in listOf("answer", "Answer it.", "pick up", "accept the call")) assertEquals(s, Command.Answer, p(s))
         for (s in listOf("reject", "decline", "hang up", "ignore it")) assertEquals(s, Command.Reject, p(s))

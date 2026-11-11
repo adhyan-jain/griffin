@@ -15,6 +15,7 @@ import (
 
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/gateway"
+	"github.com/griffin/core/internal/hands/desktop"
 	"github.com/griffin/core/internal/hands/whatsapp"
 	"github.com/griffin/core/internal/policy"
 	"github.com/griffin/core/internal/worker"
@@ -35,8 +36,10 @@ type Executor struct {
 	// WhatsApp is nil when this host has no way to reach WhatsApp.
 	WhatsApp Messenger
 	// Web is nil when this host does not offer web search and page reading.
-	Web    *WebService
-	Logger *slog.Logger
+	Web *WebService
+	// Desktop provides media playback and desktop application management.
+	Desktop *desktop.Service
+	Logger  *slog.Logger
 }
 
 // Name implements worker.TaskExecutor.
@@ -61,6 +64,11 @@ func fail(err error, retryable bool) (*worker.ExecutionResult, error) {
 
 // Execute implements worker.TaskExecutor.
 func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.ExecutionResult, error) {
+	if da, err := domain.ParseDesktopAction(task.InputPayload); err != nil {
+		return fail(err, false)
+	} else if da != nil {
+		return e.runDesktop(ctx, task, da)
+	}
 	if wa, err := domain.ParseWebAction(task.InputPayload); err != nil {
 		return fail(err, false)
 	} else if wa != nil {
@@ -267,4 +275,49 @@ func summarize(act *domain.MessagingAction, res *whatsapp.Result) string {
 		fmt.Fprintf(&b, "\n\nNote: %s.", strings.TrimRight(n, "."))
 	}
 	return b.String()
+}
+
+func (e *Executor) runDesktop(ctx context.Context, task *domain.Task, da *domain.DesktopAction) (*worker.ExecutionResult, error) {
+	if e.Desktop == nil {
+		return fail(errors.New("desktop operations are not supported on this host"), false)
+	}
+	switch da.Op {
+	case domain.DesktopOpMedia:
+		res, err := e.Desktop.Media(ctx, desktop.MediaOp(da.MediaOp), da.Player)
+		if err != nil {
+			return fail(err, false)
+		}
+		raw, _ := json.Marshal(res)
+		return &worker.ExecutionResult{
+			ExecutionID:  uuid.New(),
+			ProviderName: "hands-desktop",
+			Status:       "SUCCESS",
+			Output:       raw,
+			TextOutput:   res.Message,
+		}, nil
+	case domain.DesktopOpLaunch:
+		msg, err := e.Desktop.LaunchApp(ctx, da.App)
+		if err != nil {
+			return fail(err, false)
+		}
+		raw, _ := json.Marshal(map[string]any{"status": "launched", "message": msg})
+		return &worker.ExecutionResult{
+			ExecutionID:  uuid.New(),
+			ProviderName: "hands-desktop",
+			Status:       "SUCCESS",
+			Output:       raw,
+			TextOutput:   msg,
+		}, nil
+	case domain.DesktopOpEnv:
+		raw, _ := json.Marshal(e.Desktop.Env)
+		return &worker.ExecutionResult{
+			ExecutionID:  uuid.New(),
+			ProviderName: "hands-desktop",
+			Status:       "SUCCESS",
+			Output:       raw,
+			TextOutput:   fmt.Sprintf("Host OS: %s, Distro: %s, Desktop: %s", e.Desktop.Env.OS, e.Desktop.Env.Distro, e.Desktop.Env.Desktop),
+		}, nil
+	default:
+		return fail(fmt.Errorf("unsupported desktop op: %s", da.Op), false)
+	}
 }
