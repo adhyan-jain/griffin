@@ -31,13 +31,21 @@ object WakeMatcher {
         'y' to "why", 'z' to "zed",
     )
 
+    /** Slang wake phrases for "oye bhosadike" and its recogniser spellings. */
+    private val slangTriggers = setOf(
+        "oyebhosadike", "oyebhosdike", "oyebhosdik", "oyebhosdk", "oyebsdk", "oyebosdike",
+        "oibhosadike", "oibhosdike", "oebhosadike", "oebhosdike", "oybhosadike", "oybhosdike",
+        "bhosadike", "bhosdike", "bhosdik", "bhosdk", "bsdk", "bhonsdike", "bhonsadike",
+        "oyebhonsdike", "oyebhonsadike", "bhosadi", "bhosdi"
+    )
+
     private fun norm(s: String): String = s.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
 
-    /** All the ways the name may be written by a recogniser: as typed, and with each letter spelled out. */
+    /** All the ways the name may be written by a recogniser: as typed, with each letter spelled out, and always "griffin". */
     fun forms(name: String): Set<String> {
         val base = norm(name)
         if (base.isEmpty()) return emptySet()
-        val out = mutableSetOf(base)
+        val out = mutableSetOf(base, "griffin")
         if (base.length <= 3 && base.all { it.isLetter() }) {
             out += base.map { spokenLetters[it] ?: it.toString() }.joinToString("")
         }
@@ -45,10 +53,22 @@ object WakeMatcher {
     }
 
     fun match(heard: String, name: String): Wake? {
-        val forms = forms(name)
-        if (forms.isEmpty()) return null
         val words = heard.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty()) return null
+
+        // 1. Slang wake trigger: "oye bhosadike" and phonetic variants (1 to 3 words at the start).
+        val maxSlangSpan = minOf(3, words.size)
+        for (span in 1..maxSlangSpan) {
+            val said = norm(words.subList(0, span).joinToString(""))
+            if (said in slangTriggers || (said.length >= 8 && (levenshtein(said, "oyebhosadike") <= 2 || levenshtein(said, "oyebhosdike") <= 2))) {
+                val rest = words.drop(span).joinToString(" ").trim().trimStart(',', ':', '-', '.', '!', '?').trim()
+                return Wake(rest)
+            }
+        }
+
+        // 2. Standard wake phrase: "hey" followed by the manager's name (or "griffin").
+        val forms = forms(name)
+        if (forms.isEmpty()) return null
         if (norm(words[0]) !in heys) return null // "hey" is required
         val start = 1
         // The name is one to four words ("J J", "jay jay", "Mr Stark"); try the shortest span that matches.

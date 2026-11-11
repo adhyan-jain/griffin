@@ -120,7 +120,33 @@ class AssistantMachineTest {
         val ask = PendingAction(PendingAction.Kind.Server, "", "token-123", "", "")
         val s = AssistantMachine.reduce(AState(phase = Phase.Thinking), AEvent.ConfirmRequested(ask, now = 0)).state
         assertEquals(listOf<Effect>(Effect.Confirmed(ask)), heard(s, "yes", now = 2000).effects)
+        assertEquals(listOf<Effect>(Effect.Confirmed(ask)), heard(s, "approve", now = 2000).effects)
+        assertEquals(listOf<Effect>(Effect.Confirmed(ask)), heard(s, "yes approve", now = 2000).effects)
         assertEquals(listOf<Effect>(Effect.Declined(ask)), heard(s, "no", now = 2000).effects)
+    }
+
+    @Test fun `draft readout and hold in confirming phase`() {
+        val ask = PendingAction(PendingAction.Kind.Server, "Approve: WhatsApp message", "token-123", "Hello brother, how are you", "")
+        val s = AssistantMachine.reduce(AState(phase = Phase.Thinking), AEvent.ConfirmRequested(ask, now = 1000)).state
+        assertEquals(Phase.Confirming, s.phase)
+
+        // "read out the draft" reads draft and stays in confirming with extended deadline
+        val read = heard(s, "read out the draft", now = 2000)
+        assertEquals(listOf<Effect>(Effect.ReadDraft(ask)), read.effects)
+        assertEquals(Phase.Confirming, read.state.phase)
+        assertEquals(ask, read.state.pending)
+        assertEquals(2000 + AssistantMachine.CONFIRM_MS, read.state.until)
+
+        // "approve" confirms
+        val approve = heard(s, "approve", now = 3000)
+        assertEquals(listOf<Effect>(Effect.Confirmed(ask)), approve.effects)
+        assertEquals(Phase.Thinking, approve.state.phase)
+
+        // "ok I'll check" holds without declining
+        val hold = heard(s, "ok I'll check", now = 3000)
+        assertEquals(listOf<Effect>(Effect.Hold(ask)), hold.effects)
+        assertEquals(Phase.Idle, hold.state.phase)
+        assertNull(hold.state.pending)
     }
 
     @Test fun `any other sentence cancels the wait and is treated as ordinary input`() {

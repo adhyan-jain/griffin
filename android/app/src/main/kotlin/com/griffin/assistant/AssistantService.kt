@@ -60,7 +60,7 @@ class AssistantService : Service() {
         val listenNow = PendingIntent.getService(this, 2, Intent(this, AssistantService::class.java).setAction(ACTION_LISTEN), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification: Notification = NotificationCompat.Builder(this, "assistant").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Griffin is listening")
-            .setContentText("Say \"hey\" and the manager's name, or tap Listen now.").setOngoing(true).setContentIntent(open).addAction(0, "Listen now", listenNow).addAction(0, "Stop", stop).build()
+            .setContentText("Say \"hey $name\" or \"oye bhosadike\", or tap Listen now.").setOngoing(true).setContentIntent(open).addAction(0, "Listen now", listenNow).addAction(0, "Stop", stop).build()
         startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
 
         app.assistantRunning = true
@@ -132,6 +132,11 @@ class AssistantService : Service() {
             is Effect.Handle -> handle(effect.request)
             is Effect.Confirmed -> carryOut(effect.action)
             is Effect.Declined -> say(if (effect.action.kind == PendingAction.Kind.Server) "Okay, I will leave it." else "Okay, not sending it.")
+            is Effect.ReadDraft -> {
+                val draft = effect.action.text.ifBlank { effect.action.who.ifBlank { "No draft text attached." } }
+                say("The draft says: $draft. Say approve to confirm, or say leave it.")
+            }
+            is Effect.Hold -> say("Okay, I will hold it for you to check.")
             Effect.AnswerCall -> actions.answer()?.let { say(it) }
             Effect.RejectCall -> actions.reject()?.let { say(it) }
         }
@@ -300,7 +305,7 @@ class AssistantService : Service() {
                 name = r.managerName
                 app.main.post {
                     // Griffin asked for a yes before changing anything: wait for it with the animation showing.
-                    r.confirmToken?.let { dispatch(AEvent.ConfirmRequested(PendingAction(PendingAction.Kind.Server, "", it, "", ""), System.currentTimeMillis())) }
+                    r.confirmToken?.let { dispatch(AEvent.ConfirmRequested(PendingAction(PendingAction.Kind.Server, who = r.reply, target = it, text = r.draft.orEmpty(), via = ""), System.currentTimeMillis())) }
                     if (r.reply.isNotBlank()) say(r.reply) else if (!r.handoff) finished()
                     history += "user" to request
                     if (r.reply.isNotBlank()) history += "assistant" to r.reply

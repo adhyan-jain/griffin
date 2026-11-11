@@ -59,8 +59,17 @@ class WakeMatcherTest {
         assertEquals(6, WakeMatcher.levenshtein("", "jarvis"))
     }
 
-    @Test fun `forms of a letter name include how it is spoken`() {
-        assertEquals(setOf("jj", "jayjay"), WakeMatcher.forms("JJ"))
-        assertEquals(setOf("jarvis"), WakeMatcher.forms("Jarvis"))
+    @Test fun `forms of a letter name include how it is spoken and griffin`() {
+        assertEquals(setOf("jj", "jayjay", "griffin"), WakeMatcher.forms("JJ"))
+        assertEquals(setOf("jarvis", "griffin"), WakeMatcher.forms("Jarvis"))
+    }
+
+    @Test fun `oye bhosadike wakes and extracts command`() {
+        assertEquals("send hello to bhai", rest("oye bhosadike send hello to bhai", "JJ"))
+        assertEquals("send hello to bhai", rest("oye bhosdike send hello to bhai", "JJ"))
+        assertEquals("send hello to bhai", rest("oye bsdk send hello to bhai", "JJ"))
+        assertEquals("send hello to bhai", rest("bhosadike send hello to bhai", "JJ"))
+        assertEquals("", rest("oye bhosadike", "JJ"))
+        assertEquals("what's up", rest("hey griffin what's up", "JJ"))
     }
 }

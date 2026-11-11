@@ -24,6 +24,28 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
     private var preferOnDevice = true
     private var preferOffline = true
     private var consecutiveClientErrors = 0
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+    private var systemMuted = false
+
+    private fun suppressBeep() {
+        if (systemMuted) return
+        try {
+            audioManager?.let { am ->
+                am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0)
+                systemMuted = true
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun restoreBeep() {
+        if (!systemMuted) return
+        try {
+            audioManager?.let { am ->
+                am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_UNMUTE, 0)
+                systemMuted = false
+            }
+        } catch (_: Exception) {}
+    }
 
     val isActive get() = active
 
@@ -32,12 +54,14 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
         active = true
         paused = false
         consecutiveClientErrors = 0
+        suppressBeep()
         begin()
     }
 
     fun stop() {
         active = false
         main.removeCallbacksAndMessages(null)
+        restoreBeep()
         destroy()
         onStatus("stopped")
     }
@@ -129,7 +153,7 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
             }
             override fun onError(error: Int) {
                 when (error) {
-                    SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> schedule(150) // silence: the normal case
+                    SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> schedule(400) // silence: the normal case
                     SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> schedule(900, recreate = true)
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
                         active = false
@@ -179,6 +203,7 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
 
     private fun begin() {
         if (!active || paused) return
+        suppressBeep()
         if (recognizer == null) recognizer = create()
         val r = recognizer
         if (r == null) {
@@ -192,7 +217,8 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             }
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1300L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
         }
         try {

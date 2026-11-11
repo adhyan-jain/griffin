@@ -47,14 +47,14 @@ type TaskCommand struct {
 }
 
 var (
-	reList      = regexp.MustCompile(`^(?:please )?(?:list|show|read(?: out)?|tell me)(?: me)?(?: all)?(?: of)?(?: my| the)?(?: (running|active|finished|completed|done|failed|pending))? tasks$`)
-	reListHow   = regexp.MustCompile(`^(?:what tasks|how are my tasks|how many tasks|any (running|failed|active|finished|completed) tasks|do i have any (running|failed|active|finished|completed) tasks)(?: (?:are )?(running|active|done|finished|completed|failed))?(?: do i have)?$`)
+	reList      = regexp.MustCompile(`^(?:please )?(?:list|show|read(?: out)?|tell me)(?: me)?(?: all)?(?: of)?(?: my| the)?(?: (running|active|finished|completed|done|failed|pending|open))? tasks$`)
+	reListHow   = regexp.MustCompile(`^(?:what tasks|how are my tasks|how many tasks|(?:are there |do i have )?any (running|failed|active|finished|completed|open) tasks)(?: (?:are )?(running|active|done|finished|completed|failed|open))?(?: do i have)?$`)
 	reCancelAll = regexp.MustCompile(`^(?:please )?(?:cancel|stop) (?:all|everything|all (?:of )?(?:my )?(?:running|active)(?: tasks)?|everything running)$`)
 	reCancel    = regexp.MustCompile(`^(?:please )?cancel (?:the |my )?(.+?)(?: task)?$`)
 	reDeleteSet = regexp.MustCompile(`^(?:please )?(?:delete|remove|clear|clean up)(?: all)?(?: of)?(?: the| my)? (finished|completed|done|failed|old|all|cancelled|canceled)(?: tasks)?$`)
 	reDelete    = regexp.MustCompile(`^(?:please )?(?:delete|remove) (?:the |my |task )?(.+?)(?: task)?$`)
 	reApprList  = regexp.MustCompile(`^(?:any |what |do i have any |are there any )?(?:approvals?|things? (?:that )?(?:need|needs|waiting for) (?:my )?approval|what needs my approval)(?: (?:are )?(?:waiting|pending))?(?: for me)?$`)
-	reApprove   = regexp.MustCompile(`^(?:please )?approve(?: it| that| this| the (.+?)| (.+?))?$`)
+	reApprove   = regexp.MustCompile(`^(?:please )?(?:approve|confirm)(?: it| that| this| the (.+?)| (.+?))?$`)
 	reReject    = regexp.MustCompile(`^(?:please )?(?:reject|deny|decline)(?: it| that| this| the (.+?)| (.+?))?$`)
 )
 
@@ -66,7 +66,7 @@ func norm(s string) string {
 
 func scopeOf(word string) string {
 	switch word {
-	case "running", "active", "pending", "in progress":
+	case "running", "active", "pending", "in progress", "open":
 		return "active"
 	case "finished", "completed", "done":
 		return "done"
@@ -89,10 +89,12 @@ func ParseTaskCommand(text string) TaskCommand {
 		return TaskCommand{Kind: CmdListTasks, Scope: scopeOf(m[1])}
 	}
 	if m := reListHow.FindStringSubmatch(s); m != nil {
-		w := m[1] + m[2] + m[3]
+		w := m[1] + m[2]
 		return TaskCommand{Kind: CmdListTasks, Scope: scopeOf(w)}
 	}
-	if s == "what s running" || s == "what is running" || s == "what s in progress" || s == "what is in progress" {
+	if s == "what s running" || s == "what is running" || s == "what s in progress" || s == "what is in progress" ||
+		s == "what s open" || s == "what is open" || s == "any open tasks" || s == "are there any open tasks" ||
+		s == "do i have any open tasks" || s == "open tasks" {
 		return TaskCommand{Kind: CmdListTasks, Scope: "active"}
 	}
 	if s == "what are my tasks" || s == "what tasks do i have" || s == "list my tasks" {
@@ -160,6 +162,7 @@ type VoiceCommands struct {
 type Result struct {
 	Reply        string
 	ConfirmToken string
+	Draft        string
 	// NotHandled means the sentence only looked like a task command (it named no task of the owner's), so the caller
 	// should treat it as ordinary conversation or work instead of answering "I could not find it".
 	NotHandled bool
@@ -518,8 +521,24 @@ func (v *VoiceCommands) decideApproval(ctx context.Context, user uuid.UUID, c Ta
 		}
 		return Result{Reply: fmt.Sprintf("%d things are waiting: %s. Say which one.", len(chosen), strings.Join(titles, "; "))}, nil
 	}
+	var draft string
+	if len(chosen[0].ActionPayload) > 0 {
+		var ap map[string]any
+		if err := json.Unmarshal(chosen[0].ActionPayload, &ap); err == nil {
+			if t, ok := ap["text"].(string); ok && t != "" {
+				draft = t
+			}
+		}
+	}
+	if draft == "" {
+		draft = strings.TrimSpace(chosen[0].Summary)
+	}
 	token := v.sign(confirmPayload{User: user.String(), Action: action, IDs: []string{chosen[0].ID.String()}, Exp: v.now().Add(confirmTTL).Unix()})
-	return Result{Reply: fmt.Sprintf("%s: %s? Say yes to confirm.", verb, strings.TrimSpace(chosen[0].Summary)), ConfirmToken: token}, nil
+	return Result{
+		Reply:        fmt.Sprintf("%s: %s? Say yes to confirm.", verb, strings.TrimSpace(chosen[0].Summary)),
+		ConfirmToken: token,
+		Draft:        draft,
+	}, nil
 }
 
 // Confirm carries out a change the owner agreed to, or drops it. The token must be genuine, theirs and fresh.

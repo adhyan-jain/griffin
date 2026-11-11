@@ -60,6 +60,8 @@ sealed class Effect {
     data class Handle(val request: String) : Effect()
     data class Confirmed(val action: PendingAction) : Effect()
     data class Declined(val action: PendingAction) : Effect()
+    data class ReadDraft(val action: PendingAction) : Effect()
+    data class Hold(val action: PendingAction) : Effect()
     object AnswerCall : Effect()
     object RejectCall : Effect()
 }
@@ -73,8 +75,27 @@ object AssistantMachine {
     const val CONFIRM_MS = 20_000L
     const val RINGING_MS = 25_000L
 
-    private val yes = setOf("yes", "send", "send it", "confirm", "yes send it", "yep", "yeah")
-    private val no = setOf("no", "cancel", "don't", "do not send", "nope", "stop")
+    private val yes = setOf(
+        "yes", "send", "send it", "confirm", "yes send it", "yep", "yeah", "ya", "ha", "haan",
+        "approve", "approve it", "approve that", "approve this", "approve task", "yes approve",
+        "go ahead", "do it", "sure", "ok approve", "okay approve", "please approve", "confirm it"
+    )
+    private val no = setOf("no", "cancel", "don't", "do not send", "nope", "stop", "reject", "reject it", "decline")
+    private val readDraft = setOf(
+        "read draft", "read the draft", "read out the draft", "read out draft",
+        "what is the draft", "what's the draft", "whats the draft", "tell me the draft",
+        "show me the draft", "show draft", "draft", "read it", "read"
+    )
+    private val hold = setOf(
+        "ok", "okay", "i'll check", "ill check", "i will check", "check later", "ill check later",
+        "i'll check later", "leave it", "let it be", "whatever", "whatev", "later", "not now", "wait"
+    )
+
+    private fun isReadDraft(s: String): Boolean =
+        s.contains("draft") || s.startsWith("read") || s.contains("what did you write") || s.contains("what does it say")
+
+    private fun isHold(s: String): Boolean =
+        s.contains("check") || s.contains("leave it") || s.contains("whatever") || s.contains("whatev") || s == "ok" || s == "okay"
 
     /** What the animation should show for a phase. */
     fun orb(phase: Phase): String = when (phase) {
@@ -113,9 +134,12 @@ object AssistantMachine {
         // 1. A text or reply waiting for a yes. Anything else cancels the wait and is then treated as ordinary input.
         if (s.phase == Phase.Confirming && s.pending != null) {
             val p = s.pending!!
-            when (e.text.lowercase().trim(' ', '.', '!')) {
-                in yes -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null), listOf(Effect.Confirmed(p)))
-                in no -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null), listOf(Effect.Declined(p)))
+            val txt = e.text.lowercase().trim(' ', '.', '!', '?')
+            when {
+                txt in yes -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null), listOf(Effect.Confirmed(p)))
+                txt in no -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null), listOf(Effect.Declined(p)))
+                txt in readDraft || isReadDraft(txt) -> return Step(s.copy(phase = Phase.Confirming, until = e.now + CONFIRM_MS), listOf(Effect.ReadDraft(p)))
+                txt in hold || isHold(txt) -> return Step(s.copy(phase = Phase.Idle, until = 0, pending = null), listOf(Effect.Hold(p)))
             }
             s = s.copy(phase = Phase.Idle, until = 0, pending = null)
         }

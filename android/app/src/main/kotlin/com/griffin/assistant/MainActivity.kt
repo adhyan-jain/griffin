@@ -162,7 +162,7 @@ class MainActivity : Activity() {
 
         // Header: the wake phrase is the product.
         root.addView(label("Griffin", 15f, Ink.muted, true))
-        root.addView(label("Say \"hey $name\"", 30f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
+        root.addView(label("Say \"hey $name\" or \"oye bhosadike\"", 24f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
         root.addView(label(if (running) "Listening on this phone. Nothing is kept unless it starts with that." else "Not listening right now.", 14f, Ink.muted).apply { setPadding(0, dp(6), 0, 0) })
 
         if (app.api.usingTestServer) {

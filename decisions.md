@@ -729,4 +729,19 @@ This document is the canonical ledger of all architectural, product, engineering
   - **Thread Deduplication**: Ongoing conversation messages automatically link to `thread_id` and `follow_up_of` rather than scattering into 100s of separate task cards on the dashboard.
 - **Why**: Eliminates user frustration when refining commands mid-stream and keeps the task dashboard organized into coherent, singular conversation threads.
 
+#### ADR-105: Dual Wake Words ("oye bhosadike" / "hey <manager>"), Voice Draft Readout, and Mic Audio Suppression
+- **Status**: IMPLEMENTED (`android/.../core/WakeMatcher.kt`, `android/.../core/AssistantMachine.kt`, `android/.../Listener.kt`, `internal/service/voice_commands.go`, `internal/api/handlers/voice.go`).
+- **Decision**:
+  1. **Dual Wake Phrases**: Added support for Hindi/colloquial wake triggers ("oye bhosadike", "oye bhosdike", "oye bsdk", "bhosadike") alongside standard "hey <manager>" and "hey griffin".
+  2. **Voice Approvals & Draft Readout**:
+     - Users can verbally inspect pending drafts before approving by saying "read out the draft" / "read draft" / "what's the draft". The assistant reads the draft text aloud and stays in the confirmation window.
+     - Saying "approve" / "approve it" / "yes approve" / "send" confirms and fires the action.
+     - Saying "ok, I'll check" / "check later" / "leave it" / "whatever" acknowledges and holds the task pending without failing or rejecting.
+  3. **Open Tasks Query**: Added support for queries like "are there any open tasks", "any open tasks", "what are the open tasks", "list open tasks", returning and reading out active running tasks.
+  4. **Speech Recognizer Beep & Silence Thrashing Suppression**:
+     - System speech recognition start/restart sound muted via `AudioManager.STREAM_SYSTEM` mute/unmute during listening loops.
+     - Silence timeout increased from 1.3s to 5s to eliminate rapid continuous restarting and audio cue pings.
+- **Why**: Provides a seamless, hands-free voice experience with verbal approval safety and eliminates annoying audio artifacts from continuous speech recognition.
+
+
 

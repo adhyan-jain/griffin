@@ -37,6 +37,11 @@ func TestParseTaskCommand(t *testing.T) {
 		{"what needs my approval", TaskCommand{CmdListApprovals, "", ""}},
 		{"approve it", TaskCommand{CmdApprove, "", ""}},
 		{"approve the message to bro", TaskCommand{CmdApprove, "", "message to bro"}},
+		{"are there any open tasks", TaskCommand{CmdListTasks, "active", ""}},
+		{"any open tasks", TaskCommand{CmdListTasks, "active", ""}},
+		{"open tasks", TaskCommand{CmdListTasks, "active", ""}},
+		{"list open tasks", TaskCommand{CmdListTasks, "active", ""}},
+		{"what is open", TaskCommand{CmdListTasks, "active", ""}},
 		{"reject that", TaskCommand{CmdReject, "", ""}},
 		{"decline the email", TaskCommand{CmdReject, "", "email"}},
 	}

@@ -68,6 +68,8 @@ type VoiceTurnResponse struct {
 	Fallback string `json:"fallback,omitempty"`
 	// ConfirmToken is set when the reply asks the owner to confirm a change; send it back with their answer.
 	ConfirmToken string `json:"confirm_token,omitempty"`
+	// Draft is the draft text associated with an approval or action waiting for confirmation.
+	Draft string `json:"draft,omitempty"`
 }
 
 const (
@@ -141,7 +143,7 @@ func (h *VoiceHandler) PostTurn(w http.ResponseWriter, r *http.Request) {
 				httputil.JSON(w, http.StatusOK, out)
 				return
 			case !res.NotHandled:
-				out.Kind, out.Reply, out.ConfirmToken = "command", res.Reply, res.ConfirmToken
+				out.Kind, out.Reply, out.ConfirmToken, out.Draft = "command", res.Reply, res.ConfirmToken, res.Draft
 				httputil.JSON(w, http.StatusOK, out)
 				return
 			}

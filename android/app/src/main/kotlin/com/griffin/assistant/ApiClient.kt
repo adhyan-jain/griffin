@@ -8,7 +8,7 @@ import java.net.URL
 import java.util.UUID
 
 /** What the voice route answered. */
-data class VoiceReply(val kind: String, val reply: String, val handoff: Boolean, val managerName: String, val fallback: String?, val confirmToken: String? = null)
+data class VoiceReply(val kind: String, val reply: String, val handoff: Boolean, val managerName: String, val fallback: String?, val confirmToken: String? = null, val draft: String? = null)
 
 class ApiException(message: String, val status: Int = 0) : Exception(message)
 
@@ -16,7 +16,7 @@ class ApiException(message: String, val status: Int = 0) : Exception(message)
 fun parseVoiceReply(body: String): VoiceReply {
     val root = JSONObject(body)
     val d = root.optJSONObject("data") ?: root
-    return VoiceReply(d.optString("kind", "conversation"), d.optString("reply", ""), d.optBoolean("handoff", false), d.optString("manager_name", "JJ"), d.optString("fallback").ifEmpty { null }, d.optString("confirm_token").ifEmpty { null })
+    return VoiceReply(d.optString("kind", "conversation"), d.optString("reply", ""), d.optBoolean("handoff", false), d.optString("manager_name", "JJ"), d.optString("fallback").ifEmpty { null }, d.optString("confirm_token").ifEmpty { null }, d.optString("draft").ifEmpty { null })
 }
 
 /** Talks to Griffin's API with the owner's own sign-in. All calls block: run them off the main thread. */
