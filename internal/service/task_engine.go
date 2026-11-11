@@ -140,6 +140,11 @@ func (e *TaskEngine) ListTasks(ctx context.Context, filter repository.TaskFilter
 	return e.taskRepo.ListTasks(ctx, filter)
 }
 
+// UpdateTask updates an existing task record.
+func (e *TaskEngine) UpdateTask(ctx context.Context, task *domain.Task) error {
+	return e.taskRepo.UpdateTask(ctx, task)
+}
+
 // ClaimTask atomically leases the next available QUEUED task.
 func (e *TaskEngine) ClaimTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*domain.Task, error) {
 	task, err := e.taskRepo.ClaimNextTask(ctx, workerID, leaseDuration)

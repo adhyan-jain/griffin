@@ -719,3 +719,14 @@ This document is the canonical ledger of all architectural, product, engineering
     4. Consecutive client error counter applies exponential backoff (up to 10s) and displays clear diagnostics ("check Google app mic permission & offline speech pack") instead of aggressively spinning every 2 seconds.
 - **Why**: Ensures voice assistant listening works universally across all Android OEM implementations (Pixel, OnePlus, Samsung, Xiaomi) regardless of whether offline language packs are pre-installed.
 
+#### ADR-104: Mid-Flight Task Steering and In-Conversation Thread Deduplication
+- **Status**: IMPLEMENTED (`internal/api/handlers/auto_thread.go`, `internal/api/handlers/follow_up.go`, `internal/service/task_engine.go`).
+- **Decision**: When users speak or message while an earlier task is running (e.g. "give me the draft first", "also mention Friday", "wait don't send yet"), previously the system treated non-terminal tasks as uncontinuable (`g.settled() == nil`) and spawned disjoint, competing top-level tasks:
+  - **Mid-Flight Steering on Active Tasks**: `JJChatHandler` now inspects in-flight tasks (`g.inFlight()`) in the current conversation. When a steering command is detected:
+    - If requesting *"draft first"* / *"don't send yet"*, downstream outward messaging steps (`wa_do`, `send`) are intercepted and tagged with `[Draft Only]`, `draft_only: true`, and `requires_approval: true`.
+    - If providing mid-flight additions (*"also mention..."*, *"make sure to say..."*), notes are appended directly to the active task's `steering_notes` in `InputPayload`.
+    - Returns an instant, conversational acknowledgement without spawning a duplicate task.
+  - **Thread Deduplication**: Ongoing conversation messages automatically link to `thread_id` and `follow_up_of` rather than scattering into 100s of separate task cards on the dashboard.
+- **Why**: Eliminates user frustration when refining commands mid-stream and keeps the task dashboard organized into coherent, singular conversation threads.
+
+

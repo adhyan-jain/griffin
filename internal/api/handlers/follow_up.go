@@ -21,6 +21,7 @@ import (
 type ThreadStore interface {
 	GetTaskForUser(ctx context.Context, taskID, userID uuid.UUID) (*domain.Task, error)
 	ListTasks(ctx context.Context, filter repository.TaskFilter) ([]*domain.Task, error)
+	UpdateTask(ctx context.Context, task *domain.Task) error
 }
 
 // WithThreads enables POST /api/v1/tasks/{id}/follow-ups.

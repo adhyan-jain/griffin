@@ -39,6 +39,17 @@ func (f *fakeThreads) ListTasks(_ context.Context, flt repository.TaskFilter) ([
 	return out, nil
 }
 
+func (f *fakeThreads) UpdateTask(_ context.Context, task *domain.Task) error {
+	for i, t := range f.tasks {
+		if t.ID == task.ID {
+			f.tasks[i] = task
+			return nil
+		}
+	}
+	f.tasks = append(f.tasks, task)
+	return nil
+}
+
 var tick = time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
 
 func mk(user uuid.UUID, goal, answer string, status domain.TaskStatus, payload string, minutes int) *domain.Task {
@@ -382,4 +393,60 @@ func sendRaw(t *testing.T, h *JJChatHandler, user uuid.UUID, body string) (int, 
 	var env struct{ Data map[string]any }
 	_ = json.Unmarshal(rec.Body.Bytes(), &env)
 	return rec.Code, env.Data
+}
+
+func TestAutoThread_MidFlightSteeringDraftFirstAndNotes(t *testing.T) {
+	user := uuid.New()
+	conv := uuid.NewString()
+	runningTask := mk(user, "send an email to Alex", "", domain.TaskStatusRunning, `{"kind":"chat","conversation_id":"`+conv+`"}`, 1)
+	childSend := &domain.Task{
+		ID:           uuid.New(),
+		UserID:       user,
+		ParentID:     &runningTask.ID,
+		Title:        "Send WhatsApp message to Alex",
+		Goal:         "Send WhatsApp message",
+		Status:       domain.TaskStatusRunning,
+		InputPayload: json.RawMessage(`{"requires":["messaging"]}`),
+		CreatedAt:    tick.Add(2 * time.Minute),
+	}
+	h, store, _, th := setup(runningTask, childSend)
+
+	// User sends mid-flight steering: "give me the draft first"
+	code, out := sendRaw(t, h, user, `{"message":"give me the draft first","conversation_id":"`+conv+`"}`)
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, true, out["steered"])
+	assert.Equal(t, runningTask.ID.String(), out["steered_task_id"])
+	assert.Contains(t, out["response"], "hold the send")
+
+	// Verify child task was updated to Draft Only and requires approval
+	var updatedChild *domain.Task
+	for _, tk := range th.tasks {
+		if tk.ID == childSend.ID {
+			updatedChild = tk
+			break
+		}
+	}
+	require.NotNil(t, updatedChild)
+	assert.Contains(t, updatedChild.Title, "[Draft Only]")
+	assert.Contains(t, string(updatedChild.InputPayload), `"draft_only":true`)
+
+	// Mid-flight addition: "also mention Friday deadline"
+	code, out = sendRaw(t, h, user, `{"message":"also mention Friday deadline","conversation_id":"`+conv+`"}`)
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, true, out["steered"])
+	assert.Contains(t, out["response"], "also mention Friday deadline")
+
+	// Confirm steering notes saved on task
+	var updatedRunning *domain.Task
+	for _, tk := range th.tasks {
+		if tk.ID == runningTask.ID {
+			updatedRunning = tk
+			break
+		}
+	}
+	require.NotNil(t, updatedRunning)
+	assert.Contains(t, string(updatedRunning.InputPayload), "also mention Friday deadline")
+
+	// Ensure NO additional detached root tasks were created!
+	assert.Empty(t, store.tasks)
 }

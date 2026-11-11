@@ -1,4 +1,4 @@
-.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help run-host check-host login-whatsapp check-whatsapp
+.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help run-host run-host-bg stop-host host-status check-host login-whatsapp check-whatsapp
 
 # Default target
 all: build
@@ -51,9 +51,21 @@ package:
 	bash scripts/package-lambda.sh
 	bash scripts/package-worker.sh
 
-## Run the griffin host agent on this laptop
+## Run the griffin host agent on this laptop (interactive)
 run-host:
 	bash scripts/run-host.sh
+
+## Run griffin-host in the background (silent daemon, terminal safe to close)
+run-host-bg:
+	bash scripts/run-host-bg.sh
+
+## Stop background griffin-host daemon
+stop-host:
+	bash scripts/stop-host.sh
+
+## Show background griffin-host daemon status and recent logs
+host-status:
+	bash scripts/host-status.sh
 
 ## Check host agent status, token, and API connectivity
 check-host:

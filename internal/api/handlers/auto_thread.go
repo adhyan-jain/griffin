@@ -2,14 +2,15 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	"fmt"
 	"github.com/griffin/core/internal/api/httputil"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
@@ -87,6 +88,105 @@ func (g *threadGroup) settled() *domain.Task {
 	return latest
 }
 
+// inFlight returns the newest active, non-terminal task of a thread, or nil if all have finished.
+func (g *threadGroup) inFlight() *domain.Task {
+	var active *domain.Task
+	for _, t := range g.Tasks {
+		if !t.IsTerminal() {
+			if active == nil || t.CreatedAt.After(active.CreatedAt) {
+				active = t
+			}
+		}
+	}
+	return active
+}
+
+var (
+	draftFirstRe  = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b`)
+	steeringAddRe = regexp.MustCompile(`(?i)\b(?:also\s+(?:add|mention|tell|include|say|state)|make\s+sure\s+to|don'?t\s+forget\s+to|change\s+(?:the\s+)?(?:message|email|text|it)\s+to|instead\s+of\b|add\s+that\b)`)
+)
+
+func isSteeringIntent(s string) bool {
+	return draftFirstRe.MatchString(s) || steeringAddRe.MatchString(s)
+}
+
+func appendSteering(t *domain.Task, note string) {
+	var p map[string]any
+	if len(t.InputPayload) > 0 {
+		_ = json.Unmarshal(t.InputPayload, &p)
+	} else {
+		p = make(map[string]any)
+	}
+	var notes []string
+	if raw, ok := p["steering_notes"].([]any); ok {
+		for _, item := range raw {
+			if s, ok := item.(string); ok {
+				notes = append(notes, s)
+			}
+		}
+	}
+	notes = append(notes, note)
+	p["steering_notes"] = notes
+	t.InputPayload, _ = json.Marshal(p)
+	t.UpdatedAt = time.Now().UTC()
+}
+
+func (h *JJChatHandler) steerActiveTask(w http.ResponseWriter, r *http.Request, userID uuid.UUID, g *threadGroup, active *domain.Task, message string, convID string) bool {
+	if draftFirstRe.MatchString(message) {
+		appendSteering(active, "User requested draft first: prepare draft only and hold outward send for approval.")
+		_ = h.threads.UpdateTask(r.Context(), active)
+
+		// Also find downstream children if this is an orchestration plan root
+		children, _ := h.threads.ListTasks(r.Context(), repository.TaskFilter{UserID: &userID, ParentID: &g.Root.ID})
+		for _, child := range children {
+			if strings.Contains(strings.ToLower(child.Title), "send") || strings.Contains(string(child.InputPayload), domain.HostCapMessaging) {
+				child.Title = "[Draft Only] " + child.Title
+				var cp map[string]any
+				if len(child.InputPayload) > 0 {
+					_ = json.Unmarshal(child.InputPayload, &cp)
+				} else {
+					cp = make(map[string]any)
+				}
+				cp["draft_only"] = true
+				cp["requires_approval"] = true
+				child.InputPayload, _ = json.Marshal(cp)
+				_ = h.threads.UpdateTask(r.Context(), child)
+			}
+		}
+
+		httputil.JSON(w, http.StatusOK, map[string]any{
+			"kind":            string(service.MessageKindConversation),
+			"conversation_id": convID,
+			"task_id":         active.ID.String(),
+			"response":        "Understood. I have updated the ongoing task to draft it first and hold the send. I will show you the draft before anything is sent.",
+			"steered":         true,
+			"steered_task_id": active.ID.String(),
+		})
+		return true
+	}
+
+	if steeringAddRe.MatchString(message) {
+		appendSteering(active, message)
+		_ = h.threads.UpdateTask(r.Context(), active)
+		if g.Root.ID != active.ID {
+			appendSteering(g.Root, message)
+			_ = h.threads.UpdateTask(r.Context(), g.Root)
+		}
+
+		httputil.JSON(w, http.StatusOK, map[string]any{
+			"kind":            string(service.MessageKindConversation),
+			"conversation_id": convID,
+			"task_id":         active.ID.String(),
+			"response":        fmt.Sprintf("Got it. I've updated the ongoing task with: %q.", message),
+			"steered":         true,
+			"steered_task_id": active.ID.String(),
+		})
+		return true
+	}
+
+	return false
+}
+
 func continuedInfo(g *threadGroup, latest *domain.Task, reason string) map[string]any {
 	return map[string]any{"continued": map[string]any{"task_id": latest.ID, "root_id": g.Root.ID, "title": g.Root.Title, "reason": reason}}
 }
@@ -108,6 +208,18 @@ func (h *JJChatHandler) tryContinue(w http.ResponseWriter, r *http.Request, user
 			return true, nil
 		}
 		if !target.IsTerminal() {
+			if isSteeringIntent(message) {
+				tasks, _ := h.threads.ListTasks(r.Context(), repository.TaskFilter{UserID: &userID, Limit: threadScanLimit})
+				groups := groupThreads(tasks)
+				root, _ := domain.ThreadOf(target)
+				for _, g := range groups {
+					if g.Root.ID == root {
+						if h.steerActiveTask(w, r, userID, g, target, message, req.ConversationID) {
+							return true, nil
+						}
+					}
+				}
+			}
 			httputil.ErrorJSON(w, fmt.Errorf("%w: wait for that task to finish before continuing it", domain.ErrConflict))
 			return true, nil
 		}
@@ -138,6 +250,12 @@ func (h *JJChatHandler) tryContinue(w http.ResponseWriter, r *http.Request, user
 					if latest := g.settled(); latest != nil {
 						h.continueTask(w, r, userID, latest, message, req.IdempotencyKey, managerName, continuedInfo(g, latest, "the same conversation"))
 						return true, nil
+					}
+					// If the task is currently active and the user is steering it mid-flight:
+					if active := g.inFlight(); active != nil {
+						if h.steerActiveTask(w, r, userID, g, active, message, conv) {
+							return true, nil
+						}
 					}
 				}
 			}
