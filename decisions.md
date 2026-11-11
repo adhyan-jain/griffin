@@ -707,3 +707,15 @@ This document is the canonical ledger of all architectural, product, engineering
   - Attempt 1: Automatically wake and dismiss standard keyguards using `adb shell wm dismiss-keyguard` and `input keyevent 82` (KEYCODE_MENU). If `GRIFFIN_PHONE_PIN` is configured, automatically unlock via secure PIN input.
   - Fallback 2: If the screen remains locked behind secure biometrics/credentials, Android hand returns `ErrNotReady` with explanation. `whatsapp.Messenger` seamlessly falls back to WhatsApp Web on the laptop. Since WhatsApp multi-device syncs over cloud WebSockets, messages send reliably and headlessly without requiring the phone screen to be on or unlocked.
   - Automated Verification: End-to-end hermetic tests (`e2e_verification_test.go`) confirm that sent messages (`MessagingSend`) are verified and read back via `MessagingReadRecent` to guarantee delivery across both Android ADB and Web fallback paths.
+
+#### ADR-103: Android SpeechRecognizer Resilience and Package Visibility Queries
+- **Status**: IMPLEMENTED (`android/app/src/main/AndroidManifest.xml`, `android/app/src/main/kotlin/com/griffin/assistant/Listener.kt`).
+- **Decision**: Speech recognition on Android companion app targeting API 35 (`targetSdk = 35`) encountered continuous retry loops with `SpeechRecognizer.ERROR_CLIENT` (code `5`):
+  - **Manifest Package Visibility Queries**: On Android 11+ (API 30+), apps must declare `<intent><action android:name="android.speech.RecognitionService" /></intent>` and `<intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>` inside `<queries>` in `AndroidManifest.xml`. Without this, package visibility prevents discovering or binding to speech recognition engines (e.g. Google Speech Services, Samsung Voice), failing immediately with client error 5.
+  - **On-Device to Standard Fallback**: `SpeechRecognizer.isOnDeviceRecognitionAvailable(context)` returns true on API 33+ devices even when offline speech recognition packs have not been downloaded. Previously, this caused an unrecoverable crash/retry loop on `createOnDeviceSpeechRecognizer`. `Listener.kt` now automatically falls back:
+    1. Try on-device recognition (`createOnDeviceSpeechRecognizer`) with offline preference.
+    2. If `ERROR_CLIENT` (5) occurs, fall back to standard `createSpeechRecognizer(context)` with offline preference.
+    3. If offline recognition still fails, drop `EXTRA_PREFER_OFFLINE` to enable online/system recognition.
+    4. Consecutive client error counter applies exponential backoff (up to 10s) and displays clear diagnostics ("check Google app mic permission & offline speech pack") instead of aggressively spinning every 2 seconds.
+- **Why**: Ensures voice assistant listening works universally across all Android OEM implementations (Pixel, OnePlus, Samsung, Xiaomi) regardless of whether offline language packs are pre-installed.
+
