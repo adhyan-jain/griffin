@@ -55,12 +55,27 @@ class AssistantService : Service() {
         super.onCreate()
         actions = Actions(this)
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("assistant", "Listening", NotificationManager.IMPORTANCE_MIN))
-        val stop = PendingIntent.getService(this, 1, Intent(this, AssistantService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
-        val listenNow = PendingIntent.getService(this, 2, Intent(this, AssistantService::class.java).setAction(ACTION_LISTEN), PendingIntent.FLAG_IMMUTABLE)
+        try { nm.deleteNotificationChannel("assistant") } catch (_: Exception) {}
+        val channel = NotificationChannel("assistant_silent", "Griffin Background", NotificationManager.IMPORTANCE_MIN).apply {
+            setShowBadge(false)
+            enableLights(false)
+            enableVibration(false)
+            setSound(null, null)
+            lockscreenVisibility = Notification.VISIBILITY_SECRET
+        }
+        nm.createNotificationChannel(channel)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val notification: Notification = NotificationCompat.Builder(this, "assistant").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Griffin is listening")
-            .setContentText("Say \"hey $name\" or \"oye bhosadike\", or tap Listen now.").setOngoing(true).setContentIntent(open).addAction(0, "Listen now", listenNow).addAction(0, "Stop", stop).build()
+        val notification: Notification = NotificationCompat.Builder(this, "assistant_silent")
+            .setSmallIcon(android.R.color.transparent)
+            .setContentTitle("Griffin")
+            .setContentText("Background service active")
+            .setOngoing(true)
+            .setContentIntent(open)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setSilent(true)
+            .setShowWhen(false)
+            .build()
         startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
 
         app.assistantRunning = true

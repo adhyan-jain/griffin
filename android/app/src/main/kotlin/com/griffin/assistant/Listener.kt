@@ -27,15 +27,27 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
     private var consecutiveClientErrors = 0
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
     private var originalMusicVolume: Int? = null
+    private var originalSystemVolume: Int? = null
+    private var originalNotificationVolume: Int? = null
+    private var isMuted = false
 
     private fun muteChime() {
+        if (isMuted) return
+        isMuted = true
         try {
             audioManager?.let { am ->
                 if (!am.isMusicActive) {
-                    val cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                    if (originalMusicVolume == null) originalMusicVolume = cur
+                    val curMusic = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                    if (originalMusicVolume == null) originalMusicVolume = curMusic
                     am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 0, 0)
                 }
+                val curSys = am.getStreamVolume(android.media.AudioManager.STREAM_SYSTEM)
+                if (originalSystemVolume == null) originalSystemVolume = curSys
+                am.setStreamVolume(android.media.AudioManager.STREAM_SYSTEM, 0, 0)
+
+                val curNotif = am.getStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION)
+                if (originalNotificationVolume == null) originalNotificationVolume = curNotif
+                am.setStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, 0, 0)
             }
         } catch (_: Exception) {}
         try {
@@ -45,11 +57,21 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
     }
 
     private fun restoreVolume() {
+        if (!isMuted) return
+        isMuted = false
         try {
             audioManager?.let { am ->
                 originalMusicVolume?.let { vol ->
                     am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, vol, 0)
                     originalMusicVolume = null
+                }
+                originalSystemVolume?.let { vol ->
+                    am.setStreamVolume(android.media.AudioManager.STREAM_SYSTEM, vol, 0)
+                    originalSystemVolume = null
+                }
+                originalNotificationVolume?.let { vol ->
+                    am.setStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, vol, 0)
+                    originalNotificationVolume = null
                 }
             }
         } catch (_: Exception) {}
@@ -158,11 +180,13 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
 
         r?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
-                restoreVolume()
                 consecutiveClientErrors = 0
                 onStatus("listening")
+                // Keep streams muted through the start chime window (~300-600ms) to ensure complete silence.
+                main.postDelayed({ restoreVolume() }, 1000L)
             }
             override fun onBeginningOfSpeech() {
+                restoreVolume()
                 consecutiveClientErrors = 0
                 onStatus("hearing you")
             }
