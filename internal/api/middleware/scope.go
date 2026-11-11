@@ -48,6 +48,12 @@ func RLSTransaction(mgr *database.UserTxManager, logger *slog.Logger) func(http.
 				writeScopeError(w, http.StatusServiceUnavailable, "DB_UNAVAILABLE", "database unavailable")
 				return
 			}
+			// Ensure user profile exists in profiles table so foreign keys referencing profiles(id) succeed.
+			if email, _ := r.Context().Value(UserEmailKey).(string); email != "" {
+				_, _ = tx.Exec(r.Context(),
+					`INSERT INTO profiles (id, email, full_name, role) VALUES ($1, $2, 'Griffin Operator', 'OWNER') ON CONFLICT (id) DO NOTHING`,
+					userID, email)
+			}
 			finished := false
 			defer func() {
 				if !finished { // panic or early return: never leave the tx (and its claims) open

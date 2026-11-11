@@ -12,10 +12,10 @@ export const CAPABILITY_INFO: Record<HostCapability, { label: string; help: stri
   messaging: { label: "Use WhatsApp", help: "Read and send WhatsApp messages, through WhatsApp Web or your phone. Sending asks you first." },
 };
 
-/** Capabilities the current laptop build can actually back. Offering more would hand it steps it cannot do. */
+/** Capabilities the current build can actually back. */
 export const BACKED_BY_BUILD: Record<HostKind, HostCapability[]> = {
   laptop: ["agent", "messaging", "web"],
-  phone: [],
+  phone: ["messaging", "phone_apps", "sms", "calls"],
 };
 
 export function capabilityLabel(c: string): string {
@@ -85,6 +85,27 @@ export function laptopSetup(apiUrl: string): string {
     `chmod 600 ~/.griffin-host/token`,
     `GRIFFIN_API_URL=${apiUrl || "https://YOUR-API"} GRIFFIN_HOST_TOKEN_FILE=~/.griffin-host/token ./griffin-host --check`,
   ].join("\n");
+}
+
+/** Setup instructions for a device once registered. */
+export function deviceSetup(kind: HostKind, apiUrl: string): { label: string; text: string } {
+  if (kind === "phone") {
+    return {
+      label: "Set it up on your phone or laptop",
+      text: [
+        `# Option 1 (Recommended): Connect phone to laptop with ADB enabled.`,
+        `# griffin-host on laptop automatically drives your Android phone for WhatsApp/Instagram!`,
+        `GRIFFIN_API_URL=${apiUrl || "https://YOUR-API"} GRIFFIN_HOST_TOKEN_FILE=~/.griffin-host/token ./griffin-host`,
+        ``,
+        `# Option 2: Standalone phone companion`,
+        `# Enter the token above in the Griffin Android companion app.`,
+      ].join("\n"),
+    };
+  }
+  return {
+    label: "Set it up on the laptop",
+    text: laptopSetup(apiUrl),
+  };
 }
 
 /** A worker id as a person reads it: a device the owner registered is "your device", never a raw id. */

@@ -10,6 +10,7 @@ import {
   CAPABILITY_INFO,
   capabilityLabel,
   describeMode,
+  deviceSetup,
   effectiveSummary,
   hostStatus,
   laptopSetup,
@@ -248,7 +249,10 @@ function RegisterDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
       {created ? (
         <div className="space-y-4">
           <CopyBlock label="Token" text={created.token} />
-          <CopyBlock label="Set it up on the laptop" text={laptopSetup(API_ORIGIN)} />
+          <CopyBlock
+            label={deviceSetup(created.host.kind, API_ORIGIN).label}
+            text={deviceSetup(created.host.kind, API_ORIGIN).text}
+          />
           <p className="text-sm text-muted-foreground">
             Keep the token in a file only you can read. If it leaks, remove the device here and add it again: the old token stops working at once.
           </p>
