@@ -47,15 +47,16 @@ type TaskCommand struct {
 }
 
 var (
-	reList      = regexp.MustCompile(`^(?:please )?(?:list|show|read(?: out)?|tell me)(?: me)?(?: all)?(?: of)?(?: my| the)?(?: (running|active|finished|completed|done|failed|pending|open))? tasks$`)
-	reListHow   = regexp.MustCompile(`^(?:what tasks|how are my tasks|how many tasks|(?:are there |do i have )?any (running|failed|active|finished|completed|open) tasks)(?: (?:are )?(running|active|done|finished|completed|failed|open))?(?: do i have)?$`)
-	reCancelAll = regexp.MustCompile(`^(?:please )?(?:cancel|stop) (?:all|everything|all (?:of )?(?:my )?(?:running|active)(?: tasks)?|everything running)$`)
-	reCancel    = regexp.MustCompile(`^(?:please )?cancel (?:the |my )?(.+?)(?: task)?$`)
-	reDeleteSet = regexp.MustCompile(`^(?:please )?(?:delete|remove|clear|clean up)(?: all)?(?: of)?(?: the| my)? (finished|completed|done|failed|old|all|cancelled|canceled)(?: tasks)?$`)
-	reDelete    = regexp.MustCompile(`^(?:please )?(?:delete|remove) (?:the |my |task )?(.+?)(?: task)?$`)
-	reApprList  = regexp.MustCompile(`^(?:any |what |do i have any |are there any )?(?:approvals?|things? (?:that )?(?:need|needs|waiting for) (?:my )?approval|what needs my approval)(?: (?:are )?(?:waiting|pending))?(?: for me)?$`)
-	reApprove   = regexp.MustCompile(`^(?:please )?(?:approve|confirm)(?: it| that| this| the (.+?)| (.+?))?$`)
-	reReject    = regexp.MustCompile(`^(?:please )?(?:reject|deny|decline)(?: it| that| this| the (.+?)| (.+?))?$`)
+	reList          = regexp.MustCompile(`^(?:please )?(?:(?:give me|get me|fetch|show(?: me)?|tell me|read(?: out)?(?: me)?|list|check|display|bring up)(?: me)?(?: all)?(?: of)?(?: my| the| a)?(?: list of)?|(?:the |a )?list of(?: all)?(?: of)?(?: my| the)?)(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks|task list|tasks list)$`)
+	reListQuestions = regexp.MustCompile(`^(?:what|how|are there|is there|do i have|have i got)(?: is| are| were| many)?(?: the| any| all| of)?(?: my| the)?(?: list of)?(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks|task list|tasks list)(?: (?:are )?(running|active|done|finished|completed|failed|open|left|pending|in progress))?(?: do i have)?$`)
+	reTaskStatus    = regexp.MustCompile(`^(?:what is |check |tell me )?(?:the )?(?:status of (?:my |the )?tasks?|tasks? status)$`)
+	reCancelAll     = regexp.MustCompile(`^(?:please )?(?:cancel|stop) (?:all|everything|all (?:of )?(?:my )?(?:running|active)(?: tasks)?|everything running)$`)
+	reCancel        = regexp.MustCompile(`^(?:please )?cancel (?:the |my )?(.+?)(?: task)?$`)
+	reDeleteSet     = regexp.MustCompile(`^(?:please )?(?:delete|remove|clear|clean up)(?: all)?(?: of)?(?: the| my)? (finished|completed|done|failed|old|all|cancelled|canceled)(?: tasks)?$`)
+	reDelete        = regexp.MustCompile(`^(?:please )?(?:delete|remove) (?:the |my |task )?(.+?)(?: task)?$`)
+	reApprList      = regexp.MustCompile(`^(?:(?:please )?(?:list|show|check|give me|tell me|read(?: out)?|any|what|do i have any|are there any|what are the)?(?: all)?(?: of)?(?: my)?(?: pending| open)? approvals?|what needs my approval|what needs approval|(?:any |what )?(?:things?|tasks?) (?:that )?(?:need|needs|waiting for) (?:my )?approval)(?: (?:are )?(?:waiting|pending))?(?: for me)?$`)
+	reApprove       = regexp.MustCompile(`^(?:please )?(?:approve|confirm)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
+	reReject        = regexp.MustCompile(`^(?:please )?(?:reject|deny|decline)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
 )
 
 func norm(s string) string {
@@ -78,6 +79,80 @@ func scopeOf(word string) string {
 	return "all"
 }
 
+func isApprovalListQuery(s string) bool {
+	switch s {
+	case "approvals", "my approvals", "all approvals", "pending approvals", "open approvals",
+		"list approvals", "show approvals", "check approvals", "give me approvals",
+		"tell me approvals", "any approvals", "what approvals", "approvals batao",
+		"mere approvals batao", "kya koi approval hai", "kya koi approvals hai":
+		return true
+	}
+	return false
+}
+
+func isNonListCommand(s string) bool {
+	if s == "tasks" || s == "what is a task" || s == "what is task" || s == "explain task" || s == "define task" || s == "how do tasks work" {
+		return true
+	}
+	for _, p := range []string{"cancel", "stop", "delete", "remove", "clear", "clean up", "create", "add task", "new task", "start task"} {
+		if s == p || strings.HasPrefix(s, p+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+func isTaskListQuery(s string) (bool, string) {
+	// 1. Idiomatic queries for running state without "task"
+	switch s {
+	case "what s running", "what is running", "what s in progress", "what is in progress",
+		"what s open", "what is open", "kya chal raha hai", "kya chal rha hai":
+		return true, "active"
+	}
+
+	// 2. Exact phrases with scope
+	switch s {
+	case "open tasks", "running tasks", "active tasks", "pending tasks",
+		"any open tasks", "any running tasks", "any active tasks", "any pending tasks":
+		return true, "active"
+	case "completed tasks", "finished tasks", "done tasks",
+		"any completed tasks", "any finished tasks", "any done tasks":
+		return true, "done"
+	case "failed tasks", "cancelled tasks", "canceled tasks",
+		"any failed tasks", "any cancelled tasks", "any canceled tasks":
+		return true, "failed"
+	case "my tasks", "all tasks", "the tasks", "task list", "tasks list",
+		"list tasks", "list of tasks", "the list of tasks", "a list of tasks",
+		"any tasks", "my task list", "tasks batao", "mere tasks batao",
+		"mere tasks kya hai", "tasks kya hai", "kya tasks hai", "task batao",
+		"mere task batao", "task kya hai":
+		return true, "all"
+	case "kya tasks chal rahe hai", "chal rahe tasks":
+		return true, "active"
+	}
+
+	// 3. Status queries
+	if reTaskStatus.MatchString(s) {
+		return true, "all"
+	}
+
+	// 4. Request queries
+	if m := reList.FindStringSubmatch(s); m != nil {
+		return true, scopeOf(m[1])
+	}
+
+	// 5. Question queries
+	if m := reListQuestions.FindStringSubmatch(s); m != nil {
+		w := m[1]
+		if w == "" {
+			w = m[2]
+		}
+		return true, scopeOf(w)
+	}
+
+	return false, ""
+}
+
 // ParseTaskCommand recognises task and approval requests. It is strict: a sentence only matches when it starts like
 // the command, so ordinary conversation is never turned into an action.
 func ParseTaskCommand(text string) TaskCommand {
@@ -85,35 +160,34 @@ func ParseTaskCommand(text string) TaskCommand {
 	if s == "" {
 		return TaskCommand{}
 	}
-	if m := reList.FindStringSubmatch(s); m != nil {
-		return TaskCommand{Kind: CmdListTasks, Scope: scopeOf(m[1])}
+
+	// Approvals queries and decisions
+	if reApprList.MatchString(s) || isApprovalListQuery(s) {
+		return TaskCommand{Kind: CmdListApprovals}
 	}
-	if m := reListHow.FindStringSubmatch(s); m != nil {
-		w := m[1] + m[2]
-		return TaskCommand{Kind: CmdListTasks, Scope: scopeOf(w)}
+	if m := reApprove.FindStringSubmatch(s); m != nil {
+		ref := strings.TrimSpace(m[1] + m[2])
+		ref = strings.TrimSuffix(ref, " karo")
+		if genericRef(ref) {
+			ref = ""
+		}
+		return TaskCommand{Kind: CmdApprove, Ref: ref}
 	}
-	if s == "what s running" || s == "what is running" || s == "what s in progress" || s == "what is in progress" ||
-		s == "what s open" || s == "what is open" || s == "any open tasks" || s == "are there any open tasks" ||
-		s == "do i have any open tasks" || s == "open tasks" {
-		return TaskCommand{Kind: CmdListTasks, Scope: "active"}
+	if m := reReject.FindStringSubmatch(s); m != nil {
+		ref := strings.TrimSpace(m[1] + m[2])
+		ref = strings.TrimSuffix(ref, " karo")
+		if genericRef(ref) {
+			ref = ""
+		}
+		return TaskCommand{Kind: CmdReject, Ref: ref}
 	}
-	if s == "what are my tasks" || s == "what tasks do i have" || s == "list my tasks" {
-		return TaskCommand{Kind: CmdListTasks, Scope: "all"}
-	}
+
+	// Task cancellations and deletions
 	if reCancelAll.MatchString(s) {
 		return TaskCommand{Kind: CmdCancelTasks, Scope: "active"}
 	}
 	if m := reDeleteSet.FindStringSubmatch(s); m != nil {
 		return TaskCommand{Kind: CmdDeleteTasks, Scope: scopeOf(m[1])}
-	}
-	if reApprList.MatchString(s) {
-		return TaskCommand{Kind: CmdListApprovals}
-	}
-	if m := reApprove.FindStringSubmatch(s); m != nil {
-		return TaskCommand{Kind: CmdApprove, Ref: strings.TrimSpace(m[1] + m[2])}
-	}
-	if m := reReject.FindStringSubmatch(s); m != nil {
-		return TaskCommand{Kind: CmdReject, Ref: strings.TrimSpace(m[1] + m[2])}
 	}
 	if m := reCancel.FindStringSubmatch(s); m != nil && !genericRef(m[1]) {
 		return TaskCommand{Kind: CmdCancelTasks, Ref: m[1]}
@@ -121,13 +195,24 @@ func ParseTaskCommand(text string) TaskCommand {
 	if m := reDelete.FindStringSubmatch(s); m != nil && !genericRef(m[1]) {
 		return TaskCommand{Kind: CmdDeleteTasks, Ref: m[1]}
 	}
+
+	// Negative guard: definitions or mutations are not listing commands
+	if isNonListCommand(s) {
+		return TaskCommand{}
+	}
+
+	// Task listing queries
+	if ok, scope := isTaskListQuery(s); ok {
+		return TaskCommand{Kind: CmdListTasks, Scope: scope}
+	}
+
 	return TaskCommand{}
 }
 
 // genericRef is a reference that names nothing ("it", "that"), which must not delete or cancel a guess.
 func genericRef(ref string) bool {
 	switch norm(ref) {
-	case "", "it", "that", "this", "them", "me", "my", "everything", "all", "all tasks", "tasks", "the", "a", "up":
+	case "", "it", "that", "this", "them", "me", "my", "everything", "all", "all tasks", "tasks", "task", "the task", "the tasks", "the", "a", "up", "approval", "the approval", "approvals", "karo":
 		return true
 	}
 	return false
@@ -282,15 +367,24 @@ func plural(n int, one, many string) string {
 }
 
 func spokenList(tasks []*domain.Task, limit int) string {
+	if len(tasks) == 0 {
+		return ""
+	}
 	var parts []string
 	for i, t := range tasks {
 		if i == limit {
-			parts = append(parts, fmt.Sprintf("and %d more", len(tasks)-limit))
+			parts = append(parts, fmt.Sprintf("%d more", len(tasks)-limit))
 			break
 		}
 		parts = append(parts, tidyTitle(t))
 	}
-	return strings.Join(parts, "; ")
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	if len(parts) == 2 {
+		return parts[0] + " and " + parts[1]
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
 }
 
 // match picks the tasks a reference names: every word of it appears in the title or goal. "last" and "latest" mean
@@ -467,12 +561,20 @@ func (v *VoiceCommands) listApprovals(ctx context.Context, user uuid.UUID) (Resu
 	parts := make([]string, 0, 3)
 	for i, x := range a {
 		if i == 3 {
-			parts = append(parts, fmt.Sprintf("and %d more", len(a)-3))
+			parts = append(parts, fmt.Sprintf("%d more", len(a)-3))
 			break
 		}
 		parts = append(parts, strings.TrimSpace(x.Summary))
 	}
-	return Result{Reply: fmt.Sprintf("%s waiting for your approval: %s.", plural(len(a), "approval is", "approvals are"), strings.Join(parts, "; "))}, nil
+	var formatted string
+	if len(parts) == 1 {
+		formatted = parts[0]
+	} else if len(parts) == 2 {
+		formatted = parts[0] + " and " + parts[1]
+	} else {
+		formatted = strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
+	}
+	return Result{Reply: fmt.Sprintf("%s waiting for your approval: %s.", plural(len(a), "approval is", "approvals are"), formatted)}, nil
 }
 
 func (v *VoiceCommands) decideApproval(ctx context.Context, user uuid.UUID, c TaskCommand, unlocked bool) (Result, error) {
