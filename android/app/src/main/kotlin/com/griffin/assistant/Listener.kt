@@ -20,6 +20,7 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
     private var active = false
     private var paused = false
     private var restartPending = false
+    private var forceListenNext = false
 
     private var preferOnDevice = false
     private var preferOffline = false
@@ -39,6 +40,7 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
         } catch (_: Exception) {}
         try {
             audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0)
+            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_MUTE, 0)
         } catch (_: Exception) {}
     }
 
@@ -53,6 +55,7 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
         } catch (_: Exception) {}
         try {
             audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_UNMUTE, 0)
+            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_UNMUTE, 0)
         } catch (_: Exception) {}
     }
 
@@ -89,6 +92,19 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
         if (!paused) return
         paused = false
         if (active) schedule(350)
+    }
+
+    /** Forces a one-turn listen even if media or music is playing. */
+    fun forceListen() {
+        forceListenNext = true
+        main.removeCallbacksAndMessages(null)
+        restartPending = false
+        if (paused) paused = false
+        active = true
+        try {
+            recognizer?.cancel()
+        } catch (_: Exception) {}
+        begin()
     }
 
     private fun destroy() {
@@ -215,6 +231,12 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
 
     private fun begin() {
         if (!active || paused) return
+        if (audioManager?.isMusicActive == true && !forceListenNext) {
+            onStatus("media playing: tap to speak")
+            schedule(2000)
+            return
+        }
+        forceListenNext = false
         if (recognizer == null) recognizer = create()
         val r = recognizer
         if (r == null) {

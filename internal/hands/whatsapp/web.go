@@ -48,9 +48,9 @@ func DefaultSelectors() Selectors {
 	return Selectors{
 		ChatList:      `#pane-side, [data-testid="chat-list"]`,
 		QR:            `canvas[aria-label*="QR" i], [data-testid="qrcode"], div[data-ref]`,
-		Search:        `div[contenteditable="true"][role="textbox"][aria-label*="Search" i], [data-testid="chat-list-search"], div[contenteditable="true"][data-tab="3"]`,
-		Row:           `#pane-side [role="listitem"], #pane-side [data-testid="cell-frame-container"]`,
-		RowTitle:      `span[title]`,
+		Search:        `input[role="textbox"][aria-label*="Search" i], input[data-tab="3"], input[placeholder*="Search" i], div[contenteditable="true"][role="textbox"][aria-label*="Search" i], [data-testid="chat-list-search"], div[contenteditable="true"][data-tab="3"]`,
+		Row:           `[data-testid="cell-frame-container"], #pane-side [role="listitem"], [role="listitem"]`,
+		RowTitle:      `span[title], [title]`,
 		RowPreview:    `span[data-testid="last-msg"], div[role="gridcell"] span[dir="ltr"], span.preview`,
 		RowUnread:     `span[aria-label*="unread" i]`,
 		Composer:      `footer div[contenteditable="true"][role="textbox"], [data-testid="conversation-compose-box-input"], footer div[contenteditable="true"][data-tab="10"]`,
@@ -60,7 +60,7 @@ func DefaultSelectors() Selectors {
 		MsgMeta:       `[data-pre-plain-text]`,
 		Pending:       `span[data-icon="msg-time"]`,
 		InvalidDialog: `div[data-animate-modal-popup="true"], [data-testid="popup-contents"]`,
-		HeaderTitle:   `#main header span[title], [data-testid="conversation-info-header-chat-title"]`,
+		HeaderTitle:   `#main header span[title], [data-testid="conversation-info-header-chat-title"], #main header [title]`,
 	}
 }
 

@@ -35,6 +35,10 @@ func TestClassifyMessage(t *testing.T) {
 		{"do you", "Do you remember what we discussed?", c},
 		{"write a haiku is cheap", "Write a haiku about spring", c},
 		{"ambiguous noun", "task queues", c},
+		{"task list command", "give me the list of tasks", c},
+		{"task list command singular", "give me the list of task", c},
+		{"my tasks", "my tasks", c},
+		{"what are my tasks", "what are my tasks", c},
 		{"empty", "   ", c},
 		// objectives
 		{"research and compare", "Research three open-source Go task queue libraries and compare them", o},

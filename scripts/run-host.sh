@@ -7,4 +7,8 @@ export GRIFFIN_API_URL="${GRIFFIN_API_URL:-https://fq322jvjt4.execute-api.ap-sou
 export GRIFFIN_HOST_TOKEN_FILE="${GRIFFIN_HOST_TOKEN_FILE:-$HOME/.griffin-host/token}"
 
 cd "$(dirname "$0")/.."
-exec go run ./cmd/griffin-host "$@"
+if [ -f "./build/griffin-host" ]; then
+    exec ./build/griffin-host "$@"
+else
+    exec go run ./cmd/griffin-host "$@"
+fi

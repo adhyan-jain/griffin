@@ -48,6 +48,9 @@ func ClassifyMessageWithReason(text string) (MessageKind, string) {
 	if t == "" {
 		return MessageKindConversation, "empty"
 	}
+	if cmd := ParseTaskCommand(t); cmd.Kind != CmdNone {
+		return MessageKindConversation, "task-command:" + string(cmd.Kind)
+	}
 	for _, s := range sentenceSplitRe.FindAllString(t, -1) {
 		if reason := objectiveSentenceReason(strings.TrimSpace(s)); reason != "" {
 			return MessageKindObjective, reason
@@ -95,6 +98,16 @@ func objectiveSentenceReason(s string) string {
 	question := strings.HasSuffix(s, "?")
 	s = strings.Trim(leadFillerRe.ReplaceAllString(s, ""), " \t.!?")
 	if s == "" {
+		return ""
+	}
+
+	if cmd := ParseTaskCommand(s); cmd.Kind != CmdNone {
+		return ""
+	}
+	if ok, _ := isTaskListQuery(norm(s)); ok {
+		return ""
+	}
+	if isApprovalListQuery(norm(s)) {
 		return ""
 	}
 

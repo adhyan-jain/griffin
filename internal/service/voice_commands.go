@@ -47,8 +47,8 @@ type TaskCommand struct {
 }
 
 var (
-	reList          = regexp.MustCompile(`^(?:please )?(?:(?:give me|get me|fetch|show(?: me)?|tell me|read(?: out)?(?: me)?|list|check|display|bring up)(?: me)?(?: all)?(?: of)?(?: my| the| a)?(?: list of)?|(?:the |a )?list of(?: all)?(?: of)?(?: my| the)?)(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks|task list|tasks list)$`)
-	reListQuestions = regexp.MustCompile(`^(?:what|how|are there|is there|do i have|have i got)(?: is| are| were| many)?(?: the| any| all| of)?(?: my| the)?(?: list of)?(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks|task list|tasks list)(?: (?:are )?(running|active|done|finished|completed|failed|open|left|pending|in progress))?(?: do i have)?$`)
+	reList          = regexp.MustCompile(`^(?:please )?(?:(?:give me|get me|fetch|show(?: me)?|tell me|read(?: out)?(?: me)?|list|check|display|bring up)(?: me)?(?: all)?(?: of)?(?: my| the| a)?(?: list of)?|(?:the |a )?list of(?: all)?(?: of)?(?: my| the)?)(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks?|task list|tasks list)$`)
+	reListQuestions = regexp.MustCompile(`^(?:what|how|are there|is there|do i have|have i got)(?: is| are| were| many)?(?: the| any| all| of)?(?: my| the)?(?: list of)?(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks?|task list|tasks list)(?: (?:are )?(running|active|done|finished|completed|failed|open|left|pending|in progress))?(?: do i have)?$`)
 	reTaskStatus    = regexp.MustCompile(`^(?:what is |check |tell me )?(?:the )?(?:status of (?:my |the )?tasks?|tasks? status)$`)
 	reCancelAll     = regexp.MustCompile(`^(?:please )?(?:cancel|stop) (?:all|everything|all (?:of )?(?:my )?(?:running|active)(?: tasks)?|everything running)$`)
 	reCancel        = regexp.MustCompile(`^(?:please )?cancel (?:the |my )?(.+?)(?: task)?$`)
@@ -113,17 +113,26 @@ func isTaskListQuery(s string) (bool, string) {
 	// 2. Exact phrases with scope
 	switch s {
 	case "open tasks", "running tasks", "active tasks", "pending tasks",
-		"any open tasks", "any running tasks", "any active tasks", "any pending tasks":
+		"any open tasks", "any running tasks", "any active tasks", "any pending tasks",
+		"open task", "running task", "active task", "pending task",
+		"any open task", "any running task", "any active task", "any pending task":
 		return true, "active"
 	case "completed tasks", "finished tasks", "done tasks",
-		"any completed tasks", "any finished tasks", "any done tasks":
+		"any completed tasks", "any finished tasks", "any done tasks",
+		"completed task", "finished task", "done task",
+		"any completed task", "any finished task", "any done task":
 		return true, "done"
 	case "failed tasks", "cancelled tasks", "canceled tasks",
-		"any failed tasks", "any cancelled tasks", "any canceled tasks":
+		"any failed tasks", "any cancelled tasks", "any canceled tasks",
+		"failed task", "cancelled task", "canceled task",
+		"any failed task", "any cancelled task", "any canceled task":
 		return true, "failed"
 	case "my tasks", "all tasks", "the tasks", "task list", "tasks list",
 		"list tasks", "list of tasks", "the list of tasks", "a list of tasks",
-		"any tasks", "my task list", "tasks batao", "mere tasks batao",
+		"my task", "the task", "list task", "list of task", "the list of task", "a list of task",
+		"give me the list of task", "give me the list of tasks", "give me a list of task", "give me a list of tasks",
+		"show me the list of task", "show me the list of tasks", "show my task", "show my tasks",
+		"any tasks", "any task", "my task list", "tasks batao", "mere tasks batao",
 		"mere tasks kya hai", "tasks kya hai", "kya tasks hai", "task batao",
 		"mere task batao", "task kya hai":
 		return true, "all"

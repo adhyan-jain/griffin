@@ -91,7 +91,12 @@ class AssistantService : Service() {
         when (intent?.action) {
             ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
             // From the button, the notification or the tile: the same as hearing "hey <name>" on its own.
-            ACTION_LISTEN -> { app.log("woke by button"); dispatch(AEvent.ManualWake(System.currentTimeMillis())); beepSoon() }
+            ACTION_LISTEN -> {
+                app.log("woke by button")
+                if (::listener.isInitialized) listener.forceListen()
+                dispatch(AEvent.ManualWake(System.currentTimeMillis()))
+                beepSoon()
+            }
         }
         return START_STICKY
     }
