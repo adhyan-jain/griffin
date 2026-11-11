@@ -104,45 +104,51 @@ test_data = [
         ("TC-22", "Thread Deduplication on Dashboard", "Send 4 consecutive follow-up queries in the same conversation thread", "All messages link to parent thread_id. Dashboard shows 1 singular thread, not 4 fragmented cards.")
     ]),
 
-    # 6. Media & App Control (Android Phone)
-    ("Phone Media & App Control", [
+    # 6. Device Tools & App Control (Android Phone)
+    ("Phone Tools & App Control", [
         ("TC-23", "Phone Media Skip / Next Song", "With Spotify/YT Music playing on phone, speak: 'next song' or 'change spotify song'", "Instantaneous skip to next song via media key without opening or switching apps."),
-        ("TC-24", "Phone Media Pause", "Speak: 'pause music' or 'pause spotify'", "Immediately pauses playback."),
-        ("TC-25", "Phone Media Resume", "Speak: 'play music' or 'resume spotify'", "Immediately resumes playback."),
-        ("TC-26", "Phone Volume Control", "Speak: 'volume up' or 'turn the volume down'", "Adjusts media audio stream volume by 3 steps smoothly."),
-        ("TC-27", "Voice App Launcher on Phone", "Speak: 'open Spotify' or 'open WhatsApp'", "Launches specified app package directly.")
+        ("TC-24", "Phone Media Pause & Resume", "Speak: 'pause music' then 'play music' or 'play pause'", "Immediately pauses and resumes audio playback."),
+        ("TC-25", "Torch / Flashlight On & Off", "Speak: 'torch on', 'torch off', 'turn on flashlight', 'turn off flashlight'", "Instantly activates and turns off phone camera LED flash."),
+        ("TC-26", "Torch Toggle & Colloquial Trigger", "Speak: 'torch' or 'toggle torch'", "Toggles flashlight state seamlessly."),
+        ("TC-27", "Hindi Torch Voice Commands", "Speak: 'torch chalu karo' or 'torch band karo'", "Turns flashlight on and off with colloquial Hindi phrasing."),
+        ("TC-28", "Battery Level & Charging Status", "Speak: 'battery', 'battery level', 'how much battery', or 'battery kitni hai'", "Reads out exact battery percentage and charging state aloud (e.g. 'Battery is at 82 percent and charging.')."),
+        ("TC-29", "Quick Time & Date Query", "Speak: 'what time is it', 'kya time hua', or 'what is today's date'", "Immediately speaks current time or date without requiring network round-trip."),
+        ("TC-30", "Camera Voice Shortcut", "Speak: 'open camera', 'camera', 'take a photo', or 'take a selfie'", "Launches phone camera app instantly in capture mode."),
+        ("TC-31", "Phone Volume & Mute Control", "Speak: 'volume up', 'volume down', 'mute', or 'unmute'", "Smoothly steps media volume or silences all audio streams."),
+        ("TC-32", "Voice App Launcher (English & Hindi)", "Speak: 'open Spotify', 'launch WhatsApp', 'whatsapp kholo', or 'spotify chalao'", "Directly resolves and opens the requested app."),
+        ("TC-33", "Standalone App Name Triggers", "Wake assistant and say: 'calculator', 'settings', 'photos', or 'chrome'", "Opens the respective application or system settings instantly.")
     ]),
 
     # 7. Desktop & OS Control (Laptop Host)
     ("Desktop & OS Control", [
-        ("TC-28", "Laptop Headless Media Skip (Arch/Omarchy)", "Run 'playerctl next' or trigger desktop media action from griffin-host", "Spotify track on laptop skips in under 10ms via MPRIS D-Bus."),
-        ("TC-29", "Querying Laptop Spotify Playing Track", "Trigger desktop status query", "Returns accurate current artist and track name (e.g. 'August Sands - Starbloom')."),
-        ("TC-30", "Host Distro & Session Auto-Detection", "Run 'make check-host' on laptop", "Correctly detects OS: linux, Distro: Arch Linux (Omarchy), Desktop: Hyprland/Wayland."),
-        ("TC-31", "Multi-OS Portability (Linux/macOS/Win)", "Inspect hands/desktop driver on different OS environments", "Correctly falls back to osascript on macOS and PowerShell on Windows."),
-        ("TC-32", "Headless Desktop App Launcher", "Dispatch desktop launch action for 'code' or 'spotify'", "Launches application in background without blocking host daemon.")
+        ("TC-34", "Laptop Headless Media Skip (Arch/Omarchy)", "Run 'playerctl next' or trigger desktop media action from griffin-host", "Spotify track on laptop skips in under 10ms via MPRIS D-Bus."),
+        ("TC-35", "Querying Laptop Spotify Playing Track", "Trigger desktop status query", "Returns accurate current artist and track name (e.g. 'August Sands - Starbloom')."),
+        ("TC-36", "Host Distro & Session Auto-Detection", "Run 'make check-host' on laptop", "Correctly detects OS: linux, Distro: Arch Linux (Omarchy), Desktop: Hyprland/Wayland."),
+        ("TC-37", "Multi-OS Portability (Linux/macOS/Win)", "Inspect hands/desktop driver on different OS environments", "Correctly falls back to osascript on macOS and PowerShell on Windows."),
+        ("TC-38", "Headless Desktop App Launcher", "Dispatch desktop launch action for 'code' or 'spotify'", "Launches application in background without blocking host daemon.")
     ]),
 
     # 8. Messaging Hands & Fallbacks
     ("Messaging Hands", [
-        ("TC-33", "Headless WhatsApp Web Send", "Dispatch messaging action with WhatsApp Web configured", "Sends message headlessly in background via isolated Chrome profile."),
-        ("TC-34", "WhatsApp Session Persistence", "Run 'make login-whatsapp', scan QR once, restart host", "Session cookies persist in ~/.griffin-host/whatsapp-profile without re-prompting for QR code."),
-        ("TC-35", "Wireless ADB Connection to Phone", "Pair phone via 'adb pair' and connect over Wi-Fi", "Device shows under 'adb devices' and griffin-host detects phone hands over Wi-Fi."),
-        ("TC-36", "Locked Phone Posture Fallback", "Send message when phone screen is locked", "Host detects lock and cleanly falls back to laptop WhatsApp Web or prompts.")
+        ("TC-39", "Headless WhatsApp Web Send", "Dispatch messaging action with WhatsApp Web configured", "Sends message headlessly in background via isolated Chrome profile."),
+        ("TC-40", "WhatsApp Session Persistence", "Run 'make login-whatsapp', scan QR once, restart host", "Session cookies persist in ~/.griffin-host/whatsapp-profile without re-prompting for QR code."),
+        ("TC-41", "Wireless ADB Connection to Phone", "Pair phone via 'adb pair' and connect over Wi-Fi", "Device shows under 'adb devices' and griffin-host detects phone hands over Wi-Fi."),
+        ("TC-42", "Locked Phone Posture Fallback", "Send message when phone screen is locked", "Host detects lock and cleanly falls back to laptop WhatsApp Web or prompts.")
     ]),
 
     # 9. Host Daemon & Developer Experience
     ("Host Daemon & DX", [
-        ("TC-37", "Silent Background Host Daemon", "Run 'make run-host-bg' and close the VS Code terminal window", "griffin-host continues running silently as PID in ~/.griffin-host/host.pid."),
-        ("TC-38", "Daemon Status Inspection", "Run 'make host-status'", "Prints daemon PID, running status, and tail of ~/.griffin-host/host.log."),
-        ("TC-39", "Daemon Stop Command", "Run 'make stop-host'", "Cleanly stops background process and removes PID file."),
-        ("TC-40", "Tilde Path Token Resolution", "Set GRIFFIN_HOST_TOKEN_FILE=~/.griffin-host/token in environment", "Host resolves '~' to user home directory without 'file not found' errors.")
+        ("TC-43", "Silent Background Host Daemon", "Run 'make run-host-bg' and close the VS Code terminal window", "griffin-host continues running silently as PID in ~/.griffin-host/host.pid."),
+        ("TC-44", "Daemon Status Inspection", "Run 'make host-status'", "Prints daemon PID, running status, and tail of ~/.griffin-host/host.log."),
+        ("TC-45", "Daemon Stop Command", "Run 'make stop-host'", "Cleanly stops background process and removes PID file."),
+        ("TC-46", "Tilde Path Token Resolution", "Set GRIFFIN_HOST_TOKEN_FILE=~/.griffin-host/token in environment", "Host resolves '~' to user home directory without 'file not found' errors.")
     ]),
 
     # 10. Dashboard UI/UX & AX
     ("Dashboard UI/UX & AX", [
-        ("TC-41", "Auto-Send Permission Policy Check", "Send routine WhatsApp or email task", "Executes without constant nagging approval prompts (policy configured for auto on user)."),
-        ("TC-42", "Task State Badges & Live Status", "Inspect task cards on web dashboard while task is executing", "Visual badges transition accurately from Queued -> Running -> Completed/Draft Only."),
-        ("TC-43", "Follow-Up Conversation Input", "Type or speak follow-up directly in web dashboard conversation panel", "Follow-up streams response within existing conversation context.")
+        ("TC-47", "Auto-Send Permission Policy Check", "Send routine WhatsApp or email task", "Executes without constant nagging approval prompts (policy configured for auto on user)."),
+        ("TC-48", "Task State Badges & Live Status", "Inspect task cards on web dashboard while task is executing", "Visual badges transition accurately from Queued -> Running -> Completed/Draft Only."),
+        ("TC-49", "Follow-Up Conversation Input", "Type or speak follow-up directly in web dashboard conversation panel", "Follow-up streams response within existing conversation context.")
     ])
 ]
 
