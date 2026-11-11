@@ -1,4 +1,4 @@
-.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help run-host check-host
+.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help run-host check-host login-whatsapp check-whatsapp
 
 # Default target
 all: build
@@ -58,6 +58,14 @@ run-host:
 ## Check host agent status, token, and API connectivity
 check-host:
 	bash scripts/run-host.sh --check
+
+## Link WhatsApp Web (scans QR code once into private profile)
+login-whatsapp:
+	go run ./cmd/griffin-host whatsapp-login
+
+## Check WhatsApp driver connectivity (Web and Phone)
+check-whatsapp:
+	go run ./cmd/griffin-host whatsapp-check
 
 ## Clean build artifacts
 clean:
