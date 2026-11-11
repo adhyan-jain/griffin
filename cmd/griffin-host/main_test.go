@@ -56,6 +56,13 @@ func TestLoadTokenPrefersTheFileAndNeverReturnsEmpty(t *testing.T) {
 	if got, err := loadToken(logger); err != nil || got != "ghk_from_file" {
 		t.Fatalf("file must win and be trimmed, got %q %v", got, err)
 	}
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(f, home) {
+		rel, _ := filepath.Rel(home, f)
+		t.Setenv("GRIFFIN_HOST_TOKEN_FILE", "~/"+rel)
+		if got, err := loadToken(logger); err != nil || got != "ghk_from_file" {
+			t.Fatalf("tilde expansion must work, got %q %v", got, err)
+		}
+	}
 	empty := filepath.Join(dir, "empty")
 	_ = os.WriteFile(empty, []byte("  \n"), 0o600)
 	t.Setenv("GRIFFIN_HOST_TOKEN_FILE", empty)

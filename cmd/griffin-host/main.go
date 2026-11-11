@@ -267,6 +267,11 @@ func validateAPIURL(raw string) error {
 // readable by others. The token is never logged.
 func loadToken(logger *slog.Logger) (string, error) {
 	if path := strings.TrimSpace(os.Getenv("GRIFFIN_HOST_TOKEN_FILE")); path != "" {
+		if strings.HasPrefix(path, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				path = filepath.Join(home, path[2:])
+			}
+		}
 		st, err := os.Stat(path)
 		if err != nil {
 			return "", fmt.Errorf("read token file: %w", err)
