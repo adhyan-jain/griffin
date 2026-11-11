@@ -290,18 +290,22 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		isAuthErr := errors.Is(failErr, domain.ErrAuthenticationRequired) || strings.Contains(strings.ToLower(errMsg), "authentication required")
 		if isAuthErr {
 			retryable = false
-			w.logger.Error("CRITICAL: Antigravity authentication required; task execution halted without retrying. Operator intervention required (run `agy auth login`)",
+			w.logger.Error("CRITICAL: Antigravity authentication required; task paused in BLOCKED_AWAITING_PROVIDER. Operator intervention required (run `agy auth login`)",
 				"worker_id", w.ID,
 				"task_id", task.ID,
 			)
+			task.Status = domain.TaskStatusBlockedAwaitingProvider
+			task.FailureReason = &errMsg
+			if err := w.engine.UpdateTask(ctx, task); err != nil {
+				w.logger.Error("engine.UpdateTask failed for blocked task", "worker_id", w.ID, "task_id", task.ID, "error", err)
+			}
 		} else {
 			w.logger.Warn("Task execution failed", "worker_id", w.ID, "task_id", task.ID, "error", errMsg)
-		}
-
-		if err := w.engine.FailTask(ctx, task.ID, w.ID, errMsg, retryable); err != nil {
-			w.logger.Error("engine.FailTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
-		} else {
-			w.notifyFinished(ctx, task.ID)
+			if err := w.engine.FailTask(ctx, task.ID, w.ID, errMsg, retryable); err != nil {
+				w.logger.Error("engine.FailTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+			} else {
+				w.notifyFinished(ctx, task.ID)
+			}
 		}
 
 		if isAuthErr && w.taskRepo != nil {

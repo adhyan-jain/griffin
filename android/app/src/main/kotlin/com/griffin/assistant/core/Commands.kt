@@ -33,6 +33,10 @@ sealed class Command {
     object MediaPlay : Command()
     object MediaPause : Command()
     object MediaPlayPause : Command()
+    object Ringtone : Command()
+    object Wallpaper : Command()
+    object DeveloperOptions : Command()
+    data class WebSearch(val query: String) : Command()
     object Answer : Command()
     object Reject : Command()
     object Stop : Command()
@@ -106,6 +110,11 @@ object Commands {
         Regex("^(?:please )?(?:set|wake me)(?: an)? alarm(?: for| at)? (.+)$").find(s)?.let { m -> parseTime(m.groupValues[1])?.let { (h, mi) -> return Command.Alarm(h, mi) } }
         Regex("^(?:please )?wake me (?:up )?at (.+)$").find(s)?.let { m -> parseTime(m.groupValues[1])?.let { (h, mi) -> return Command.Alarm(h, mi) } }
 
+        Regex("^(?:please )?(?:search(?: for)?|google|search the web for|look up|search something from the browser and tell me(?: the result)?) (.+)$").find(s)?.let { m ->
+            val q = m.groupValues[1].removePrefix("the ").removePrefix("about ").trim()
+            if (q.isNotEmpty()) return Command.WebSearch(q)
+        }
+
         // Torch / Flashlight: on, off, toggle, and Hindi colloquial triggers
         when (s) {
             "torch on", "turn on torch", "turn on the torch", "turn torch on", "torch chalu karo", "torch on karo", "torch jalao", "torch chalao",
@@ -148,6 +157,20 @@ object Commands {
             "play music", "play song", "resume music", "resume song", "play spotify", "resume spotify", "play", "resume" -> return Command.MediaPlay
             "pause music", "pause song", "stop music", "pause spotify", "pause" -> return Command.MediaPause
             "play pause", "toggle music", "toggle playback" -> return Command.MediaPlayPause
+
+            // Ringtone
+            "ringtone", "change ringtone", "set ringtone", "ringtone settings", "ringtone change karo",
+            "ringtone badlo", "change my ringtone" -> return Command.Ringtone
+
+            // Wallpaper / Home screen background
+            "wallpaper", "change wallpaper", "set wallpaper", "wallpaper settings", "wallpaper badlo",
+            "change background", "change home screen background", "home screen wallpaper",
+            "change my wallpaper", "change my bg", "change bg", "home screen background" -> return Command.Wallpaper
+
+            // Developer options / Developer mode
+            "developer options", "developer settings", "developer mode", "turn on developer mode",
+            "enable developer mode", "open developer mode", "open developer options", "developer mode on karo",
+            "turn on developer mode for my phone" -> return Command.DeveloperOptions
 
             // Common standalone app names
             "calculator", "calc" -> return Command.OpenApp("calculator")

@@ -79,3 +79,19 @@ In everyday life, users do **not** leave their phones permanently unlocked or aw
 - **S3 Vault Document Caching**:
   - Working document files (`.pdf`, `.docx`, `.md`, `.txt`) accessed more than once are automatically encrypted client-side with AES-256-GCM and cached in tenant-isolated S3 Vault.
   - Source code repositories (`.git`, `node_modules`, `vendor`) are strictly excluded.
+
+---
+
+## 7. Phone-First Default & Headless Execution Invariant
+
+- **Default Target Device**: Unless the user explicitly specifies `"laptop"`, `"desktop"`, or `"computer"`, Griffin assumes all personal tasks, device controls (ringtone, wallpaper, developer options, searches), and communications target the user's primary **phone**.
+- **Headless Background Execution**: Messaging and system tasks must execute headlessly in the background (using notification quick-reply or background host automation). Griffin avoids forcefully launching apps in the phone foreground to prevent interrupting user activity.
+- **Immediate Push Notifications**: Any replies received on tracked job applications, cold emails, or alumni LinkedIn/WhatsApp messages must trigger an immediate high-priority push notification to the user's phone.
+
+---
+
+## 8. Career & Resume Quality Guardrail (Strict Claude Enforcement)
+
+- **Resume Tailoring & Personalization**: All resume alterations, role-tailored edits, and outreach drafting against `/home/adhyan/Downloads/AJ_Resume_Context.md` must strictly be executed using **Claude Pro CLI**.
+- **Prohibition of Silent Fallback**: If Claude is unavailable, rate-limited, or throws an error, Griffin **must halt and alert the user immediately**. It is strictly forbidden to fall back to Antigravity CLI or lower-tier models for resume modifications.
+

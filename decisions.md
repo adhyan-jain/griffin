@@ -779,3 +779,21 @@ This document is the canonical ledger of all architectural, product, engineering
     - **Thread Auto-Steering**: In `auto_thread.go`, steering commands automatically latch onto active in-flight tasks even if the client omitted `conversation_id`, preventing hundreds of disjoint task cards from cluttering the dashboard.
 - **Why**: Gives the user full real-time control over in-flight tasks, prevents unintended outward messages, and allows seamless iterative refinement without restarting tasks from scratch.
 
+#### ADR-109: Headless Background Device Execution, System Controls, and Phone-First Invariant
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/Actions.kt`, `android/app/src/main/kotlin/com/griffin/assistant/core/Commands.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `agents.md`, `habit.md`).
+- **Decision**:
+  1. **Phone-First Default Invariant**:
+     - Any task involving device actions, notifications, communications, or system utilities defaults to the user's mobile device (`phone`) unless the user explicitly mentions `"laptop"`, `"desktop"`, or `"computer"`.
+  2. **Headless Background Execution for Messaging**:
+     - External chat automation (WhatsApp, Instagram, LinkedIn, SMS) must never aggressively launch foreground applications or hijack the user's phone screen.
+     - In-bound notifications are answered headlessly via Android notification `PendingIntent` quick-reply (`Inbox.book.replyTarget`).
+     - Fresh messages with no active notification session are routed headlessly to background web workers (e.g. WhatsApp Web automation on the laptop host agent) or queued with required draft approval.
+  3. **Expanded Phone System Controls**:
+     - Added voice and intent actions for device maintenance:
+       - Ringtone: `openRingtoneSettings()` (`RingtoneManager.ACTION_RINGTONE_PICKER` / `Settings.ACTION_SOUND_SETTINGS`).
+       - Wallpaper: `openWallpaperSettings()` (`Intent.ACTION_SET_WALLPAPER` / `Settings.ACTION_DISPLAY_SETTINGS`).
+       - Developer Mode: `openDeveloperOptions()` (`Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS`).
+       - Browser Search: `searchWeb()` (`Intent.ACTION_VIEW` targeting Google Web Search).
+- **Why**: Ensures frictionless device automation that respects the user's screen state, minimizes jarring app popups, and extends voice assistant control over everyday device settings.
+
+

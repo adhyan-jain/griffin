@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -102,21 +101,30 @@ func (g *threadGroup) inFlight() *domain.Task {
 	return active
 }
 
-var (
-	draftFirstRe  = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see|read(?: out)?|tell me|check)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b|\b(?:pehle|pahle)\s+(?:mujhe\s+)?draft\b|\bdraft\s+(?:dikha|dikhana|padh|batao|dekhna)\b|\b(?:abhi\s+)?(?:mat\s+bhejo|mat\s+bhejna|ruk\s+jao|rok\s+lo)\b|\bdraft\b`)
-	steeringAddRe = regexp.MustCompile(`(?i)\b(?:also\s+(?:add|mention|tell|include|say|state)|make\s+sure\s+to|don'?t\s+forget\s+to|change\s+(?:the\s+)?(?:message|email|text|it)\s+to|instead\s+of\b|add\s+that\b|aur\s+(?:ye\s+)?(?:bhi\s+)?(?:bolna|kehna|likhna|bhejna))`)
-)
-
-func isSteeringIntent(s string) bool {
-	return draftFirstRe.MatchString(s) || steeringAddRe.MatchString(s)
+type steeringResult struct {
+	Matched bool
+	Note    string
+	IsDraft bool
 }
 
-func (h *JJChatHandler) isSteering(ctx context.Context, s string) (bool, string, bool) {
-	if draftFirstRe.MatchString(s) {
-		return true, "User requested draft first: prepare draft only and hold outward send for approval.", true
+func isSteeringIntent(s string) bool {
+	return domain.DraftFirstRegex.MatchString(s) || domain.SteeringAddRegex.MatchString(s)
+}
+
+func (h *JJChatHandler) isSteering(ctx context.Context, s string) steeringResult {
+	if domain.DraftFirstRegex.MatchString(s) {
+		return steeringResult{
+			Matched: true,
+			Note:    "User requested draft first: prepare draft only and hold outward send for approval.",
+			IsDraft: true,
+		}
 	}
-	if steeringAddRe.MatchString(s) {
-		return true, s, false
+	if domain.SteeringAddRegex.MatchString(s) {
+		return steeringResult{
+			Matched: true,
+			Note:    s,
+			IsDraft: false,
+		}
 	}
 	if h.classifier != nil {
 		intent := h.classifier.Classify(ctx, s)
@@ -125,32 +133,15 @@ func (h *JJChatHandler) isSteering(ctx context.Context, s string) (bool, string,
 			if note == "" {
 				note = s
 			}
-			isDraft := draftFirstRe.MatchString(s) || draftFirstRe.MatchString(note)
-			return true, note, isDraft
-		}
-	}
-	return false, "", false
-}
-
-func appendSteering(t *domain.Task, note string) {
-	var p map[string]any
-	if len(t.InputPayload) > 0 {
-		_ = json.Unmarshal(t.InputPayload, &p)
-	} else {
-		p = make(map[string]any)
-	}
-	var notes []string
-	if raw, ok := p["steering_notes"].([]any); ok {
-		for _, item := range raw {
-			if s, ok := item.(string); ok {
-				notes = append(notes, s)
+			isDraft := domain.DraftFirstRegex.MatchString(s) || domain.DraftFirstRegex.MatchString(note)
+			return steeringResult{
+				Matched: true,
+				Note:    note,
+				IsDraft: isDraft,
 			}
 		}
 	}
-	notes = append(notes, note)
-	p["steering_notes"] = notes
-	t.InputPayload, _ = json.Marshal(p)
-	t.UpdatedAt = time.Now().UTC()
+	return steeringResult{}
 }
 
 func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, userID uuid.UUID, g *threadGroup, active *domain.Task, note string, isDraft bool, convID string) bool {
@@ -172,7 +163,8 @@ func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, us
 			return true
 		}
 
-		appendSteering(active, "User requested draft first: prepare draft only and hold outward send for approval.")
+		active.AppendSteeringNote("User requested draft first: prepare draft only and hold outward send for approval.")
+		active.SetDraftOnly()
 		_ = h.threads.UpdateTask(r.Context(), active)
 
 		// Also find downstream children if this is an orchestration plan root
@@ -180,15 +172,7 @@ func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, us
 		for _, child := range children {
 			if strings.Contains(strings.ToLower(child.Title), "send") || strings.Contains(string(child.InputPayload), domain.HostCapMessaging) {
 				child.Title = "[Draft Only] " + child.Title
-				var cp map[string]any
-				if len(child.InputPayload) > 0 {
-					_ = json.Unmarshal(child.InputPayload, &cp)
-				} else {
-					cp = make(map[string]any)
-				}
-				cp["draft_only"] = true
-				cp["requires_approval"] = true
-				child.InputPayload, _ = json.Marshal(cp)
+				child.SetDraftOnly()
 				_ = h.threads.UpdateTask(r.Context(), child)
 			}
 		}
@@ -204,10 +188,10 @@ func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, us
 		return true
 	}
 
-	appendSteering(active, note)
+	active.AppendSteeringNote(note)
 	_ = h.threads.UpdateTask(r.Context(), active)
 	if g.Root.ID != active.ID {
-		appendSteering(g.Root, note)
+		g.Root.AppendSteeringNote(note)
 		_ = h.threads.UpdateTask(r.Context(), g.Root)
 	}
 
@@ -223,11 +207,11 @@ func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, us
 }
 
 func (h *JJChatHandler) steerActiveTask(w http.ResponseWriter, r *http.Request, userID uuid.UUID, g *threadGroup, active *domain.Task, message string, convID string) bool {
-	ok, note, isDraft := h.isSteering(r.Context(), message)
-	if !ok {
+	res := h.isSteering(r.Context(), message)
+	if !res.Matched {
 		return false
 	}
-	return h.steerTaskWith(w, r, userID, g, active, note, isDraft, convID)
+	return h.steerTaskWith(w, r, userID, g, active, res.Note, res.IsDraft, convID)
 }
 
 func continuedInfo(g *threadGroup, latest *domain.Task, reason string) map[string]any {
@@ -307,10 +291,10 @@ func (h *JJChatHandler) tryContinue(w http.ResponseWriter, r *http.Request, user
 	}
 
 	// 2.5 Mid-flight steering of an active task even when conversation ID is omitted:
-	if ok, note, isDraft := h.isSteering(r.Context(), message); ok {
+	if res := h.isSteering(r.Context(), message); res.Matched {
 		for _, g := range groups {
 			if active := g.inFlight(); active != nil {
-				if h.steerTaskWith(w, r, userID, g, active, note, isDraft, "") {
+				if h.steerTaskWith(w, r, userID, g, active, res.Note, res.IsDraft, "") {
 					return true, nil
 				}
 			}

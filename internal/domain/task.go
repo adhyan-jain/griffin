@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -14,17 +15,18 @@ import (
 type TaskStatus string
 
 const (
-	TaskStatusCreated              TaskStatus = "CREATED"
-	TaskStatusRouted               TaskStatus = "ROUTED"
-	TaskStatusQueued               TaskStatus = "QUEUED"
-	TaskStatusRunning              TaskStatus = "RUNNING"
-	TaskStatusWaitingForDependency TaskStatus = "WAITING_FOR_DEPENDENCY"
-	TaskStatusVerifying            TaskStatus = "VERIFYING"
-	TaskStatusAwaitingApproval     TaskStatus = "AWAITING_APPROVAL"
-	TaskStatusRetrying             TaskStatus = "RETRYING"
-	TaskStatusCompleted            TaskStatus = "COMPLETED"
-	TaskStatusFailed               TaskStatus = "FAILED"
-	TaskStatusCancelled            TaskStatus = "CANCELLED"
+	TaskStatusCreated                 TaskStatus = "CREATED"
+	TaskStatusRouted                  TaskStatus = "ROUTED"
+	TaskStatusQueued                  TaskStatus = "QUEUED"
+	TaskStatusRunning                 TaskStatus = "RUNNING"
+	TaskStatusWaitingForDependency    TaskStatus = "WAITING_FOR_DEPENDENCY"
+	TaskStatusVerifying               TaskStatus = "VERIFYING"
+	TaskStatusAwaitingApproval        TaskStatus = "AWAITING_APPROVAL"
+	TaskStatusRetrying                TaskStatus = "RETRYING"
+	TaskStatusCompleted               TaskStatus = "COMPLETED"
+	TaskStatusFailed                  TaskStatus = "FAILED"
+	TaskStatusCancelled               TaskStatus = "CANCELLED"
+	TaskStatusBlockedAwaitingProvider TaskStatus = "BLOCKED_AWAITING_PROVIDER"
 )
 
 // TaskPriority represents priority tier for task scheduling.
@@ -80,20 +82,21 @@ func ValidatePriority(p TaskPriority) error {
 
 // Task represents a persistent unit of work managed by Griffin.
 type Task struct {
-	ID              uuid.UUID       `json:"id"`
-	UserID          uuid.UUID       `json:"user_id"`
-	WorkspaceID     *uuid.UUID      `json:"workspace_id,omitempty"`
-	ParentID        *uuid.UUID      `json:"parent_id,omitempty"`
-	RootID          *uuid.UUID      `json:"root_id,omitempty"`
-	AssignedAgentID *uuid.UUID      `json:"assigned_agent_id,omitempty"`
-	ManagerDomain   string          `json:"manager_domain"`
-	Title           string          `json:"title"`
-	Goal            string          `json:"goal"`
-	InputPayload    json.RawMessage `json:"input_payload"`
-	OutputPayload   json.RawMessage `json:"output_payload,omitempty"`
-	Status          TaskStatus      `json:"status"`
-	Priority        TaskPriority    `json:"priority"`
-	IdempotencyKey  *string         `json:"idempotency_key,omitempty"`
+	ID                uuid.UUID       `json:"id"`
+	UserID            uuid.UUID       `json:"user_id"`
+	WorkspaceID       *uuid.UUID      `json:"workspace_id,omitempty"`
+	ParentID          *uuid.UUID      `json:"parent_id,omitempty"`
+	RootID            *uuid.UUID      `json:"root_id,omitempty"`
+	AssignedAgentID   *uuid.UUID      `json:"assigned_agent_id,omitempty"`
+	ManagerDomain     string          `json:"manager_domain"`
+	Title             string          `json:"title"`
+	Goal              string          `json:"goal"`
+	InputPayload      json.RawMessage `json:"input_payload"`
+	OutputPayload     json.RawMessage `json:"output_payload,omitempty"`
+	Status            TaskStatus      `json:"status"`
+	Priority          TaskPriority    `json:"priority"`
+	IdempotencyKey    *string         `json:"idempotency_key,omitempty"`
+	AllowPaidFallback bool            `json:"allow_paid_fallback,omitempty"`
 
 	// Distributed lease fields
 	LeasedBy       *string    `json:"leased_by,omitempty"`
@@ -168,17 +171,18 @@ func (t *Task) IsTerminal() bool {
 // standalone task can be resumed in place. Whether a task is such a root is decided where it is resumed (the
 // SQL and the app), not by this table.
 var taskTransitions = map[TaskStatus][]TaskStatus{
-	TaskStatusCreated:              {TaskStatusRouted, TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusCancelled},
-	TaskStatusRouted:               {TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusCancelled},
-	TaskStatusWaitingForDependency: {TaskStatusQueued, TaskStatusAwaitingApproval, TaskStatusCancelled},
-	TaskStatusQueued:               {TaskStatusRunning, TaskStatusAwaitingApproval, TaskStatusCancelled},
-	TaskStatusRunning:              {TaskStatusVerifying, TaskStatusCompleted, TaskStatusAwaitingApproval, TaskStatusRetrying, TaskStatusFailed, TaskStatusCancelled},
-	TaskStatusVerifying:            {TaskStatusCompleted, TaskStatusFailed, TaskStatusRetrying, TaskStatusCancelled},
-	TaskStatusAwaitingApproval:     {TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusRunning, TaskStatusCancelled},
-	TaskStatusRetrying:             {TaskStatusQueued, TaskStatusRunning, TaskStatusCancelled},
-	TaskStatusCompleted:            {},
-	TaskStatusFailed:               {TaskStatusQueued, TaskStatusWaitingForDependency},
-	TaskStatusCancelled:            {TaskStatusQueued, TaskStatusWaitingForDependency},
+	TaskStatusCreated:                 {TaskStatusRouted, TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusCancelled},
+	TaskStatusRouted:                  {TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusCancelled},
+	TaskStatusWaitingForDependency:    {TaskStatusQueued, TaskStatusAwaitingApproval, TaskStatusCancelled},
+	TaskStatusQueued:                  {TaskStatusRunning, TaskStatusAwaitingApproval, TaskStatusCancelled},
+	TaskStatusRunning:                 {TaskStatusVerifying, TaskStatusCompleted, TaskStatusAwaitingApproval, TaskStatusRetrying, TaskStatusFailed, TaskStatusCancelled, TaskStatusBlockedAwaitingProvider},
+	TaskStatusVerifying:               {TaskStatusCompleted, TaskStatusFailed, TaskStatusRetrying, TaskStatusCancelled},
+	TaskStatusAwaitingApproval:        {TaskStatusQueued, TaskStatusWaitingForDependency, TaskStatusRunning, TaskStatusCancelled},
+	TaskStatusRetrying:                {TaskStatusQueued, TaskStatusRunning, TaskStatusCancelled},
+	TaskStatusBlockedAwaitingProvider: {TaskStatusQueued, TaskStatusRunning, TaskStatusCancelled, TaskStatusFailed},
+	TaskStatusCompleted:               {},
+	TaskStatusFailed:                  {TaskStatusQueued, TaskStatusWaitingForDependency},
+	TaskStatusCancelled:               {TaskStatusQueued, TaskStatusWaitingForDependency},
 }
 
 // AllTaskStatuses lists every status, so tools and tests can be sure they have covered them all.
@@ -241,4 +245,51 @@ type TaskEvent struct {
 	Message   string          `json:"message"`
 	Metadata  json.RawMessage `json:"metadata"`
 	CreatedAt time.Time       `json:"created_at"`
+}
+
+var (
+	// DraftFirstRegex matches user expressions requesting draft inspection or holding transmission.
+	DraftFirstRegex = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see|read(?: out)?|tell me|check)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b|\b(?:pehle|pahle)\s+(?:mujhe\s+)?draft\b|\bdraft\s+(?:dikha|dikhana|padh|batao|dekhna)\b|\b(?:abhi\s+)?(?:mat\s+bhejo|mat\s+bhejna|ruk\s+jao|rok\s+lo)\b|\bdraft\b`)
+	// SteeringAddRegex matches mid-flight addition and modification requests.
+	SteeringAddRegex = regexp.MustCompile(`(?i)\b(?:also\s+(?:add|mention|tell|include|say|state)|make\s+sure\s+to|don'?t\s+forget\s+to|change\s+(?:the\s+)?(?:message|email|text|it)\s+to|instead\s+of\b|add\s+that\b|aur\s+(?:ye\s+)?(?:bhi\s+)?(?:bolna|kehna|likhna|bhejna))`)
+)
+
+// SetDraftOnly marks the task as draft-only and holds outward transmission for manual approval.
+func (t *Task) SetDraftOnly() {
+	var p map[string]any
+	if len(t.InputPayload) > 0 {
+		_ = json.Unmarshal(t.InputPayload, &p)
+	} else {
+		p = make(map[string]any)
+	}
+	p["draft_only"] = true
+	p["requires_approval"] = true
+	t.InputPayload, _ = json.Marshal(p)
+	t.UpdatedAt = time.Now().UTC()
+}
+
+// AppendSteeringNote appends a mid-flight steering directive to the task's input payload.
+func (t *Task) AppendSteeringNote(note string) {
+	clean := strings.TrimSpace(note)
+	if clean == "" {
+		return
+	}
+	var p map[string]any
+	if len(t.InputPayload) > 0 {
+		_ = json.Unmarshal(t.InputPayload, &p)
+	} else {
+		p = make(map[string]any)
+	}
+	var notes []string
+	if raw, ok := p["steering_notes"].([]any); ok {
+		for _, item := range raw {
+			if s, ok := item.(string); ok {
+				notes = append(notes, s)
+			}
+		}
+	}
+	notes = append(notes, clean)
+	p["steering_notes"] = notes
+	t.InputPayload, _ = json.Marshal(p)
+	t.UpdatedAt = time.Now().UTC()
 }

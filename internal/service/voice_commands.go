@@ -447,44 +447,8 @@ func (v *VoiceCommands) Run(ctx context.Context, user uuid.UUID, c TaskCommand, 
 	return Result{}, errors.New("not a task command")
 }
 
-var reDraft = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see|read(?: out)?|tell me|check)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b|\b(?:pehle|pahle)\s+(?:mujhe\s+)?draft\b|\bdraft\s+(?:dikha|dikhana|padh|batao|dekhna)\b|\b(?:abhi\s+)?(?:mat\s+bhejo|mat\s+bhejna|ruk\s+jao|rok\s+lo)\b|\bdraft\b`)
-
 func isDraftRequest(s string) bool {
-	return reDraft.MatchString(s)
-}
-
-func appendSteeringNote(t *domain.Task, note string) {
-	var p map[string]any
-	if len(t.InputPayload) > 0 {
-		_ = json.Unmarshal(t.InputPayload, &p)
-	} else {
-		p = make(map[string]any)
-	}
-	var notes []string
-	if raw, ok := p["steering_notes"].([]any); ok {
-		for _, item := range raw {
-			if s, ok := item.(string); ok {
-				notes = append(notes, s)
-			}
-		}
-	}
-	notes = append(notes, note)
-	p["steering_notes"] = notes
-	t.InputPayload, _ = json.Marshal(p)
-	t.UpdatedAt = time.Now().UTC()
-}
-
-func setDraftOnlyFlag(t *domain.Task) {
-	var p map[string]any
-	if len(t.InputPayload) > 0 {
-		_ = json.Unmarshal(t.InputPayload, &p)
-	} else {
-		p = make(map[string]any)
-	}
-	p["draft_only"] = true
-	p["requires_approval"] = true
-	t.InputPayload, _ = json.Marshal(p)
-	t.UpdatedAt = time.Now().UTC()
+	return domain.DraftFirstRegex.MatchString(s)
 }
 
 func (v *VoiceCommands) steerTask(ctx context.Context, user uuid.UUID, c TaskCommand) (Result, error) {
@@ -534,15 +498,15 @@ func (v *VoiceCommands) steerTask(ctx context.Context, user uuid.UUID, c TaskCom
 			}, nil
 		}
 
-		appendSteeringNote(target, "User requested draft first: prepare draft only and hold outward send for approval.")
-		setDraftOnlyFlag(target)
+		target.AppendSteeringNote("User requested draft first: prepare draft only and hold outward send for approval.")
+		target.SetDraftOnly()
 		if v.Tasks != nil {
 			_ = v.Tasks.UpdateTask(ctx, target)
 			children, _ := v.Tasks.ListTasks(ctx, repository.TaskFilter{UserID: &user, ParentID: &target.ID})
 			for _, ch := range children {
 				if strings.Contains(strings.ToLower(ch.Title), "send") || strings.Contains(string(ch.InputPayload), domain.HostCapMessaging) || strings.Contains(ch.Title, "WhatsApp:") || strings.Contains(ch.Title, "Instagram:") {
 					ch.Title = "[Draft Only] " + ch.Title
-					setDraftOnlyFlag(ch)
+					ch.SetDraftOnly()
 					_ = v.Tasks.UpdateTask(ctx, ch)
 				}
 			}
@@ -557,7 +521,7 @@ func (v *VoiceCommands) steerTask(ctx context.Context, user uuid.UUID, c TaskCom
 		note = c.Scope
 	}
 	if note != "" {
-		appendSteeringNote(target, note)
+		target.AppendSteeringNote(note)
 		if v.Tasks != nil {
 			_ = v.Tasks.UpdateTask(ctx, target)
 		}

@@ -37,10 +37,10 @@ Every agent working on Griffin must consult and update these two living ledgers:
 
 1. **Antigravity CLI is PRIMARY (ADR-009)**:
    - JJ and all background workers route tasks to the authenticated `agy` CLI on EC2 by default.
-   - No Google AI Studio, Anthropic, or OpenAI API keys are required for V1.
+   - No Google AI Studio, Anthropic, or OpenAI API keys are required for V1 task execution. For ultra-low latency voice/intent classification and conversational auto-threading (ADR-084, ADR-107), lightweight Gemini Flash Lite is used when `GEMINI_API_KEY` is provided, gracefully falling back to local heuristic matching if absent.
 2. **Strict Prohibition of Silent Paid Fallback (ADR-014)**:
    - Tasks default to `allow_paid_fallback = false`.
-   - If Antigravity credentials expire or fail canary checks, tasks pause in `BLOCKED_AWAITING_PROVIDER` and alert the user. Never silently bill per-token APIs.
+   - If Antigravity credentials expire or fail canary checks, tasks pause in `BLOCKED_AWAITING_PROVIDER` and alert the user. Never silently bill per-token APIs for worker labor.
 3. **PostgreSQL `SKIP LOCKED` for Queueing (ADR-002)**:
    - Do not introduce Redis, RabbitMQ, Celery, or external message brokers.
    - Task claiming uses PostgreSQL transactions with `SELECT ... FOR UPDATE SKIP LOCKED`.

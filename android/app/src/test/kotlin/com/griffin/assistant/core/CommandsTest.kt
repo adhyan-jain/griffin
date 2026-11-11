@@ -81,6 +81,14 @@ class CommandsTest {
         assertEquals(Command.OpenApp("calculator"), p("calculator"))
         assertEquals(Command.OpenApp("settings"), p("settings"))
         assertEquals(Command.OpenApp("google maps"), p("launch the Google Maps app"))
+        assertEquals(Command.Ringtone, p("change my ringtone"))
+        assertEquals(Command.Ringtone, p("set ringtone"))
+        assertEquals(Command.Wallpaper, p("change wallpaper"))
+        assertEquals(Command.Wallpaper, p("change my bg"))
+        assertEquals(Command.DeveloperOptions, p("turn on developer mode for my phone"))
+        assertEquals(Command.DeveloperOptions, p("developer options"))
+        assertEquals(Command.WebSearch("what is quantum computing"), p("search for what is quantum computing on google"))
+        assertEquals(Command.WebSearch("best food nearby"), p("look up best food nearby"))
         assertEquals(Command.None, p("open a timer"))
     }
 

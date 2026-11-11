@@ -214,6 +214,44 @@ class Actions(private val context: Context) {
         "Could not open $label."
     }
 
+    fun openRingtoneSettings(): String = try {
+        val intent = Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_RINGTONE)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        "Opening ringtone selector."
+    } catch (e: Exception) {
+        launchIntent(Intent(android.provider.Settings.ACTION_SOUND_SETTINGS), "Sound and ringtone settings")
+    }
+
+    fun openWallpaperSettings(): String = try {
+        val intent = Intent(Intent.ACTION_SET_WALLPAPER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        "Opening wallpaper settings."
+    } catch (e: Exception) {
+        launchIntent(Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS), "Display and wallpaper settings")
+    }
+
+    fun openDeveloperOptions(): String = try {
+        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        "Opening Developer Options."
+    } catch (e: Exception) {
+        "Could not open Developer Options. You may need to enable developer mode in About Phone first."
+    }
+
+    fun searchWeb(query: String): String = try {
+        val escaped = java.net.URLEncoder.encode(query.trim(), "UTF-8")
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$escaped")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        "Searching for $query."
+    } catch (e: Exception) {
+        "Could not open browser."
+    }
+
     companion object {
         fun spokenDuration(seconds: Int): String {
             val h = seconds / 3600

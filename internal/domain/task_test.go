@@ -81,8 +81,8 @@ func TestTaskStatusTransitions(t *testing.T) {
 // can be cancelled from are exactly the non-terminal ones (what CancelTask's SQL accepts).
 func TestTaskLifecycleTableIsComplete(t *testing.T) {
 	all := domain.AllTaskStatuses()
-	if len(all) != 11 {
-		t.Fatalf("expected 11 statuses, got %d: %v", len(all), all)
+	if len(all) != 12 {
+		t.Fatalf("expected 12 statuses, got %d: %v", len(all), all)
 	}
 	known := map[domain.TaskStatus]bool{}
 	for _, s := range all {
