@@ -60,6 +60,24 @@ type JJChatHandler struct {
 	threads ThreadStore
 	// deviceCheck says whether one of the owner's live devices covers these capabilities; nil skips the check.
 	deviceCheck func(ctx context.Context, userID uuid.UUID, caps []string) bool
+	commands    *service.VoiceCommands
+	brain       VoiceBrain
+	classifier  *service.SmartClassifier
+}
+
+// WithCommands lets chat handle task listings, approvals, and steering directly.
+func (h *JJChatHandler) WithCommands(c *service.VoiceCommands) *JJChatHandler {
+	h.commands = c
+	return h
+}
+
+// WithBrain supplies fast LLM understanding for intent classification.
+func (h *JJChatHandler) WithBrain(b VoiceBrain) *JJChatHandler {
+	h.brain = b
+	if b != nil {
+		h.classifier = service.NewSmartClassifier(b)
+	}
+	return h
 }
 
 // WithDeviceCheck lets the handler tell the owner when their request needs a device (the laptop's WhatsApp or web
@@ -219,7 +237,52 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		toClassify = stripped
 	}
 
-	kind, reason := service.ClassifyMessageWithReason(toClassify)
+	var intent service.ParsedIntent
+	if h.classifier != nil {
+		intent = h.classifier.Classify(r.Context(), toClassify)
+	}
+
+	if h.commands != nil && !req.NewTask {
+		var cmd service.TaskCommand
+		var isCmd bool
+		if intent.Kind != service.IntentNone {
+			cmd, isCmd = intent.ToTaskCommand()
+		}
+		if !isCmd {
+			cmd = service.ParseTaskCommand(toClassify)
+			isCmd = cmd.Kind != service.CmdNone
+		}
+		if isCmd {
+			res, err := h.commands.Run(r.Context(), userID, cmd, true)
+			if err == nil && !res.NotHandled {
+				resp := map[string]any{
+					"kind":            string(service.MessageKindConversation),
+					"conversation_id": conversationID.String(),
+					"response":        res.Reply,
+				}
+				if res.ConfirmToken != "" {
+					resp["confirm_token"] = res.ConfirmToken
+				}
+				if res.Draft != "" {
+					resp["draft"] = res.Draft
+				}
+				for k, v := range respExtra {
+					resp[k] = v
+				}
+				httputil.JSON(w, http.StatusOK, resp)
+				return
+			}
+		}
+	}
+
+	kind := service.MessageKindConversation
+	reason := "default-conversation"
+	if intent.Kind == service.IntentObjective {
+		kind = service.MessageKindObjective
+		reason = intent.Reason
+	} else if intent.Kind == "" {
+		kind, reason = service.ClassifyMessageWithReason(toClassify)
+	}
 	if h.objectives == nil {
 		kind, reason = service.MessageKindConversation, "no-orchestrator"
 	}

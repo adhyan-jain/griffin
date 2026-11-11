@@ -234,6 +234,7 @@ func (f *voiceFakeStore) DeleteTask(_ context.Context, id uuid.UUID) error {
 	f.deleted = append(f.deleted, id)
 	return nil
 }
+func (f *voiceFakeStore) UpdateTask(context.Context, *domain.Task) error { return nil }
 func (f *voiceFakeStore) ListApprovals(context.Context, uuid.UUID, *domain.ApprovalStatus) ([]*domain.Approval, error) {
 	return nil, nil
 }

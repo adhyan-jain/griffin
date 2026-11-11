@@ -122,6 +122,16 @@ func (f *fakeVoice) DeleteTask(_ context.Context, id uuid.UUID) error {
 	f.deleted = append(f.deleted, id)
 	return nil
 }
+func (f *fakeVoice) UpdateTask(_ context.Context, task *domain.Task) error {
+	for i, t := range f.tasks {
+		if t.ID == task.ID {
+			f.tasks[i] = task
+			return nil
+		}
+	}
+	f.tasks = append(f.tasks, task)
+	return nil
+}
 func (f *fakeVoice) ListApprovals(_ context.Context, user uuid.UUID, _ *domain.ApprovalStatus) ([]*domain.Approval, error) {
 	var out []*domain.Approval
 	for _, a := range f.approvals {
@@ -306,5 +316,58 @@ func TestApprovalsByVoice(t *testing.T) {
 	}
 	if r, _ := newVC(&fakeVoice{}).Run(ctx, u, TaskCommand{Kind: CmdApprove}, true); r.Reply != "Nothing is waiting for your approval." {
 		t.Errorf("nothing waiting: %q", r.Reply)
+	}
+}
+
+func TestSteerTaskByVoice(t *testing.T) {
+	u := uuid.New()
+	task := &domain.Task{
+		ID:        uuid.New(),
+		UserID:    u,
+		Title:     "Send WhatsApp to Boss",
+		Status:    domain.TaskStatusRunning,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	f := &fakeVoice{tasks: []*domain.Task{task}}
+	vc := newVC(f)
+	ctx := context.Background()
+
+	// 1. User asks for draft first
+	res, err := vc.Run(ctx, u, TaskCommand{Kind: CmdSteerTask, Ref: "give me the draft first"}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Reply, "draft it first") {
+		t.Errorf("unexpected draft first reply: %q", res.Reply)
+	}
+	if !strings.Contains(string(task.InputPayload), `"draft_only":true`) {
+		t.Errorf("expected draft_only:true in InputPayload, got: %s", string(task.InputPayload))
+	}
+
+	// 2. User appends a steering note
+	res2, err := vc.Run(ctx, u, TaskCommand{Kind: CmdSteerTask, Ref: "also mention that I'm on leave tomorrow"}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res2.Reply, "also mention that I'm on leave tomorrow") {
+		t.Errorf("unexpected steering reply: %q", res2.Reply)
+	}
+	if !strings.Contains(string(task.InputPayload), "also mention that I'm on leave tomorrow") {
+		t.Errorf("expected note in steering_notes, got: %s", string(task.InputPayload))
+	}
+
+	// 3. User asks for draft when task has output text
+	task.OutputPayload = []byte(`{"response":"Dear Boss, I will be on leave tomorrow."}`)
+	task.Status = domain.TaskStatusCompleted
+	res3, err := vc.Run(ctx, u, TaskCommand{Kind: CmdSteerTask, Ref: "show me the draft"}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res3.Reply, "Dear Boss, I will be on leave tomorrow") {
+		t.Errorf("expected draft in reply, got: %q", res3.Reply)
+	}
+	if res3.Draft != "Dear Boss, I will be on leave tomorrow." {
+		t.Errorf("expected Draft set, got: %q", res3.Draft)
 	}
 }

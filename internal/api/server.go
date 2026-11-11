@@ -190,7 +190,18 @@ func NewServer(deps ServerDependencies) *Server {
 	if deps.ProfileRepo != nil {
 		profiles = deps.ProfileRepo
 	}
-	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero).WithProfiles(profiles).WithThreads(deps.Engine)
+	var voiceCmds *service.VoiceCommands
+	if deps.Engine != nil && deps.ApprovalRepo != nil {
+		voiceCmds = &service.VoiceCommands{Tasks: deps.Engine, Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine}, Secret: []byte(deps.Config.SupabaseJWTSecret)}
+	}
+
+	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero).
+		WithProfiles(profiles).
+		WithThreads(deps.Engine).
+		WithBrain(deps.VoiceBrain)
+	if voiceCmds != nil {
+		jjChatHandler.WithCommands(voiceCmds)
+	}
 	if hostSvc != nil {
 		jjChatHandler.WithDeviceCheck(hostSvc.CanCover)
 	}
@@ -214,8 +225,8 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	// A nil client is fine here: its Enabled reports false, so every voice turn hands off.
 	voiceHandler := handlers.NewVoiceHandler(deps.VoiceBrain, profiles)
-	if deps.Engine != nil && deps.ApprovalRepo != nil {
-		voiceHandler.WithCommands(&service.VoiceCommands{Tasks: deps.Engine, Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine}, Secret: []byte(deps.Config.SupabaseJWTSecret)})
+	if voiceCmds != nil {
+		voiceHandler.WithCommands(voiceCmds)
 	}
 	mux.Handle("POST /api/v1/voice/turn", userAuth(http.HandlerFunc(voiceHandler.PostTurn)))
 

@@ -16,6 +16,7 @@ import (
 	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/service"
 )
 
 type fakeThreads struct{ tasks []*domain.Task }
@@ -449,4 +450,43 @@ func TestAutoThread_MidFlightSteeringDraftFirstAndNotes(t *testing.T) {
 
 	// Ensure NO additional detached root tasks were created!
 	assert.Empty(t, store.tasks)
+}
+
+type fakeChatVoiceStore struct {
+	tasks []*domain.Task
+}
+
+func (f *fakeChatVoiceStore) ListTasks(_ context.Context, flt repository.TaskFilter) ([]*domain.Task, error) {
+	var out []*domain.Task
+	for _, t := range f.tasks {
+		if flt.UserID == nil || t.UserID == *flt.UserID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+func (f *fakeChatVoiceStore) CancelTask(context.Context, uuid.UUID, string) error { return nil }
+func (f *fakeChatVoiceStore) DeleteTask(context.Context, uuid.UUID) error         { return nil }
+func (f *fakeChatVoiceStore) UpdateTask(context.Context, *domain.Task) error      { return nil }
+
+func TestJJChat_TaskCommandsAnsweredDirectlyWithoutObjective(t *testing.T) {
+	user := uuid.New()
+	t1 := mk(user, "Build reporting feature", "", domain.TaskStatusRunning, `{"kind":"chat"}`, 1)
+	t2 := mk(user, "Analyze competitors", "Report ready.", domain.TaskStatusCompleted, `{"kind":"chat"}`, 2)
+
+	h, store, obj, _ := setup(t1, t2)
+	voiceStore := &fakeChatVoiceStore{tasks: []*domain.Task{t1, t2}}
+	h.WithCommands(&service.VoiceCommands{Tasks: voiceStore})
+
+	// User asks "give me the list of task" in JJ chat
+	code, out := sendRaw(t, h, user, `{"message":"give me the list of task"}`)
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, "conversation", out["kind"])
+	assert.Contains(t, out["response"], "You have 2 tasks")
+	assert.Contains(t, out["response"], "Running: Build reporting feature")
+	assert.Contains(t, out["response"], "1 finished")
+
+	// Ensure NO new tasks or objectives were submitted!
+	assert.Empty(t, store.tasks)
+	assert.Equal(t, 0, obj.calls)
 }

@@ -743,5 +743,39 @@ This document is the canonical ledger of all architectural, product, engineering
      - Silence timeout increased from 1.3s to 5s to eliminate rapid continuous restarting and audio cue pings.
 - **Why**: Provides a seamless, hands-free voice experience with verbal approval safety and eliminates annoying audio artifacts from continuous speech recognition.
 
+#### ADR-106: Zero-Chime Speech Recognition & Android Status Bar Icon Suppression
+- **Status**: IMPLEMENTED (`android/app/src/main/AndroidManifest.xml`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/Listener.kt`).
+- **Decision**:
+  1. **Status Bar Icon & Notification Channel Cleanup**:
+     - Deleted the previous noisy `"assistant"` notification channel to wipe cached OS notification alerts.
+     - Recreated an invisible `"assistant_silent"` notification channel with `IMPORTANCE_MIN`, `lockscreenVisibility = VISIBILITY_SECRET`, no sound, no vibration, and no lights.
+     - Built the foreground service notification using `android.R.color.transparent` small icon, neutral `"Griffin"` title, `PRIORITY_MIN`, and `setSilent(true)`. This eliminates persistent mic status bar icons on OnePlus / OxygenOS and modern Android releases.
+  2. **Elimination of Google SpeechRecognizer Start Chime ("Ting" Sound)**:
+     - Standard Android speech recognition engines emit a 350ms chime on start or restart.
+     - Added `<uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />` in `AndroidManifest.xml` and granted notification policy access to allow muting system and notification streams.
+     - `muteChime()` zeroes and mutes `STREAM_SYSTEM`, `STREAM_NOTIFICATION`, and `STREAM_MUSIC`.
+     - Delayed stream unmuting by 1000ms (`main.postDelayed({ restoreVolume() }, 1000L)`) past `onReadyForSpeech()` so the initial recognition chime is 100% inaudible before streams restore on user speech or turn completion.
+- **Why**: Eliminates audio disruptions and status bar clutter, providing an unobtrusive and quiet background voice assistant on the user's phone.
 
+#### ADR-107: Fast Intent Classification & Conversational Task Routing with Gemini Flash Lite
+- **Status**: IMPLEMENTED (`internal/service/intent_classifier.go`, `internal/service/voice_commands.go`, `internal/api/handlers/voice.go`, `internal/api/handlers/jj_chat.go`, `internal/api/server.go`).
+- **Decision**:
+  - **Problem**: Brittle regex matching caused colloquial queries, Hindi/Hinglish turns ("give me the list of task", "kya tasks chal rahe hai", "tasks batao", "mere approvals kya hai", "pehle draft dikha dena abhi mat bhej") to slip past command detectors. They were routed to JJ Orchestrator as multi-step objectives, causing EC2 AGY worker cold-starts taking 8+ minutes and hallucinating synthetic task catalogs.
+  - **Three-Tier Intent Architecture**:
+    1. **Deterministic Fast Path (0ms)**: Strict regex evaluation (`ParseTaskCommand` and `ClassifyMessageWithReason`) immediately catches unambiguous commands and obvious objectives with zero latency and zero token cost.
+    2. **Smart LLM Intent Classifier (~300ms)**: For natural language nuances, Hinglish, steering requests, or ambiguous utterances, Griffin invokes Gemini Flash Lite (`gemini-flash-lite-latest` / `gemini-3.5-flash-lite`) via `GEMINI_API_KEY`. It parses input into structured JSON intents: `list_tasks`, `list_approvals`, `approve`, `reject`, `cancel_tasks`, `delete_tasks`, `steer_task`, `conversation`, and `objective`.
+    3. **Deterministic Conversation Fallback**: Ensures system resilience if external networks or models are temporarily unreachable.
+  - **Direct Conversational Execution**:
+    - Both `VoiceHandler` (`POST /api/v1/voice/turn`) and `JJChatHandler` (`POST /api/v1/jj/messages`) route classified task commands directly through `VoiceCommands.Run()`, returning instant conversational replies (e.g. "You have 2 tasks. Running: ... 1 finished.") in milliseconds without creating unnecessary EC2 worker tasks or spinning orchestrators.
+- **Why**: Prevents unwanted task creation, eliminates hallucinated workforce catalogs on query commands, and provides robust multilingual comprehension across English, Hindi, and Hinglish.
+
+#### ADR-108: Mid-Flight Task Steering and Real-Time Draft Interception
+- **Status**: IMPLEMENTED (`internal/service/voice_commands.go`, `internal/api/handlers/auto_thread.go`, `internal/domain/thread.go`).
+- **Decision**:
+  - When users issue mid-flight directives on an ongoing task ("give me the draft first", "pehle draft dikha", "don't send yet", "also mention X", "change the message to Y"):
+    - **Draft Request on Completed/Settled Work**: If the task has already produced draft content (`domain.ResultText(target.OutputPayload)`), Griffin immediately extracts the draft, presents it to the user ("Here is the draft: ... Would you like me to approve and send it?"), and sets `Draft` on the response, keeping the confirmation prompt active.
+    - **Draft Request on In-Flight Work**: If the task is still running, Griffin marks `draft_only: true` and `requires_approval: true` on the target and any downstream messaging/sending children, and records `"User requested draft first: prepare draft only and hold outward send for approval."` in `steering_notes`. Outward transmissions are paused for approval without cancelling or restarting the task.
+    - **Mid-Flight Additions**: Notes are appended to `steering_notes` in `InputPayload` and persisted via `Tasks.UpdateTask()`.
+    - **Thread Auto-Steering**: In `auto_thread.go`, steering commands automatically latch onto active in-flight tasks even if the client omitted `conversation_id`, preventing hundreds of disjoint task cards from cluttering the dashboard.
+- **Why**: Gives the user full real-time control over in-flight tasks, prevents unintended outward messages, and allows seamless iterative refinement without restarting tasks from scratch.
 

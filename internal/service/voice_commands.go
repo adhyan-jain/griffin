@@ -36,6 +36,7 @@ const (
 	CmdListApprovals TaskCommandKind = "list_approvals"
 	CmdApprove       TaskCommandKind = "approve"
 	CmdReject        TaskCommandKind = "reject"
+	CmdSteerTask     TaskCommandKind = "steer_task"
 )
 
 // TaskCommand is a parsed request. Scope is "all", "active", "done" or "failed" (or "old" for delete); Ref is the
@@ -234,6 +235,7 @@ type VoiceStore interface {
 	ListTasks(ctx context.Context, f repository.TaskFilter) ([]*domain.Task, error)
 	CancelTask(ctx context.Context, id uuid.UUID, reason string) error
 	DeleteTask(ctx context.Context, id uuid.UUID) error
+	UpdateTask(ctx context.Context, task *domain.Task) error
 }
 
 // VoiceApprovals is the approvals side.
@@ -439,8 +441,132 @@ func (v *VoiceCommands) Run(ctx context.Context, user uuid.UUID, c TaskCommand, 
 		return v.changeTasks(ctx, user, c, unlocked)
 	case CmdApprove, CmdReject:
 		return v.decideApproval(ctx, user, c, unlocked)
+	case CmdSteerTask:
+		return v.steerTask(ctx, user, c)
 	}
 	return Result{}, errors.New("not a task command")
+}
+
+var reDraft = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see|read(?: out)?|tell me|check)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b|\b(?:pehle|pahle)\s+(?:mujhe\s+)?draft\b|\bdraft\s+(?:dikha|dikhana|padh|batao|dekhna)\b|\b(?:abhi\s+)?(?:mat\s+bhejo|mat\s+bhejna|ruk\s+jao|rok\s+lo)\b|\bdraft\b`)
+
+func isDraftRequest(s string) bool {
+	return reDraft.MatchString(s)
+}
+
+func appendSteeringNote(t *domain.Task, note string) {
+	var p map[string]any
+	if len(t.InputPayload) > 0 {
+		_ = json.Unmarshal(t.InputPayload, &p)
+	} else {
+		p = make(map[string]any)
+	}
+	var notes []string
+	if raw, ok := p["steering_notes"].([]any); ok {
+		for _, item := range raw {
+			if s, ok := item.(string); ok {
+				notes = append(notes, s)
+			}
+		}
+	}
+	notes = append(notes, note)
+	p["steering_notes"] = notes
+	t.InputPayload, _ = json.Marshal(p)
+	t.UpdatedAt = time.Now().UTC()
+}
+
+func setDraftOnlyFlag(t *domain.Task) {
+	var p map[string]any
+	if len(t.InputPayload) > 0 {
+		_ = json.Unmarshal(t.InputPayload, &p)
+	} else {
+		p = make(map[string]any)
+	}
+	p["draft_only"] = true
+	p["requires_approval"] = true
+	t.InputPayload, _ = json.Marshal(p)
+	t.UpdatedAt = time.Now().UTC()
+}
+
+func (v *VoiceCommands) steerTask(ctx context.Context, user uuid.UUID, c TaskCommand) (Result, error) {
+	all, err := v.tasksOf(ctx, user)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(all) == 0 {
+		return Result{Reply: "You don't have any tasks right now."}, nil
+	}
+
+	var target *domain.Task
+	if c.Scope != "" && c.Scope != "active" {
+		if matched := match(c.Scope, all); len(matched) > 0 {
+			target = matched[0]
+		}
+	}
+	if target == nil && c.Ref != "" {
+		if matched := match(c.Ref, all); len(matched) > 0 {
+			target = matched[0]
+		}
+	}
+	// Prefer active non-terminal task
+	if target == nil {
+		for _, t := range all {
+			if !t.IsTerminal() {
+				target = t
+				break
+			}
+		}
+	}
+	// Fall back to newest task
+	if target == nil {
+		target = all[0]
+	}
+
+	isDraft := isDraftRequest(c.Ref) || isDraftRequest(c.Scope)
+	if isDraft {
+		if draft := domain.ResultText(target.OutputPayload); draft != "" {
+			snip := draft
+			if runes := []rune(snip); len(runes) > 160 {
+				snip = string(runes[:157]) + "..."
+			}
+			return Result{
+				Reply: fmt.Sprintf("Here is the draft: %s. Would you like me to approve and send it?", snip),
+				Draft: draft,
+			}, nil
+		}
+
+		appendSteeringNote(target, "User requested draft first: prepare draft only and hold outward send for approval.")
+		setDraftOnlyFlag(target)
+		if v.Tasks != nil {
+			_ = v.Tasks.UpdateTask(ctx, target)
+			children, _ := v.Tasks.ListTasks(ctx, repository.TaskFilter{UserID: &user, ParentID: &target.ID})
+			for _, ch := range children {
+				if strings.Contains(strings.ToLower(ch.Title), "send") || strings.Contains(string(ch.InputPayload), domain.HostCapMessaging) || strings.Contains(ch.Title, "WhatsApp:") || strings.Contains(ch.Title, "Instagram:") {
+					ch.Title = "[Draft Only] " + ch.Title
+					setDraftOnlyFlag(ch)
+					_ = v.Tasks.UpdateTask(ctx, ch)
+				}
+			}
+		}
+		return Result{
+			Reply: "Understood. I have updated the ongoing task to draft it first and hold the send. I will show you the draft before anything is sent.",
+		}, nil
+	}
+
+	note := c.Ref
+	if note == "" {
+		note = c.Scope
+	}
+	if note != "" {
+		appendSteeringNote(target, note)
+		if v.Tasks != nil {
+			_ = v.Tasks.UpdateTask(ctx, target)
+		}
+		return Result{
+			Reply: fmt.Sprintf("Got it. I've updated the ongoing task with: %q.", note),
+		}, nil
+	}
+
+	return Result{Reply: "Understood."}, nil
 }
 
 func (v *VoiceCommands) tasksOf(ctx context.Context, user uuid.UUID) ([]*domain.Task, error) {

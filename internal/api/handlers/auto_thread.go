@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -102,12 +103,33 @@ func (g *threadGroup) inFlight() *domain.Task {
 }
 
 var (
-	draftFirstRe  = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b`)
-	steeringAddRe = regexp.MustCompile(`(?i)\b(?:also\s+(?:add|mention|tell|include|say|state)|make\s+sure\s+to|don'?t\s+forget\s+to|change\s+(?:the\s+)?(?:message|email|text|it)\s+to|instead\s+of\b|add\s+that\b)`)
+	draftFirstRe  = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see|read(?: out)?|tell me|check)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b|\b(?:pehle|pahle)\s+(?:mujhe\s+)?draft\b|\bdraft\s+(?:dikha|dikhana|padh|batao|dekhna)\b|\b(?:abhi\s+)?(?:mat\s+bhejo|mat\s+bhejna|ruk\s+jao|rok\s+lo)\b|\bdraft\b`)
+	steeringAddRe = regexp.MustCompile(`(?i)\b(?:also\s+(?:add|mention|tell|include|say|state)|make\s+sure\s+to|don'?t\s+forget\s+to|change\s+(?:the\s+)?(?:message|email|text|it)\s+to|instead\s+of\b|add\s+that\b|aur\s+(?:ye\s+)?(?:bhi\s+)?(?:bolna|kehna|likhna|bhejna))`)
 )
 
 func isSteeringIntent(s string) bool {
 	return draftFirstRe.MatchString(s) || steeringAddRe.MatchString(s)
+}
+
+func (h *JJChatHandler) isSteering(ctx context.Context, s string) (bool, string, bool) {
+	if draftFirstRe.MatchString(s) {
+		return true, "User requested draft first: prepare draft only and hold outward send for approval.", true
+	}
+	if steeringAddRe.MatchString(s) {
+		return true, s, false
+	}
+	if h.classifier != nil {
+		intent := h.classifier.Classify(ctx, s)
+		if intent.Kind == service.IntentSteerTask {
+			note := intent.Steering
+			if note == "" {
+				note = s
+			}
+			isDraft := draftFirstRe.MatchString(s) || draftFirstRe.MatchString(note)
+			return true, note, isDraft
+		}
+	}
+	return false, "", false
 }
 
 func appendSteering(t *domain.Task, note string) {
@@ -131,8 +153,25 @@ func appendSteering(t *domain.Task, note string) {
 	t.UpdatedAt = time.Now().UTC()
 }
 
-func (h *JJChatHandler) steerActiveTask(w http.ResponseWriter, r *http.Request, userID uuid.UUID, g *threadGroup, active *domain.Task, message string, convID string) bool {
-	if draftFirstRe.MatchString(message) {
+func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, userID uuid.UUID, g *threadGroup, active *domain.Task, note string, isDraft bool, convID string) bool {
+	if convID == "" {
+		convID = conversationOf(active)
+	}
+
+	if isDraft {
+		if draft := domain.ResultText(active.OutputPayload); draft != "" {
+			httputil.JSON(w, http.StatusOK, map[string]any{
+				"kind":            string(service.MessageKindConversation),
+				"conversation_id": convID,
+				"task_id":         active.ID.String(),
+				"response":        fmt.Sprintf("Here is the draft: %s. Would you like me to approve and send it?", draft),
+				"draft":           draft,
+				"steered":         true,
+				"steered_task_id": active.ID.String(),
+			})
+			return true
+		}
+
 		appendSteering(active, "User requested draft first: prepare draft only and hold outward send for approval.")
 		_ = h.threads.UpdateTask(r.Context(), active)
 
@@ -165,26 +204,30 @@ func (h *JJChatHandler) steerActiveTask(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 
-	if steeringAddRe.MatchString(message) {
-		appendSteering(active, message)
-		_ = h.threads.UpdateTask(r.Context(), active)
-		if g.Root.ID != active.ID {
-			appendSteering(g.Root, message)
-			_ = h.threads.UpdateTask(r.Context(), g.Root)
-		}
-
-		httputil.JSON(w, http.StatusOK, map[string]any{
-			"kind":            string(service.MessageKindConversation),
-			"conversation_id": convID,
-			"task_id":         active.ID.String(),
-			"response":        fmt.Sprintf("Got it. I've updated the ongoing task with: %q.", message),
-			"steered":         true,
-			"steered_task_id": active.ID.String(),
-		})
-		return true
+	appendSteering(active, note)
+	_ = h.threads.UpdateTask(r.Context(), active)
+	if g.Root.ID != active.ID {
+		appendSteering(g.Root, note)
+		_ = h.threads.UpdateTask(r.Context(), g.Root)
 	}
 
-	return false
+	httputil.JSON(w, http.StatusOK, map[string]any{
+		"kind":            string(service.MessageKindConversation),
+		"conversation_id": convID,
+		"task_id":         active.ID.String(),
+		"response":        fmt.Sprintf("Got it. I've updated the ongoing task with: %q.", note),
+		"steered":         true,
+		"steered_task_id": active.ID.String(),
+	})
+	return true
+}
+
+func (h *JJChatHandler) steerActiveTask(w http.ResponseWriter, r *http.Request, userID uuid.UUID, g *threadGroup, active *domain.Task, message string, convID string) bool {
+	ok, note, isDraft := h.isSteering(r.Context(), message)
+	if !ok {
+		return false
+	}
+	return h.steerTaskWith(w, r, userID, g, active, note, isDraft, convID)
 }
 
 func continuedInfo(g *threadGroup, latest *domain.Task, reason string) map[string]any {
@@ -261,6 +304,17 @@ func (h *JJChatHandler) tryContinue(w http.ResponseWriter, r *http.Request, user
 			}
 		}
 		return false, nil // a new conversation, or one still answering: a task of its own, as before
+	}
+
+	// 2.5 Mid-flight steering of an active task even when conversation ID is omitted:
+	if ok, note, isDraft := h.isSteering(r.Context(), message); ok {
+		for _, g := range groups {
+			if active := g.inFlight(); active != nil {
+				if h.steerTaskWith(w, r, userID, g, active, note, isDraft, "") {
+					return true, nil
+				}
+			}
+		}
 	}
 
 	// 3. Otherwise judge it from what was said and how recently.
