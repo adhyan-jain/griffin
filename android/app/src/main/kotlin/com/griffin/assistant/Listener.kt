@@ -25,25 +25,34 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
     private var preferOffline = false
     private var consecutiveClientErrors = 0
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
-    private var systemMuted = false
+    private var originalMusicVolume: Int? = null
 
-    private fun suppressBeep() {
-        if (systemMuted) return
+    private fun muteChime() {
         try {
             audioManager?.let { am ->
-                am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0)
-                systemMuted = true
+                if (!am.isMusicActive) {
+                    val cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                    if (originalMusicVolume == null) originalMusicVolume = cur
+                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 0, 0)
+                }
             }
+        } catch (_: Exception) {}
+        try {
+            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0)
         } catch (_: Exception) {}
     }
 
-    private fun restoreBeep() {
-        if (!systemMuted) return
+    private fun restoreVolume() {
         try {
             audioManager?.let { am ->
-                am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_UNMUTE, 0)
-                systemMuted = false
+                originalMusicVolume?.let { vol ->
+                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, vol, 0)
+                    originalMusicVolume = null
+                }
             }
+        } catch (_: Exception) {}
+        try {
+            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_UNMUTE, 0)
         } catch (_: Exception) {}
     }
 
@@ -54,14 +63,13 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
         active = true
         paused = false
         consecutiveClientErrors = 0
-        suppressBeep()
         begin()
     }
 
     fun stop() {
         active = false
         main.removeCallbacksAndMessages(null)
-        restoreBeep()
+        restoreVolume()
         destroy()
         onStatus("stopped")
     }
@@ -71,6 +79,7 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
         paused = true
         main.removeCallbacksAndMessages(null)
         restartPending = false
+        restoreVolume()
         try {
             recognizer?.cancel()
         } catch (_: Exception) {}
@@ -133,6 +142,7 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
 
         r?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
+                restoreVolume()
                 consecutiveClientErrors = 0
                 onStatus("listening")
             }
@@ -146,12 +156,14 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
             override fun onResults(results: Bundle?) {
+                restoreVolume()
                 consecutiveClientErrors = 0
                 val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
                 if (list.isNotEmpty()) onHeard(list)
                 schedule(250)
             }
             override fun onError(error: Int) {
+                restoreVolume()
                 when (error) {
                     SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> schedule(400) // silence: the normal case
                     SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> schedule(900, recreate = true)
@@ -203,7 +215,6 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
 
     private fun begin() {
         if (!active || paused) return
-        suppressBeep()
         if (recognizer == null) recognizer = create()
         val r = recognizer
         if (r == null) {
@@ -226,8 +237,10 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
         }
         try {
+            muteChime()
             r.startListening(intent)
         } catch (e: Exception) {
+            restoreVolume()
             onStatus("could not start listening: ${e.message}")
             schedule(2000, recreate = true)
         }
