@@ -69,7 +69,42 @@ class WakeMatcherTest {
         assertEquals("send hello to bhai", rest("oye bhosdike send hello to bhai", "JJ"))
         assertEquals("send hello to bhai", rest("oye bsdk send hello to bhai", "JJ"))
         assertEquals("send hello to bhai", rest("bhosadike send hello to bhai", "JJ"))
+        assertEquals("send hello to bhai", rest("bhosdike send hello to bhai", "JJ"))
         assertEquals("", rest("oye bhosadike", "JJ"))
+        assertEquals("", rest("bhosdike", "JJ"))
         assertEquals("what's up", rest("hey griffin what's up", "JJ"))
+    }
+
+    @Test fun `profanity censorship asterisks are unmasked and match`() {
+        assertEquals("change spotify song", rest("oye b*** change spotify song", "JJ"))
+        assertEquals("change spotify song", rest("oye b**** change spotify song", "JJ"))
+        assertEquals("change spotify song", rest("oye b***dike change spotify song", "JJ"))
+        assertEquals("change spotify song", rest("b*** change spotify song", "JJ"))
+        assertEquals("change spotify song", rest("b**** change spotify song", "JJ"))
+        assertEquals("change spotify song", rest("oye *** change spotify song", "JJ"))
+    }
+
+    @Test fun `english acoustic misrecognitions by speech engine match`() {
+        assertEquals("play music", rest("boss dk play music", "JJ"))
+        assertEquals("play music", rest("boss decay play music", "JJ"))
+        assertEquals("play music", rest("boss dyke play music", "JJ"))
+        assertEquals("play music", rest("bose dk play music", "JJ"))
+        assertEquals("play music", rest("oye boss dk play music", "JJ"))
+        assertEquals("play music", rest("oye boss decay play music", "JJ"))
+        assertEquals("play music", rest("oi boss dk play music", "JJ"))
+        assertEquals("play music", rest("oh yeah boss decay play music", "JJ"))
+        assertEquals("play music", rest("oye b s d k play music", "JJ"))
+    }
+
+    @Test fun `devanagari wake phrases match`() {
+        assertEquals("play music", rest("ओए भोसड़ीके play music", "JJ"))
+        assertEquals("play music", rest("भोसड़ीके play music", "JJ"))
+        assertEquals("play music", rest("भोसडीके play music", "JJ"))
+    }
+
+    @Test fun `matchAny finds wake among multiple speech hypotheses`() {
+        val hypotheses = listOf("oil boss dick", "oye boss dk skip track", "boy's deck")
+        val match = WakeMatcher.matchAny(hypotheses, "JJ")
+        assertEquals("skip track", match?.rest)
     }
 }

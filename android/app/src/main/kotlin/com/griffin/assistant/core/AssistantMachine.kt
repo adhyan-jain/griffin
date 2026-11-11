@@ -37,8 +37,8 @@ data class AState(
 )
 
 sealed class AEvent {
-    /** Something the recogniser heard. [name] is the manager's current name. */
-    data class Heard(val text: String, val now: Long, val name: String) : AEvent()
+    /** Something the recogniser heard. [name] is the manager's current name. [candidates] contains speech hypotheses. */
+    data class Heard(val text: String, val now: Long, val name: String, val candidates: List<String> = emptyList()) : AEvent()
     data class CallRinging(val now: Long) : AEvent()
     object SpeechStarted : AEvent()
     data class SpeechEnded(val now: Long) : AEvent()
@@ -153,8 +153,9 @@ object AssistantMachine {
             }
         }
 
-        // 3. The wake phrase: "hey" and the name.
-        val wake = WakeMatcher.match(e.text, e.name)
+        // 3. The wake phrase: "hey" and the name, or slang triggers across all recogniser hypotheses.
+        val allTexts = if (e.candidates.isNotEmpty()) e.candidates else listOf(e.text)
+        val wake = WakeMatcher.matchAny(allTexts, e.name)
         if (wake != null) {
             // A new request cancels anything still waiting for a yes, even if its question is being spoken right now.
             val fresh = s.copy(pending = null, resume = Phase.Idle)

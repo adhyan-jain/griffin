@@ -14,15 +14,15 @@ import android.speech.SpeechRecognizer
  * the phone's on-device recogniser (private and works offline) and restarts itself after the silences and
  * hiccups that speech recognisers produce constantly. Everything runs on the main thread.
  */
-class Listener(private val context: Context, private val onHeard: (String) -> Unit, private val onStatus: (String) -> Unit, private val onLevel: (Float) -> Unit = {}) {
+class Listener(private val context: Context, private val onHeard: (List<String>) -> Unit, private val onStatus: (String) -> Unit, private val onLevel: (Float) -> Unit = {}) {
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var active = false
     private var paused = false
     private var restartPending = false
 
-    private var preferOnDevice = true
-    private var preferOffline = true
+    private var preferOnDevice = false
+    private var preferOffline = false
     private var consecutiveClientErrors = 0
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
     private var systemMuted = false
@@ -147,8 +147,8 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
             override fun onEvent(eventType: Int, params: Bundle?) {}
             override fun onResults(results: Bundle?) {
                 consecutiveClientErrors = 0
-                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-                if (text.isNotEmpty()) onHeard(text)
+                val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                if (list.isNotEmpty()) onHeard(list)
                 schedule(250)
             }
             override fun onError(error: Int) {
@@ -213,10 +213,14 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
         }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            // Support Indian English and Hindi alongside default locale
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
+            putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN", "hi-IN", "en-US"))
             if (preferOffline) {
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             }
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)

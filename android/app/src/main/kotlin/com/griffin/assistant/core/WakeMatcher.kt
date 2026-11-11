@@ -31,15 +31,76 @@ object WakeMatcher {
         'y' to "why", 'z' to "zed",
     )
 
-    /** Slang wake phrases for "oye bhosadike" and its recogniser spellings. */
-    private val slangTriggers = setOf(
-        "oyebhosadike", "oyebhosdike", "oyebhosdik", "oyebhosdk", "oyebsdk", "oyebosdike",
-        "oibhosadike", "oibhosdike", "oebhosadike", "oebhosdike", "oybhosadike", "oybhosdike",
-        "bhosadike", "bhosdike", "bhosdik", "bhosdk", "bsdk", "bhonsdike", "bhonsadike",
-        "oyebhonsdike", "oyebhonsadike", "bhosadi", "bhosdi"
+    private val slangBases = listOf(
+        // Hindi / Hinglish spellings
+        "bhosadike", "bhosdike", "bhosdik", "bhosdk", "bsdk", "bhonsadike", "bhonsdike",
+        "bhosadi", "bhosdi", "bhosada", "bhosda", "bhosrika", "bhosrike", "bhosri",
+        "bhootike", "bhosdiwala", "bhosadiwala",
+        // Recogniser English sound-alikes / mishearings
+        "bossdk", "bossdecay", "bossdyke", "bossdike", "bossdeck", "bossdick",
+        "bosedk", "bosedecay", "bosedyke", "bosedike",
+        "bhosdk", "bhosdecay", "bhosdyke",
+        "postdk", "postdecay", "postdike",
+        "bothdk", "bothdecay", "boththek",
+        "voicedecay", "boysdeck", "posdike", "pozdecay",
+        // Devanagari
+        "भोसड़ीके", "भोसडीके", "भोसड़ीके", "भोसड़ी", "भोसडी", "भोसड़ी",
+        "भोसड़ा", "भोसडा", "भोसड़ीक", "भोसडीक"
     )
 
-    private fun norm(s: String): String = s.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+    private val slangPrefixes = listOf(
+        "", "oye", "oy", "oi", "oe", "ohyeah", "oyeah", "oh", "ay", "ae", "hey", "hay",
+        "ओए", "ओय", "अरे"
+    )
+
+    private val slangTriggers: Set<String> = buildSet {
+        for (b in slangBases) {
+            for (p in slangPrefixes) {
+                add(p + b)
+            }
+        }
+    }
+
+    private val fuzzyTargets = listOf(
+        "oyebhosadike", "oyebhosdike", "bhosadike", "bhosdike",
+        "oyebossdecay", "bossdecay", "oyebossdk", "bossdk"
+    )
+
+    private fun isFuzzySlang(said: String): Boolean {
+        if (said.length < 7) return false
+        for (target in fuzzyTargets) {
+            val maxDist = if (target.length <= 8) 1 else 2
+            if (Math.abs(said.length - target.length) <= maxDist && levenshtein(said, target) <= maxDist) return true
+        }
+        return false
+    }
+
+    private fun isAllowedChar(c: Char): Boolean {
+        if (c.isLetterOrDigit()) return true
+        val type = Character.getType(c)
+        return type == Character.NON_SPACING_MARK.toInt() || type == Character.COMBINING_SPACING_MARK.toInt()
+    }
+
+    private fun norm(s: String): String = s.lowercase(Locale.ROOT).filter { isAllowedChar(it) }
+
+    private fun unmaskWord(raw: String, prevWord: String?): String {
+        val low = raw.lowercase(Locale.ROOT).trim(' ', ',', '.', '!', '?', '-', ':')
+        // Recogniser profanity censorship: b***, b****, bh***, b***dike, etc.
+        if (low.startsWith("b") && low.contains('*')) {
+            return "bhosdike"
+        }
+        // Devanagari profanity censorship: भो***, भो***के
+        if (low.startsWith("भो") && low.contains('*')) {
+            return "भोसड़ीके"
+        }
+        // Bare asterisks: ***, **** preceded by oye/oi/hey or at the start
+        if (low.isNotEmpty() && low.all { it == '*' }) {
+            if (prevWord == null || norm(prevWord) in setOf("oye", "oy", "oi", "oe", "ohyeah", "hey")) {
+                return "bhosdike"
+            }
+        }
+        return raw
+    }
 
     /** All the ways the name may be written by a recogniser: as typed, with each letter spelled out, and always "griffin". */
     fun forms(name: String): Set<String> {
@@ -53,15 +114,28 @@ object WakeMatcher {
     }
 
     fun match(heard: String, name: String): Wake? {
-        val words = heard.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        if (words.isEmpty()) return null
+        val rawWords = heard.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (rawWords.isEmpty()) return null
 
-        // 1. Slang wake trigger: "oye bhosadike" and phonetic variants (1 to 3 words at the start).
-        val maxSlangSpan = minOf(3, words.size)
-        for (span in 1..maxSlangSpan) {
+        val words = rawWords.mapIndexed { i, w ->
+            unmaskWord(w, rawWords.getOrNull(i - 1))
+        }
+
+        // 1. Slang wake trigger: "oye bhosadike", "bhosdike", and phonetic variants (1 to 5 words).
+        // Try exact triggers longest-first so "oye boss dk" matches before "oye boss".
+        val maxSlangSpan = minOf(5, words.size)
+        for (span in maxSlangSpan downTo 1) {
             val said = norm(words.subList(0, span).joinToString(""))
-            if (said in slangTriggers || (said.length >= 8 && (levenshtein(said, "oyebhosadike") <= 2 || levenshtein(said, "oyebhosdike") <= 2))) {
-                val rest = words.drop(span).joinToString(" ").trim().trimStart(',', ':', '-', '.', '!', '?').trim()
+            if (said in slangTriggers) {
+                val rest = rawWords.drop(span).joinToString(" ").trim().trimStart(',', ':', '-', '.', '!', '?').trim()
+                return Wake(rest)
+            }
+        }
+        // Fuzzy fallback for slang typos:
+        for (span in maxSlangSpan downTo 1) {
+            val said = norm(words.subList(0, span).joinToString(""))
+            if (isFuzzySlang(said)) {
+                val rest = rawWords.drop(span).joinToString(" ").trim().trimStart(',', ':', '-', '.', '!', '?').trim()
                 return Wake(rest)
             }
         }
@@ -77,9 +151,17 @@ object WakeMatcher {
         for (span in 1..maxSpan) {
             val said = norm(words.subList(start, start + span).joinToString(""))
             if (forms.any { sounds(said, it) }) {
-                val rest = words.drop(start + span).joinToString(" ").trim().trimStart(',', ':', '-', '.', '!', '?').trim()
+                val rest = rawWords.drop(start + span).joinToString(" ").trim().trimStart(',', ':', '-', '.', '!', '?').trim()
                 return Wake(rest)
             }
+        }
+        return null
+    }
+
+    fun matchAny(candidates: List<String>, name: String): Wake? {
+        for (cand in candidates) {
+            val w = match(cand, name)
+            if (w != null) return w
         }
         return null
     }

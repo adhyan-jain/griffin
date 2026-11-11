@@ -71,7 +71,16 @@ class AssistantService : Service() {
             if (::listener.isInitialized) { if (speaking) listener.pause() else listener.resume() }
             dispatch(if (speaking) AEvent.SpeechStarted else AEvent.SpeechEnded(System.currentTimeMillis()))
         }
-        listener = Listener(this, { text -> dispatch(AEvent.Heard(text, System.currentTimeMillis(), name)) }, { status -> app.log("mic: $status") }, { level -> if (app.mode == OrbView.Mode.Listening) app.showLevel(level) })
+        listener = Listener(
+            this,
+            { candidates ->
+                val primary = candidates.firstOrNull().orEmpty()
+                app.dlog("mic heard: $candidates")
+                dispatch(AEvent.Heard(primary, System.currentTimeMillis(), name, candidates))
+            },
+            { status -> app.log("mic: $status") },
+            { level -> if (app.mode == OrbView.Mode.Listening) app.showLevel(level) }
+        )
         listener.start()
         refreshName()
         if (BuildConfig.DEBUG) registerDebugReceiver()
