@@ -21,12 +21,17 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
     private var paused = false
     private var restartPending = false
 
+    private var preferOnDevice = true
+    private var preferOffline = true
+    private var consecutiveClientErrors = 0
+
     val isActive get() = active
 
     fun start() {
         if (active) return
         active = true
         paused = false
+        consecutiveClientErrors = 0
         begin()
     }
 
@@ -42,7 +47,9 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
         paused = true
         main.removeCallbacksAndMessages(null)
         restartPending = false
-        recognizer?.cancel()
+        try {
+            recognizer?.cancel()
+        } catch (_: Exception) {}
     }
 
     fun resume() {
@@ -52,7 +59,9 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
     }
 
     private fun destroy() {
-        recognizer?.destroy()
+        try {
+            recognizer?.destroy()
+        } catch (_: Exception) {}
         recognizer = null
     }
 
@@ -67,18 +76,53 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
     }
 
     private fun create(): SpeechRecognizer? {
-        // Only the recogniser that runs on the phone is used. The ordinary one can stream audio to a server, and an
-        // always-on microphone must never do that: waiting for "hey" stays entirely on the device.
-        val r = if (android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) SpeechRecognizer.createOnDeviceSpeechRecognizer(context) else null
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            onStatus("no speech recognition service installed on device")
+            return null
+        }
+
+        val r = try {
+            if (preferOnDevice && android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(context)
+            }
+        } catch (e: Exception) {
+            if (preferOnDevice) {
+                preferOnDevice = false
+                try {
+                    SpeechRecognizer.createSpeechRecognizer(context)
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+        } ?: try {
+            if (preferOnDevice) {
+                preferOnDevice = false
+                SpeechRecognizer.createSpeechRecognizer(context)
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+
         r?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) = onStatus("listening")
-            override fun onBeginningOfSpeech() = onStatus("hearing you")
+            override fun onReadyForSpeech(params: Bundle?) {
+                consecutiveClientErrors = 0
+                onStatus("listening")
+            }
+            override fun onBeginningOfSpeech() {
+                consecutiveClientErrors = 0
+                onStatus("hearing you")
+            }
             override fun onRmsChanged(rmsdB: Float) = onLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
             override fun onResults(results: Bundle?) {
+                consecutiveClientErrors = 0
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
                 if (text.isNotEmpty()) onHeard(text)
                 schedule(250)
@@ -87,9 +131,46 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
                 when (error) {
                     SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> schedule(150) // silence: the normal case
                     SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> schedule(900, recreate = true)
-                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> { active = false; onStatus("microphone permission is missing") }
-                    SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> { onStatus("the speech language is unavailable"); schedule(5000, recreate = true) }
-                    else -> { onStatus("speech error $error, retrying"); schedule(2000, recreate = true) }
+                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                        active = false
+                        onStatus("microphone permission is missing")
+                    }
+                    SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> {
+                        onStatus("the speech language is unavailable")
+                        schedule(5000, recreate = true)
+                    }
+                    SpeechRecognizer.ERROR_CLIENT -> {
+                        consecutiveClientErrors++
+                        if (preferOnDevice && android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+                            preferOnDevice = false
+                            onStatus("on-device speech engine failed; falling back to standard engine")
+                            schedule(500, recreate = true)
+                        } else if (preferOffline) {
+                            preferOffline = false
+                            onStatus("offline speech engine failed; switching to online recognition")
+                            schedule(500, recreate = true)
+                        } else {
+                            val delay = (2000L * consecutiveClientErrors).coerceAtMost(10000L)
+                            onStatus("speech client error 5: check Google app mic permission & offline speech pack")
+                            schedule(delay, recreate = true)
+                        }
+                    }
+                    SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> {
+                        onStatus("speech network error, retrying")
+                        schedule(3000, recreate = true)
+                    }
+                    SpeechRecognizer.ERROR_AUDIO -> {
+                        onStatus("audio recording error, retrying")
+                        schedule(2000, recreate = true)
+                    }
+                    SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> {
+                        onStatus("speech server error, retrying")
+                        schedule(3000, recreate = true)
+                    }
+                    else -> {
+                        onStatus("speech error $error, retrying")
+                        schedule(2000, recreate = true)
+                    }
                 }
             }
         })
@@ -101,12 +182,15 @@ class Listener(private val context: Context, private val onHeard: (String) -> Un
         if (recognizer == null) recognizer = create()
         val r = recognizer
         if (r == null) {
-            onStatus("needs the offline speech pack: install it in the Google app, Settings, Voice, Offline speech recognition")
+            onStatus("needs speech recognition service: install or enable Google speech recognition")
+            schedule(5000, recreate = true)
             return
         }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            if (preferOffline) {
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            }
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1300L)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
