@@ -1,4 +1,4 @@
-.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help
+.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help run-host check-host
 
 # Default target
 all: build
@@ -50,6 +50,14 @@ migrate-down:
 package:
 	bash scripts/package-lambda.sh
 	bash scripts/package-worker.sh
+
+## Run the griffin host agent on this laptop
+run-host:
+	bash scripts/run-host.sh
+
+## Check host agent status, token, and API connectivity
+check-host:
+	bash scripts/run-host.sh --check
 
 ## Clean build artifacts
 clean:
