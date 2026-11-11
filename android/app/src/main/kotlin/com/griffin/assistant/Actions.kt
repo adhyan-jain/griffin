@@ -75,10 +75,19 @@ class Actions(private val context: Context) {
         return "Alarm set for ${spokenTime(hour, minute)}."
     }
 
-    fun flashlight(on: Boolean): String = try {
+    private var isTorchOn = false
+
+    fun flashlight(on: Boolean? = null): String = try {
         val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val id = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
-        if (id == null) "This phone has no flashlight." else { cm.setTorchMode(id, on); if (on) "Flashlight on." else "Flashlight off." }
+        if (id == null) {
+            "This phone has no flashlight."
+        } else {
+            val target = on ?: !isTorchOn
+            cm.setTorchMode(id, target)
+            isTorchOn = target
+            if (target) "Flashlight on." else "Flashlight off."
+        }
     } catch (e: Exception) {
         "I could not use the flashlight."
     }
@@ -87,6 +96,52 @@ class Actions(private val context: Context) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         repeat(3) { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER, 0) }
         return if (up) "Louder." else "Quieter."
+    }
+
+    fun mute(mute: Boolean): String = try {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val op = if (mute) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
+        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, op, 0)
+        am.adjustStreamVolume(AudioManager.STREAM_RING, op, 0)
+        am.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, op, 0)
+        if (mute) "Muted." else "Unmuted."
+    } catch (e: Exception) {
+        "Could not adjust volume."
+    }
+
+    fun battery(): String = try {
+        val ifilter = android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val batteryStatus: Intent? = context.registerReceiver(null, ifilter)
+        val level = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val pct = if (level >= 0 && scale > 0) (level * 100 / scale) else -1
+        val status = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val isCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+        if (pct >= 0) {
+            "Battery is at $pct percent${if (isCharging) " and charging" else ""}."
+        } else {
+            "Could not read battery level."
+        }
+    } catch (e: Exception) {
+        "Could not read battery."
+    }
+
+    fun time(): String {
+        val c = Calendar.getInstance()
+        return "It is ${spokenTime(c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))}."
+    }
+
+    fun date(): String {
+        val sdf = java.text.SimpleDateFormat("EEEE, MMMM d", java.util.Locale.getDefault())
+        return "Today is ${sdf.format(java.util.Date())}."
+    }
+
+    fun openCamera(): String = try {
+        val intent = Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        "Opening camera."
+    } catch (e: Exception) {
+        openApp("camera")
     }
 
     fun mediaNext(): String {
@@ -121,16 +176,42 @@ class Actions(private val context: Context) {
     }
 
     fun openApp(name: String): String {
+        val target = name.trim().lowercase(java.util.Locale.ROOT)
+        // Common system settings shortcuts
+        when (target) {
+            "settings" -> return launchIntent(Intent(android.provider.Settings.ACTION_SETTINGS), "Settings")
+            "wifi", "wi-fi", "wifi settings" -> return launchIntent(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), "Wi-Fi settings")
+            "bluetooth", "bluetooth settings" -> return launchIntent(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS), "Bluetooth settings")
+            "display", "display settings" -> return launchIntent(Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS), "Display settings")
+            "sound", "sounds", "sound settings" -> return launchIntent(Intent(android.provider.Settings.ACTION_SOUND_SETTINGS), "Sound settings")
+            "camera" -> return openCamera()
+        }
+
         val pm = context.packageManager
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = pm.queryIntentActivities(launcher, 0).map { it.loadLabel(pm).toString() to it.activityInfo.packageName }
-        val hit = apps.firstOrNull { it.first.equals(name, true) } ?: apps.filter { it.first.contains(name, true) }.minByOrNull { it.first.length } ?: return "I could not find an app called $name."
+
+        // Find exact, prefix, substring, or package name match
+        val hit = apps.firstOrNull { it.first.equals(target, true) }
+            ?: apps.firstOrNull { it.first.contains(target, true) }
+            ?: apps.firstOrNull { it.second.contains(target, true) }
+            ?: apps.filter { it.first.contains(target, true) }.minByOrNull { it.first.length }
+            ?: return "I could not find an app called $name."
+
         return try {
-            context.startActivity(pm.getLaunchIntentForPackage(hit.second)!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val intent = pm.getLaunchIntentForPackage(hit.second)!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            context.startActivity(intent)
             "Opening ${hit.first}."
         } catch (e: Exception) {
             "Android does not let me open apps while the screen is off. Open the Griffin app first, or allow display over other apps."
         }
+    }
+
+    private fun launchIntent(intent: Intent, label: String): String = try {
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        "Opening $label."
+    } catch (e: Exception) {
+        "Could not open $label."
     }
 
     companion object {

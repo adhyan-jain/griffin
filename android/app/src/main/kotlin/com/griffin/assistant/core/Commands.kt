@@ -20,9 +20,14 @@ sealed class Command {
     data class MessageVia(val who: String, val text: String, val app: String) : Command()
     data class Timer(val seconds: Int) : Command()
     data class Alarm(val hour: Int, val minute: Int) : Command()
-    data class Flashlight(val on: Boolean) : Command()
+    data class Flashlight(val on: Boolean? = null) : Command()
     data class OpenApp(val name: String) : Command()
     data class Volume(val up: Boolean) : Command()
+    data class Mute(val mute: Boolean) : Command()
+    object Battery : Command()
+    object Time : Command()
+    object Date : Command()
+    object Camera : Command()
     object MediaNext : Command()
     object MediaPrevious : Command()
     object MediaPlay : Command()
@@ -101,22 +106,79 @@ object Commands {
         Regex("^(?:please )?(?:set|wake me)(?: an)? alarm(?: for| at)? (.+)$").find(s)?.let { m -> parseTime(m.groupValues[1])?.let { (h, mi) -> return Command.Alarm(h, mi) } }
         Regex("^(?:please )?wake me (?:up )?at (.+)$").find(s)?.let { m -> parseTime(m.groupValues[1])?.let { (h, mi) -> return Command.Alarm(h, mi) } }
 
+        // Torch / Flashlight: on, off, toggle, and Hindi colloquial triggers
         when (s) {
-            "flashlight on", "turn on the flashlight", "turn the flashlight on", "torch on", "turn on the torch", "turn on flashlight" -> return Command.Flashlight(true)
-            "flashlight off", "turn off the flashlight", "turn the flashlight off", "torch off", "turn off the torch", "turn off flashlight" -> return Command.Flashlight(false)
-            "volume up", "turn it up", "turn the volume up", "louder", "increase the volume" -> return Command.Volume(true)
-            "volume down", "turn it down", "turn the volume down", "quieter", "lower the volume", "decrease the volume" -> return Command.Volume(false)
+            "torch on", "turn on torch", "turn on the torch", "turn torch on", "torch chalu karo", "torch on karo", "torch jalao", "torch chalao",
+            "flashlight on", "turn on flashlight", "turn on the flashlight", "turn flashlight on", "flashlight chalu karo", "flashlight on karo",
+            "light on", "turn on light", "turn on the light", "turn light on",
+            "switch on torch", "switch on the torch", "switch on flashlight", "switch on the flashlight",
+            "enable torch", "enable flashlight" -> return Command.Flashlight(true)
+
+            "torch off", "turn off torch", "turn off the torch", "turn torch off", "torch band karo", "torch off karo", "torch bujhao",
+            "flashlight off", "turn off flashlight", "turn off the flashlight", "turn flashlight off", "flashlight band karo", "flashlight off karo",
+            "light off", "turn off light", "turn off the light", "turn light off",
+            "switch off torch", "switch off the torch", "switch off flashlight", "switch off the flashlight",
+            "disable torch", "disable flashlight" -> return Command.Flashlight(false)
+
+            "torch", "flashlight", "toggle torch", "toggle flashlight", "torch light" -> return Command.Flashlight(null)
+
+            // Battery status
+            "battery", "battery level", "battery percentage", "battery status", "how much battery", "check battery",
+            "what is my battery", "what's my battery", "whats my battery", "battery kitni hai", "battery percent" -> return Command.Battery
+
+            // Time & Date
+            "what time is it", "what's the time", "whats the time", "tell me the time", "current time", "what is the time",
+            "kya time hua", "time kya hai" -> return Command.Time
+
+            "what date is it", "what's the date", "whats the date", "what is today's date", "today's date", "todays date",
+            "what day is it", "today" -> return Command.Date
+
+            // Quick Camera
+            "camera", "open camera", "take a photo", "take a picture", "take a selfie", "snap a photo", "click a photo", "take photo", "take picture" -> return Command.Camera
+
+            // Volume & Mute
+            "volume up", "turn it up", "turn the volume up", "louder", "increase the volume", "increase volume" -> return Command.Volume(true)
+            "volume down", "turn it down", "turn the volume down", "quieter", "lower the volume", "decrease the volume", "decrease volume" -> return Command.Volume(false)
+            "mute", "mute phone", "mute volume", "silence", "silent", "mute audio" -> return Command.Mute(true)
+            "unmute", "unmute phone", "unmute volume", "unmute audio" -> return Command.Mute(false)
+
+            // Media playback
             "next song", "next track", "skip song", "skip track", "skip", "change song", "change the song", "change spotify song", "spotify next", "next" -> return Command.MediaNext
             "previous song", "previous track", "prev song", "prev track", "last song", "replay song" -> return Command.MediaPrevious
             "play music", "play song", "resume music", "resume song", "play spotify", "resume spotify", "play", "resume" -> return Command.MediaPlay
             "pause music", "pause song", "stop music", "pause spotify", "pause" -> return Command.MediaPause
             "play pause", "toggle music", "toggle playback" -> return Command.MediaPlayPause
+
+            // Common standalone app names
+            "calculator", "calc" -> return Command.OpenApp("calculator")
+            "settings" -> return Command.OpenApp("settings")
+            "gallery", "photos" -> return Command.OpenApp("photos")
+            "clock" -> return Command.OpenApp("clock")
+            "calendar" -> return Command.OpenApp("calendar")
+            "maps", "google maps" -> return Command.OpenApp("maps")
+            "spotify" -> return Command.OpenApp("spotify")
+            "youtube" -> return Command.OpenApp("youtube")
+            "whatsapp" -> return Command.OpenApp("whatsapp")
+            "instagram", "insta" -> return Command.OpenApp("instagram")
+            "chrome", "browser" -> return Command.OpenApp("chrome")
+            "files", "file manager" -> return Command.OpenApp("files")
+            "gmail", "email", "mail" -> return Command.OpenApp("gmail")
         }
 
-        Regex("^(?:please )?(?:open|launch|start) ([a-z0-9' ]+)$").find(s)?.let { m ->
+        // Open/Launch any installed app: English & Hindi
+        Regex("^(?:please )?(?:open(?: up)?|launch|start|run|show|go to|switch to) ([a-z0-9' ]+)$").find(s)?.let { m ->
             val app = m.groupValues[1].removePrefix("the ").removeSuffix(" app").trim()
             val words = app.split(" ")
-            // App names are short and are names, not sentences: "open source is great" is not a request to open an app.
+            if (app.isNotEmpty() && words.size <= 3 && words.none { it in sentenceWords } && app !in setOf("timer", "a timer", "alarm", "an alarm")) return Command.OpenApp(app)
+        }
+        Regex("^([a-z0-9' ]+?) (?:kholo|chalao|open karo|start karo)$").find(s)?.let { m ->
+            val app = m.groupValues[1].removePrefix("the ").removeSuffix(" app").trim()
+            val words = app.split(" ")
+            if (app.isNotEmpty() && words.size <= 3 && words.none { it in sentenceWords } && app !in setOf("timer", "a timer", "alarm", "an alarm")) return Command.OpenApp(app)
+        }
+        Regex("^(?:kholo|chalao) ([a-z0-9' ]+)$").find(s)?.let { m ->
+            val app = m.groupValues[1].removePrefix("the ").removeSuffix(" app").trim()
+            val words = app.split(" ")
             if (app.isNotEmpty() && words.size <= 3 && words.none { it in sentenceWords } && app !in setOf("timer", "a timer", "alarm", "an alarm")) return Command.OpenApp(app)
         }
         return Command.None
