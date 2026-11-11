@@ -94,4 +94,6 @@ In everyday life, users do **not** leave their phones permanently unlocked or aw
 
 - **Resume Tailoring & Personalization**: All resume alterations, role-tailored edits, and outreach drafting against `/home/adhyan/Downloads/AJ_Resume_Context.md` must strictly be executed using **Claude Pro CLI**.
 - **Prohibition of Silent Fallback**: If Claude is unavailable, rate-limited, or throws an error, Griffin **must halt and alert the user immediately**. It is strictly forbidden to fall back to Antigravity CLI or lower-tier models for resume modifications.
+- **Mandatory Pre-Application Approval Gate**: Under no circumstances may Griffin auto-submit an internship application, send a LinkedIn cold message, or dispatch a cold email without explicit prior user approval. Every application package (company, role, stipend, tailored resume variant, cover note, questionnaire responses) must pause in `AWAITING_APPROVAL` (`requires_approval = true`, `draft_only = true`), send an interactive approval prompt to the user's phone, and submit only after the user explicitly reviews and confirms.
+
 

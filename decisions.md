@@ -796,4 +796,22 @@ This document is the canonical ledger of all architectural, product, engineering
        - Browser Search: `searchWeb()` (`Intent.ACTION_VIEW` targeting Google Web Search).
 - **Why**: Ensures frictionless device automation that respects the user's screen state, minimizes jarring app popups, and extends voice assistant control over everyday device settings.
 
+#### ADR-110: Mandatory Pre-Application & External Submission Human Approval Gate
+- **Status**: IMPLEMENTED (`habit.md`, `decisions.md`, `internal/domain/task.go`, `internal/api/handlers/auto_thread.go`).
+- **Decision**:
+  - **Zero Unapproved Outward Submissions**: Griffin is strictly prohibited from auto-submitting job or internship applications, sending LinkedIn cold outreach, or dispatching cold emails autonomously.
+  - **Pre-Submission Staging Contract**:
+    1. The worker parses the job opening, selects the appropriate resume variant, and tailors the bullets/cover letter using Claude Pro CLI.
+    2. Instead of completing and executing the submission, the task transitions to `AWAITING_APPROVAL` with `requires_approval = true` and `draft_only = true`.
+    3. An approval payload is generated containing:
+       - Company Name & Role Title
+       - Verified Stipend & Location / Remote Status
+       - Application URL & Deadline
+       - Tailored Resume Diff & Selected Base Resume File
+       - Form / Questionnaire Answers & Cover Pitch Draft
+    4. Griffin delivers an interactive approval card to the user's phone / dashboard with "Approve & Submit", "Edit Draft", or "Reject" buttons.
+    5. Transmission or submission is blocked until explicit user confirmation is received via UI button click or voice command ("approve", "ha bhej do").
+- **Why**: Protects the user's professional reputation, eliminates accidental submissions to mismatched roles, and ensures the user retains 100% control over their job search and personal brand.
+
+
 
