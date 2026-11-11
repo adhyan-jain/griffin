@@ -56,9 +56,17 @@ var (
 	reDeleteSet     = regexp.MustCompile(`^(?:please )?(?:delete|remove|clear|clean up)(?: all)?(?: of)?(?: the| my)? (finished|completed|done|failed|old|all|cancelled|canceled)(?: tasks)?$`)
 	reDelete        = regexp.MustCompile(`^(?:please )?(?:delete|remove) (?:the |my |task )?(.+?)(?: task)?$`)
 	reApprList      = regexp.MustCompile(`^(?:(?:please )?(?:list|show|check|give me|tell me|read(?: out)?|any|what|do i have any|are there any|what are the)?(?: all)?(?: of)?(?: my)?(?: pending| open)? approvals?|what needs my approval|what needs approval|(?:any |what )?(?:things?|tasks?) (?:that )?(?:need|needs|waiting for) (?:my )?approval)(?: (?:are )?(?:waiting|pending))?(?: for me)?$`)
-	reApprove       = regexp.MustCompile(`^(?:please )?(?:approve|confirm)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
+	reApprove       = regexp.MustCompile(`^(?:please )?(?:approve|allow|confirm)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
 	reReject        = regexp.MustCompile(`^(?:please )?(?:reject|deny|decline)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
 )
+
+func isAllApprovalWord(ref string) bool {
+	switch norm(ref) {
+	case "all", "everything", "all approvals", "all actions", "all tasks", "sab", "saare", "saari", "allow all", "approve all", "sab kuch":
+		return true
+	}
+	return false
+}
 
 func norm(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -178,6 +186,9 @@ func ParseTaskCommand(text string) TaskCommand {
 	if m := reApprove.FindStringSubmatch(s); m != nil {
 		ref := strings.TrimSpace(m[1] + m[2])
 		ref = strings.TrimSuffix(ref, " karo")
+		if isAllApprovalWord(ref) {
+			return TaskCommand{Kind: CmdApprove, Scope: "all", Ref: "all"}
+		}
 		if genericRef(ref) {
 			ref = ""
 		}
@@ -186,6 +197,9 @@ func ParseTaskCommand(text string) TaskCommand {
 	if m := reReject.FindStringSubmatch(s); m != nil {
 		ref := strings.TrimSpace(m[1] + m[2])
 		ref = strings.TrimSuffix(ref, " karo")
+		if isAllApprovalWord(ref) {
+			return TaskCommand{Kind: CmdReject, Scope: "all", Ref: "all"}
+		}
 		if genericRef(ref) {
 			ref = ""
 		}
@@ -709,6 +723,20 @@ func (v *VoiceCommands) decideApproval(ctx context.Context, user uuid.UUID, c Ta
 			}
 		}
 	}
+
+	isAll := c.Scope == "all" || c.Ref == "all" || c.Ref == "everything" || isAllApprovalWord(c.Ref)
+	if isAll && len(a) > 0 {
+		var ids []string
+		for _, x := range a {
+			ids = append(ids, x.ID.String())
+		}
+		token := v.sign(confirmPayload{User: user.String(), Action: action, IDs: ids, Exp: v.now().Add(confirmTTL).Unix()})
+		return Result{
+			Reply:        fmt.Sprintf("%s all %d waiting actions? Say yes to confirm.", verb, len(ids)),
+			ConfirmToken: token,
+		}, nil
+	}
+
 	switch {
 	case len(chosen) == 0:
 		return Result{Reply: fmt.Sprintf("Nothing waiting matches %s.", c.Ref)}, nil

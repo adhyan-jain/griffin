@@ -813,5 +813,22 @@ This document is the canonical ledger of all architectural, product, engineering
     5. Transmission or submission is blocked until explicit user confirmation is received via UI button click or voice command ("approve", "ha bhej do").
 - **Why**: Protects the user's professional reputation, eliminates accidental submissions to mismatched roles, and ensures the user retains 100% control over their job search and personal brand.
 
+#### ADR-111: Bulk Approvals Gate & Interactive List/File Action Interface
+- **Status**: IMPLEMENTED (`internal/api/handlers/approvals.go`, `internal/api/server.go`, `internal/service/voice_commands.go`, `web/src/app/approvals/page.tsx`, `web/src/app/artifacts/page.tsx`, `web/src/app/lists/[id]/page.tsx`, `web/src/lib/api.ts`).
+- **Decision**:
+  1. **"Allow All" Bulk Approval Protocol**:
+     - **API**: Introduced `POST /api/v1/approvals/batch` supporting atomic approval or rejection of all pending actions (or a specific array of IDs).
+     - **Web UI**: Added an interactive "Allow All Pending Actions" card at the top of the Approvals dashboard (`/approvals`). Shows total pending count, single-click "Allow All ({count})" button, and "Reject All" button.
+     - **Voice & Chat**: Recognizes "allow all", "approve all", "all approvals", "sab approve karo", and "saare allow karo", signing a unified confirmation token and executing batch approval upon the user's confirmation.
+  2. **Interactive Files Interface (`/artifacts`)**:
+     - Added filter tabs: `All Files`, `Trackers & Lists`, `Resumes & Career`, and `Task Outputs`.
+     - In-line interactive buttons:
+       - **View**: Launches an in-page quick-preview modal with live markdown/document rendering without leaving the page.
+       - **Action**: Launches an interactive task runner with contextual presets (e.g. "Tailor resume with Claude", "Scrape open 30k+ internships", "Verify emails") and custom prompts, directly creating Griffin tasks linked to the artifact.
+  3. **Interactive Lists Interface (`/lists/[id]`)**:
+     - Added an interactive "Run Task on List" action bar with presets for refreshing internship trackers, tailoring resumes for listed openings, and monitoring outreach logs.
+- **Why**: Eliminates repetitive one-by-one approval friction when managing dozens of job applications or outreach drafts, while turning static lists and file dumps into actionable execution hubs.
+
+
 
 

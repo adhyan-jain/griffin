@@ -710,6 +710,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ decision: approve ? "APPROVE" : "REJECT", reason: reason ?? "" }),
     }),
+  batchRespondApprovals: (approve: boolean, ids?: string[], reason?: string) =>
+    fetchWithAuth<{ approved: number; rejected: number; failed: number; total: number }>(`/api/v1/approvals/batch`, {
+      method: "POST",
+      body: JSON.stringify({ decision: approve ? "APPROVE" : "REJECT", reason: reason ?? "", ids }),
+    }),
 
   // Artifacts
   listArtifacts: (taskId?: string, opts?: ReqOpts) =>

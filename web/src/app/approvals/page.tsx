@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
-import { Check, Loader2, ShieldCheck, X } from "lucide-react";
+import { Check, CheckCheck, Loader2, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Approval } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ export default function ApprovalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -51,6 +52,27 @@ export default function ApprovalsPage() {
       toast.error(e instanceof Error ? e.message : "Could not record your decision.");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const respondAll = async (approve: boolean) => {
+    if (!items || items.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await api.batchRespondApprovals(approve);
+      toast.success(approve ? `Approved all ${res.approved} actions` : `Rejected all ${res.rejected} actions`);
+      refresh();
+    } catch {
+      try {
+        const pending = items.filter((a) => a.status === "PENDING");
+        await Promise.allSettled(pending.map((a) => api.respondApproval(a.id, approve, "Bulk " + (approve ? "approved" : "rejected"))));
+        toast.success(approve ? `Approved ${pending.length} actions` : `Rejected ${pending.length} actions`);
+        refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not complete bulk decision.");
+      }
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -89,7 +111,49 @@ export default function ApprovalsPage() {
           description="When a task wants to do something risky, it will ask here first."
         />
       ) : (
-        <ul className="space-y-3">
+        <div className="space-y-4">
+          {tab === "pending" && items && items.length > 0 && (
+            <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 sm:p-5 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-primary">
+                      <CheckCheck className="size-4" />
+                    </span>
+                    <h3 className="text-base font-semibold text-foreground">
+                      Allow All Actions
+                    </h3>
+                    <span className="rounded-full bg-primary/20 px-2 py-0.5 text-xs font-semibold text-primary">
+                      {items.length} pending
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    Approve and execute all queued decisions at once, or review and decide individually below.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-10 text-muted-foreground hover:text-destructive"
+                    disabled={bulkBusy || busyId !== null}
+                    onClick={() => respondAll(false)}
+                  >
+                    <X className="size-4" /> Reject All
+                  </Button>
+                  <Button
+                    className="h-10 bg-primary font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+                    disabled={bulkBusy || busyId !== null}
+                    onClick={() => respondAll(true)}
+                  >
+                    {bulkBusy ? <Loader2 className="size-4 animate-spin" /> : <CheckCheck className="size-4" />}
+                    Allow All ({items.length})
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <ul className="space-y-3">
           {items.map((a) => {
             const pending = a.status === "PENDING";
             return (
@@ -131,7 +195,8 @@ export default function ApprovalsPage() {
             );
           })}
         </ul>
-      )}
-    </PageContainer>
-  );
+      </div>
+    )}
+  </PageContainer>
+);
 }

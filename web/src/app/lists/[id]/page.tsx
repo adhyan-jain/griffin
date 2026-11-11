@@ -3,10 +3,11 @@
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Download, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, Download, Loader2, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Artifact } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNote, PageContainer, timeAgo } from "@/components/page";
@@ -31,6 +32,9 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
   const [editor, setEditor] = useState<Editor>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [actionOpen, setActionOpen] = useState(false);
+  const [actionInstruction, setActionInstruction] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -97,6 +101,27 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
     URL.revokeObjectURL(url);
   };
 
+  const runTask = async () => {
+    if (!meta || !actionInstruction.trim() || actionBusy) return;
+    setActionBusy(true);
+    try {
+      const goal = `${actionInstruction.trim()} (Referencing list: ${meta.title}, ID: ${meta.id})`;
+      const task = await api.createTask({
+        goal,
+        title: `List task: ${meta.title}`.slice(0, 80),
+        manager_domain: "JJ",
+      });
+      toast.success("Task dispatched to Griffin");
+      setActionOpen(false);
+      setActionInstruction("");
+      router.push(`/tasks/${task.id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not launch task.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   return (
     <PageContainer>
       <Link href="/lists" className="mb-3 inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -117,7 +142,10 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
           <p className="mt-2 text-sm text-muted-foreground">Started {timeAgo(meta.created_at)}. Each task you save to it adds a dated section.</p>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <Button className="h-11" onClick={() => open("add")}>
+            <Button className="h-11 gap-2 bg-primary font-medium text-primary-foreground shadow-sm hover:bg-primary/90" onClick={() => setActionOpen(true)}>
+              <Sparkles className="size-4" /> Run Task on List
+            </Button>
+            <Button variant="outline" className="h-11" onClick={() => open("add")}>
               <Plus /> Add entry
             </Button>
             <Button variant="outline" className="h-11" onClick={() => open("edit")}>
@@ -173,6 +201,57 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
           <Button variant="destructive" className="h-11" disabled={busy} onClick={remove}>
             {busy ? "Deleting..." : "Delete list"}
           </Button>
+        </div>
+      </ResponsiveDialog>
+
+      {/* Interactive Task Runner Dialog for this List */}
+      <ResponsiveDialog
+        open={actionOpen}
+        onOpenChange={(o) => !actionBusy && setActionOpen(o)}
+        title="Run Task on this List"
+        description={meta ? `Ask Griffin to process or update ${meta.title}` : undefined}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Suggested Tasks</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "Search open internships and add new 30k+ roles to this tracker",
+                "Review open roles and tailor resumes with Claude (draft first)",
+                "Draft cold outreach messages for alumni in this list",
+                "Verify email responses and application statuses",
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setActionInstruction(preset)}
+                  className="rounded-lg border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40 hover:bg-accent hover:text-foreground text-left"
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="list-instruction">Instructions for Griffin</Label>
+            <Textarea
+              id="list-instruction"
+              rows={3}
+              placeholder="e.g. Scrape Unstop and LinkedIn for new 30k+ summer SDE internships and update this table..."
+              value={actionInstruction}
+              onChange={(e) => setActionInstruction(e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" className="h-10" disabled={actionBusy} onClick={() => setActionOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="h-10 gap-1.5" disabled={actionBusy || !actionInstruction.trim()} onClick={() => void runTask()}>
+              {actionBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              Launch Task
+            </Button>
+          </div>
         </div>
       </ResponsiveDialog>
     </PageContainer>

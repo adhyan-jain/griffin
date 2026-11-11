@@ -104,3 +104,88 @@ func (h *ApprovalHandler) RespondApproval(w http.ResponseWriter, r *http.Request
 
 	httputil.JSON(w, http.StatusOK, app)
 }
+
+type BatchRespondApprovalRequest struct {
+	Decision string      `json:"decision"` // "APPROVE" or "REJECT"
+	Reason   string      `json:"reason,omitempty"`
+	IDs      []uuid.UUID `json:"ids,omitempty"`
+}
+
+type BatchRespondApprovalResponse struct {
+	Approved int                `json:"approved"`
+	Rejected int                `json:"rejected"`
+	Failed   int                `json:"failed"`
+	Total    int                `json:"total"`
+	Items    []*domain.Approval `json:"items"`
+}
+
+func (h *ApprovalHandler) BatchRespondApprovals(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+
+	var req BatchRespondApprovalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, err))
+		return
+	}
+
+	approved := false
+	if strings.EqualFold(req.Decision, "APPROVE") || strings.EqualFold(req.Decision, "APPROVED") {
+		approved = true
+	} else if !strings.EqualFold(req.Decision, "REJECT") && !strings.EqualFold(req.Decision, "REJECTED") {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("decision must be APPROVE or REJECT")))
+		return
+	}
+
+	targetIDs := req.IDs
+	if len(targetIDs) == 0 {
+		statusPending := domain.ApprovalStatusPending
+		pending, err := h.approvalRepo.ListApprovals(r.Context(), userID, &statusPending)
+		if err != nil {
+			httputil.ErrorJSON(w, err)
+			return
+		}
+		for _, a := range pending {
+			targetIDs = append(targetIDs, a.ID)
+		}
+	}
+
+	res := BatchRespondApprovalResponse{
+		Total: len(targetIDs),
+		Items: make([]*domain.Approval, 0, len(targetIDs)),
+	}
+
+	reason := req.Reason
+	if reason == "" {
+		if approved {
+			reason = "Bulk approved"
+		} else {
+			reason = "Bulk rejected"
+		}
+	}
+
+	for _, id := range targetIDs {
+		app, err := h.engine.RespondApproval(r.Context(), id, userID, approved, reason)
+		if err != nil {
+			res.Failed++
+			continue
+		}
+		if approved {
+			res.Approved++
+		} else {
+			res.Rejected++
+		}
+		res.Items = append(res.Items, app)
+	}
+
+	if res.Approved > 0 && h.wakeup != nil {
+		wakeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		_ = h.wakeup.TriggerWakeup(wakeCtx)
+		cancel()
+	}
+
+	httputil.JSON(w, http.StatusOK, res)
+}
