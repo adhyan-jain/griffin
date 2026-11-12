@@ -137,6 +137,9 @@ func (t *Task) Validate() error {
 	if err := ValidateWeb(t.InputPayload); err != nil {
 		return err
 	}
+	if err := ValidateBrowser(t.InputPayload); err != nil {
+		return err
+	}
 	if t.Priority == "" {
 		t.Priority = TaskPriorityNormalP2
 	}
