@@ -33,6 +33,12 @@ type FinishNotifier interface {
 	TaskFinished(ctx context.Context, t *domain.Task)
 }
 
+// ApprovalNotifier is the optional second half of a FinishNotifier: it is told the moment any step, top-level or
+// not, asks the owner for a decision, so an approval inside a plan is not left waiting unseen.
+type ApprovalNotifier interface {
+	ApprovalRequested(ctx context.Context, a *domain.Approval)
+}
+
 // SetNotifier turns on finish notifications.
 func (e *TaskEngine) SetNotifier(n FinishNotifier) { e.notifier = n }
 
@@ -325,7 +331,15 @@ func (e *TaskEngine) cascadeCancelChildren(ctx context.Context, parentID uuid.UU
 
 // RequestApproval pauses task execution and registers an approval gate requiring human sign-off.
 func (e *TaskEngine) RequestApproval(ctx context.Context, taskID uuid.UUID, approval *domain.Approval) error {
-	return e.taskRepo.TransitionToApproval(ctx, taskID, approval)
+	if err := e.taskRepo.TransitionToApproval(ctx, taskID, approval); err != nil {
+		return err
+	}
+	if an, ok := e.notifier.(ApprovalNotifier); ok && an != nil {
+		nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second)
+		defer cancel()
+		an.ApprovalRequested(nctx, approval)
+	}
+	return nil
 }
 
 // HasApprovedAction reports whether the task's owner has approved the given action type for this task.

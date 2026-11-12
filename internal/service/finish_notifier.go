@@ -55,3 +55,31 @@ func (n *TaskNotifier) TaskFinished(ctx context.Context, t *domain.Task) {
 		log.Warn("could not send the finish notification", "task_id", t.ID, "error", err)
 	}
 }
+
+// ApprovalRequested implements ApprovalNotifier: a short push that opens the approvals page, where the owner
+// can read, edit and decide on the draft.
+func (n *TaskNotifier) ApprovalRequested(ctx context.Context, a *domain.Approval) {
+	if n == nil || n.Sender == nil || a == nil {
+		return
+	}
+	name := domain.DefaultManagerName
+	if n.ManagerName != nil {
+		if v := n.ManagerName(ctx, a.UserID); v != "" {
+			name = v
+		}
+	}
+	err := n.Sender.Send(ctx, notify.Message{
+		Title:    name + ": waiting for you",
+		Body:     a.Summary,
+		ClickURL: strings.TrimRight(n.AppURL, "/") + "/approvals",
+		Priority: 4,
+		Tags:     []string{"raised_hand"},
+	})
+	if err != nil {
+		log := n.Logger
+		if log == nil {
+			log = slog.Default()
+		}
+		log.Warn("could not send the approval notification", "approval_id", a.ID, "error", err)
+	}
+}
