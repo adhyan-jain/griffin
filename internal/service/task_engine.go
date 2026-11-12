@@ -383,6 +383,18 @@ func (e *TaskEngine) RespondApproval(ctx context.Context, approvalID uuid.UUID, 
 	return app, nil
 }
 
+// EditApproval lets the owner change the message text of a pending approval before deciding on it.
+func (e *TaskEngine) EditApproval(ctx context.Context, approvalID, userID uuid.UUID, text string) (*domain.Approval, error) {
+	app, err := e.approvalRepo.EditPendingApproval(ctx, approvalID, userID, text)
+	if err != nil {
+		return nil, fmt.Errorf("task_engine: edit approval: %w", err)
+	}
+	_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+		TaskID: app.TaskID, EventType: "STATUS_CHANGE", Message: "Owner edited the draft before approving", Metadata: json.RawMessage("{}"),
+	})
+	return app, nil
+}
+
 // ReapExpiredLeases reclaims tasks abandoned by crashed workers.
 func (e *TaskEngine) ReapExpiredLeases(ctx context.Context) (int64, error) {
 	reaped, err := e.taskRepo.ReapExpiredLeases(ctx)

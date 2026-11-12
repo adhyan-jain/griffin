@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/griffin/core/internal/database"
@@ -18,6 +19,9 @@ type ApprovalRepository interface {
 	GetApprovalByID(ctx context.Context, id uuid.UUID) (*domain.Approval, error)
 	ListApprovals(ctx context.Context, userID uuid.UUID, status *domain.ApprovalStatus) ([]*domain.Approval, error)
 	RespondToApproval(ctx context.Context, id uuid.UUID, userID uuid.UUID, approved bool, reason string) (*domain.Approval, error)
+	// EditPendingApproval replaces the text of a message awaiting approval. The approval is bound to a digest of
+	// the exact message, so the task's action, the approval's type, summary and payload all change together.
+	EditPendingApproval(ctx context.Context, id uuid.UUID, userID uuid.UUID, text string) (*domain.Approval, error)
 }
 
 // PostgresApprovalRepository implements ApprovalRepository.
@@ -148,5 +152,61 @@ func (r *PostgresApprovalRepository) RespondToApproval(ctx context.Context, id u
 		return nil, fmt.Errorf("commit approval response tx: %w", err)
 	}
 
+	return &a, nil
+}
+
+func (r *PostgresApprovalRepository) EditPendingApproval(ctx context.Context, id uuid.UUID, userID uuid.UUID, text string) (*domain.Approval, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var a domain.Approval
+	err = tx.QueryRow(ctx, `
+		SELECT id, user_id, task_id, action_type, risk_level, summary, action_payload,
+		       status, decided_by, decision_reason, decided_at, expires_at, created_at, updated_at
+		FROM approvals WHERE id = $1 AND user_id = $2 AND status = 'PENDING' FOR UPDATE`, id, userID).Scan(
+		&a.ID, &a.UserID, &a.TaskID, &a.ActionType, &a.RiskLevel, &a.Summary, &a.ActionPayload,
+		&a.Status, &a.DecidedBy, &a.DecisionReason, &a.DecidedAt, &a.ExpiresAt, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrApprovalNotPending
+		}
+		return nil, fmt.Errorf("lock approval: %w", err)
+	}
+
+	var input json.RawMessage
+	if err := tx.QueryRow(ctx, `SELECT input_payload FROM tasks WHERE id = $1`, a.TaskID).Scan(&input); err != nil {
+		return nil, fmt.Errorf("read task payload: %w", err)
+	}
+	newInput, act, err := domain.WithEditedText(input, text)
+	if err != nil {
+		return nil, err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(a.ActionPayload, &payload); err != nil || payload == nil {
+		payload = map[string]any{}
+	}
+	payload["text"] = act.Text
+	payload["digest"] = act.Digest()
+	newPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	a.ActionType, a.Summary, a.ActionPayload = act.ApprovalActionType(), act.Summary(), newPayload
+
+	now := time.Now().UTC()
+	if _, err := tx.Exec(ctx, `UPDATE tasks SET input_payload = $1, updated_at = $2 WHERE id = $3`, newInput, now, a.TaskID); err != nil {
+		return nil, fmt.Errorf("update task payload: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE approvals SET action_type = $1, summary = $2, action_payload = $3, updated_at = $4 WHERE id = $5`,
+		a.ActionType, a.Summary, a.ActionPayload, now, id); err != nil {
+		return nil, fmt.Errorf("update approval: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	a.UpdatedAt = now
 	return &a, nil
 }

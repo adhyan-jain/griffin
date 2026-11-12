@@ -656,3 +656,53 @@ func TestJJOrchestrationSubmitUnderRLS(t *testing.T) {
 		}
 	}
 }
+
+// Editing a pending message must rewrite the task's action and the approval together, so the digest the owner
+// approves is the digest of the edited text. Another tenant can neither edit nor see it.
+func TestEditPendingApprovalRebindsTheDigest(t *testing.T) {
+	e := setupRLS(t, 2, "")
+	ctx := context.Background()
+	a := CreateTestUser(t, e.DB, "edit_a@example.com")
+	b := CreateTestUser(t, e.DB, "edit_b@example.com")
+
+	payload := json.RawMessage(`{"requires":["messaging"],"messaging":{"channel":"whatsapp","op":"send","contact":"Bro","text":"hi"}}`)
+	task, err := e.Engine.CreateTask(ctx, &domain.Task{UserID: a, Title: "Message Bro", Goal: "g", InputPayload: payload}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Engine.ClaimTask(ctx, "w-edit", 60*1e9); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := domain.ParseMessagingAction(payload)
+	approval := &domain.Approval{
+		ID: uuid.New(), UserID: a, TaskID: task.ID, ActionType: old.ApprovalActionType(), RiskLevel: domain.ApprovalRiskHigh,
+		Summary: old.Summary(), ActionPayload: json.RawMessage(`{"digest":"` + old.Digest() + `","text":"hi"}`),
+	}
+	if err := e.Engine.RequestApproval(ctx, task.ID, approval); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewPostgresApprovalRepository(e.Scoped)
+
+	txB, _ := e.UserTx.Begin(ctx, b)
+	if _, err := repo.EditPendingApproval(database.WithUserTx(ctx, txB), approval.ID, b, "pwn"); err == nil {
+		t.Fatal("another tenant edited the approval")
+	}
+	_ = txB.Rollback(ctx)
+
+	txA, _ := e.UserTx.Begin(ctx, a)
+	got, err := repo.EditPendingApproval(database.WithUserTx(ctx, txA), approval.ID, a, "see you at 8?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := txA.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var stored json.RawMessage
+	if err := e.DB.Pool.QueryRow(ctx, `SELECT input_payload FROM tasks WHERE id=$1`, task.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	act, _ := domain.ParseMessagingAction(stored)
+	if act.Text != "see you at 8?" || got.ActionType != act.ApprovalActionType() || got.ActionType == old.ApprovalActionType() {
+		t.Fatalf("approval and task must agree on the edited action: %q %s", act.Text, got.ActionType)
+	}
+}

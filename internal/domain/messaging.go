@@ -230,3 +230,31 @@ func truncateRunes(s string, n int) string {
 	}
 	return string(r[:n]) + "..."
 }
+
+// WithEditedText returns the payload with the messaging action's text replaced, and the new action. The text is
+// part of the digest an approval is bound to, so an owner's edit has to change the action itself; the caller then
+// rewrites the approval's action type, summary and payload from the result. Only a send has text to edit.
+func WithEditedText(payload json.RawMessage, text string) (json.RawMessage, *MessagingAction, error) {
+	act, err := ParseMessagingAction(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	if act == nil || act.Op != MessagingSend {
+		return nil, nil, fmt.Errorf("%w: only a message to send has text to edit", ErrValidation)
+	}
+	act.Text = text
+	if err := act.Validate(); err != nil {
+		return nil, nil, err
+	}
+	var v map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return nil, nil, fmt.Errorf("%w: payload is not an object", ErrValidation)
+	}
+	raw, err := json.Marshal(act)
+	if err != nil {
+		return nil, nil, err
+	}
+	v[MessagingKey] = raw
+	out, err := json.Marshal(v)
+	return out, act, err
+}

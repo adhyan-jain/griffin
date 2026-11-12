@@ -105,6 +105,35 @@ func (h *ApprovalHandler) RespondApproval(w http.ResponseWriter, r *http.Request
 	httputil.JSON(w, http.StatusOK, app)
 }
 
+type EditApprovalRequest struct {
+	Text string `json:"text"`
+}
+
+// EditApproval changes the text of a message that is waiting for approval; the owner then approves the new text.
+func (h *ApprovalHandler) EditApproval(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+	approvalID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid approval id format")))
+		return
+	}
+	var req EditApprovalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("text is required")))
+		return
+	}
+	app, err := h.engine.EditApproval(r.Context(), approvalID, userID, req.Text)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, app)
+}
+
 type BatchRespondApprovalRequest struct {
 	Decision string      `json:"decision"` // "APPROVE" or "REJECT"
 	Reason   string      `json:"reason,omitempty"`

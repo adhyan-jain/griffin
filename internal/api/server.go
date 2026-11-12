@@ -154,6 +154,7 @@ func NewServer(deps ServerDependencies) *Server {
 	approvalHandler := handlers.NewApprovalHandler(deps.Engine, deps.ApprovalRepo, deps.Wakeup)
 	mux.Handle("GET /api/v1/approvals", userAuth(http.HandlerFunc(approvalHandler.ListApprovals)))
 	mux.Handle("POST /api/v1/approvals/{id}/respond", userAuth(http.HandlerFunc(approvalHandler.RespondApproval)))
+	mux.Handle("PATCH /api/v1/approvals/{id}", userAuth(http.HandlerFunc(approvalHandler.EditApproval)))
 	mux.Handle("POST /api/v1/approvals/batch", userAuth(http.HandlerFunc(approvalHandler.BatchRespondApprovals)))
 
 	agentHandler := handlers.NewAgentHandler(deps.AgentRepo)
