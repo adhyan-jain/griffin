@@ -20,3 +20,11 @@ web/.next/
 web/out/
 
 build/
+
+# More secrets and machine-local files
+.env.*
+!.env.example
+.env copy*
+android/local.properties
+*.jks
+.griffin-host/

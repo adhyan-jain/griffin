@@ -1,4 +1,4 @@
-.PHONY: build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help run-host run-host-bg stop-host host-status check-host login-whatsapp check-whatsapp
+.PHONY: setup build run test test-v fmt lint setup-hooks migrate migrate-status migrate-down package clean help run-host run-host-bg stop-host host-status check-host login-whatsapp check-whatsapp
 
 # Default target
 all: build
@@ -32,6 +32,16 @@ setup-hooks:
 	git config core.hooksPath .githooks
 	chmod +x .githooks/pre-commit
 	@echo "Git hooks configured to .githooks/"
+
+## One command for a first run: config files, a local database and its migrations.
+setup:
+	@command -v docker >/dev/null || { echo "Docker is needed for the local database (or point DATABASE_URL at your own PostgreSQL)."; exit 1; }
+	@test -f .env || { cp .env.example .env; echo "Created .env from .env.example. Add your keys to it."; }
+	@test -f web/.env.local || { cp web/.env.example web/.env.local; echo "Created web/.env.local."; }
+	docker compose up -d --wait db
+	set -a; . ./.env; set +a; go run ./cmd/griffin-migrate -local-auth-shim up
+	cd web && npm install
+	@echo "Ready. Start the API with 'make run' and the web app with 'cd web && npm run dev'."
 
 ## Apply migrations explicitly. LOCAL plain PostgreSQL only (creates a minimal auth shim).
 ## Requires DATABASE_URL (or MIGRATION_DATABASE_URL). For Supabase run: go run ./cmd/griffin-migrate up

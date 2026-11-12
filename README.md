@@ -48,7 +48,7 @@ make test-v
 
 ## 3. Database Schema & Migration Guide
 
-Migrations are version-controlled in [`migrations/`](file:///home/adhyan/Desktop/griffin/migrations/):
+Migrations are version-controlled in [`migrations/`](./migrations/):
 
 | File | Purpose |
 | :--- | :--- |
@@ -231,7 +231,7 @@ griffin-host vault-sync
 
 ## 10. User Habits, Lingo Resolution & Locked Phone Posture
 
-Griffin incorporates an adaptive user habit profile documented in [`habit.md`](file:///home/adhyan/Desktop/griffin/habit.md):
+Griffin incorporates an adaptive user habit profile documented in [`habit.md`](./habit.md):
 - **Typo Tolerance & Crude Lingo**: Normalizes keyboard slips (`sned`, `snd`, `wapp`, `watsp`) and parses informal greetings (`wassup`, `sup`, `yo`, `hellooo`).
 - **Implicit Messaging Routing**: Phrasing like *"message bhai wassup"*, *"text bhai wassup"*, or *"ping bhai"* automatically routes to WhatsApp personal messaging hands without requiring explicit app naming.
 - **Contact Alias Resolution**: Common vernacular relationships (`bhai`, `bro`, `brother`, `maa`, `mom`, `papa`, `dad`) resolve seamlessly to user contact book targets.

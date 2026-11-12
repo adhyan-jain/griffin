@@ -27,16 +27,16 @@
       "Action": "ec2:RunInstances",
       "Resource": [
         "arn:aws:ec2:ap-south-1::image/*",
-        "arn:aws:ec2:ap-south-1:123456789012:subnet/*",
-        "arn:aws:ec2:ap-south-1:123456789012:network-interface/*",
-        "arn:aws:ec2:ap-south-1:123456789012:security-group/*"
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:subnet/*",
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:network-interface/*",
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:security-group/*"
       ]
     },
     {
       "Sid": "RunInstancesT4gMediumImdsv2Tagged",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",
-      "Resource": "arn:aws:ec2:ap-south-1:123456789012:instance/*",
+      "Resource": "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:instance/*",
       "Condition": {
         "StringEquals": {
           "ec2:InstanceType": "t4g.medium",
@@ -49,7 +49,7 @@
       "Sid": "RunInstancesEncryptedVolumeMax30",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",
-      "Resource": "arn:aws:ec2:ap-south-1:123456789012:volume/*",
+      "Resource": "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:volume/*",
       "Condition": {
         "Bool": {
           "ec2:Encrypted": "true"
@@ -64,9 +64,9 @@
       "Effect": "Allow",
       "Action": "ec2:CreateTags",
       "Resource": [
-        "arn:aws:ec2:ap-south-1:123456789012:instance/*",
-        "arn:aws:ec2:ap-south-1:123456789012:volume/*",
-        "arn:aws:ec2:ap-south-1:123456789012:security-group/*"
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:instance/*",
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:volume/*",
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:security-group/*"
       ],
       "Condition": {
         "StringEquals": {
@@ -82,8 +82,8 @@
       "Effect": "Allow",
       "Action": "ec2:CreateSecurityGroup",
       "Resource": [
-        "arn:aws:ec2:ap-south-1:123456789012:vpc/vpc-0c233c7991952ec37",
-        "arn:aws:ec2:ap-south-1:123456789012:security-group/*"
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:vpc/vpc-0c233c7991952ec37",
+        "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:security-group/*"
       ]
     },
     {
@@ -94,15 +94,15 @@
         "iam:GetInstanceProfile"
       ],
       "Resource": [
-        "arn:aws:iam::123456789012:role/GriffinEC2WorkerRole",
-        "arn:aws:iam::123456789012:instance-profile/GriffinEC2WorkerProfile"
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/GriffinEC2WorkerRole",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:instance-profile/GriffinEC2WorkerProfile"
       ]
     },
     {
       "Sid": "PassExistingWorkerRoleToEc2Only",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::123456789012:role/GriffinEC2WorkerRole",
+      "Resource": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/GriffinEC2WorkerRole",
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": "ec2.amazonaws.com"
@@ -123,7 +123,7 @@
         "ec2:StopInstances",
         "ec2:RebootInstances"
       ],
-      "Resource": "arn:aws:ec2:ap-south-1:123456789012:instance/*",
+      "Resource": "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:instance/*",
       "Condition": {
         "StringEquals": {
           "ec2:ResourceTag/Project": "Griffin"
@@ -134,7 +134,7 @@
       "Sid": "SessionManagerToTaggedRunner",
       "Effect": "Allow",
       "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ec2:ap-south-1:123456789012:instance/*",
+      "Resource": "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:instance/*",
       "Condition": {
         "StringEquals": {
           "ssm:resourceTag/Project": "Griffin"
@@ -146,7 +146,7 @@
       "Effect": "Allow",
       "Action": "ssm:StartSession",
       "Resource": [
-        "arn:aws:ssm:ap-south-1:123456789012:document/SSM-SessionManagerRunShell",
+        "arn:aws:ssm:ap-south-1:<AWS_ACCOUNT_ID>:document/SSM-SessionManagerRunShell",
         "arn:aws:ssm:ap-south-1::document/AWS-StartInteractiveCommand"
       ]
     },
@@ -154,7 +154,7 @@
       "Sid": "RunCommandOnTaggedRunner",
       "Effect": "Allow",
       "Action": "ssm:SendCommand",
-      "Resource": "arn:aws:ec2:ap-south-1:123456789012:instance/*",
+      "Resource": "arn:aws:ec2:ap-south-1:<AWS_ACCOUNT_ID>:instance/*",
       "Condition": {
         "StringEquals": {
           "ssm:resourceTag/Project": "Griffin"
@@ -195,7 +195,7 @@
         "s3:PutObject",
         "s3:GetObject"
       ],
-      "Resource": "arn:aws:s3:::griffin-artifacts-123456789012-ap-south-1/releases/*"
+      "Resource": "arn:aws:s3:::griffin-artifacts-<AWS_ACCOUNT_ID>-ap-south-1/releases/*"
     }
   ]
 }

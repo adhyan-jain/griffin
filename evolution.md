@@ -69,7 +69,7 @@ timeline
   - **Concurrency Safety**: Two parallel worker runs completed in 14.44s wall-clock with distinct conversation IDs and zero lockfile collisions.
   - **Memory Headroom**: On a 4 GiB `t4g.medium`, two concurrent workers consume ~470 MiB, leaving **>2.6 GiB (64%) free memory headroom**.
 - **Guardrail Enforced**:
-  - We verified that the local AWS credentials profile (`axiom-dev`) lacked EC2 permissions. In strict accordance with user rules, zero cloud resources were launched until explicit credentials and approvals are provided. Automated launch scripts were codified in [`infra/provision-ec2.sh`](infra/provision-ec2.sh) and [`infra/user-data.sh`](infra/user-data.sh).
+  - We verified that the local AWS credentials profile (`<AWS_PROFILE>`) lacked EC2 permissions. In strict accordance with user rules, zero cloud resources were launched until explicit credentials and approvals are provided. Automated launch scripts were codified in [`infra/provision-ec2.sh`](infra/provision-ec2.sh) and [`infra/user-data.sh`](infra/user-data.sh).
 
 ---
 
@@ -224,7 +224,7 @@ Phase 4 grounded Griffin's document and artifact storage in enterprise cloud obj
 - **Key Implementation Details**:
   - **Web Console in `web/`**: Built with Next.js 15, TypeScript, Tailwind CSS, Lucide icons, and PWA manifest. Features Executive Dashboard, JJ Orchestrator Workspace, Task DAG Hierarchy, Task Details & Logs Inspector, Approvals Governance Inbox, S3 Artifacts Browser, Workforce Directory (11 managers), System Health, Operator Login, and Responsive Mobile Drawer/Navbar.
   - **CORS & Web Auth**: Implemented `internal/api/middleware/cors.go` and `internal/api/handlers/auth.go` (`POST /api/v1/auth/login`) with automatic foreign-key user provisioning and signed Supabase JWT issuance.
-  - **Live Cloud Verification**: Verified `tests/s3_live_test.go` directly against real AWS S3 bucket `griffin-artifacts-123456789012-ap-south-1` in `ap-south-1` using `griffin-bootstrap` credentials with zero errors.
+  - **Live Cloud Verification**: Verified `tests/s3_live_test.go` directly against real AWS S3 bucket `griffin-artifacts-<AWS_ACCOUNT_ID>-ap-south-1` in `ap-south-1` using `griffin-bootstrap` credentials with zero errors.
   - **Deployment Runbooks**: Authored `docs/DEPLOYMENT_RUNBOOK.md` and `docs/ANTIGRAVITY_CLOUD_RUNNER.md` detailing unattended Antigravity CLI authentication, DBus user lingering sessions, and EventBridge Scheduler configurations.
 
 ---

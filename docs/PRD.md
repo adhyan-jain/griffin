@@ -47,7 +47,7 @@ The only maintained docs are this PRD, `decisions.md` (why each decision was mad
 | Web app (PWA) | Next.js 16, React 19, Tailwind v4, shadcn/ui, React Three Fiber, GSAP, Lenis | Vercel, `https://griffin-pwa.vercel.app`, auto-deploys from `master` |
 | API | Go, Lambda (arm64) behind API Gateway HTTP API | `griffin-api`, ap-south-1 |
 | Database and auth | Supabase Postgres with row-level security; Supabase Auth (JWKS) | pooler connections; `griffin_app` (runtime), `griffin_system` (system) roles |
-| Files | S3 bucket, per-user key prefix | `griffin-artifacts-123456789012-ap-south-1` |
+| Files | S3 bucket, per-user key prefix | `griffin-artifacts-<AWS_ACCOUNT_ID>-ap-south-1` |
 | Worker ("runner") | Same Go binary in worker mode, systemd service, runs Google Antigravity CLI `agy` 1.5.2 | One EC2 instance `i-0123456789abcdef0`, scale-to-zero (wakes on demand, stops after 5 idle min) |
 
 **Flow:** the app calls the API; the API stores tasks and plans and wakes the runner; the worker leases a task, runs `agy` in an isolated workspace, stores the result, and reconciles the plan; the app polls (adaptively) for progress.

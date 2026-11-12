@@ -5,7 +5,7 @@
       "Sid": "InvokeTickDestinationOnly",
       "Effect": "Allow",
       "Action": "events:InvokeApiDestination",
-      "Resource": "arn:aws:events:ap-south-1:123456789012:api-destination/griffin-tick/*"
+      "Resource": "arn:aws:events:ap-south-1:<AWS_ACCOUNT_ID>:api-destination/griffin-tick/*"
     }
   ]
 }

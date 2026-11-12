@@ -10,7 +10,7 @@
         "s3:DeleteObject",
         "s3:AbortMultipartUpload"
       ],
-      "Resource": "arn:aws:s3:::griffin-artifacts-123456789012-ap-south-1/*"
+      "Resource": "arn:aws:s3:::griffin-artifacts-<AWS_ACCOUNT_ID>-ap-south-1/*"
     },
     {
       "Sid": "ArtifactBucketMetadata",
@@ -19,7 +19,7 @@
         "s3:ListBucket",
         "s3:GetBucketLocation"
       ],
-      "Resource": "arn:aws:s3:::griffin-artifacts-123456789012-ap-south-1"
+      "Resource": "arn:aws:s3:::griffin-artifacts-<AWS_ACCOUNT_ID>-ap-south-1"
     },
     {
       "Sid": "FetchWorkerEnv",
@@ -29,8 +29,8 @@
         "ssm:GetParameter"
       ],
       "Resource": [
-        "arn:aws:ssm:ap-south-1:123456789012:parameter/griffin/prod/worker",
-        "arn:aws:ssm:ap-south-1:123456789012:parameter/griffin/prod/worker/*"
+        "arn:aws:ssm:ap-south-1:<AWS_ACCOUNT_ID>:parameter/griffin/prod/worker",
+        "arn:aws:ssm:ap-south-1:<AWS_ACCOUNT_ID>:parameter/griffin/prod/worker/*"
       ]
     }
   ]

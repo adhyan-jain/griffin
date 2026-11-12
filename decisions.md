@@ -104,43 +104,43 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Status**: IMPLEMENTED (Phase 2)
 - **Decision**: Each task executed by `agy` runs inside an isolated scratch workspace `<WorkspaceRoot>/task-<task_id>-<exec_id>/` with permissions `0700`. Input payloads are serialized as `task_input.json` with permissions `0600`. Upon task completion, the runner recursively removes the directory unless `RETAIN_WORKSPACES_ON_FAILURE=true` is set.
 - **Rationale**: Prevents filesystem collisions between concurrent workers, contains temporary files, and bounds disk consumption on persistent storage.
-- **Location**: [`internal/provider/antigravity/workspace.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/workspace.go)
+- **Location**: [`internal/provider/antigravity/workspace.go`](./internal/provider/antigravity/workspace.go)
 
 #### ADR-016: Structured Output via Native `--json-schema`
 - **Status**: IMPLEMENTED (Phase 2)
 - **Decision**: Griffin task prompts pass JSON schemas via `--json-schema` directly to `agy`, enforcing that LLM responses deserialize into typed Go domain structs and structured output JSON without regex heuristics.
 - **Rationale**: Empirically validated in Phase 0.5 and Phase 2; guarantees deterministic JSON formatting from Gemini models.
-- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go), [`internal/provider/antigravity/parser.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/parser.go)
+- **Location**: [`internal/provider/antigravity/executor.go`](./internal/provider/antigravity/executor.go), [`internal/provider/antigravity/parser.go`](./internal/provider/antigravity/parser.go)
 
 #### ADR-023: Process Group Containment (`Setpgid`) and Two-Stage Termination
 - **Status**: IMPLEMENTED (Phase 2)
 - **Decision**: Subprocesses are spawned in separate process groups (`cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}`). On timeout or cancellation, `SIGTERM` is sent to `-pgid`, followed by a 5-second graceful wait, and `SIGKILL` to `-pgid` if processes remain alive.
 - **Rationale**: Completely eliminates zombie processes and orphan child tool processes spawned by `agy`.
-- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go)
+- **Location**: [`internal/provider/antigravity/executor.go`](./internal/provider/antigravity/executor.go)
 
 #### ADR-024: Pure `argv` Slice Subprocess Execution without Shell Interpolation
 - **Status**: IMPLEMENTED (Phase 2)
 - **Decision**: Commands are launched via `exec.Command(binaryPath, args...)` using discrete string slices. Shell execution (`sh -c`, `bash -c`, or string interpolation) is strictly forbidden.
 - **Rationale**: Neutralizes shell injection vulnerabilities from user-provided prompts, schemas, and parameters.
-- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go)
+- **Location**: [`internal/provider/antigravity/executor.go`](./internal/provider/antigravity/executor.go)
 
 #### ADR-025: Path Traversal Defense on Workspace Operations
 - **Status**: IMPLEMENTED (Phase 2)
 - **Decision**: All workspace directory creation and cleanup operations enforce `filepath.Clean` and verify that the target directory strictly begins with `rootDir + filepath.Separator`. Violations return `ErrWorkspacePathTraversal`.
 - **Rationale**: Prevents malicious or corrupted task identifiers from modifying or deleting directories outside the designated scratchpad area.
-- **Location**: [`internal/provider/antigravity/workspace.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/workspace.go)
+- **Location**: [`internal/provider/antigravity/workspace.go`](./internal/provider/antigravity/workspace.go)
 
 #### ADR-026: Multi-Turn Conversation Continuation via `--conversation <id>`
 - **Status**: IMPLEMENTED (Phase 2)
 - **Decision**: The executor extracts `conversation_id` from task input envelopes and forwards it via `--conversation <id>` to `agy`. Upon task completion, new or returned conversation IDs are captured and stored with the execution result.
 - **Rationale**: Enables multi-step missions and interactive conversation threads across discrete tasks while preserving full context in Google Antigravity.
-- **Location**: [`internal/provider/antigravity/executor.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor.go)
+- **Location**: [`internal/provider/antigravity/executor.go`](./internal/provider/antigravity/executor.go)
 
 #### ADR-027: Typed Authentication Failure Detection & Immediate Halt
 - **Status**: IMPLEMENTED (Phase 2)
 - **Decision**: Subprocess outputs indicating authentication expiry ("authentication required", "unauthenticated", "token expired") are parsed into `ErrAuthenticationRequired`. The worker disables retries (`retryable: false`), logs a critical operator alert, records an `AUTHENTICATION_REQUIRED` event in PostgreSQL `task_events`, and halts execution without silent paid fallback.
 - **Rationale**: Enforces Griffin's zero-paid-fallback guarantee and prevents wasteful, endless retry loops on invalid credentials.
-- **Location**: [`internal/provider/antigravity/parser.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/parser.go), [`internal/worker/worker.go`](file:///home/adhyan/Desktop/griffin/internal/worker/worker.go)
+- **Location**: [`internal/provider/antigravity/parser.go`](./internal/provider/antigravity/parser.go), [`internal/worker/worker.go`](./internal/worker/worker.go)
 
 #### ADR-028: Two-Tier Subprocess Testing Strategy
 - **Status**: IMPLEMENTED (Phase 2)
@@ -148,7 +148,7 @@ This document is the canonical ledger of all architectural, product, engineering
   1. Hermetic controlled subprocess mock tests using temporary scripts (sub-second, runs in CI without tokens).
   2. Opt-in live integration probe against installed `/usr/bin/agy` gated behind `GRIFFIN_ENABLE_LIVE_AGY_TEST=true`.
 - **Rationale**: Guarantees reproducible, fast automated testing in development and CI environments while retaining an automated verification probe for live binary compatibility.
-- **Location**: [`internal/provider/antigravity/executor_test.go`](file:///home/adhyan/Desktop/griffin/internal/provider/antigravity/executor_test.go), [`tests/worker_test.go`](file:///home/adhyan/Desktop/griffin/tests/worker_test.go)
+- **Location**: [`internal/provider/antigravity/executor_test.go`](./internal/provider/antigravity/executor_test.go), [`tests/worker_test.go`](./tests/worker_test.go)
 
 ---
 
@@ -158,25 +158,25 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Status**: IMPLEMENTED (Scale-to-Zero)
 - **Decision**: Pivot from an always-on 24/7 EC2 compute model to on-demand execution where the EC2 runner stops during idle periods and wakes up on runnable work. Ingress API stays online 24/7 independently on serverless compute. Supabase PostgreSQL remains the durable source of truth.
 - **Rationale**: Slashes monthly EC2 compute costs by over 90% (from ~$16.35/mo to ~$1.34/mo for typical 2hr/day workloads) while preserving unattended execution, encrypted EBS state, and zero-paid-fallback guarantees.
-- **Location**: [`docs/SCALE_TO_ZERO_ARCHITECTURE.md`](file:///home/adhyan/Desktop/griffin/docs/SCALE_TO_ZERO_ARCHITECTURE.md), [`internal/runner/`](file:///home/adhyan/Desktop/griffin/internal/runner/)
+- **Location**: [`docs/SCALE_TO_ZERO_ARCHITECTURE.md`](./docs/SCALE_TO_ZERO_ARCHITECTURE.md), [`internal/runner/`](./internal/runner/)
 
 #### ADR-030: Asynchronous 202 Accepted Task Ingestion
 - **Status**: IMPLEMENTED (Scale-to-Zero)
 - **Decision**: When `SCALE_TO_ZERO_ENABLED=true` and tasks are submitted in `QUEUED` state, the API persists the task durably in PostgreSQL, triggers runner wake-up asynchronously, and immediately responds to the client with `202 Accepted` and `X-Runner-Status: WAKEUP_SIGNALED`.
 - **Rationale**: Decouples client HTTP latency (<20ms response time) from cloud VM cold-boot latencies (30–45s boot time), preventing HTTP timeouts on edge and mobile clients.
-- **Location**: [`internal/api/handlers/tasks.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/tasks.go)
+- **Location**: [`internal/api/handlers/tasks.go`](./internal/api/handlers/tasks.go)
 
 #### ADR-031: Atomic Pre-Shutdown Database Recheck to Neutralize Shutdown Races
 - **Status**: IMPLEMENTED (Scale-to-Zero)
 - **Decision**: When the idle shutdown timer expires, the worker pool pauses task claims and enters `DRAINING`. Once in-flight executions finish, the monitor performs an atomic database recheck (`CountRunnableTasks(ctx)`). If ANY runnable task arrived during draining, or if the recheck fails, shutdown is aborted, workers resume, and the monitor resets to `ACTIVE`.
 - **Rationale**: Prevents task starvation and race conditions where tasks arriving milliseconds before machine shutdown would otherwise remain stranded until an external trigger.
-- **Location**: [`internal/runner/shutdown.go`](file:///home/adhyan/Desktop/griffin/internal/runner/shutdown.go)
+- **Location**: [`internal/runner/shutdown.go`](./internal/runner/shutdown.go)
 
 #### ADR-032: Debounced Wake-Up Controller with Stopping-State Retry Backoff
 - **Status**: IMPLEMENTED (Scale-to-Zero)
 - **Decision**: The wake-up controller enforces a 30-second cooldown window between AWS `ec2:StartInstances` API calls, protecting against request stampedes. If the EC2 instance is currently in `stopping` state (which returns `InvalidInstanceState` on immediate `StartInstances`), the controller enters a background retry loop polling with exponential backoff until the instance reaches `stopped`, then issues `StartInstances`.
 - **Rationale**: AWS EC2 rejects start commands on instances that have not yet fully stopped. Debouncing and retries guarantee reliable runner startup without race crashes.
-- **Location**: [`internal/runner/wakeup.go`](file:///home/adhyan/Desktop/griffin/internal/runner/wakeup.go)
+- **Location**: [`internal/runner/wakeup.go`](./internal/runner/wakeup.go)
 
 #### ADR-033: Decoupled Multi-Mode Binary Entrypoint (`GRIFFIN_MODE=all|api|worker`)
 - **Status**: IMPLEMENTED (Scale-to-Zero)
@@ -185,13 +185,13 @@ This document is the canonical ledger of all architectural, product, engineering
   2. `api`: Ingress-only mode running HTTP endpoints and wake-up controller (for serverless edge or container hosting).
   3. `worker`: Headless runner mode running worker pools, task execution, and idle shutdown monitor on EC2.
 - **Rationale**: Allows deploying identical, battle-tested Go code across serverless ingress and stoppable EC2 compute without maintaining separate codebases.
-- **Location**: [`cmd/griffin-server/main.go`](file:///home/adhyan/Desktop/griffin/cmd/griffin-server/main.go), [`internal/config/config.go`](file:///home/adhyan/Desktop/griffin/internal/config/config.go)
+- **Location**: [`cmd/griffin-server/main.go`](./cmd/griffin-server/main.go), [`internal/config/config.go`](./internal/config/config.go)
 
 #### ADR-034: External Periodic Scheduler Tick via EventBridge
 - **Status**: IMPLEMENTED (Scale-to-Zero)
 - **Decision**: Griffin exposes an authenticated `POST /api/v1/scheduler/tick` endpoint protected by `X-Worker-Key`. AWS EventBridge Scheduler triggers this endpoint every minute to inspect PostgreSQL for due cron tasks and trigger runner wake-up when runnable work exists.
 - **Rationale**: Offloads periodic scheduling from the stoppable EC2 VM to free-tier cloud serverless infrastructure, ensuring scheduled tasks (such as morning briefings) wake the runner right on time.
-- **Location**: [`internal/api/handlers/scheduler.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/scheduler.go), [`docs/SERVERLESS_API_DESIGN.md`](file:///home/adhyan/Desktop/griffin/docs/SERVERLESS_API_DESIGN.md)
+- **Location**: [`internal/api/handlers/scheduler.go`](./internal/api/handlers/scheduler.go), [`docs/SERVERLESS_API_DESIGN.md`](./docs/SERVERLESS_API_DESIGN.md)
 
 ### Phase 3: JJ Orchestrator, Manager Framework & Agent Factory
 
@@ -202,37 +202,37 @@ This document is the canonical ledger of all architectural, product, engineering
   2. **11 Specialist Managers**: Domain experts (`career`, `research`, `engineering`, `hackathon`, `freelance`, `networking`, `tech_intelligence`, `learning`, `personal_ops`, `finance`, `product_ideas`) with verification criteria.
   3. **Specialist Workers**: Focused task executors instantiated with injected system prompts, schemas, tools, and capability boundaries.
 - **Rationale**: Prevents monolithic context degradation and prompt bloat. Enables clean separation of concerns and strict capability boundaries.
-- **Location**: [`internal/service/orchestrator.go`](file:///home/adhyan/Desktop/griffin/internal/service/orchestrator.go), [`internal/manager/manager.go`](file:///home/adhyan/Desktop/griffin/internal/manager/manager.go), [`docs/JJ_ORCHESTRATOR.md`](file:///home/adhyan/Desktop/griffin/docs/JJ_ORCHESTRATOR.md)
+- **Location**: [`internal/service/orchestrator.go`](./internal/service/orchestrator.go), [`internal/manager/manager.go`](./internal/manager/manager.go), [`docs/JJ_ORCHESTRATOR.md`](./docs/JJ_ORCHESTRATOR.md)
 
 #### ADR-035: Kahn's Algorithm DAG Plan Validation & Cyclic Dependency Defense
 - **Status**: IMPLEMENTED (Phase 3)
 - **Decision**: All plans generated by JJ (whether via AI or heuristic fallback) must be validated before execution using Kahn's topological sort algorithm to detect cycles and enforce strict DAG linearity.
 - **Rationale**: Prevents deadlock in the task engine caused by circular dependency graphs generated by LLMs.
-- **Location**: [`internal/domain/orchestration.go`](file:///home/adhyan/Desktop/griffin/internal/domain/orchestration.go), [`internal/domain/orchestration_test.go`](file:///home/adhyan/Desktop/griffin/internal/domain/orchestration_test.go)
+- **Location**: [`internal/domain/orchestration.go`](./internal/domain/orchestration.go), [`internal/domain/orchestration_test.go`](./internal/domain/orchestration_test.go)
 
 #### ADR-036: Reusable Specialist Worker Definitions with Versioned Immutability & Audit Trail
 - **Status**: IMPLEMENTED (Phase 3)
 - **Decision**: Specialist workers are defined via `WorkerDefinition` models with strict immutability. Updating a worker definition never mutates existing database rows; it creates a new row with an incremented version number (`version + 1`). All mutations record audit records in `agent_factory_audits`.
 - **Rationale**: Ensures complete auditability and guarantees that historical task executions maintain immutable references to the exact worker definition and prompts that executed them.
-- **Location**: [`internal/domain/worker_definition.go`](file:///home/adhyan/Desktop/griffin/internal/domain/worker_definition.go), [`internal/service/agent_factory.go`](file:///home/adhyan/Desktop/griffin/internal/service/agent_factory.go), [`docs/AGENT_FACTORY.md`](file:///home/adhyan/Desktop/griffin/docs/AGENT_FACTORY.md)
+- **Location**: [`internal/domain/worker_definition.go`](./internal/domain/worker_definition.go), [`internal/service/agent_factory.go`](./internal/service/agent_factory.go), [`docs/AGENT_FACTORY.md`](./docs/AGENT_FACTORY.md)
 
 #### ADR-037: Centralized Capability Taxonomy & Automated Approval Checkpoints
 - **Status**: IMPLEMENTED (Phase 3)
 - **Decision**: Define a centralized taxonomy of 11 explicit capabilities (`research:read`, `repo:read`, `repo:write`, `web:read`, `email:draft`, `email:send`, `calendar:read`, `calendar:write`, `financial:action`, `job:apply`, `infra:destructive`). Sensitive capabilities (`repo:write`, `email:send`, `financial:action`, `job:apply`, `infra:destructive`) automatically require human approval (`domain.RequiresApproval`). Tasks requesting sensitive actions pause in `AWAITING_APPROVAL` until signed off by the user.
 - **Rationale**: Enforces zero-trust capability security and prevents autonomous AI models from taking destructive or irreversible real-world actions without human oversight.
-- **Location**: [`internal/domain/capability.go`](file:///home/adhyan/Desktop/griffin/internal/domain/capability.go), [`docs/CAPABILITY_AND_APPROVAL_POLICIES.md`](file:///home/adhyan/Desktop/griffin/docs/CAPABILITY_AND_APPROVAL_POLICIES.md)
+- **Location**: [`internal/domain/capability.go`](./internal/domain/capability.go), [`docs/CAPABILITY_AND_APPROVAL_POLICIES.md`](./docs/CAPABILITY_AND_APPROVAL_POLICIES.md)
 
 #### ADR-038: JJ Orchestration Lifecycle (REQUEST -> PLAN -> VALIDATE -> DELEGATE -> MONITOR -> COLLECT -> VERIFY -> RESPOND) & Restart Recovery
 - **Status**: IMPLEMENTED (Phase 3)
 - **Decision**: JJ manages orchestration across 8 explicit phases. Root tasks represent overall user intent (`manager_domain = 'JJ'`), while child tasks represent delegated work. JJ recovers active in-flight orchestrations on system startup via `ReconcileInFlight`.
 - **Rationale**: Guarantees zero lost work, seamless crash recovery across server restarts, and non-blocking monitoring of worker leases.
-- **Location**: [`internal/service/orchestrator.go`](file:///home/adhyan/Desktop/griffin/internal/service/orchestrator.go), [`docs/JJ_ORCHESTRATOR.md`](file:///home/adhyan/Desktop/griffin/docs/JJ_ORCHESTRATOR.md)
+- **Location**: [`internal/service/orchestrator.go`](./internal/service/orchestrator.go), [`docs/JJ_ORCHESTRATOR.md`](./docs/JJ_ORCHESTRATOR.md)
 
 #### ADR-039: Manager Deliverable Verification Contract & Domain Governance
 - **Status**: IMPLEMENTED (Phase 3)
 - **Decision**: Each manager implements `VerifyDeliverable` to validate child task outputs before JJ synthesizes final responses. The manager registry enforces governance, rejecting any attempt to register unauthorized or hallucinated manager roles.
 - **Rationale**: Prevents hallucinated agent personas and ensures output deliverables meet domain-specific completeness and quality standards.
-- **Location**: [`internal/manager/manager.go`](file:///home/adhyan/Desktop/griffin/internal/manager/manager.go), [`internal/manager/registry.go`](file:///home/adhyan/Desktop/griffin/internal/manager/registry.go), [`docs/MANAGER_FRAMEWORK.md`](file:///home/adhyan/Desktop/griffin/docs/MANAGER_FRAMEWORK.md)
+- **Location**: [`internal/manager/manager.go`](./internal/manager/manager.go), [`internal/manager/registry.go`](./internal/manager/registry.go), [`docs/MANAGER_FRAMEWORK.md`](./docs/MANAGER_FRAMEWORK.md)
 
 ---
 
@@ -262,19 +262,19 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Status**: IMPLEMENTED (Phase 4)
 - **Decision**: AWS S3 is designated as Griffin's primary object and file storage backend. Operational metadata, ownership, checksums, and tenant isolation policies remain stored in Supabase PostgreSQL, while file payloads (reports, generated documents, logs, diffs, images, and data exports) reside in private S3 buckets.
 - **Rationale**: Eliminates local disk coupling, provides unlimited durable storage, supports automatic multipart streaming, and leverages EC2 IAM instance profiles (`GriffinEC2WorkerRole`) for zero-secret cloud security.
-- **Location**: [`internal/storage/`](file:///home/adhyan/Desktop/griffin/internal/storage/), [`docs/S3_STORAGE_CONFIGURATION.md`](file:///home/adhyan/Desktop/griffin/docs/S3_STORAGE_CONFIGURATION.md), [`docs/STORAGE_ARCHITECTURE.md`](file:///home/adhyan/Desktop/griffin/docs/STORAGE_ARCHITECTURE.md)
+- **Location**: [`internal/storage/`](./internal/storage/), [`docs/S3_STORAGE_CONFIGURATION.md`](./docs/S3_STORAGE_CONFIGURATION.md), [`docs/STORAGE_ARCHITECTURE.md`](./docs/STORAGE_ARCHITECTURE.md)
 
 #### ADR-041: Task-Scoped Object Hierarchy & Strict Private Access via Presigned URLs
 - **Status**: IMPLEMENTED (Phase 4)
 - **Decision**: All objects are stored under predictable hierarchical paths: `tasks/{task_id}/outputs/{sanitized_filename}` (or `artifacts/{uuid}/{sanitized_filename}`). S3 buckets block all public access. Client downloads are authenticated via short-lived presigned GET URLs (default 15 minutes) or authenticated streaming endpoints.
 - **Rationale**: Guarantees strict multi-tenant isolation, protects sensitive agent outputs, prevents directory traversal attacks, and offloads heavy file download bandwidth directly to S3.
-- **Location**: [`internal/storage/service.go`](file:///home/adhyan/Desktop/griffin/internal/storage/service.go), [`internal/api/handlers/artifacts.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/artifacts.go)
+- **Location**: [`internal/storage/service.go`](./internal/storage/service.go), [`internal/api/handlers/artifacts.go`](./internal/api/handlers/artifacts.go)
 
 #### ADR-042: Compensating Saga Pattern for S3 and PostgreSQL Consistency
 - **Status**: IMPLEMENTED (Phase 4)
 - **Decision**: To handle partial failures across AWS S3 and Supabase PostgreSQL without false distributed transaction claims, Griffin uses a Compensating Saga Pattern: payloads are uploaded to S3 first; if the PostgreSQL metadata insert fails, `StorageService` immediately executes a compensating `DeleteObject` against S3 using a detached background context.
 - **Rationale**: Eliminates orphaned object accumulation in S3 during database transient errors or constraint failures while keeping both systems decoupled.
-- **Location**: [`internal/storage/service.go`](file:///home/adhyan/Desktop/griffin/internal/storage/service.go), [`tests/storage_test.go`](file:///home/adhyan/Desktop/griffin/tests/storage_test.go)
+- **Location**: [`internal/storage/service.go`](./internal/storage/service.go), [`tests/storage_test.go`](./tests/storage_test.go)
 
 ---
 
@@ -299,25 +299,25 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Status**: IMPLEMENTED (Final Sprint)
 - **Decision**: Build a 10-screen responsive PWA in `web/` featuring Executive Dashboard, JJ Orchestrator Chat, Task DAG Hierarchy, Task Details & Attempts Inspector, Approvals Inbox, S3 Artifacts Browser, Workforce Specialist Directory, System Diagnostics, Operator Login, and Responsive Mobile Drawer/Navbar.
 - **Rationale**: Provides operators with real-time operational control, manual approvals, and live DAG observability across desktop and mobile devices.
-- **Location**: [`web/src/`](file:///home/adhyan/Desktop/griffin/web/src/)
+- **Location**: [`web/src/`](./web/src/)
 
 #### ADR-044: Cross-Origin Resource Sharing (CORS) and Web Client Authentication
 - **Status**: IMPLEMENTED (Final Sprint)
 - **Decision**: Wrap the Go API ingress in a CORS middleware supporting preflight `OPTIONS` and standard authorization headers. Provide `/api/v1/auth/login` to issue signed Supabase JWTs with `OWNER` privileges and automatic foreign-key user synchronization.
 - **Rationale**: Enables frictionless local and production web client integration without cross-origin blocking or manual token manipulation.
-- **Location**: [`internal/api/middleware/cors.go`](file:///home/adhyan/Desktop/griffin/internal/api/middleware/cors.go), [`internal/api/handlers/auth.go`](file:///home/adhyan/Desktop/griffin/internal/api/handlers/auth.go)
+- **Location**: [`internal/api/middleware/cors.go`](./internal/api/middleware/cors.go), [`internal/api/handlers/auth.go`](./internal/api/handlers/auth.go)
 
 #### ADR-045: Live AWS S3 Integration Testing and Integrity Verification
 - **Status**: IMPLEMENTED & LIVE VERIFIED (Final Sprint)
-- **Decision**: Implement opt-in end-to-end integration test (`tests/s3_live_test.go`) validating `Upload`, `Download`, `Head`, `PresignDownloadURL`, and `Delete` against real AWS S3 bucket `griffin-artifacts-123456789012-ap-south-1` using `griffin-bootstrap` credentials in `ap-south-1`.
+- **Decision**: Implement opt-in end-to-end integration test (`tests/s3_live_test.go`) validating `Upload`, `Download`, `Head`, `PresignDownloadURL`, and `Delete` against real AWS S3 bucket `griffin-artifacts-<AWS_ACCOUNT_ID>-ap-south-1` using `griffin-bootstrap` credentials in `ap-south-1`.
 - **Rationale**: Guarantees zero regression and genuine live cloud compatibility before production release.
-- **Location**: [`tests/s3_live_test.go`](file:///home/adhyan/Desktop/griffin/tests/s3_live_test.go)
+- **Location**: [`tests/s3_live_test.go`](./tests/s3_live_test.go)
 
 #### ADR-046: Cloud Runner Unattended Authentication and Lingering Session Pattern
 - **Status**: IMPLEMENTED (Final Sprint)
 - **Decision**: Configure EC2 cloud runners with systemd user lingering (`loginctl enable-linger griffin`) and persistent DBus session daemons to allow headless Antigravity CLI execution without interactive OAuth browser prompts.
 - **Rationale**: Essential for scale-to-zero compute where workers start on demand and execute background AI workflows without active SSH/SSM sessions.
-- **Location**: [`infra/user-data.sh`](file:///home/adhyan/Desktop/griffin/infra/user-data.sh), [`docs/ANTIGRAVITY_CLOUD_RUNNER.md`](file:///home/adhyan/Desktop/griffin/docs/ANTIGRAVITY_CLOUD_RUNNER.md)
+- **Location**: [`infra/user-data.sh`](./infra/user-data.sh), [`docs/ANTIGRAVITY_CLOUD_RUNNER.md`](./docs/ANTIGRAVITY_CLOUD_RUNNER.md)
 
 
 ### JJ-not-responding incident (2026-11) — decisions
@@ -695,7 +695,7 @@ This document is the canonical ledger of all architectural, product, engineering
 #### ADR-101: Personal Lingo & Implicit Messaging Resolution with habit.md Profile
 - **Status**: IMPLEMENTED (`habit.md`, `internal/domain/habit.go`, `internal/domain/habit_test.go`, `internal/service/planner_messaging.go`, `internal/service/planner_messaging_test.go`, `internal/service/classify_test.go`).
 - **Decision**: Users communicate crudely, make keyboard slips (`sned`, `snd`, `wapp`, `watsp`), and use implicit shorthand without explicitly naming apps (e.g. "message bhai wassup", "tell bhai I will be late", "ping bhai wassup", "text bhai wassup"):
-  - Root [`habit.md`](file:///home/adhyan/Desktop/griffin/habit.md) documents user lingo, behavioral habits, common contact aliases (`bhai` -> default brother contact, `maa`/`mom`, `papa`/`dad`), implicit messaging defaults, model allocation preferences (`agy` for research/search/composing vs `claude` for resumes/deep language), locked phone posture, and auto-caching rules.
+  - Root [`habit.md`](./habit.md) documents user lingo, behavioral habits, common contact aliases (`bhai` -> default brother contact, `maa`/`mom`, `papa`/`dad`), implicit messaging defaults, model allocation preferences (`agy` for research/search/composing vs `claude` for resumes/deep language), locked phone posture, and auto-caching rules.
   - `internal/domain/habit.go` defines `HabitProfile` with normalization routines (`NormalizeLingo`, `ResolveContact`).
   - `internal/service/planner_messaging.go` introduces `isImplicitMessaging` and layered contact extraction (`intentContactFrom` with `to <person>` prioritized before direct verbs and WhatsApp references). When a user asks to message/text/ping/tell a person, Griffin defaults to WhatsApp for personal messaging delivery while vetoing deliverables (reports, invoices, code, emails).
 - **Why**: Eliminates friction and UX failure where informal voice/text inputs were misclassified or rejected due to lack of the exact word "whatsapp" or proper syntax.
