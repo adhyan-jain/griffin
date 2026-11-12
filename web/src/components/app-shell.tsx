@@ -18,6 +18,7 @@ import {
   Moon,
   MoreHorizontal,
   Notebook,
+  Send,
   Settings,
   ShieldCheck,
   Sun,
@@ -44,6 +45,7 @@ const PRIMARY: NavItem[] = [
   { href: "/approvals", label: "Approvals", icon: ShieldCheck },
 ];
 const SECONDARY: NavItem[] = [
+  { href: "/outreach", label: "Outreach", icon: Send },
   { href: "/lists", label: "Lists", icon: Notebook },
   { href: "/artifacts", label: "Files", icon: FolderOpen },
   { href: "/vault", label: "Vault", icon: LockKeyhole },

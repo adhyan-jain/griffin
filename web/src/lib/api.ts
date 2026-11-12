@@ -107,6 +107,46 @@ export interface Approval {
   created_at: string;
 }
 
+export type OutreachStatus = "found" | "drafted" | "approved" | "sent" | "replied" | "followup_due" | "closed";
+
+export interface OutreachLimits {
+  daily_cap: number;
+  min_gap_seconds: number;
+  jitter_seconds: number;
+  quiet_start_hour: number;
+  quiet_end_hour: number;
+  followup_after_day: number;
+  max_followups: number;
+}
+
+export interface OutreachCampaign {
+  id: string;
+  name: string;
+  goal: string;
+  channel: "email" | "linkedin" | "whatsapp" | "instagram" | "other";
+  status: "active" | "paused" | "done";
+  limits: OutreachLimits;
+  counts: Partial<Record<OutreachStatus, number>>;
+  created_at: string;
+}
+
+export interface OutreachTarget {
+  id: string;
+  campaign_id: string;
+  name: string;
+  handle: string;
+  info?: string;
+  status: OutreachStatus;
+  draft?: string;
+  sent_at?: string | null;
+  replied_at?: string | null;
+  reply_text?: string;
+  next_followup_at?: string | null;
+  followups_sent: number;
+  notes?: string;
+  updated_at: string;
+}
+
 export interface Artifact {
   id: string;
   task_id?: string | null;
@@ -718,6 +758,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ decision: approve ? "APPROVE" : "REJECT", reason: reason ?? "", ids }),
     }),
+
+  // Outreach
+  listCampaigns: (opts?: ReqOpts) => fetchList<OutreachCampaign>(`/api/v1/outreach/campaigns`, opts),
+  createCampaign: (body: { name: string; goal?: string; channel: OutreachCampaign["channel"] }) =>
+    fetchWithAuth<OutreachCampaign>(`/api/v1/outreach/campaigns`, { method: "POST", body: JSON.stringify(body) }),
+  updateCampaign: (id: string, body: { status?: OutreachCampaign["status"]; limits?: OutreachLimits }) =>
+    fetchWithAuth<OutreachCampaign>(`/api/v1/outreach/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  listTargets: (campaignId: string, opts?: ReqOpts) =>
+    fetchList<OutreachTarget>(`/api/v1/outreach/campaigns/${campaignId}/targets`, opts),
+  updateTarget: (id: string, body: { status?: OutreachStatus; draft?: string; notes?: string }) =>
+    fetchWithAuth<OutreachTarget>(`/api/v1/outreach/targets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  /** The campaign as a CSV file's text, for a spreadsheet. */
+  exportCampaign: async (id: string): Promise<string> => {
+    const token = await resolveAuthToken();
+    const res = await fetch(`${API_BASE_URL}/api/v1/outreach/campaigns/${id}/export.csv`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error(`Could not export (HTTP ${res.status}).`);
+    return res.text();
+  },
 
   // Artifacts
   listArtifacts: (taskId?: string, opts?: ReqOpts) =>
