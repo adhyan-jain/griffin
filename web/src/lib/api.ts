@@ -710,6 +710,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ decision: approve ? "APPROVE" : "REJECT", reason: reason ?? "" }),
     }),
+  /** Changes the text of a message waiting for approval; the approval then covers the edited text. */
+  editApproval: (id: string, text: string) =>
+    fetchWithAuth<Approval>(`/api/v1/approvals/${id}`, { method: "PATCH", body: JSON.stringify({ text }) }),
   batchRespondApprovals: (approve: boolean, ids?: string[], reason?: string) =>
     fetchWithAuth<{ approved: number; rejected: number; failed: number; total: number }>(`/api/v1/approvals/batch`, {
       method: "POST",

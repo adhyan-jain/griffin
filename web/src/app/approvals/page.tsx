@@ -3,15 +3,24 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
-import { Check, CheckCheck, Loader2, ShieldCheck, X } from "lucide-react";
+import { Check, CheckCheck, Loader2, Pencil, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Approval } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RiskBadge, StatusBadge } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/components/page";
+
+/** The message a send approval is about, when it has one (other approvals carry no draft). */
+function draftOf(a: Approval): { contact: string; text: string } | null {
+  const p = a.action_payload;
+  if (!p || typeof p !== "object") return null;
+  const { text, contact } = p as { text?: unknown; contact?: unknown };
+  return typeof text === "string" && text !== "" ? { text, contact: typeof contact === "string" ? contact : "" } : null;
+}
 
 export default function ApprovalsPage() {
   const [tab, setTab] = useState<"pending" | "all">("pending");
@@ -20,6 +29,7 @@ export default function ApprovalsPage() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [editing, setEditing] = useState<Record<string, string>>({});
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -50,6 +60,20 @@ export default function ApprovalsPage() {
       refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not record your decision.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const saveEdit = async (a: Approval) => {
+    setBusyId(a.id);
+    try {
+      await api.editApproval(a.id, editing[a.id] ?? "");
+      setEditing(({ [a.id]: _gone, ...rest }) => rest);
+      toast.success("Draft updated. Approve it when you are happy.");
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save your edit.");
     } finally {
       setBusyId(null);
     }
@@ -172,6 +196,49 @@ export default function ApprovalsPage() {
                   </p>
                   {a.decision_reason && <p className="mt-1 text-xs text-muted-foreground">Note: {a.decision_reason}</p>}
                 </div>
+                {(() => {
+                  const draft = draftOf(a);
+                  if (!draft) return null;
+                  const isEditing = a.id in editing;
+                  return (
+                    <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {draft.contact ? `Message to ${draft.contact}` : "Message"}
+                      </p>
+                      {isEditing ? (
+                        <>
+                          <Textarea
+                            aria-label="Edit the message"
+                            rows={4}
+                            value={editing[a.id]}
+                            onChange={(e) => setEditing((m) => ({ ...m, [a.id]: e.target.value }))}
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" disabled={busyId === a.id || !editing[a.id]?.trim()} onClick={() => saveEdit(a)}>
+                              Save draft
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditing(({ [a.id]: _gone, ...rest }) => rest)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="whitespace-pre-wrap text-sm">{draft.text}</p>
+                          {pending && (
+                            <Button size="sm" variant="outline" onClick={() => setEditing((m) => ({ ...m, [a.id]: draft.text }))}>
+                              <Pencil /> Edit
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 {pending && (
                   <>
                     <Input
