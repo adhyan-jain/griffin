@@ -225,6 +225,17 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 
 	managerName := ResolveManagerName(r.Context(), h.profiles, userID)
 	var respExtra map[string]any
+	// "Go ahead" after a discussion submits what the owner said in it as one objective.
+	if h.objectives != nil && !req.NewTask && service.GoAhead(message) {
+		roles, texts := make([]string, len(history)), make([]string, len(history))
+		for i, t := range history {
+			roles[i], texts[i] = t.Role, t.Text
+		}
+		if objective := service.DiscussedObjective(roles, texts); objective != "" {
+			h.postObjectiveIn(w, r, userID, conversationID, objective, req, history, managerName, nil, nil)
+			return
+		}
+	}
 	if h.threads != nil && !req.NewTask {
 		var handled bool
 		if handled, respExtra = h.tryContinue(w, r, userID, message, req, managerName, history); handled {
@@ -235,6 +246,12 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	toClassify := message
 	if stripped := service.StripLeadingName(message, managerName); stripped != "" {
 		toClassify = stripped
+	}
+
+	// "Let's discuss it first": stay a conversation, propose a plan and wait for "go ahead".
+	if !req.NewTask && service.DiscussFirst(toClassify) {
+		h.postConversationIn(w, r, userID, conversationID, message+service.DiscussHint, history, req.IdempotencyKey, managerName, nil, "Chat: ", respExtra)
+		return
 	}
 
 	var intent service.ParsedIntent
