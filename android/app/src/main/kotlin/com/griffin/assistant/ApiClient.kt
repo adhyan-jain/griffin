@@ -19,6 +19,9 @@ fun parseVoiceReply(body: String): VoiceReply {
     return VoiceReply(d.optString("kind", "conversation"), d.optString("reply", ""), d.optBoolean("handoff", false), d.optString("manager_name", "JJ"), d.optString("fallback").ifEmpty { null }, d.optString("confirm_token").ifEmpty { null }, d.optString("draft").ifEmpty { null })
 }
 
+/** What the phone can do for Griffin today. Advertised on every heartbeat; the owner can still narrow it on the web. */
+val PHONE_CAPABILITIES = listOf("phone_apps", "sms", "calls", "messaging")
+
 /** Talks to Griffin's API with the owner's own sign-in. All calls block: run them off the main thread. */
 class ApiClient(private val store: SecretStore, private val prefs: android.content.SharedPreferences) {
     // A different server (a test stand-in) is honoured only in debug builds, and signing out puts the real one back.
@@ -89,6 +92,7 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     }
 
     fun signOut() {
+        store.put("host_token", null)
         store.put("access", null)
         store.put("refresh", null)
         prefs.edit().remove("api_url").remove("auth_url").remove("email").remove("manager_name").remove("expires_at").apply()
@@ -112,6 +116,26 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         val (code, text) = call(method, "$apiUrl$path", mapOf("Authorization" to "Bearer ${token()}"), body?.toString())
         if (code !in 200..299) throw ApiException(message(text, "Griffin answered HTTP $code."), code)
         return text
+    }
+
+    /**
+     * Registers this phone as a Griffin device the first time, then reports that it is alive. Without this the web
+     * app's Devices page never shows the phone. The host token is kept in [SecretStore] and dropped if the owner
+     * revokes the device, so the next beat registers a fresh one. Blocks: call it off the main thread.
+     */
+    fun phoneHeartbeat() {
+        var hostToken = store.get("host_token")
+        if (hostToken == null) {
+            val body = JSONObject().put("name", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim()).put("kind", "phone")
+                .put("capabilities", JSONArray(PHONE_CAPABILITIES))
+            val reply = JSONObject(api("POST", "/api/v1/hosts", body)).let { it.optJSONObject("data") ?: it }
+            hostToken = reply.getString("token")
+            store.put("host_token", hostToken)
+        }
+        val (code, text) = call("POST", "$apiUrl/api/v1/host/heartbeat", mapOf("Authorization" to "Bearer $hostToken"),
+            JSONObject().put("capabilities", JSONArray(PHONE_CAPABILITIES)).put("version", BuildConfig.VERSION_NAME).toString())
+        if (code == 401) store.put("host_token", null)
+        if (code !in 200..299) throw ApiException(message(text, "Device heartbeat failed (HTTP $code)."), code)
     }
 
     fun managerName(): String = JSONObject(api("GET", "/api/v1/settings/manager-name")).let { (it.optJSONObject("data") ?: it).optString("manager_name", "JJ") }

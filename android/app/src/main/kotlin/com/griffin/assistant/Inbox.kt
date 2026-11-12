@@ -36,7 +36,8 @@ object Inbox {
         } catch (e: PendingIntent.CanceledException) {
             "That chat was closed before I could reply."
         } catch (e: Exception) {
-            "I could not send that reply."
+            android.util.Log.w("Inbox", "reply failed: ${e.javaClass.simpleName}")
+            "I could not send that reply (${e.javaClass.simpleName.removeSuffix("Exception").lowercase().ifEmpty { "error" }})."
         }
     }
 }

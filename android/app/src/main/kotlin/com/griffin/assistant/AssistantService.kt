@@ -66,7 +66,7 @@ class AssistantService : Service() {
         nm.createNotificationChannel(channel)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification: Notification = NotificationCompat.Builder(this, "assistant_silent")
-            .setSmallIcon(android.R.color.transparent)
+            .setSmallIcon(R.drawable.ic_stat_griffin)
             .setContentTitle("Griffin")
             .setContentText("Background service active")
             .setOngoing(true)
@@ -98,6 +98,7 @@ class AssistantService : Service() {
         )
         listener.start()
         refreshName()
+        app.main.post(deviceBeat)
         if (BuildConfig.DEBUG) registerDebugReceiver()
         app.log("assistant started")
     }
@@ -123,6 +124,7 @@ class AssistantService : Service() {
         app.speaker.stop()
         app.main.removeCallbacks(timer)
         app.main.removeCallbacks(watchdog)
+        app.main.removeCallbacks(deviceBeat)
         if (::listener.isInitialized) listener.stop()
         debugReceiver?.let { unregisterReceiver(it) }
         app.removeModeListener(orbListener)
@@ -187,6 +189,16 @@ class AssistantService : Service() {
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------
+
+    /** Tells Griffin this phone is alive every 30 seconds, so it shows as a live device (it counts as live for 45). */
+    private val deviceBeat: Runnable = object : Runnable {
+        override fun run() {
+            app.net.execute {
+                try { app.api.phoneHeartbeat() } catch (e: Exception) { app.dlog("device heartbeat: ${e.message}") }
+            }
+            app.main.postDelayed(this, 30_000)
+        }
+    }
 
     private fun refreshName() {
         app.net.execute {
