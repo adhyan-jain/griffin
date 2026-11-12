@@ -125,6 +125,7 @@ func main() {
 	hostRepo := repository.NewPostgresHostRepository(repoDB)
 	policyRepo := repository.NewPostgresPolicyRepository(repoDB)
 	profileRepo := repository.NewPostgresProfileRepository(repoDB)
+	outreachRepo := repository.NewOutreachRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
 	var storageProvider storage.Provider
@@ -374,6 +375,7 @@ func main() {
 			HostRepo:        hostRepo,
 			PolicyRepo:      policyRepo,
 			ProfileRepo:     profileRepo,
+			OutreachRepo:    outreachRepo,
 			VoiceBrain:      voiceBrain(cfg),
 			InstanceMgr:     instanceMgr,
 			UserTx:          userTx,

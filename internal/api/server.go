@@ -41,6 +41,8 @@ type ServerDependencies struct {
 	HostRepo repository.HostRepository
 	// PolicyRepo stores the owner's permission policy; used with HostRepo.
 	PolicyRepo repository.PolicyRepository
+	// OutreachRepo enables campaigns and their people (cold mail, applications); nil leaves the routes off.
+	OutreachRepo *repository.OutreachRepository
 	// ProfileRepo holds the owner's settings (the manager's name).
 	ProfileRepo repository.ProfileRepository
 	// VoiceBrain is the fast model for voice chat; nil means every voice turn hands off to the worker.
@@ -290,6 +292,30 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/approval", hostAuth(http.HandlerFunc(hostHandler.RequestApproval)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/complete", hostAuth(http.HandlerFunc(hostHandler.CompleteTask)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/fail", hostAuth(http.HandlerFunc(hostHandler.FailTask)))
+	}
+
+	// Outreach: campaigns and the people in them. Owner routes use the sign-in; a host's routes (below, inside the
+	// host block) can add people, draft, claim the next send within the limits and report results, but never approve.
+	if deps.OutreachRepo != nil {
+		oh := handlers.NewOutreachHandler(deps.OutreachRepo)
+		mux.Handle("POST /api/v1/outreach/campaigns", userAuth(http.HandlerFunc(oh.CreateCampaign)))
+		mux.Handle("GET /api/v1/outreach/campaigns", userAuth(http.HandlerFunc(oh.ListCampaigns)))
+		mux.Handle("PATCH /api/v1/outreach/campaigns/{id}", userAuth(http.HandlerFunc(oh.UpdateCampaign)))
+		mux.Handle("GET /api/v1/outreach/campaigns/{id}/targets", userAuth(http.HandlerFunc(oh.ListTargets)))
+		mux.Handle("POST /api/v1/outreach/campaigns/{id}/targets", userAuth(http.HandlerFunc(oh.AddTargets)))
+		mux.Handle("POST /api/v1/outreach/campaigns/{id}/next", userAuth(http.HandlerFunc(oh.Next)))
+		mux.Handle("GET /api/v1/outreach/campaigns/{id}/export.csv", userAuth(http.HandlerFunc(oh.Export)))
+		mux.Handle("PATCH /api/v1/outreach/targets/{id}", userAuth(http.HandlerFunc(oh.UpdateTarget)))
+		mux.Handle("POST /api/v1/outreach/replies", userAuth(http.HandlerFunc(oh.Reply)))
+		if hostSvc != nil {
+			ha := middleware.AuthenticateHost(hostSvc)
+			mux.Handle("GET /api/v1/host/outreach/campaigns", ha(http.HandlerFunc(oh.ListCampaigns)))
+			mux.Handle("GET /api/v1/host/outreach/campaigns/{id}/targets", ha(http.HandlerFunc(oh.ListTargets)))
+			mux.Handle("POST /api/v1/host/outreach/campaigns/{id}/targets", ha(http.HandlerFunc(oh.AddTargets)))
+			mux.Handle("POST /api/v1/host/outreach/campaigns/{id}/next", ha(http.HandlerFunc(oh.Next)))
+			mux.Handle("PATCH /api/v1/host/outreach/targets/{id}", ha(http.HandlerFunc(oh.UpdateTarget)))
+			mux.Handle("POST /api/v1/host/outreach/replies", ha(http.HandlerFunc(oh.Reply)))
+		}
 	}
 
 	// Runner management endpoints
