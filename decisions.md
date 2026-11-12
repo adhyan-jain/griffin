@@ -236,6 +236,38 @@ This document is the canonical ledger of all architectural, product, engineering
 
 ---
 
+#### ADR-112: The speech listener is one pure state machine, and nothing touches the phone's volume
+- **Status**: IMPLEMENTED (`android/.../core/ListenerMachine.kt`, `Listener.kt`, tests in `ListenerMachineTest.kt`).
+- **Decision**: Every decision the always-on listener makes (restart after silence, error handling, falling back from the on-device recogniser, pause while speaking) is one pure function, `ListenerMachine.reduce`. `Listener` owns only the Android recogniser and the clock. The earlier mute/restore of the system and notification volume around each listen cycle is removed; the on-device recogniser is tried first because it has no start chime on most phones, and where a chime remains it is left alone.
+- **Why**: Muting `STREAM_SYSTEM`/`STREAM_NOTIFICATION` (aliased to the ring stream on most phones) on every restart flipped the ringer between vibrate and normal. The seven loose flags also hid a real bug: stopping with a restart pending left `restartPending` set, so every later restart was silently ignored.
+- **Rule**: no code in the app may write a ring-aliased volume stream to hide a sound.
+
+#### ADR-113: The phone registers itself as a device
+- **Status**: IMPLEMENTED (`ApiClient.phoneHeartbeat`, `AssistantService.deviceBeat`); not yet confirmed on a physical phone.
+- **Decision**: After sign-in the Android app registers as a `phone` host (`POST /api/v1/hosts`), keeps the host token in the keystore-backed `SecretStore`, and heartbeats every 30 s (a host counts as live for 45 s). Revocation (HTTP 401) drops the token so the next beat registers a fresh one; signing out forgets it. It advertises `phone_apps, sms, calls, messaging`.
+- **Why**: The Devices page promised a token field in the app that did not exist, so only the laptop ever appeared.
+
+#### ADR-114: An approval can be edited, and the edit re-binds the digest
+- **Status**: IMPLEMENTED (`PATCH /api/v1/approvals/{id}`, `domain.WithEditedText`, `ApprovalRepository.EditPendingApproval`, `web/src/app/approvals/page.tsx`). Completes the "Edit Draft" promised by ADR-110.
+- **Decision**: The owner can change the text of a pending message approval. In one transaction the task's messaging action, the approval's action type (a digest of channel, op, recipient and text), its summary and its payload are rewritten together, so the owner approves the digest of the text they actually read. The web approvals page now shows the draft and an inline editor. Every approval, including steps inside a plan, now sends a push (`ApprovalNotifier`) that opens the approvals page.
+- **Why**: Before this the draft was not even displayed on the page, and the only way to change a message was to reject it and ask again.
+
+#### ADR-115: Discuss first, then "go ahead"
+- **Status**: IMPLEMENTED (`internal/service/discuss.go`, `handlers/jj_chat.go`). Implements the intent of ADR-076 without a new task state.
+- **Decision**: "Let's discuss/tweak/plan it first" keeps a request a conversation in which the manager proposes a plan and waits. A later bare "go ahead / run it" submits what the owner said in that discussion (their turns only, assistant turns excluded) as one objective. Without one of those phrases nothing changes; a "go ahead" with no discussion in the history does nothing.
+- **Why**: Jobs such as an internship filter need tuning before they run, and objectives otherwise start the moment they are understood.
+
+#### ADR-116: Outreach is rows, not a document
+- **Status**: IMPLEMENTED (`migrations/000007_outreach`, `domain/outreach.go`, `repository/outreach_repo.go`, `handlers/outreach.go`, `web/src/app/outreach`).
+- **Decision**: A campaign has people (`outreach_targets`) whose status moves only along `domain.outreachTransitions` (found, drafted, approved, sent, replied, followup_due, closed), enforced in the SQL `WHERE` so two agents cannot both win. Every write touches one row. Sending is paced by limits kept on the campaign (daily cap, minimum gap, quiet hours; conservative per-channel defaults). `ClaimNextToSend` locks the campaign row to check the limits and leases the person for five minutes, so concurrent senders cannot exceed the cap or message anyone twice. Replies arrive through `POST /outreach/replies` (inbox check or notification) and move the person to `replied`; quiet senders become `followup_due` when listed. CSV export neutralises spreadsheet formulas.
+- **The one rule**: a host (an agent's device) can add people, write drafts, claim, and report sent or replied, but **only the owner's sign-in can move a draft to `approved`** or change limits (tested). This is the mandatory approval gate of ADR-110, made structural.
+- **Why**: A shared Markdown list loses concurrent writes and has no per-person status; rate limits and follow-ups need rows.
+
+#### ADR-117: Use any site through the owner's own browser, and stop before anything is sent
+- **Status**: IMPLEMENTED for the laptop (`domain/browseraction.go`, `hands/browser`, `hands/browserjob.go`, `cmd/griffin-host/browser.go`); verified against a real headless Chromium and a local page, **not yet against Gmail or LinkedIn**. The phone-side equivalent (an Android accessibility service) is NOT built.
+- **Decision**: Instead of per-site code, a `browser` job gives a goal to a model that works the owner's signed-in browser profile step by step (a numbered view of the page's controls). The run stops BEFORE any step that sends, submits, pays, publishes or deletes, and before pressing Enter; that is decided by the model and again by the code (`irreversible`), so a hostile page cannot talk it into a harmless-looking send. The whole script (every typed word) is stored on the host under its digest, the owner approves that digest, and the next run replays exactly that script with no model. Each recorded step carries the element's role and name and the browser refuses if the page no longer matches. Only http/https addresses are allowed; password values are never read; page text is labelled untrusted. Sign-in happens once, by hand, with `griffin-host browser-login`; Griffin never sees passwords. Off unless `HOST_BROWSER=on`.
+- **Honest limits**: sites restrict automated use of accounts (LinkedIn especially), so the outreach limits are conservative and approval is mandatory; the model can misread a page; a script that was approved on a changed page fails instead of guessing.
+
 ## 2. Decisions Planned (Future Phases)
 
 ### Phase 2 Operations & Background Maintenance

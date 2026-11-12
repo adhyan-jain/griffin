@@ -251,3 +251,15 @@ Phase 4 grounded Griffin's document and artifact storage in enterprise cloud obj
 - **What surfaced while building it**: (1) an approval has to be bound to the exact action (a digest of recipient and text), or one yes could cover a different message; (2) "try the other driver" is only safe before anything is sent, so failure after the send is a hard stop rather than a fallback; (3) the planner's first draft read "Google Antigravity" in an ordinary research request as a search command, which the existing integration test caught, so "google" now counts only as a command at the start of a request; (4) the first browser cleanup returned before Chrome had exited, which would have kept the WhatsApp profile locked for the next job; the test suite's temp-folder cleanup exposed it; (5) an action a model composed from text is not what the owner intended unless the owner's own words named that person.
 - **Honest status**: everything is verified against stand-ins (a fake WhatsApp page in a real browser, a fake phone, a fake search engine). The first run on the owner's real account, phone and search provider is a guided check, not an assumption.
 
+
+
+---
+
+### Epoch 12: Outreach and use of any device (2026-11-13)
+
+- **Trigger**: the owner wanted Griffin to run cold-mail and application campaigns end to end in the background, using their own laptop and phone like a person would (not per-app APIs), with the owner approving or tuning each message, plus a product fit to publish.
+- **Shift**:
+  - **From**: WhatsApp and Instagram hands, a Markdown list as the "tracker", approvals that could only be accepted or rejected, objectives that always ran at once.
+  - **To**: a general browser hand, a database-backed outreach engine with limits and reply tracking, editable approvals, and a discuss-then-go-ahead conversation.
+- **What surfaced while building it**: (1) the phone never registered as a device, so "Devices shows only my laptop" was a missing feature, not a bug; (2) the ringer flipping was our own volume muting on every listen restart; (3) the approval page never showed the draft; (4) a model deciding what is "irreversible" is not enough against a hostile page, so the code decides too; (5) an approval must bind to the whole recorded script and the page must still match at replay.
+- **Honest status**: the phone-side device-use hand and the Gmail/LinkedIn behaviour are unverified; see `docs/ROADMAP.md`.

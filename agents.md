@@ -76,6 +76,7 @@ Every agent working on Griffin must consult and update these two living ledgers:
 | **Phase 4** | AWS S3 Object Storage Integration & Dual-Persistence (Presigned URLs, Multipart, Compensating Saga) | **COMPLETE (76/76 Tests PASS, LIVE VERIFIED)** |
 | **Phase 5** | Next.js 15 PWA Interface (10 Screens, TypeScript, Tailwind, Responsive Mobile Drawer/Navbar) | **COMPLETE (0 Build Errors, Tested)** |
 | **Phase 6** | Production Hardening, Cloud Release Runbooks & Unattended Antigravity Execution | **COMPLETE** |
+| **Epoch 12** | Outreach engine (`migrations/000007`, `/outreach`), browser hand (`internal/hands/browser`), editable approvals, discuss-then-go-ahead, phone self-registration, listener state machine | **BUILT; Gmail/LinkedIn and the phone-side hand NOT verified (see `docs/ROADMAP.md`)** |
 
 ---
 
@@ -133,6 +134,9 @@ All commands are runnable via [`Makefile`](Makefile):
 ```bash
 # Build server binary into bin/griffin-server
 make build
+
+# First run: .env files, local database and migrations in one command
+make setup
 
 # Run server locally (default port 8080)
 make run

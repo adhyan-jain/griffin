@@ -488,6 +488,22 @@ Chat apps are used through **their own notifications**: Android lets a notificat
 
 **Needed from the owner:** a Gemini API key (kept in the Lambda's settings only); permission to install the Android SDK on the build machine before S3; the phone model and Android version; the S5 decision.
 
+### 7.22 Outreach campaigns and the browser hand (2026-11-13, BUILT; Gmail and LinkedIn not yet tried)
+**What the owner asks for:** "find 30 founders and cold-mail them", "apply to internships on LinkedIn". Griffin makes a **campaign**: a list of people (name, handle, status), one row each. A researching task keeps adding people as it finds them; a sending task takes approved people one at a time. Nothing is sent until the owner approves the exact message; the owner can edit it first.
+
+**Statuses:** found, drafted (needs your approval), approved (queued), sent, replied, followup_due, closed. Only the owner's sign-in can approve; an agent's device cannot (tested).
+
+**Limits (per campaign, shown on the page, conservative by default):** a daily cap, a minimum gap between sends, quiet hours, days of silence before a follow-up is due, and at most a few follow-ups. Defaults: email 30 a day; WhatsApp or Instagram 20 a day; LinkedIn 15 a day with 5 minutes between sends. The sender asks the server for "who next?" and the server refuses when a limit would be broken.
+
+**Replies and follow-ups:** a reply seen in an inbox or a notification is posted to `/outreach/replies` and the person moves to Replied (the Replied tab is the separate list); after the days of silence a person shows as Follow up and the new draft goes through approval again. Export to CSV from the page.
+
+**Using any site (the browser hand):** the laptop host can work the owner's signed-in browser for a goal, with no code per site. It prepares (opens pages, fills fields), **stops before anything is sent**, shows the owner what will be typed and which button ends it, and replays exactly that script once approved. Turn on with `HOST_BROWSER=on` and a Gemini key; sign in to your sites once with `griffin-host browser-login`.
+
+**Risks, plainly:** LinkedIn and some sites restrict automated use of an account; keep the limits low and read what you approve. The model can misread a page; a script approved on a page that has since changed refuses to run. **The phone-side hand (Android accessibility) is not built:** on the phone, WhatsApp and Instagram replies work through notification replies (7.20) and everything else needs the laptop.
+
+### 7.23 Talking a job through first (2026-11-13, BUILT)
+Say "let's discuss the internship filter first" and Griffin proposes a plan and waits; refine it over several messages; say "go ahead" and everything you said in that discussion is submitted as one job.
+
 ## 8. Operations
 
 ### 8.1 Ship
