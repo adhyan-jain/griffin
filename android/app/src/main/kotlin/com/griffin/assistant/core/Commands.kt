@@ -111,7 +111,7 @@ object Commands {
         Regex("^(?:please )?wake me (?:up )?at (.+)$").find(s)?.let { m -> parseTime(m.groupValues[1])?.let { (h, mi) -> return Command.Alarm(h, mi) } }
 
         Regex("^(?:please )?(?:search(?: for)?|google|search the web for|look up|search something from the browser and tell me(?: the result)?) (.+)$").find(s)?.let { m ->
-            val q = m.groupValues[1].removePrefix("the ").removePrefix("about ").trim()
+            val q = m.groupValues[1].removePrefix("the ").removePrefix("about ").removeSuffix(" on google").removeSuffix(" on the web").trim()
             if (q.isNotEmpty()) return Command.WebSearch(q)
         }
 

@@ -8,287 +8,115 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.griffin.assistant.core.LEffect
+import com.griffin.assistant.core.LError
+import com.griffin.assistant.core.LEvent
+import com.griffin.assistant.core.LState
+import com.griffin.assistant.core.ListenerMachine
 
 /**
- * Listens all the time, one utterance after another, and hands each finished sentence to [onHeard]. It prefers
- * the phone's on-device recogniser (private and works offline) and restarts itself after the silences and
- * hiccups that speech recognisers produce constantly. Everything runs on the main thread.
+ * Listens all the time, one utterance after another, and hands each finished sentence to [onHeard]. Every decision
+ * (when to restart, what an error means, when to fall back from the on-device engine) lives in the pure
+ * [ListenerMachine]; this class only owns the Android recogniser and the clock and runs the machine's effects.
+ * It never touches any volume stream: the on-device engine has no start chime on most phones. Main thread only.
  */
 class Listener(private val context: Context, private val onHeard: (List<String>) -> Unit, private val onStatus: (String) -> Unit, private val onLevel: (Float) -> Unit = {}) {
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
-    private var active = false
-    private var paused = false
-    private var restartPending = false
-    private var forceListenNext = false
-
-    private var preferOnDevice = false
-    private var preferOffline = false
-    private var consecutiveClientErrors = 0
+    private var state = LState()
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
-    private var originalMusicVolume: Int? = null
-    private var originalSystemVolume: Int? = null
-    private var originalNotificationVolume: Int? = null
-    private var isMuted = false
 
-    private fun muteChime() {
-        if (isMuted) return
-        isMuted = true
-        try {
-            audioManager?.let { am ->
-                if (!am.isMusicActive) {
-                    val curMusic = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                    if (originalMusicVolume == null) originalMusicVolume = curMusic
-                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 0, 0)
-                }
-                val curSys = am.getStreamVolume(android.media.AudioManager.STREAM_SYSTEM)
-                if (originalSystemVolume == null) originalSystemVolume = curSys
-                am.setStreamVolume(android.media.AudioManager.STREAM_SYSTEM, 0, 0)
+    val isActive get() = state.active
 
-                val curNotif = am.getStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION)
-                if (originalNotificationVolume == null) originalNotificationVolume = curNotif
-                am.setStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, 0, 0)
-            }
-        } catch (_: Exception) {}
-        try {
-            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0)
-            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_MUTE, 0)
-        } catch (_: Exception) {}
-    }
-
-    private fun restoreVolume() {
-        if (!isMuted) return
-        isMuted = false
-        try {
-            audioManager?.let { am ->
-                originalMusicVolume?.let { vol ->
-                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, vol, 0)
-                    originalMusicVolume = null
-                }
-                originalSystemVolume?.let { vol ->
-                    am.setStreamVolume(android.media.AudioManager.STREAM_SYSTEM, vol, 0)
-                    originalSystemVolume = null
-                }
-                originalNotificationVolume?.let { vol ->
-                    am.setStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, vol, 0)
-                    originalNotificationVolume = null
-                }
-            }
-        } catch (_: Exception) {}
-        try {
-            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_UNMUTE, 0)
-            audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_UNMUTE, 0)
-        } catch (_: Exception) {}
-    }
-
-    val isActive get() = active
-
-    fun start() {
-        if (active) return
-        active = true
-        paused = false
-        consecutiveClientErrors = 0
-        begin()
-    }
-
-    fun stop() {
-        active = false
-        main.removeCallbacksAndMessages(null)
-        restoreVolume()
-        destroy()
-        onStatus("stopped")
-    }
-
+    fun start() = send(LEvent.Start)
+    fun stop() = send(LEvent.Stop)
     /** Stops hearing while the assistant itself is talking, so it does not answer its own voice. */
-    fun pause() {
-        paused = true
-        main.removeCallbacksAndMessages(null)
-        restartPending = false
-        restoreVolume()
-        try {
-            recognizer?.cancel()
-        } catch (_: Exception) {}
-    }
-
-    fun resume() {
-        if (!paused) return
-        paused = false
-        if (active) schedule(350)
-    }
-
+    fun pause() = send(LEvent.Pause)
+    fun resume() = send(LEvent.Resume)
     /** Forces a one-turn listen even if media or music is playing. */
-    fun forceListen() {
-        forceListenNext = true
-        main.removeCallbacksAndMessages(null)
-        restartPending = false
-        if (paused) paused = false
-        active = true
-        try {
-            recognizer?.cancel()
-        } catch (_: Exception) {}
-        begin()
+    fun forceListen() = send(LEvent.ForceListen)
+
+    private fun send(event: LEvent) {
+        val step = ListenerMachine.reduce(state, event)
+        state = step.state
+        step.effects.forEach(::run)
+    }
+
+    private fun run(effect: LEffect) {
+        when (effect) {
+            LEffect.CancelTimers -> main.removeCallbacksAndMessages(null)
+            LEffect.CancelListen -> try { recognizer?.cancel() } catch (_: Exception) {}
+            LEffect.Destroy -> destroy()
+            LEffect.BeginNow -> send(LEvent.BeginAttempt(audioManager?.isMusicActive == true))
+            is LEffect.Schedule -> main.postDelayed({ send(LEvent.TimerFired(effect.recreate)) }, effect.delayMs)
+            LEffect.StartRecognizer -> startRecognizer()
+            is LEffect.Status -> onStatus(effect.text)
+            is LEffect.Heard -> onHeard(effect.texts)
+        }
     }
 
     private fun destroy() {
-        try {
-            recognizer?.destroy()
-        } catch (_: Exception) {}
+        try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
     }
 
-    private fun schedule(delayMs: Long, recreate: Boolean = false) {
-        if (!active || paused || restartPending) return
-        restartPending = true
-        main.postDelayed({
-            restartPending = false
-            if (recreate) destroy()
-            begin()
-        }, delayMs)
-    }
+    private fun onDeviceUsable() = android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
 
     private fun create(): SpeechRecognizer? {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             onStatus("no speech recognition service installed on device")
             return null
         }
-
         val r = try {
-            if (preferOnDevice && android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
-                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-            } else {
-                SpeechRecognizer.createSpeechRecognizer(context)
-            }
-        } catch (e: Exception) {
-            if (preferOnDevice) {
-                preferOnDevice = false
-                try {
-                    SpeechRecognizer.createSpeechRecognizer(context)
-                } catch (_: Exception) {
-                    null
-                }
-            } else {
-                null
-            }
-        } ?: try {
-            if (preferOnDevice) {
-                preferOnDevice = false
-                SpeechRecognizer.createSpeechRecognizer(context)
-            } else null
+            if (state.preferOnDevice && onDeviceUsable()) SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            else SpeechRecognizer.createSpeechRecognizer(context)
         } catch (_: Exception) {
-            null
+            state = state.copy(preferOnDevice = false)
+            try { SpeechRecognizer.createSpeechRecognizer(context) } catch (_: Exception) { null }
         }
-
         r?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {
-                consecutiveClientErrors = 0
-                onStatus("listening")
-                // Keep streams muted through the start chime window (~300-600ms) to ensure complete silence.
-                main.postDelayed({ restoreVolume() }, 1000L)
-            }
-            override fun onBeginningOfSpeech() {
-                restoreVolume()
-                consecutiveClientErrors = 0
-                onStatus("hearing you")
-            }
+            override fun onReadyForSpeech(params: Bundle?) = send(LEvent.Ready)
+            override fun onBeginningOfSpeech() = send(LEvent.SpeechBegan)
             override fun onRmsChanged(rmsdB: Float) = onLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
-            override fun onResults(results: Bundle?) {
-                restoreVolume()
-                consecutiveClientErrors = 0
-                val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
-                if (list.isNotEmpty()) onHeard(list)
-                schedule(250)
-            }
-            override fun onError(error: Int) {
-                restoreVolume()
-                when (error) {
-                    SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> schedule(400) // silence: the normal case
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> schedule(900, recreate = true)
-                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                        active = false
-                        onStatus("microphone permission is missing")
-                    }
-                    SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> {
-                        onStatus("the speech language is unavailable")
-                        schedule(5000, recreate = true)
-                    }
-                    SpeechRecognizer.ERROR_CLIENT -> {
-                        consecutiveClientErrors++
-                        if (preferOnDevice && android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
-                            preferOnDevice = false
-                            onStatus("on-device speech engine failed; falling back to standard engine")
-                            schedule(500, recreate = true)
-                        } else if (preferOffline) {
-                            preferOffline = false
-                            onStatus("offline speech engine failed; switching to online recognition")
-                            schedule(500, recreate = true)
-                        } else {
-                            val delay = (2000L * consecutiveClientErrors).coerceAtMost(10000L)
-                            onStatus("speech client error 5: check Google app mic permission & offline speech pack")
-                            schedule(delay, recreate = true)
-                        }
-                    }
-                    SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> {
-                        onStatus("speech network error, retrying")
-                        schedule(3000, recreate = true)
-                    }
-                    SpeechRecognizer.ERROR_AUDIO -> {
-                        onStatus("audio recording error, retrying")
-                        schedule(2000, recreate = true)
-                    }
-                    SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> {
-                        onStatus("speech server error, retrying")
-                        schedule(3000, recreate = true)
-                    }
-                    else -> {
-                        onStatus("speech error $error, retrying")
-                        schedule(2000, recreate = true)
-                    }
-                }
-            }
+            override fun onResults(results: Bundle?) =
+                send(LEvent.Results(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: emptyList()))
+            override fun onError(error: Int) = send(LEvent.Error(kindOf(error), onDeviceUsable()))
         })
         return r
     }
 
-    private fun begin() {
-        if (!active || paused) return
-        if (audioManager?.isMusicActive == true && !forceListenNext) {
-            onStatus("media playing: tap to speak")
-            schedule(2000)
-            return
-        }
-        forceListenNext = false
+    private fun kindOf(code: Int) = when (code) {
+        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> LError.Silence
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> LError.Busy
+        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> LError.Permission
+        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> LError.Language
+        SpeechRecognizer.ERROR_CLIENT -> LError.Client
+        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> LError.Network
+        SpeechRecognizer.ERROR_AUDIO -> LError.Audio
+        SpeechRecognizer.ERROR_SERVER, SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> LError.Server
+        else -> LError.Other
+    }
+
+    private fun startRecognizer() {
         if (recognizer == null) recognizer = create()
         val r = recognizer
-        if (r == null) {
-            onStatus("needs speech recognition service: install or enable Google speech recognition")
-            schedule(5000, recreate = true)
-            return
-        }
+        if (r == null) { send(LEvent.NoRecognizer); return }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             // Support Indian English and Hindi alongside default locale
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
             putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN", "hi-IN", "en-US"))
-            if (preferOffline) {
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            }
+            if (state.preferOffline) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
         }
-        try {
-            muteChime()
-            r.startListening(intent)
-        } catch (e: Exception) {
-            restoreVolume()
-            onStatus("could not start listening: ${e.message}")
-            schedule(2000, recreate = true)
-        }
+        try { r.startListening(intent) } catch (e: Exception) { send(LEvent.StartFailed(e.message ?: "unknown")) }
     }
 }
