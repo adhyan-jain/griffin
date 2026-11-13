@@ -9,8 +9,8 @@
 # PublishVersion; see docs/FINAL_IAM_POLICIES/D-deployer-api-scheduler-ops.json) and use SSM/EC2/S3 for
 # the worker. Nothing here creates infrastructure, launches instances or changes IAM.
 #
-# Env (defaults match production): AWS_PROFILE, AWS_REGION=ap-south-1, LAMBDA_FUNCTION=griffin-api,
-#   INSTANCE_ID=i-0123456789abcdef0, BUCKET=griffin-artifacts-123456789012-ap-south-1,
+# Env: AWS_PROFILE, AWS_REGION=ap-south-1, LAMBDA_FUNCTION=griffin-api, and REQUIRED: INSTANCE_ID (the worker's
+#   EC2 instance) and BUCKET (griffin-artifacts-<account-id>-<region>),
 #   API_URL=https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -18,8 +18,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 TARGET="${1:-}"; APPLY=0; [ "${2:-}" = "--apply" ] && APPLY=1
 export AWS_REGION="${AWS_REGION:-ap-south-1}" AWS_DEFAULT_REGION="${AWS_REGION:-ap-south-1}"
 FN="${LAMBDA_FUNCTION:-griffin-api}"
-INSTANCE_ID="${INSTANCE_ID:-i-0123456789abcdef0}"
-BUCKET="${BUCKET:-griffin-artifacts-123456789012-ap-south-1}"
+INSTANCE_ID="${INSTANCE_ID:?set INSTANCE_ID to the worker EC2 instance id}"
+BUCKET="${BUCKET:?set BUCKET to the artifacts bucket name}"
 API_URL="${API_URL:-https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com}"
 SHA="$(git rev-parse --short HEAD)"
 

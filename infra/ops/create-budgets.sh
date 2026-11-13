@@ -2,7 +2,7 @@
 # Creates $10 and $20 monthly cost budgets with email alerts. PRINTS the commands by default;
 # set GRIFFIN_APPLY=1 to execute (requires Policy D 'Budgets' and approval checkpoint 5).
 set -euo pipefail
-: "${ALERT_EMAIL:?set ALERT_EMAIL}"; ACCT="${AWS_ACCOUNT_ID:-123456789012}"
+: "${ALERT_EMAIL:?set ALERT_EMAIL}"; ACCT="${AWS_ACCOUNT_ID:?set AWS_ACCOUNT_ID}"
 run() { if [ "${GRIFFIN_APPLY:-0}" = "1" ]; then "$@"; else printf 'DRY-RUN:'; printf ' %q' "$@"; echo; fi; }
 for amt in 10 20; do
   budget=$(printf '{"BudgetName":"griffin-monthly-%s","BudgetLimit":{"Amount":"%s","Unit":"USD"},"TimeUnit":"MONTHLY","BudgetType":"COST"}' "$amt" "$amt")

@@ -25,7 +25,7 @@ func TestS3_LiveAWSVerification(t *testing.T) {
 
 	bucket := os.Getenv("GRIFFIN_S3_BUCKET")
 	if bucket == "" {
-		bucket = "griffin-artifacts-123456789012-ap-south-1"
+		t.Skip("set GRIFFIN_S3_BUCKET to run the live S3 test")
 	}
 
 	region := os.Getenv("GRIFFIN_S3_REGION")

@@ -18,7 +18,7 @@ set -euo pipefail
 APPLY=0; [ "${1:-}" = "--apply" ] && APPLY=1
 : "${API_BASE_URL:?set API_BASE_URL (https origin, no trailing slash)}"
 case "$API_BASE_URL" in https://*) ;; *) echo "API_BASE_URL must be https" >&2; exit 2;; esac
-R="${AWS_REGION:-ap-south-1}"; ACCT="${AWS_ACCOUNT_ID:-123456789012}"
+R="${AWS_REGION:-ap-south-1}"; ACCT="${AWS_ACCOUNT_ID:?set AWS_ACCOUNT_ID}"
 CONN=griffin-scheduler-conn; DEST=griffin-scheduler-tick; RULE=griffin-scheduler-tick; ROLE=griffin-scheduler-events
 URL="${API_BASE_URL%/}/api/v1/scheduler/tick"
 if [ "$APPLY" = 1 ]; then : "${WORKER_API_KEY:?set WORKER_API_KEY for --apply}"; KEY="$WORKER_API_KEY"; else KEY="<redacted>"; fi

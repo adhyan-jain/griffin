@@ -18,7 +18,7 @@
 
 ## Before publishing
 - (Done) MIT LICENSE added.
-- The two AWS account ids were removed from docs, but they remain in `infra/` scripts, `internal/config/config_test.go` and `tests/s3_live_test.go`; parameterise them.
+- (Done) AWS account ids, the instance id and the bucket name were removed from files and from git history; the infra scripts now take them from the environment.
 - Scan the full git history for secrets (gitleaks or trufflehog) and decide whether to publish a fresh-history repo. Rotate the Supabase database password that was pasted into a chat and the Vercel token in `web/.env.local`.
 - Audit dependency licences (notably GSAP).
 - `scripts/generate_matrix.py` and the two copies of the testing matrix `.xlsx` still hold personal paths or data.

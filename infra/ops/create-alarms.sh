@@ -3,7 +3,7 @@
 # (requires Policy D 'AlertsTopicAndAlarms', and the Lambda/API/instance to exist).
 # Needs: ALERT_EMAIL, API_ID (HTTP API id), INSTANCE_ID.
 set -euo pipefail
-: "${ALERT_EMAIL:?}" "${API_ID:?}" "${INSTANCE_ID:?}"; R=ap-south-1; ACCT="${AWS_ACCOUNT_ID:-123456789012}"
+: "${ALERT_EMAIL:?}" "${API_ID:?}" "${INSTANCE_ID:?}"; R=ap-south-1; ACCT="${AWS_ACCOUNT_ID:?set AWS_ACCOUNT_ID}"
 TOPIC="arn:aws:sns:$R:$ACCT:griffin-alerts"
 run() { if [ "${GRIFFIN_APPLY:-0}" = "1" ]; then "$@"; else printf 'DRY-RUN:'; printf ' %q' "$@"; echo; fi; }
 run aws sns create-topic --region $R --name griffin-alerts

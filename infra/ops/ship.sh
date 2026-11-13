@@ -19,7 +19,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 export AWS_PROFILE="${AWS_PROFILE:-griffin-bootstrap}" AWS_REGION="${AWS_REGION:-ap-south-1}"
-INSTANCE="${INSTANCE_ID:-i-0123456789abcdef0}"
+INSTANCE="${INSTANCE_ID:?set INSTANCE_ID to the worker EC2 instance id}"
 API="${API_URL:-https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com}"
 WEB="${WEB_URL:-https://griffin-pwa.vercel.app}"
 

@@ -19,10 +19,10 @@ Parameters:
     Default: griffin-api
   InstanceId:
     Type: String
-    Default: i-0123456789abcdef0
+    Description: The worker's EC2 instance id (i-...), from your AWS account
   ArtifactBucket:
     Type: String
-    Default: griffin-artifacts-123456789012-ap-south-1
+    Description: The artifacts bucket name, e.g. griffin-artifacts-<account-id>-<region>
   ApiUrl:
     Type: String
     Default: https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com
