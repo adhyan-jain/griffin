@@ -14,17 +14,71 @@ import (
 	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/service"
 )
 
 // OutreachHandler serves campaigns and the people in them. The owner (JWT) can do everything. A host (token)
 // can add people, write drafts, claim the next person to message within the limits, and report sent and
 // replied, but it can NEVER approve: moving a draft to "approved" is the one step only the owner's sign-in allows.
 type OutreachHandler struct {
-	repo *repository.OutreachRepository
+	repo    *repository.OutreachRepository
+	drafter *service.OutreachDrafter
 }
 
-func NewOutreachHandler(repo *repository.OutreachRepository) *OutreachHandler {
-	return &OutreachHandler{repo: repo}
+func NewOutreachHandler(repo *repository.OutreachRepository, drafter *service.OutreachDrafter) *OutreachHandler {
+	return &OutreachHandler{repo: repo, drafter: drafter}
+}
+
+// Draft writes a first message for up to ten people who are still only "found", and moves them to "drafted" for
+// the owner to approve. Call it again for the next ten. Owner only.
+func (h *OutreachHandler) Draft(w http.ResponseWriter, r *http.Request) {
+	userID, isHost, err := h.actor(r)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if isHost {
+		httputil.ErrorJSON(w, domain.ErrForbidden)
+		return
+	}
+	id, err := pathUUID(r, "id")
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	c, err := h.repo.GetCampaign(r.Context(), userID, id)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	found := domain.OutreachFound
+	people, err := h.repo.ListTargets(r.Context(), userID, id, &found)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if len(people) > 10 {
+		people = people[:10]
+	}
+	drafted, failed := 0, 0
+	to := domain.OutreachDrafted
+	for _, t := range people {
+		text, err := h.drafter.Draft(r.Context(), c, t)
+		if errors.Is(err, service.ErrDrafterOff) {
+			httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, err))
+			return
+		}
+		if err != nil {
+			failed++
+			continue
+		}
+		if _, err := h.repo.UpdateTarget(r.Context(), userID, t.ID, repository.TargetUpdate{To: &to, Draft: &text, Event: "agent: drafted"}); err != nil {
+			failed++
+			continue
+		}
+		drafted++
+	}
+	httputil.JSON(w, http.StatusOK, map[string]int{"drafted": drafted, "failed": failed, "remaining": len(people) - drafted - failed})
 }
 
 // actor resolves who is calling: the owner, or a host acting for its owner.

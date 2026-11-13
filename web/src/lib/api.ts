@@ -767,6 +767,14 @@ export const api = {
     fetchWithAuth<OutreachCampaign>(`/api/v1/outreach/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   listTargets: (campaignId: string, opts?: ReqOpts) =>
     fetchList<OutreachTarget>(`/api/v1/outreach/campaigns/${campaignId}/targets`, opts),
+  /** Writes first drafts for up to ten people who are still only "found". */
+  draftCampaign: (id: string) =>
+    fetchWithAuth<{ drafted: number; failed: number; remaining: number }>(`/api/v1/outreach/campaigns/${id}/draft`, { method: "POST" }),
+  addTargets: (campaignId: string, targets: { name: string; handle: string; info?: string }[]) =>
+    fetchWithAuth<{ added: number; received: number }>(`/api/v1/outreach/campaigns/${campaignId}/targets`, {
+      method: "POST",
+      body: JSON.stringify({ targets }),
+    }),
   updateTarget: (id: string, body: { status?: OutreachStatus; draft?: string; notes?: string }) =>
     fetchWithAuth<OutreachTarget>(`/api/v1/outreach/targets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   /** The campaign as a CSV file's text, for a spreadsheet. */

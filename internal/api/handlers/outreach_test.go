@@ -15,7 +15,7 @@ import (
 // A host (an agent's device) must never be able to approve a message or change sending limits: those are the
 // owner's decisions. Both are refused before the repository is touched, so a nil repository proves it.
 func TestHostCannotApproveOrRaiseLimits(t *testing.T) {
-	h := NewOutreachHandler(nil)
+	h := NewOutreachHandler(nil, nil)
 	host := &domain.Host{ID: uuid.New(), UserID: uuid.New()}
 	id := uuid.New().String()
 

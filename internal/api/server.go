@@ -41,6 +41,8 @@ type ServerDependencies struct {
 	HostRepo repository.HostRepository
 	// PolicyRepo stores the owner's permission policy; used with HostRepo.
 	PolicyRepo repository.PolicyRepository
+	// OutreachDrafter writes first drafts for people found by a campaign; nil means drafting is unavailable.
+	OutreachDrafter *service.OutreachDrafter
 	// OutreachRepo enables campaigns and their people (cold mail, applications); nil leaves the routes off.
 	OutreachRepo *repository.OutreachRepository
 	// ProfileRepo holds the owner's settings (the manager's name).
@@ -297,12 +299,13 @@ func NewServer(deps ServerDependencies) *Server {
 	// Outreach: campaigns and the people in them. Owner routes use the sign-in; a host's routes (below, inside the
 	// host block) can add people, draft, claim the next send within the limits and report results, but never approve.
 	if deps.OutreachRepo != nil {
-		oh := handlers.NewOutreachHandler(deps.OutreachRepo)
+		oh := handlers.NewOutreachHandler(deps.OutreachRepo, deps.OutreachDrafter)
 		mux.Handle("POST /api/v1/outreach/campaigns", userAuth(http.HandlerFunc(oh.CreateCampaign)))
 		mux.Handle("GET /api/v1/outreach/campaigns", userAuth(http.HandlerFunc(oh.ListCampaigns)))
 		mux.Handle("PATCH /api/v1/outreach/campaigns/{id}", userAuth(http.HandlerFunc(oh.UpdateCampaign)))
 		mux.Handle("GET /api/v1/outreach/campaigns/{id}/targets", userAuth(http.HandlerFunc(oh.ListTargets)))
 		mux.Handle("POST /api/v1/outreach/campaigns/{id}/targets", userAuth(http.HandlerFunc(oh.AddTargets)))
+		mux.Handle("POST /api/v1/outreach/campaigns/{id}/draft", userAuth(http.HandlerFunc(oh.Draft)))
 		mux.Handle("POST /api/v1/outreach/campaigns/{id}/next", userAuth(http.HandlerFunc(oh.Next)))
 		mux.Handle("GET /api/v1/outreach/campaigns/{id}/export.csv", userAuth(http.HandlerFunc(oh.Export)))
 		mux.Handle("PATCH /api/v1/outreach/targets/{id}", userAuth(http.HandlerFunc(oh.UpdateTarget)))

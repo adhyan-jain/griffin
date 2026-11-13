@@ -376,6 +376,7 @@ func main() {
 			PolicyRepo:      policyRepo,
 			ProfileRepo:     profileRepo,
 			OutreachRepo:    outreachRepo,
+			OutreachDrafter: outreachDrafter(cfg),
 			VoiceBrain:      voiceBrain(cfg),
 			InstanceMgr:     instanceMgr,
 			UserTx:          userTx,
@@ -448,4 +449,12 @@ func summaryBrainFor(cfg *config.Config) service.PlanBrain {
 		return b
 	}
 	return nil
+}
+
+// outreachDrafter writes first drafts with the same Gemini key as the voice route; nil when there is none.
+func outreachDrafter(cfg *config.Config) *service.OutreachDrafter {
+	if cfg.GeminiAPIKey == "" {
+		return nil
+	}
+	return &service.OutreachDrafter{Model: &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 500}}
 }

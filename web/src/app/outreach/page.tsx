@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Download, Pause, Pencil, Play, Plus, Send, X } from "lucide-react";
+import { Check, Download, Sparkles, MessageSquareReply, Pause, Pencil, Play, Plus, Send, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type OutreachCampaign, type OutreachStatus, type OutreachTarget } from "@/lib/api";
 import { usePolling } from "@/lib/use-polling";
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/components/page";
+import { parsePeople } from "@/lib/outreach-parse";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 
 type Tab = "all" | "approve" | "sent" | "replied" | "followups";
@@ -63,6 +64,8 @@ export default function OutreachPage() {
   const [newGoal, setNewGoal] = useState("");
   const [newChannel, setNewChannel] = useState<OutreachCampaign["channel"]>("email");
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [pasted, setPasted] = useState("");
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -152,6 +155,14 @@ export default function OutreachPage() {
               >
                 {campaign.status === "active" ? <Pause /> : <Play />} {campaign.status === "active" ? "Pause" : "Resume"}
               </Button>
+              {!!campaign.counts.found && (
+                <Button disabled={busy} onClick={() => act(() => api.draftCampaign(campaign.id), "Drafts written. Review them under Needs approval.")}>
+                  <Sparkles /> Draft {Math.min(campaign.counts.found, 10)} message{campaign.counts.found === 1 ? "" : "s"}
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setAdding(true)}>
+                <UserPlus /> Add people
+              </Button>
               <Button variant="outline" onClick={() => api.exportCampaign(campaign.id).then((t) => csvDownload(campaign.name, t), (e) => toast.error(String(e.message ?? e)))}>
                 <Download /> CSV
               </Button>
@@ -209,6 +220,11 @@ export default function OutreachPage() {
                               <Check /> Approve
                             </Button>
                           )}
+                          {(t.status === "sent" || t.status === "followup_due") && (
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => act(() => api.updateTarget(t.id, { status: "replied" }), "Marked as replied")}>
+                              <MessageSquareReply /> Replied
+                            </Button>
+                          )}
                           {t.status !== "closed" && (
                             <Button size="sm" variant="ghost" aria-label="Close this person" disabled={busy} onClick={() => act(() => api.updateTarget(t.id, { status: "closed" }), "Closed")}>
                               <X />
@@ -242,6 +258,24 @@ export default function OutreachPage() {
             Save draft
           </Button>
         </div>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog open={adding} onOpenChange={setAdding} title="Add people" description="One per line: Name <email>, Name, email, or just an address or profile link. Griffin drafts a message for each, and you approve before anything is sent.">
+        <Textarea aria-label="People" rows={8} placeholder={"Ada Lovelace <ada@example.com>\nhttps://linkedin.com/in/someone"} value={pasted} onChange={(e) => setPasted(e.target.value)} />
+        <Button
+          className="mt-3 w-full"
+          disabled={busy || !campaign || parsePeople(pasted).length === 0}
+          onClick={() =>
+            campaign &&
+            act(async () => {
+              await api.addTargets(campaign.id, parsePeople(pasted));
+              setPasted("");
+              setAdding(false);
+            }, "People added")
+          }
+        >
+          Add {parsePeople(pasted).length || ""} {parsePeople(pasted).length === 1 ? "person" : "people"}
+        </Button>
       </ResponsiveDialog>
 
       <ResponsiveDialog open={creating} onOpenChange={setCreating} title="New campaign" description="You can also just ask Griffin in chat.">
