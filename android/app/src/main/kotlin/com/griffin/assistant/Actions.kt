@@ -1,6 +1,5 @@
 package com.griffin.assistant
 
-import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -54,26 +53,23 @@ class Actions(private val context: Context) {
         "There is no call to end."
     }
 
-    /** Schedules a spoken, audible alarm. Returns what to say. */
-    fun alarmAt(triggerAtMillis: Long, label: String): String {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val fire = PendingIntent.getBroadcast(context, (triggerAtMillis / 1000).toInt(), Intent(context, AlarmReceiver::class.java).putExtra("label", label), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val show = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, show), fire) // exempt from the exact-alarm permission
-        return label
+    /** Timers and alarms belong to the phone's own Clock app: it rings reliably, shows in the clock, and the owner can edit it there. */
+    private fun clockIntent(intent: Intent, done: String): String = try {
+        context.startActivity(intent.putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        done
+    } catch (e: Exception) {
+        "I could not reach your Clock app."
     }
 
-    fun timer(seconds: Int): String {
-        alarmAt(System.currentTimeMillis() + seconds * 1000L, "Your ${spokenDuration(seconds)} timer is done.")
-        return "Timer set for ${spokenDuration(seconds)}."
-    }
+    fun timer(seconds: Int): String = clockIntent(
+        Intent(android.provider.AlarmClock.ACTION_SET_TIMER).putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds),
+        "Timer set for ${spokenDuration(seconds)} in your Clock app.",
+    )
 
-    fun alarm(hour: Int, minute: Int): String {
-        val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, hour); set(Calendar.MINUTE, minute); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
-        if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
-        alarmAt(c.timeInMillis, "It is ${spokenTime(hour, minute)}. Your alarm.")
-        return "Alarm set for ${spokenTime(hour, minute)}."
-    }
+    fun alarm(hour: Int, minute: Int): String = clockIntent(
+        Intent(android.provider.AlarmClock.ACTION_SET_ALARM).putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour).putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute),
+        "Alarm set for ${spokenTime(hour, minute)} in your Clock app.",
+    )
 
     private var isTorchOn = false
 
