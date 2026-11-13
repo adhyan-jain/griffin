@@ -9,13 +9,15 @@ export const CAPABILITY_INFO: Record<HostCapability, { label: string; help: stri
   sms: { label: "Send texts", help: "Text messages from your number." },
   calls: { label: "Make calls", help: "Always with your approval." },
   web: { label: "Search the web", help: "Search and read public pages. Reading only; never signs in anywhere." },
+  desktop: { label: "Control the desktop", help: "Open apps and control media on the computer." },
+  phone_ui: { label: "Use any app on the phone", help: "Taps and types in other apps for jobs you give it, and asks before anything is sent. Needs Griffin phone control turned on in Accessibility." },
   messaging: { label: "Use WhatsApp", help: "Read and send WhatsApp messages, through WhatsApp Web or your phone. Sending asks you first." },
 };
 
 /** Capabilities the current build can actually back. */
 export const BACKED_BY_BUILD: Record<HostKind, HostCapability[]> = {
-  laptop: ["agent", "messaging", "web"],
-  phone: ["messaging", "phone_apps", "sms", "calls"],
+  laptop: ["agent", "messaging", "web", "browser"],
+  phone: ["messaging", "phone_apps", "sms", "calls", "phone_ui"],
 };
 
 export function capabilityLabel(c: string): string {
@@ -73,7 +75,7 @@ export function waitingForDevice(task: Pick<Task, "status" | "input_payload">): 
   if (task.status !== "QUEUED" && task.status !== "RETRYING") return null;
   const req = requiredCapabilities(task);
   if (req.length === 0) return null;
-  const phoneOnly = req.every((c) => c === "phone_apps" || c === "sms" || c === "calls");
+  const phoneOnly = req.every((c) => c === "phone_apps" || c === "sms" || c === "calls" || c === "phone_ui");
   return phoneOnly ? "your phone" : "your laptop";
 }
 

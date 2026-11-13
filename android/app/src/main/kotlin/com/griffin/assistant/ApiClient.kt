@@ -21,6 +21,8 @@ fun parseVoiceReply(body: String): VoiceReply {
 
 /** What the phone can do for Griffin today. Advertised on every heartbeat; the owner can still narrow it on the web. */
 val PHONE_CAPABILITIES = listOf("phone_apps", "sms", "calls", "messaging")
+/** Granted at registration; advertised on a heartbeat only while the accessibility service is actually on. */
+const val PHONE_UI = "phone_ui"
 
 /** Talks to Griffin's API with the owner's own sign-in. All calls block: run them off the main thread. */
 class ApiClient(private val store: SecretStore, private val prefs: android.content.SharedPreferences) {
@@ -123,17 +125,17 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
      * app's Devices page never shows the phone. The host token is kept in [SecretStore] and dropped if the owner
      * revokes the device, so the next beat registers a fresh one. Blocks: call it off the main thread.
      */
-    fun phoneHeartbeat() {
+    fun phoneHeartbeat(withPhoneUi: Boolean = false) {
         var hostToken = store.get("host_token")
         if (hostToken == null) {
             val body = JSONObject().put("name", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim()).put("kind", "phone")
-                .put("capabilities", JSONArray(PHONE_CAPABILITIES))
+                .put("capabilities", JSONArray(PHONE_CAPABILITIES + PHONE_UI))
             val reply = JSONObject(api("POST", "/api/v1/hosts", body)).let { it.optJSONObject("data") ?: it }
             hostToken = reply.getString("token")
             store.put("host_token", hostToken)
         }
         val (code, text) = call("POST", "$apiUrl/api/v1/host/heartbeat", mapOf("Authorization" to "Bearer $hostToken"),
-            JSONObject().put("capabilities", JSONArray(PHONE_CAPABILITIES)).put("version", BuildConfig.VERSION_NAME).toString())
+            JSONObject().put("capabilities", JSONArray(if (withPhoneUi) PHONE_CAPABILITIES + PHONE_UI else PHONE_CAPABILITIES)).put("version", BuildConfig.VERSION_NAME).toString())
         if (code == 401) store.put("host_token", null)
         if (code !in 200..299) throw ApiException(message(text, "Device heartbeat failed (HTTP $code)."), code)
     }
@@ -148,6 +150,53 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     /** Tells Griffin a person it is waiting on has answered. */
     fun reportReply(name: String, text: String) {
         api("POST", "/api/v1/outreach/replies", JSONObject().put("name", name).put("text", text.take(2000)))
+    }
+
+    // ---- the host protocol, as this phone (the host token, not the owner's sign-in) -----------------------------
+
+    private fun host(method: String, path: String, body: JSONObject? = null): Pair<Int, String> {
+        val token = store.get("host_token") ?: throw ApiException("This phone is not registered yet.", 401)
+        val r = call(method, "$apiUrl$path", mapOf("Authorization" to "Bearer $token"), body?.toString() ?: if (method == "POST") "{}" else null)
+        if (r.first == 401) store.put("host_token", null)
+        if (r.first !in 200..299) throw ApiException(message(r.second, "Griffin answered HTTP ${r.first}."), r.first)
+        return r
+    }
+
+    /** A claimed phone task: its id, the phone job's goal and the approvals the owner already granted. */
+    data class PhoneTask(val id: String, val goal: String, val approved: Set<String>)
+
+    /** Leases the next task for this phone, or null. Tasks that are not phone jobs are failed back, not run. */
+    fun claimPhoneTask(): PhoneTask? {
+        val (code, text) = host("POST", "/api/v1/host/claim")
+        if (code == 204 || text.isBlank()) return null
+        val root = JSONObject(text).let { it.optJSONObject("data") ?: it }
+        val task = root.optJSONObject("task") ?: return null
+        val id = task.getString("id")
+        val payload = task.optJSONObject("input_payload")
+        val goal = payload?.optJSONObject("phone")?.optString("goal").orEmpty()
+        val approved = root.optJSONArray("approved_actions")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+        if (goal.isEmpty()) { failTask(id, "This phone only runs phone jobs.", retryable = true); return null }
+        return PhoneTask(id, goal, approved)
+    }
+
+    fun renewLease(taskId: String) { host("POST", "/api/v1/host/tasks/$taskId/heartbeat") }
+    fun completeTask(taskId: String, response: String) { host("POST", "/api/v1/host/tasks/$taskId/complete", JSONObject().put("output", JSONObject().put("response", response))) }
+    fun failTask(taskId: String, reason: String, retryable: Boolean) { host("POST", "/api/v1/host/tasks/$taskId/fail", JSONObject().put("reason", reason.take(500)).put("retryable", retryable)) }
+    fun requestApproval(taskId: String, actionType: String, summary: String, payload: JSONObject) {
+        host("POST", "/api/v1/host/tasks/$taskId/approval", JSONObject().put("action_type", actionType).put("summary", summary.take(500)).put("risk_level", "HIGH").put("payload", payload))
+    }
+
+    /** Asks the server (which holds the model key) what to do next on this screen. */
+    fun deviceNext(goal: String, screen: com.griffin.assistant.core.PScreen, done: List<com.griffin.assistant.core.PStep>): com.griffin.assistant.core.PDecision {
+        val page = JSONObject().put("url", screen.app).put("title", screen.title).put("text", screen.text.take(4000))
+            .put("elements", JSONArray().apply { screen.elements.forEach { put(JSONObject().put("ref", it.ref).put("role", it.role).put("name", it.name).put("value", it.value)) } })
+        val (_, text) = host("POST", "/api/v1/host/device/next", JSONObject().put("goal", goal).put("page", page).put("done", com.griffin.assistant.core.PhoneScript.toJson(done)))
+        val d = JSONObject(text).let { it.optJSONObject("data") ?: it }
+        val step = d.optJSONObject("step")
+        return com.griffin.assistant.core.PDecision(
+            d.optBoolean("done"), d.optString("result"),
+            com.griffin.assistant.core.PStep(step?.optString("kind").orEmpty(), step?.optString("ref").orEmpty(), "", "", step?.optString("text").orEmpty(), step?.optString("url").orEmpty(), step?.optString("note").orEmpty(), step?.optBoolean("final") ?: false),
+        )
     }
 
     fun managerName(): String = JSONObject(api("GET", "/api/v1/settings/manager-name")).let { (it.optJSONObject("data") ?: it).optString("manager_name", "JJ") }

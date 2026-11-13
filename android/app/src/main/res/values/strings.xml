@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="access_desc">Lets Griffin use apps on this phone for you, one step at a time. It reads what is on the screen to decide what to tap, and it always asks you before anything is sent, posted or paid.</string>
+</resources>

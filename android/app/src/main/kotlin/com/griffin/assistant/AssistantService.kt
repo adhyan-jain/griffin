@@ -192,11 +192,12 @@ class AssistantService : Service() {
 
     /** Tells Griffin this phone is alive every 30 seconds, so it shows as a live device (it counts as live for 45). */
     private var beats = 0
+    private val phoneRunner by lazy { PhoneRunner(this, app.api) { app.dlog(it) } }
     private val deviceBeat: Runnable = object : Runnable {
         override fun run() {
             val refreshNames = beats++ % 10 == 0
             app.net.execute {
-                try { app.api.phoneHeartbeat() } catch (e: Exception) { app.dlog("device heartbeat: ${e.message}") }
+                try { app.api.phoneHeartbeat(withPhoneUi = GriffinAccess.ready); phoneRunner.tick() } catch (e: Exception) { app.dlog("device heartbeat: ${e.message}") }
                 if (refreshNames) try { app.replyWatch.update(app.api.awaitingNames()) } catch (_: Exception) {}
             }
             app.main.postDelayed(this, 30_000)
