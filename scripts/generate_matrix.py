@@ -1,3 +1,4 @@
+import argparse
 import os
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -210,9 +211,9 @@ col_widths = {
 for col, width in col_widths.items():
     ws.column_dimensions[get_column_letter(col)].width = width
 
-out_path_repo = "/home/adhyan/Desktop/griffin/griffin_feature_testing_matrix.xlsx"
-out_path_brain = "/home/adhyan/.gemini/antigravity-cli/brain/5f398a67-6d5f-4da1-ac2b-1a7f4465363f/griffin_feature_testing_matrix.xlsx"
+parser = argparse.ArgumentParser(description="Generate the Griffin feature testing matrix (.xlsx).")
+parser.add_argument("--out", required=True, help="Path to write the generated .xlsx file to.")
+args = parser.parse_args()
 
-wb.save(out_path_repo)
-wb.save(out_path_brain)
-print(f"Matrix successfully generated at:\n  - {out_path_repo}\n  - {out_path_brain}")
+wb.save(args.out)
+print(f"Matrix successfully generated at:\n  - {args.out}")

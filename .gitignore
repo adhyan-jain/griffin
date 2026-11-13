@@ -28,3 +28,7 @@ build/
 android/local.properties
 *.jks
 .griffin-host/
+
+# Generated testing matrix spreadsheets (regenerate with scripts/generate_matrix.py --out PATH)
+griffin_feature_testing_matrix.xlsx
+docs/griffin_feature_testing_matrix.xlsx
