@@ -32,7 +32,7 @@ Phone control is not on. Android blocks accessibility for sideloaded apps. The o
 - Verification on real Gmail/LinkedIn (needs `griffin-host browser-login`, `HOST_BROWSER=on`, `GEMINI_API_KEY`).
 
 ## Before publishing
-- AWS account ids, the EC2 instance id and the bucket name were removed from files AND rewritten out of git history; `infra/ops/*.sh` now REQUIRE `AWS_ACCOUNT_ID`, `INSTANCE_ID` and `BUCKET` from the environment. The API Gateway id (in the public API URL) and the Vercel URL still appear in scripts.
+- AWS account ids, the EC2 instance id and the bucket name were removed from files AND rewritten out of git history; `infra/ops/*.sh` now REQUIRE `AWS_ACCOUNT_ID`, `INSTANCE_ID` and `BUCKET` from the environment. The API Gateway id (in the public API URL) and the Vercel URL still appear in scripts. **One exposure remains on GitHub:** the read-only ref `refs/pull/1/head` (merged PR #1) still holds the OLD history with the account id, instance id and bucket name; git cannot overwrite it. The owner must ask GitHub Support to purge it ("Sensitive data removal"), or delete and recreate the repo from the clean `master`. History was rewritten on 2026-11-13 and force-pushed, so every commit hash changed; any other clone must be re-cloned.
 - Scan full git history for secrets (gitleaks/trufflehog); consider a fresh-history public repo.
 - **Rotate** the Supabase database password that was pasted into an earlier chat, and the Vercel OIDC token in `web/.env.local`. `.env copy` (untracked) may hold secrets: never commit it.
 - Audit dependency licences (GSAP). `scripts/generate_matrix.py` and the two `.xlsx` matrices contain personal paths/data.
