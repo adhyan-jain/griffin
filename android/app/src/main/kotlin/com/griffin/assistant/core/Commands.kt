@@ -22,6 +22,8 @@ sealed class Command {
     data class Alarm(val hour: Int, val minute: Int) : Command()
     data class Flashlight(val on: Boolean? = null) : Command()
     data class OpenApp(val name: String) : Command()
+    /** Open one chat in a chat app ('open WhatsApp chat with bhai'); the chat is opened, nothing is typed or sent. */
+    data class OpenChat(val who: String, val app: String) : Command()
     data class Volume(val up: Boolean) : Command()
     data class Mute(val mute: Boolean) : Command()
     object Battery : Command()
@@ -87,6 +89,31 @@ object Commands {
         // Reading and replying to chats (the apps' own notifications), and messaging in a named app.
         Regex("^(?:please )?(?:read|check)(?: out)?(?: me)?(?: my| the)?(?: new| unread)? (?:messages?|texts?|chats?|dms?|notifications?)(?: from (.+))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
         Regex("^(?:do i have |are there |any |have i got )(?:any )?(?:new |unread )?(?:messages?|texts?|dms?)(?: from (.+))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
+        // "what's the latest message I got from my bhai", "last message from bhai", "bhai ka last message", "bhai ne kya bheja"
+        Regex("^(?:please )?(?:what(?:'s| is|s)? |tell me |show me |read (?:me )?|give me )?(?:the |my )?(?:latest|last|newest|most recent|recent|new) (?:message|msg|text|dm)s?(?: (?:that )?(?:i|you) (?:got|received|have))?(?: from| of| by) (.+?)(?: (?:on|in) (?:whatsapp|instagram|insta|messenger|telegram|signal|sms))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(?:what|which)(?:'s| is|s)? (?:the )?(?:latest|last|newest|most recent) (?:message|msg|text) (?:i )?(?:got|received) from (.+)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(.+?) (?:ka|ke|ki) (?:latest|last|new) (?:message|msg|text)(?: (?:batao|bolo|padho|sunao|dikhao))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(.+?) ne (?:kya|kuch) (?:bheja|likha|bola|kaha|message kiya)(?: hai)?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(?:any|is there(?: a)?|did i get(?: a)?|have i got(?: a)?) (?:new |latest |recent )?(?:message|msg|text)s? from (.+)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+
+        // "open whatsapp chat with bhai", "open bhai's chat on whatsapp", "whatsapp pe bhai ki chat kholo"
+        Regex("^(?:please )?(?:open|show|go to|launch|start)(?: up)? (whatsapp|instagram|insta|messenger|telegram|signal|sms)(?: chat| chats| conversation| thread)?(?: with| of| for| from) (.+)$").find(s)?.let { m ->
+            val who = m.groupValues[2].removePrefix("my ").trim()
+            if (who.isNotEmpty() && who !in notAName) return Command.OpenChat(who, appName(m.groupValues[1])!!)
+        }
+        Regex("^(?:please )?(?:open|show|go to)(?: up)? (?:my )?(?:chat|conversation|thread) (?:with|of|from) (.+?) (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms)$").find(s)?.let { m ->
+            val who = m.groupValues[1].removePrefix("my ").trim()
+            if (who.isNotEmpty() && who !in notAName) return Command.OpenChat(who, appName(m.groupValues[2])!!)
+        }
+        Regex("^(?:please )?(?:open|show)(?: up)? ([a-z0-9' ]+?)'?s? (?:chat|conversation|thread) (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms)$").find(s)?.let { m ->
+            val who = m.groupValues[1].removePrefix("my ").trim()
+            if (who.isNotEmpty() && who !in notAName) return Command.OpenChat(who, appName(m.groupValues[2])!!)
+        }
+        Regex("^(whatsapp|instagram|insta|messenger|telegram|signal) (?:pe|par|mein|me) ([a-z0-9' ]+?) (?:ka|ki|ke) (?:chat|conversation) (?:kholo|dikhao|open karo|khol do)$").find(s)?.let { m ->
+            val who = m.groupValues[2].removePrefix("my ").trim()
+            if (who.isNotEmpty()) return Command.OpenChat(who, appName(m.groupValues[1])!!)
+        }
+
         Regex("^what did (.+?) (?:say|text|send|write)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
         Regex("^read (?:me )?(.+?)'?s? (?:messages?|texts?|chats?)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
         Regex("^(?:please )?reply(?: to (.+?))?(?: (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms))?(?: saying| with| that| say)?:? (.+)$").find(s)?.let { m ->

@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.griffin.assistant.core.AEvent
 import com.griffin.assistant.core.AState
+import com.griffin.assistant.core.Aliases
 import com.griffin.assistant.core.AssistantMachine
 import com.griffin.assistant.core.Chat
 import com.griffin.assistant.core.Command
@@ -98,6 +99,7 @@ class AssistantService : Service() {
         )
         listener.start()
         refreshName()
+        app.net.execute { try { if (app.api.signedIn) app.api.refreshAliases() } catch (_: Exception) {} }
         app.main.post(deviceBeat)
         if (BuildConfig.DEBUG) registerDebugReceiver()
         app.log("assistant started")
@@ -252,8 +254,12 @@ class AssistantService : Service() {
 
     // ---- what the owner asked ---------------------------------------------------------------------------------
 
-    private fun handle(request: String) {
-        when (val cmd = Commands.parse(request)) {
+    private fun handle(heard: String) {
+        // The owner's aliases ("mummy" means "mom") are understood by what the phone does itself. Anything it does not
+        // recognise goes to Griffin as said, and the server applies the aliases again.
+        val request = heard
+        val cmd0 = Commands.parse(Aliases.apply(heard, app.api.aliases()))
+        when (val cmd = cmd0) {
             is Command.Call -> placeCall(cmd.who)
             is Command.Text -> textOrReply(cmd.who, cmd.message)
             is Command.Timer -> say(actions.timer(cmd.seconds))
@@ -271,6 +277,7 @@ class AssistantService : Service() {
             Command.MediaPause -> say(actions.mediaPause())
             Command.MediaPlayPause -> say(actions.mediaPlayPause())
             is Command.OpenApp -> say(actions.openApp(cmd.name))
+            is Command.OpenChat -> openChat(cmd.who, cmd.app)
             Command.Ringtone -> say(actions.openRingtoneSettings())
             Command.Wallpaper -> say(actions.openWallpaperSettings())
             Command.DeveloperOptions -> say(actions.openDeveloperOptions())
@@ -322,6 +329,13 @@ class AssistantService : Service() {
         say(MessageBook.spoken(chats))
     }
 
+    /** Opens one chat (WhatsApp only for now) from the contact's number. Nothing is typed or sent. */
+    private fun openChat(who: String, appName: String) {
+        if (appName != "WhatsApp") { say(actions.openApp(appName) + " I can only jump straight into a chat on WhatsApp for now."); return }
+        val m = pickContact(who) ?: return
+        say(actions.openWhatsAppChat(m.number, m.name))
+    }
+
     private fun replyTo(who: String?, appSaid: String?, text: String) {
         if (!notificationAccess()) { say("I need access to your notifications to reply. Turn it on in the Griffin app."); return }
         val now = System.currentTimeMillis()
@@ -361,6 +375,7 @@ class AssistantService : Service() {
         app.net.execute {
             try {
                 val r = app.api.voiceTurn(request, past, unlocked)
+                if (request.contains("alias", ignoreCase = true)) try { app.api.refreshAliases() } catch (_: Exception) {}
                 name = r.managerName
                 app.main.post {
                     // Griffin asked for a yes before changing anything: wait for it with the animation showing.

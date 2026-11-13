@@ -207,6 +207,19 @@ class Actions(private val context: Context) {
         }
     }
 
+    /** Opens the WhatsApp chat for a contact number (10-digit Indian numbers get +91). Opens only; never sends. */
+    fun openWhatsAppChat(number: String, name: String): String {
+        val digits = number.filter { it.isDigit() }.let { if (it.length == 10) "91$it" else it.trimStart('0') }
+        if (digits.length < 8) return "I could not use the number saved for $name."
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://wa.me/$digits")).setPackage("com.whatsapp").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            "Opening your WhatsApp chat with $name."
+        } catch (e: Exception) {
+            "I could not open WhatsApp for $name. Is it installed, and is the screen on?"
+        }
+    }
+
     private fun launchIntent(intent: Intent, label: String): String = try {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         "Opening $label."

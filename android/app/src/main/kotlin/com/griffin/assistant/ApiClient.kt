@@ -215,6 +215,18 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     fun voiceConfirm(token: String, yes: Boolean, unlocked: Boolean): VoiceReply =
         parseVoiceReply(api("POST", "/api/v1/voice/turn", JSONObject().put("unlocked", unlocked).put("confirm", JSONObject().put("token", token).put("yes", yes))))
 
+    /** The owner's aliases, fetched from the server and kept so the phone understands them without a round trip. */
+    fun refreshAliases() {
+        val data = JSONObject(api("GET", "/api/v1/aliases", null)).let { it.optJSONObject("data") ?: it }
+        val m = data.optJSONObject("aliases") ?: JSONObject()
+        prefs.edit().putString("aliases", m.toString()).apply()
+    }
+
+    fun aliases(): Map<String, String> = try {
+        val m = JSONObject(prefs.getString("aliases", "{}") ?: "{}")
+        m.keys().asSequence().associateWith { m.getString(it) }
+    } catch (_: Exception) { emptyMap() }
+
     /** Sends real work to the manager with the conversation so far. */
     fun sendMessage(text: String, history: List<Pair<String, String>>) {
         api("POST", "/api/v1/jj/messages", JSONObject().put("message", text).put("history", historyJson(history)).put("idempotency_key", UUID.randomUUID().toString()))
