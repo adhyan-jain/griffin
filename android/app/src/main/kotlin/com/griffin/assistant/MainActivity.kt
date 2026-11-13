@@ -172,7 +172,17 @@ class MainActivity : Activity() {
         val ready = app.api.signedIn && all.all { it.done }
 
         // Header: the wake phrase is the product.
-        root.addView(label("Griffin", 15f, Ink.muted, true))
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(android.widget.ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_griffin_mark)
+                background = round(0xFF0B0C14.toInt(), 14, Ink.line)
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                setPadding(dp(1), dp(1), dp(1), dp(1))
+            }, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(label("Griffin", 17f, Ink.text, true).apply { setPadding(dp(12), 0, 0, 0) })
+        })
         root.addView(label("Say \"hey $name\" or \"oye bhosadike\"", 24f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
         root.addView(label(if (running) "Listening on this phone. Nothing is kept unless it starts with that." else "Not listening right now.", 14f, Ink.muted).apply { setPadding(0, dp(6), 0, 0) })
 
@@ -201,6 +211,14 @@ class MainActivity : Activity() {
             (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.topMargin = dp(10); it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it }
             visibility = if (running) View.GONE else View.VISIBLE
         })
+
+        // The floating ball needs the accessibility service, which the setup list below already asks for.
+        if (GriffinAccess.ready) {
+            val on = FloatingBall.enabled(this)
+            root.addView(small(if (on) "Hide the floating ball" else "Show the floating ball") { FloatingBall.setEnabled(this, !on); rebuild() }.apply {
+                (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.topMargin = dp(6); it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it }
+            })
+        }
 
         // Account.
         if (!app.api.signedIn) {

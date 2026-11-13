@@ -17,8 +17,16 @@ import com.griffin.assistant.core.PStep
  * in the phone's Accessibility settings.
  */
 class GriffinAccess : AccessibilityService(), PScreenDriver {
-    override fun onServiceConnected() { instance = this }
-    override fun onUnbind(intent: Intent?): Boolean { if (instance === this) instance = null; return super.onUnbind(intent) }
+    private var ball: FloatingBall? = null
+
+    override fun onServiceConnected() { instance = this; syncBall() }
+    override fun onUnbind(intent: Intent?): Boolean { ball?.hide(); ball = null; if (instance === this) instance = null; return super.onUnbind(intent) }
+
+    /** Shows or hides the floating ball to match the owner's setting. */
+    fun syncBall() {
+        val b = ball ?: FloatingBall(this).also { ball = it }
+        if (FloatingBall.enabled(this)) b.show() else b.hide()
+    }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
