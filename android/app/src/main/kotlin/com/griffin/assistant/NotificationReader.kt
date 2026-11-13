@@ -13,6 +13,8 @@ import com.griffin.assistant.core.ChatLine
  * Android only runs this after the owner turns on "Notification access" for Griffin in the phone's settings.
  */
 class NotificationReader : NotificationListenerService() {
+    private val app get() = application as GriffinApp
+
     override fun onListenerConnected() {
         runCatching { activeNotifications?.forEach(::ingest) }
     }
@@ -41,6 +43,10 @@ class NotificationReader : NotificationListenerService() {
 
         val reply = n.actions?.firstOrNull { a -> a.remoteInputs?.isNotEmpty() == true && (a.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY || a.semanticAction == Notification.Action.SEMANTIC_ACTION_NONE) }
         Inbox.remember(sbn.key, reply)
+        if (!group && app.replyWatch.matches(title)) {
+            val text = lines.last().text
+            app.net.execute { try { app.api.reportReply(title, text) } catch (_: Exception) {} }
+        }
         Inbox.book.put(Chat(sbn.key, sbn.packageName, appLabel(sbn.packageName), title, group, lines, reply != null), System.currentTimeMillis())
     }
 

@@ -138,6 +138,18 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         if (code !in 200..299) throw ApiException(message(text, "Device heartbeat failed (HTTP $code)."), code)
     }
 
+    /** Names of the people an outreach campaign is waiting to hear from (nothing else is ever sent about chats). */
+    fun awaitingNames(): List<String> {
+        val root = JSONObject(api("GET", "/api/v1/outreach/awaiting"))
+        val arr = root.optJSONArray("data") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name")?.takeIf { n -> n.isNotBlank() } }
+    }
+
+    /** Tells Griffin a person it is waiting on has answered. */
+    fun reportReply(name: String, text: String) {
+        api("POST", "/api/v1/outreach/replies", JSONObject().put("name", name).put("text", text.take(2000)))
+    }
+
     fun managerName(): String = JSONObject(api("GET", "/api/v1/settings/manager-name")).let { (it.optJSONObject("data") ?: it).optString("manager_name", "JJ") }
         .also { prefs.edit().putString("manager_name", it).apply() }
 

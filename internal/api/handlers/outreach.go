@@ -313,7 +313,24 @@ func (h *OutreachHandler) Next(w http.ResponseWriter, r *http.Request) {
 
 type replyRequest struct {
 	Handle string `json:"handle"`
-	Text   string `json:"text"`
+	// Name is used by a phone, whose notifications show a contact's name and not an address.
+	Name string `json:"name"`
+	Text string `json:"text"`
+}
+
+// Awaiting lists the people who have been messaged and not answered (names and addresses only).
+func (h *OutreachHandler) Awaiting(w http.ResponseWriter, r *http.Request) {
+	userID, _, err := h.actor(r)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	list, err := h.repo.AwaitingReply(r.Context(), userID)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, list)
 }
 
 // Reply records an answer seen in an inbox or a notification and moves the matching person to "replied".
@@ -324,11 +341,16 @@ func (h *OutreachHandler) Reply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req replyRequest
-	if err := decodeBody(r, &req); err != nil || strings.TrimSpace(req.Handle) == "" {
-		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("handle is required")))
+	if err := decodeBody(r, &req); err != nil || (strings.TrimSpace(req.Handle) == "" && strings.TrimSpace(req.Name) == "") {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("handle or name is required")))
 		return
 	}
-	t, err := h.repo.RecordReplyByHandle(r.Context(), userID, strings.TrimSpace(req.Handle), req.Text)
+	var t *domain.OutreachTarget
+	if strings.TrimSpace(req.Handle) != "" {
+		t, err = h.repo.RecordReplyByHandle(r.Context(), userID, strings.TrimSpace(req.Handle), req.Text)
+	} else {
+		t, err = h.repo.RecordReplyByName(r.Context(), userID, strings.TrimSpace(req.Name), req.Text)
+	}
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return

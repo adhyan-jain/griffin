@@ -11,6 +11,8 @@ class GriffinApp : Application() {
     lateinit var api: ApiClient
     lateinit var speaker: Speaker
     val net = Executors.newSingleThreadExecutor()
+    /** Who the owner is waiting to hear from; only their chat notifications are ever reported to Griffin. */
+    val replyWatch = com.griffin.assistant.core.ReplyWatch()
     val main = Handler(Looper.getMainLooper())
 
     private val lines = ArrayDeque<String>()

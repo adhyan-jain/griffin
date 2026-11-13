@@ -307,6 +307,7 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("GET /api/v1/outreach/campaigns/{id}/export.csv", userAuth(http.HandlerFunc(oh.Export)))
 		mux.Handle("PATCH /api/v1/outreach/targets/{id}", userAuth(http.HandlerFunc(oh.UpdateTarget)))
 		mux.Handle("POST /api/v1/outreach/replies", userAuth(http.HandlerFunc(oh.Reply)))
+		mux.Handle("GET /api/v1/outreach/awaiting", userAuth(http.HandlerFunc(oh.Awaiting)))
 		if hostSvc != nil {
 			ha := middleware.AuthenticateHost(hostSvc)
 			mux.Handle("GET /api/v1/host/outreach/campaigns", ha(http.HandlerFunc(oh.ListCampaigns)))
@@ -315,6 +316,7 @@ func NewServer(deps ServerDependencies) *Server {
 			mux.Handle("POST /api/v1/host/outreach/campaigns/{id}/next", ha(http.HandlerFunc(oh.Next)))
 			mux.Handle("PATCH /api/v1/host/outreach/targets/{id}", ha(http.HandlerFunc(oh.UpdateTarget)))
 			mux.Handle("POST /api/v1/host/outreach/replies", ha(http.HandlerFunc(oh.Reply)))
+			mux.Handle("GET /api/v1/host/outreach/awaiting", ha(http.HandlerFunc(oh.Awaiting)))
 		}
 	}
 

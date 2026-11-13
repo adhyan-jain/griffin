@@ -234,6 +234,44 @@ func (r *OutreachRepository) RecordReplyByHandle(ctx context.Context, userID uui
 	return t, err
 }
 
+// Awaiting is a person who has been messaged and has not answered.
+type Awaiting struct {
+	Name   string `json:"name"`
+	Handle string `json:"handle"`
+}
+
+// AwaitingReply lists the people the owner is waiting to hear from, so a phone can recognise their messages
+// without sending every notification it sees to the server.
+func (r *OutreachRepository) AwaitingReply(ctx context.Context, userID uuid.UUID) ([]Awaiting, error) {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT name, handle FROM outreach_targets WHERE user_id = $1 AND status IN ('sent','followup_due') LIMIT 1000`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Awaiting{}
+	for rows.Next() {
+		var a Awaiting
+		if err := rows.Scan(&a.Name, &a.Handle); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// RecordReplyByName is RecordReplyByHandle for a chat notification, which shows a contact's name and not their
+// address. It only matches when exactly one awaited person has that name, so it never guesses between two.
+func (r *OutreachRepository) RecordReplyByName(ctx context.Context, userID uuid.UUID, name, text string) (*domain.OutreachTarget, error) {
+	t, err := scanTarget(r.pool.QueryRow(ctx, `UPDATE outreach_targets SET status = 'replied', replied_at = NOW(), reply_text = $3, updated_at = NOW()
+		WHERE id = (SELECT id FROM outreach_targets WHERE user_id = $1 AND lower(name) = lower($2) AND status IN ('sent','followup_due'))
+		  AND (SELECT COUNT(*) FROM outreach_targets WHERE user_id = $1 AND lower(name) = lower($2) AND status IN ('sent','followup_due')) = 1
+		RETURNING `+targetCols, userID, name, text))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
 // SendClaim is the answer to "what should I send next?": a person to message now, or when to ask again.
 type SendClaim struct {
 	Target  *domain.OutreachTarget `json:"target,omitempty"`
