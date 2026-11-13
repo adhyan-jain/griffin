@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 
@@ -134,7 +135,7 @@ func (c *Chrome) Do(ctx context.Context, s domain.BrowserStep) error {
 		if s.Kind == domain.StepClick {
 			return c.run(ctx, chromedp.Click(sel, chromedp.ByQuery), chromedp.Sleep(900*time.Millisecond))
 		}
-		return c.run(ctx, chromedp.Click(sel, chromedp.ByQuery), chromedp.SendKeys(sel, s.Text, chromedp.ByQuery))
+		return c.typeText(ctx, sel, s.Text)
 	case domain.StepPress:
 		key, ok := keyNames[strings.ToLower(s.Text)]
 		if !ok {
@@ -147,6 +148,35 @@ func (c *Chrome) Do(ctx context.Context, s domain.BrowserStep) error {
 		return c.run(ctx, chromedp.Sleep(1500*time.Millisecond))
 	}
 	return fmt.Errorf("unknown step %q", s.Kind)
+}
+
+// typeText clicks the field and types text into it. chromedp turns "\n" and "\r" into an Enter press, which
+// submits a chat box or compose form before the owner has approved anything, so each line is typed on its own and
+// Shift+Enter (a soft line break) joins them. A single-line <input> cannot hold a line break, so text with one is
+// refused rather than typed.
+func (c *Chrome) typeText(ctx context.Context, sel, text string) error {
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	lines := strings.Split(text, "\n")
+	if len(lines) > 1 {
+		var singleLine bool
+		check := fmt.Sprintf(`document.querySelector(%q).tagName === 'INPUT'`, sel)
+		if err := c.run(ctx, chromedp.Evaluate(check, &singleLine)); err != nil {
+			return err
+		}
+		if singleLine {
+			return fmt.Errorf("this field takes one line, so text with a line break cannot be typed into it")
+		}
+	}
+	actions := []chromedp.Action{chromedp.Click(sel, chromedp.ByQuery)}
+	for i, line := range lines {
+		if i > 0 {
+			actions = append(actions, chromedp.KeyEvent(kb.Enter, chromedp.KeyModifiers(input.ModifierShift)))
+		}
+		if line != "" {
+			actions = append(actions, chromedp.SendKeys(sel, line, chromedp.ByQuery))
+		}
+	}
+	return c.run(ctx, actions...)
 }
 
 var keyNames = map[string]string{

@@ -73,3 +73,60 @@ func TestChromeStagesThenReplaysExactly(t *testing.T) {
 		t.Fatal("clicking an element that does not match what was approved must fail")
 	}
 }
+
+// A line break typed into a message box must never submit it: chromedp would turn a bare "\n" into an Enter press.
+func TestChromeTypingANewlineNeverSubmits(t *testing.T) {
+	if _, err := whatsapp.FindBrowser(""); err != nil {
+		t.Skip("no Chrome or Chromium on this machine")
+	}
+	const page = `<!doctype html><title>Compose</title><body>
+<textarea aria-label="Message"></textarea>
+<input type="text" aria-label="Subject">
+<script>
+document.querySelector('textarea').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { document.title = 'Sent'; e.preventDefault(); }
+});
+</script>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(page)) }))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	ch, err := NewChrome(ctx, ChromeConfig{ProfileDir: t.TempDir(), NoSandbox: os.Getenv("CI") != "" || os.Geteuid() == 0})
+	if err != nil {
+		t.Skipf("cannot start the browser here: %v", err)
+	}
+	defer ch.Close()
+
+	if err := ch.Do(ctx, domain.BrowserStep{Kind: domain.StepGoto, URL: srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Do(ctx, domain.BrowserStep{Kind: domain.StepType, Ref: "1", Text: "line one\r\nline two"}); err != nil {
+		t.Fatal(err)
+	}
+	page1, err := ch.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page1.Title == "Sent" {
+		t.Fatal("typing a line break pressed Enter and submitted the message")
+	}
+	var value string
+	for _, e := range page1.Elements {
+		if e.Name == "Message" {
+			value = e.Value
+		}
+	}
+	if value != "line one\nline two" {
+		t.Fatalf("the message should hold both lines on separate lines, got %q", value)
+	}
+
+	// A one-line input cannot hold a line break: refuse instead of typing.
+	if err := ch.Do(ctx, domain.BrowserStep{Kind: domain.StepType, Ref: "2", Text: "a\nb"}); err == nil {
+		t.Fatal("multi-line text into a single-line input must be refused")
+	}
+	// Single-line text still types normally.
+	if err := ch.Do(ctx, domain.BrowserStep{Kind: domain.StepType, Ref: "2", Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+}
