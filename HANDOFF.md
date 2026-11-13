@@ -25,8 +25,8 @@ Test status at last run: Go `./internal/...` all pass; web 182 pass; Android all
 Phone control is not on. Android blocks accessibility for sideloaded apps. The owner must: Settings > Apps > Griffin > three dots > **Allow restricted settings** (Android treats this as the user's own decision; an attempt to set it over adb was refused by the permission system and must not be worked around), then Settings > Accessibility > **Griffin phone control** > on, then on the web Devices page grant the phone "Use any app on the phone". After that, give it one harmless job ("on my phone, open Notes") and watch `adb logcat` / screenshots. The phone is attached over USB debugging (adb at `~/Android/Sdk/platform-tools/adb`, device `e47a0795`, the installed app is a debug build so `adb install -r` keeps sign-in).
 
 ## Not built yet
-- Onboarding wizard in the web app (sign in, add devices, grant permissions, connect the browser profile).
-- Dockerfiles for the server and web app (only the database is in `compose.yaml`).
+- (Done) Onboarding: `/welcome` "Get started" checklist (`web/src/app/welcome/page.tsx`) ticks itself from real state.
+- (Done, partly verified) `Dockerfile` (server image builds) and `web/Dockerfile` (written, **not built**). `compose.yaml` still runs only the database; add the app services if wanted.
 - Laptop-side reply polling (a browser job that checks Gmail/LinkedIn inboxes and posts to `/outreach/replies`). The endpoint and the manual "Replied" button exist.
 - Splitting one chat request ("cold mail 30 founders") into a researcher and a sender over a campaign. Today it becomes one browser job.
 - Verification on real Gmail/LinkedIn (needs `griffin-host browser-login`, `HOST_BROWSER=on`, `GEMINI_API_KEY`).
@@ -45,5 +45,5 @@ Phone control is not on. Android blocks accessibility for sideloaded apps. The o
 - Local run: `make setup` then `make run` and `cd web && npm run dev`.
 
 ## Repo state
-- Default branch `master`; all other local branches are already merged into it (`git branch --no-merged master` is empty). Many old branches and `.claude/worktrees/*` remain; deleting them is the owner's call.
+- Default branch `master`. All old local branches and `.claude/worktrees/*` were merged and have been deleted. Matching branches still exist on `origin` (feat/hands-whatsapp, feat/host-protocol-m2, fix/jj-incident, fix/frontend-polling, feat/web-mvp-ui, feat/backend-contract-hardening, hotfix/cors-canonical-origin, wip/web-ui-redesign); deleting remote branches is the owner's call.
 - Commits must show only the owner as author (no Co-Authored-By trailers).

@@ -1,0 +1,9 @@
+.git
+bin/
+build/
+.env*
+!.env.example
+web/node_modules
+web/.next
+android/
+.claude/
