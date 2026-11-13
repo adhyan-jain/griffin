@@ -88,3 +88,13 @@ Migrations apply on server start and in the test suite; `make migrate` applies t
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
+
+## Third-party licences
+
+Griffin's own code is MIT (see [`LICENSE`](./LICENSE)).
+
+The web app uses GSAP (`gsap` and `@gsap/react`, including the SplitText and ScrollTrigger plugins) for animation. GSAP is free to use but is distributed under its own Standard "no charge" licence ([gsap.com/standard-license](https://gsap.com/standard-license)), not MIT. Anyone forking Griffin must follow that licence.
+
+Other dependencies keep their own licences. Most production web dependencies are MIT, with some Apache-2.0, ISC, BSD-3-Clause and Zlib. Two packages that Next.js pulls in are not permissive: `@img/sharp-libvips` (LGPL-3.0-or-later) and `caniuse-lite` (CC-BY-4.0).
+
+Go modules (see `go.mod`) keep their own licences.
