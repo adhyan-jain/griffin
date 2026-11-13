@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/griffin/core/internal/hands/browser"
 	"github.com/griffin/core/internal/notify"
 	"github.com/griffin/core/internal/provider/gemini"
 	"log/slog"
@@ -377,6 +378,7 @@ func main() {
 			ProfileRepo:     profileRepo,
 			OutreachRepo:    outreachRepo,
 			OutreachDrafter: outreachDrafter(cfg),
+			DeviceDecider:   deviceDecider(cfg),
 			VoiceBrain:      voiceBrain(cfg),
 			InstanceMgr:     instanceMgr,
 			UserTx:          userTx,
@@ -457,4 +459,12 @@ func outreachDrafter(cfg *config.Config) *service.OutreachDrafter {
 		return nil
 	}
 	return &service.OutreachDrafter{Model: &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 500}}
+}
+
+// deviceDecider chooses phone screen steps with the server's Gemini key, so the key never reaches the phone.
+func deviceDecider(cfg *config.Config) browser.Decider {
+	if cfg.GeminiAPIKey == "" {
+		return nil
+	}
+	return &browser.ModelDecider{Phone: true, Model: &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 700}}
 }

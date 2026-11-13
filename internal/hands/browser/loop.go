@@ -31,6 +31,9 @@ type Page struct {
 	Elements []Element `json:"elements"`
 }
 
+// Find returns the element with this ref, or nil.
+func (p *Page) Find(ref string) *Element { return p.find(ref) }
+
 func (p *Page) find(ref string) *Element {
 	for i := range p.Elements {
 		if p.Elements[i].Ref == ref {

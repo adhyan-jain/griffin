@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/hands/browser"
 	"log/slog"
 	"net/http"
 	"time"
@@ -41,6 +42,8 @@ type ServerDependencies struct {
 	HostRepo repository.HostRepository
 	// PolicyRepo stores the owner's permission policy; used with HostRepo.
 	PolicyRepo repository.PolicyRepository
+	// DeviceDecider chooses the next screen step for a phone; nil means phone device-use is unavailable.
+	DeviceDecider browser.Decider
 	// OutreachDrafter writes first drafts for people found by a campaign; nil means drafting is unavailable.
 	OutreachDrafter *service.OutreachDrafter
 	// OutreachRepo enables campaigns and their people (cold mail, applications); nil leaves the routes off.
@@ -287,6 +290,9 @@ func NewServer(deps ServerDependencies) *Server {
 			mux.Handle("POST /api/v1/host/vault", hostAuth(http.HandlerFunc(vaultHandler.Add)))
 			mux.Handle("GET /api/v1/host/vault/misses", hostAuth(http.HandlerFunc(vaultHandler.ListMisses)))
 			mux.Handle("DELETE /api/v1/host/vault/misses/{id}", hostAuth(http.HandlerFunc(vaultHandler.ResolveMiss)))
+		}
+		if deps.DeviceDecider != nil {
+			mux.Handle("POST /api/v1/host/device/next", hostAuth(http.HandlerFunc(handlers.NewDeviceHandler(deps.DeviceDecider).Next)))
 		}
 		mux.Handle("POST /api/v1/host/heartbeat", hostAuth(http.HandlerFunc(hostHandler.Heartbeat)))
 		mux.Handle("POST /api/v1/host/claim", hostAuth(http.HandlerFunc(hostHandler.Claim)))

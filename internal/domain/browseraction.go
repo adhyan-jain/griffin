@@ -38,6 +38,9 @@ const (
 	StepPress  BrowserStepKind = "press"
 	StepScroll BrowserStepKind = "scroll"
 	StepWait   BrowserStepKind = "wait"
+	// StepOpen opens an app on the phone (Text is its name or package). StepBack presses Back.
+	StepOpen BrowserStepKind = "open"
+	StepBack BrowserStepKind = "back"
 )
 
 // BrowserStep is one recorded action. Ref names an element in the page snapshot the agent was shown.
@@ -134,7 +137,11 @@ func ValidateScript(steps []BrowserStep) error {
 			if s.Text == "" || len(s.Text) > 32 {
 				return fmt.Errorf("%w: press needs a key name", ErrValidation)
 			}
-		case StepScroll, StepWait:
+		case StepOpen:
+			if s.Text == "" || len(s.Text) > 100 {
+				return fmt.Errorf("%w: open needs an app name", ErrValidation)
+			}
+		case StepScroll, StepWait, StepBack:
 		default:
 			return fmt.Errorf("%w: unknown step %q", ErrValidation, s.Kind)
 		}
@@ -177,4 +184,47 @@ func ValidateBrowser(payload json.RawMessage) error {
 		}
 	}
 	return fmt.Errorf("%w: a step with a browser job must require the %q capability", ErrValidation, HostCapBrowser)
+}
+
+// PhoneKey is where a step's phone job lives inside input_payload. A phone job has the same shape as a browser
+// job (a goal, worked one step at a time, stopping before anything is sent) but runs on the phone's screen.
+const PhoneKey = "phone"
+
+// ParsePhoneAction reads and validates the phone job in a payload, or returns (nil, nil) when it has none.
+func ParsePhoneAction(payload json.RawMessage) (*BrowserAction, error) {
+	var v map[string]json.RawMessage
+	if len(payload) == 0 || json.Unmarshal(payload, &v) != nil {
+		return nil, nil
+	}
+	raw, ok := v[PhoneKey]
+	if !ok || string(raw) == "null" {
+		return nil, nil
+	}
+	var b BrowserAction
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return nil, fmt.Errorf("%w: input_payload.phone is not a valid job", ErrValidation)
+	}
+	b.StartURL = ""
+	if err := b.Validate(); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// ValidatePhone checks a task payload at creation: a phone job must be valid and require the phone_ui capability.
+func ValidatePhone(payload json.RawMessage) error {
+	b, err := ParsePhoneAction(payload)
+	if err != nil || b == nil {
+		return err
+	}
+	caps, err := parseRequires(payload)
+	if err != nil {
+		return err
+	}
+	for _, c := range caps {
+		if c == HostCapPhoneUI {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: a step with a phone job must require the %q capability", ErrValidation, HostCapPhoneUI)
 }

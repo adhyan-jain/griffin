@@ -16,3 +16,16 @@ func TestWantsBrowserIsNarrow(t *testing.T) {
 		}
 	}
 }
+
+func TestWantsPhoneIsNarrow(t *testing.T) {
+	for _, s := range []string{"on my phone, open Notes and add milk", "using my phone set a reminder in the Clock app"} {
+		if !wantsPhone(s) {
+			t.Errorf("should use the phone: %q", s)
+		}
+	}
+	for _, s := range []string{"what phone should I buy", "build a phone app", "write my phone number on the form"} {
+		if wantsPhone(s) {
+			t.Errorf("should not use the phone: %q", s)
+		}
+	}
+}

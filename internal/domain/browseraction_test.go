@@ -70,3 +70,19 @@ func TestValidateBrowserRequiresTheCapability(t *testing.T) {
 		t.Fatal("other payloads are not our concern")
 	}
 }
+
+func TestPhoneJobNeedsItsCapabilityAndRefusesAURL(t *testing.T) {
+	if err := ValidatePhone(json.RawMessage(`{"requires":["phone_ui"],"phone":{"goal":"add milk to Notes"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if ValidatePhone(json.RawMessage(`{"phone":{"goal":"x"}}`)) == nil {
+		t.Fatal("capability required")
+	}
+	b, _ := ParsePhoneAction(json.RawMessage(`{"requires":["phone_ui"],"phone":{"goal":"x","start_url":"file:///etc"}}`))
+	if b == nil || b.StartURL != "" {
+		t.Fatal("a phone job has no start URL")
+	}
+	if err := ValidateScript([]BrowserStep{{Kind: StepOpen, Text: "Notes"}, {Kind: StepBack}}); err != nil {
+		t.Fatal(err)
+	}
+}

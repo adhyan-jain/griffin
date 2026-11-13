@@ -36,6 +36,9 @@ const (
 	HostCapWeb = "web"
 	// HostCapDesktop is headless desktop app launching, media control, and OS environment awareness.
 	HostCapDesktop = "desktop"
+	// HostCapPhoneUI is operating any app on the phone through its screen (an accessibility service), one step
+	// at a time, stopping before anything is sent. It is the phone's counterpart of the browser capability.
+	HostCapPhoneUI = "phone_ui"
 )
 
 // AllHostCapabilities is the set of recognized host capabilities.
@@ -50,6 +53,7 @@ var AllHostCapabilities = map[string]bool{
 	HostCapMessaging: true,
 	HostCapWeb:       true,
 	HostCapDesktop:   true,
+	HostCapPhoneUI:   true,
 }
 
 const (

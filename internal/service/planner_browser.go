@@ -35,3 +35,27 @@ func browserSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.Pla
 		ManagerDomain: "personal_ops", InputPayload: b, Priority: req.Priority,
 	}}, nil
 }
+
+var phoneJob = regexp.MustCompile(`(?i)\b(on|from|using|with) my phone\b|\bon the phone\b|\bin the (\w+ ){0,2}app on my phone\b`)
+
+// wantsPhone is true when the owner asks for something to be done on their phone's screen. WhatsApp and Instagram
+// have their own, earlier routes; this is for every other app.
+func wantsPhone(text string) bool {
+	if buildingVerb.MatchString(strings.ToLower(text)) {
+		return false
+	}
+	return phoneJob.MatchString(text)
+}
+
+// phoneSteps plans one phone step: the phone works the goal on its screen, stops before anything is sent, and
+// the owner approves the exact steps.
+func phoneSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency) {
+	b, _ := json.Marshal(map[string]any{
+		"requires": []string{domain.HostCapPhoneUI},
+		"phone":    domain.BrowserAction{Goal: req.RequestText},
+	})
+	return []domain.ChildTaskPlan{{
+		Key: "phone_job", Title: truncateString("Phone: "+req.RequestText, 60), Goal: req.RequestText,
+		ManagerDomain: "personal_ops", InputPayload: b, Priority: req.Priority,
+	}}, nil
+}
