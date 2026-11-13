@@ -18,63 +18,63 @@ func TestParseTaskCommand(t *testing.T) {
 		in   string
 		want TaskCommand
 	}{
-		{"list my tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"show my tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"what are my tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"what's running", TaskCommand{CmdListTasks, "active", ""}},
-		{"list my failed tasks", TaskCommand{CmdListTasks, "failed", ""}},
-		{"show finished tasks", TaskCommand{CmdListTasks, "done", ""}},
-		{"any failed tasks", TaskCommand{CmdListTasks, "failed", ""}},
-		{"delete finished tasks", TaskCommand{CmdDeleteTasks, "done", ""}},
-		{"clear completed tasks", TaskCommand{CmdDeleteTasks, "done", ""}},
-		{"remove all failed tasks", TaskCommand{CmdDeleteTasks, "failed", ""}},
-		{"delete old tasks", TaskCommand{CmdDeleteTasks, "old", ""}},
-		{"delete the cover letter task", TaskCommand{CmdDeleteTasks, "", "cover letter"}},
-		{"cancel the laptop research", TaskCommand{CmdCancelTasks, "", "laptop research"}},
-		{"cancel everything", TaskCommand{CmdCancelTasks, "active", ""}},
-		{"cancel all running tasks", TaskCommand{CmdCancelTasks, "active", ""}},
-		{"any approvals", TaskCommand{CmdListApprovals, "", ""}},
-		{"what needs my approval", TaskCommand{CmdListApprovals, "", ""}},
-		{"approve it", TaskCommand{CmdApprove, "", ""}},
-		{"approve the message to bro", TaskCommand{CmdApprove, "", "message to bro"}},
-		{"are there any open tasks", TaskCommand{CmdListTasks, "active", ""}},
-		{"any open tasks", TaskCommand{CmdListTasks, "active", ""}},
-		{"open tasks", TaskCommand{CmdListTasks, "active", ""}},
-		{"list open tasks", TaskCommand{CmdListTasks, "active", ""}},
-		{"what is open", TaskCommand{CmdListTasks, "active", ""}},
-		{"reject that", TaskCommand{CmdReject, "", ""}},
-		{"decline the email", TaskCommand{CmdReject, "", "email"}},
-		{"give me the list of tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"give me the list of task", TaskCommand{CmdListTasks, "all", ""}},
-		{"the list of tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"the list of task", TaskCommand{CmdListTasks, "all", ""}},
-		{"list of tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"list of task", TaskCommand{CmdListTasks, "all", ""}},
-		{"what is the list of tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"what is the list of task", TaskCommand{CmdListTasks, "all", ""}},
-		{"what are the tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"what tasks are running", TaskCommand{CmdListTasks, "active", ""}},
-		{"fetch my tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"fetch tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"check my tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"how are my tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"show my task", TaskCommand{CmdListTasks, "all", ""}},
-		{"task list", TaskCommand{CmdListTasks, "all", ""}},
-		{"tasks list", TaskCommand{CmdListTasks, "all", ""}},
-		{"my tasks", TaskCommand{CmdListTasks, "all", ""}},
-		{"tasks batao", TaskCommand{CmdListTasks, "all", ""}},
-		{"task batao", TaskCommand{CmdListTasks, "all", ""}},
-		{"mere tasks kya hai", TaskCommand{CmdListTasks, "all", ""}},
-		{"mere task batao", TaskCommand{CmdListTasks, "all", ""}},
-		{"task kya hai", TaskCommand{CmdListTasks, "all", ""}},
-		{"kya tasks chal rahe hai", TaskCommand{CmdListTasks, "active", ""}},
-		{"list approvals", TaskCommand{CmdListApprovals, "", ""}},
-		{"show approvals", TaskCommand{CmdListApprovals, "", ""}},
-		{"are there any approvals", TaskCommand{CmdListApprovals, "", ""}},
-		{"approvals batao", TaskCommand{CmdListApprovals, "", ""}},
-		{"approve karo", TaskCommand{CmdApprove, "", ""}},
-		{"approve task", TaskCommand{CmdApprove, "", ""}},
-		{"reject karo", TaskCommand{CmdReject, "", ""}},
+		{"list my tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"show my tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"what are my tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"what's running", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"list my failed tasks", TaskCommand{CmdListTasks, "failed", "", ""}},
+		{"show finished tasks", TaskCommand{CmdListTasks, "done", "", ""}},
+		{"any failed tasks", TaskCommand{CmdListTasks, "failed", "", ""}},
+		{"delete finished tasks", TaskCommand{CmdDeleteTasks, "done", "", ""}},
+		{"clear completed tasks", TaskCommand{CmdDeleteTasks, "done", "", ""}},
+		{"remove all failed tasks", TaskCommand{CmdDeleteTasks, "failed", "", ""}},
+		{"delete old tasks", TaskCommand{CmdDeleteTasks, "old", "", ""}},
+		{"delete the cover letter task", TaskCommand{CmdDeleteTasks, "", "cover letter", ""}},
+		{"cancel the laptop research", TaskCommand{CmdCancelTasks, "", "laptop research", ""}},
+		{"cancel everything", TaskCommand{CmdCancelTasks, "active", "", ""}},
+		{"cancel all running tasks", TaskCommand{CmdCancelTasks, "active", "", ""}},
+		{"any approvals", TaskCommand{CmdListApprovals, "", "", ""}},
+		{"what needs my approval", TaskCommand{CmdListApprovals, "", "", ""}},
+		{"approve it", TaskCommand{CmdApprove, "", "", ""}},
+		{"approve the message to bro", TaskCommand{CmdApprove, "", "message to bro", ""}},
+		{"are there any open tasks", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"any open tasks", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"open tasks", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"list open tasks", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"what is open", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"reject that", TaskCommand{CmdReject, "", "", ""}},
+		{"decline the email", TaskCommand{CmdReject, "", "email", ""}},
+		{"give me the list of tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"give me the list of task", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"the list of tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"the list of task", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"list of tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"list of task", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"what is the list of tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"what is the list of task", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"what are the tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"what tasks are running", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"fetch my tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"fetch tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"check my tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"how are my tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"show my task", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"task list", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"tasks list", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"my tasks", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"tasks batao", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"task batao", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"mere tasks kya hai", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"mere task batao", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"task kya hai", TaskCommand{CmdListTasks, "all", "", ""}},
+		{"kya tasks chal rahe hai", TaskCommand{CmdListTasks, "active", "", ""}},
+		{"list approvals", TaskCommand{CmdListApprovals, "", "", ""}},
+		{"show approvals", TaskCommand{CmdListApprovals, "", "", ""}},
+		{"are there any approvals", TaskCommand{CmdListApprovals, "", "", ""}},
+		{"approvals batao", TaskCommand{CmdListApprovals, "", "", ""}},
+		{"approve karo", TaskCommand{CmdApprove, "", "", ""}},
+		{"approve task", TaskCommand{CmdApprove, "", "", ""}},
+		{"reject karo", TaskCommand{CmdReject, "", "", ""}},
 	}
 	for _, c := range cases {
 		if got := ParseTaskCommand(c.in); got != c.want {
@@ -369,5 +369,75 @@ func TestSteerTaskByVoice(t *testing.T) {
 	}
 	if res3.Draft != "Dear Boss, I will be on leave tomorrow." {
 		t.Errorf("expected Draft set, got: %q", res3.Draft)
+	}
+}
+
+func TestTaskListQuestionsWithATrailingStateAreListingsNotNewWork(t *testing.T) {
+	yes := map[string]string{
+		"give me the list of task that I still open":    "active",
+		"give me the list of tasks that are still open": "active",
+		"what tasks do I still have open":               "active",
+		"which tasks are still pending":                 "active",
+		"list all the tasks that are still running":     "active",
+		"which tasks have I completed":                  "done",
+		"how many tasks failed":                         "failed",
+	}
+	for in, scope := range yes {
+		c := ParseTaskCommand(in)
+		if c.Kind != CmdListTasks || c.Scope != scope {
+			t.Errorf("%q => %q/%q, want list_tasks/%q", in, c.Kind, c.Scope, scope)
+		}
+	}
+	for _, in := range []string{
+		"create a task to finish the open source report",
+		"write a long essay about which tasks are best for a team so I can read it tonight before the meeting starts",
+		"what is a task",
+		"cancel the open tasks",
+	} {
+		if c := ParseTaskCommand(in); c.Kind == CmdListTasks {
+			t.Errorf("%q must not be a task listing", in)
+		}
+	}
+}
+
+type fakeAliases struct{ m map[string]string }
+
+func (f *fakeAliases) List(context.Context, uuid.UUID) (map[string]string, error) { return f.m, nil }
+func (f *fakeAliases) Put(_ context.Context, _ uuid.UUID, a, t string) error      { f.m[a] = t; return nil }
+func (f *fakeAliases) Delete(_ context.Context, _ uuid.UUID, a string) (bool, error) {
+	_, ok := f.m[a]
+	delete(f.m, a)
+	return ok, nil
+}
+
+func TestAliasesByVoice(t *testing.T) {
+	c := ParseTaskCommand("make an alias of mummy for mom")
+	if c.Kind != CmdAddAlias || c.Ref != "mummy" || c.Target != "mom" {
+		t.Fatalf("parsed %+v", c)
+	}
+	if c := ParseTaskCommand("add alias bade bhai as rohan sharma"); c.Kind != CmdAddAlias || c.Ref != "bade bhai" || c.Target != "rohan sharma" {
+		t.Fatalf("parsed %+v", c)
+	}
+	f := &fakeAliases{m: map[string]string{}}
+	v := &VoiceCommands{Aliases: f}
+	u := uuid.New()
+	if r, err := v.Run(context.Background(), u, c, false); err != nil || !strings.Contains(r.Reply, "mummy") || f.m["mummy"] != "mom" {
+		t.Fatalf("add: %+v %v %v", r, err, f.m)
+	}
+	if got := v.Expand(context.Background(), u, "call mummy"); got != "call mom" {
+		t.Errorf("expand: %q", got)
+	}
+	if got := v.Expand(context.Background(), u, "make an alias of mummy for mom"); got != "make an alias of mummy for mom" {
+		t.Errorf("an alias command must not be rewritten: %q", got)
+	}
+	if r, _ := v.Run(context.Background(), u, ParseTaskCommand("list my aliases"), false); !strings.Contains(r.Reply, "mummy means mom") {
+		t.Errorf("list: %q", r.Reply)
+	}
+	if r, _ := v.Run(context.Background(), u, ParseTaskCommand("remove alias mummy"), false); !strings.Contains(r.Reply, "Removed") || len(f.m) != 0 {
+		t.Errorf("remove: %q %v", r.Reply, f.m)
+	}
+	var none *VoiceCommands
+	if none.Expand(context.Background(), u, "x") != "x" {
+		t.Error("nil commands must pass text through")
 	}
 }

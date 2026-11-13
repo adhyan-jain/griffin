@@ -126,6 +126,7 @@ func main() {
 	hostRepo := repository.NewPostgresHostRepository(repoDB)
 	policyRepo := repository.NewPostgresPolicyRepository(repoDB)
 	profileRepo := repository.NewPostgresProfileRepository(repoDB)
+	aliasRepo := repository.NewPostgresAliasRepository(repoDB)
 	outreachRepo := repository.NewOutreachRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
@@ -376,6 +377,7 @@ func main() {
 			HostRepo:        hostRepo,
 			PolicyRepo:      policyRepo,
 			ProfileRepo:     profileRepo,
+			AliasRepo:       aliasRepo,
 			OutreachRepo:    outreachRepo,
 			OutreachDrafter: outreachDrafter(cfg),
 			DeviceDecider:   deviceDecider(cfg),

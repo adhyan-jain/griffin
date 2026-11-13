@@ -48,6 +48,8 @@ type ServerDependencies struct {
 	OutreachDrafter *service.OutreachDrafter
 	// OutreachRepo enables campaigns and their people (cold mail, applications); nil leaves the routes off.
 	OutreachRepo *repository.OutreachRepository
+	// AliasRepo stores the owner's aliases ("mummy" means "mom"); nil leaves aliases off.
+	AliasRepo repository.AliasRepository
 	// ProfileRepo holds the owner's settings (the manager's name).
 	ProfileRepo repository.ProfileRepository
 	// VoiceBrain is the fast model for voice chat; nil means every voice turn hands off to the worker.
@@ -201,7 +203,7 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	var voiceCmds *service.VoiceCommands
 	if deps.Engine != nil && deps.ApprovalRepo != nil {
-		voiceCmds = &service.VoiceCommands{Tasks: deps.Engine, Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine}, Secret: []byte(deps.Config.SupabaseJWTSecret)}
+		voiceCmds = &service.VoiceCommands{Tasks: deps.Engine, Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine}, Secret: []byte(deps.Config.SupabaseJWTSecret), Aliases: deps.AliasRepo}
 	}
 
 	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero).
@@ -276,6 +278,13 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("GET /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.ListHosts)))
 		mux.Handle("PATCH /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.UpdateHost)))
 		mux.Handle("DELETE /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.RevokeHost)))
+
+		if deps.AliasRepo != nil {
+			aliasHandler := handlers.NewAliasesHandler(deps.AliasRepo)
+			mux.Handle("GET /api/v1/aliases", userAuth(http.HandlerFunc(aliasHandler.List)))
+			mux.Handle("PUT /api/v1/aliases", userAuth(http.HandlerFunc(aliasHandler.Put)))
+			mux.Handle("DELETE /api/v1/aliases/{alias}", userAuth(http.HandlerFunc(aliasHandler.Delete)))
+		}
 
 		if policySvc != nil {
 			permHandler := handlers.NewPermissionsHandler(policySvc)

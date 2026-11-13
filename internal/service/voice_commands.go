@@ -37,6 +37,9 @@ const (
 	CmdApprove       TaskCommandKind = "approve"
 	CmdReject        TaskCommandKind = "reject"
 	CmdSteerTask     TaskCommandKind = "steer_task"
+	CmdAddAlias      TaskCommandKind = "add_alias"
+	CmdRemoveAlias   TaskCommandKind = "remove_alias"
+	CmdListAliases   TaskCommandKind = "list_aliases"
 )
 
 // TaskCommand is a parsed request. Scope is "all", "active", "done" or "failed" (or "old" for delete); Ref is the
@@ -45,19 +48,30 @@ type TaskCommand struct {
 	Kind  TaskCommandKind
 	Scope string
 	Ref   string
+	// Target is what an alias stands for (CmdAddAlias): Ref is the alias, Target is the name it means.
+	Target string
 }
 
 var (
 	reList          = regexp.MustCompile(`^(?:please )?(?:(?:give me|get me|fetch|show(?: me)?|tell me|read(?: out)?(?: me)?|list|check|display|bring up)(?: me)?(?: all)?(?: of)?(?: my| the| a)?(?: list of)?|(?:the |a )?list of(?: all)?(?: of)?(?: my| the)?)(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks?|task list|tasks list)$`)
 	reListQuestions = regexp.MustCompile(`^(?:what|how|are there|is there|do i have|have i got)(?: is| are| were| many)?(?: the| any| all| of)?(?: my| the)?(?: list of)?(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks?|task list|tasks list)(?: (?:are )?(running|active|done|finished|completed|failed|open|left|pending|in progress))?(?: do i have)?$`)
-	reTaskStatus    = regexp.MustCompile(`^(?:what is |check |tell me )?(?:the )?(?:status of (?:my |the )?tasks?|tasks? status)$`)
-	reCancelAll     = regexp.MustCompile(`^(?:please )?(?:cancel|stop) (?:all|everything|all (?:of )?(?:my )?(?:running|active)(?: tasks)?|everything running)$`)
-	reCancel        = regexp.MustCompile(`^(?:please )?cancel (?:the |my )?(.+?)(?: task)?$`)
-	reDeleteSet     = regexp.MustCompile(`^(?:please )?(?:delete|remove|clear|clean up)(?: all)?(?: of)?(?: the| my)? (finished|completed|done|failed|old|all|cancelled|canceled)(?: tasks)?$`)
-	reDelete        = regexp.MustCompile(`^(?:please )?(?:delete|remove) (?:the |my |task )?(.+?)(?: task)?$`)
-	reApprList      = regexp.MustCompile(`^(?:(?:please )?(?:list|show|check|give me|tell me|read(?: out)?|any|what|do i have any|are there any|what are the)?(?: all)?(?: of)?(?: my)?(?: pending| open)? approvals?|what needs my approval|what needs approval|(?:any |what )?(?:things?|tasks?) (?:that )?(?:need|needs|waiting for) (?:my )?approval)(?: (?:are )?(?:waiting|pending))?(?: for me)?$`)
-	reApprove       = regexp.MustCompile(`^(?:please )?(?:approve|allow|confirm)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
-	reReject        = regexp.MustCompile(`^(?:please )?(?:reject|deny|decline)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
+	// A short request that asks about tasks and names a state ("give me the list of task that I still open",
+	// "which tasks are still pending"). Kept narrow: it needs a list or question lead, the word task(s), a state
+	// word, and at most 12 words, so ordinary conversation is never turned into a listing.
+	reQualLead    = regexp.MustCompile(`^(?:please )?(?:give me|get me|fetch|show(?: me)?|tell me|read(?: out)?(?: me)?|list|check|display|what|which|how many|are there|is there|do i have|any)\b`)
+	reQualTasks   = regexp.MustCompile(`\btasks?\b`)
+	reQualState   = regexp.MustCompile(`\b(open|opened|pending|running|active|left|remaining|incomplete|unfinished|still|in progress|completed|finished|done|failed|cancelled|canceled)\b`)
+	reTaskStatus  = regexp.MustCompile(`^(?:what is |check |tell me )?(?:the )?(?:status of (?:my |the )?tasks?|tasks? status)$`)
+	reCancelAll   = regexp.MustCompile(`^(?:please )?(?:cancel|stop) (?:all|everything|all (?:of )?(?:my )?(?:running|active)(?: tasks)?|everything running)$`)
+	reCancel      = regexp.MustCompile(`^(?:please )?cancel (?:the |my )?(.+?)(?: task)?$`)
+	reDeleteSet   = regexp.MustCompile(`^(?:please )?(?:delete|remove|clear|clean up)(?: all)?(?: of)?(?: the| my)? (finished|completed|done|failed|old|all|cancelled|canceled)(?: tasks)?$`)
+	reDelete      = regexp.MustCompile(`^(?:please )?(?:delete|remove) (?:the |my |task )?(.+?)(?: task)?$`)
+	reApprList    = regexp.MustCompile(`^(?:(?:please )?(?:list|show|check|give me|tell me|read(?: out)?|any|what|do i have any|are there any|what are the)?(?: all)?(?: of)?(?: my)?(?: pending| open)? approvals?|what needs my approval|what needs approval|(?:any |what )?(?:things?|tasks?) (?:that )?(?:need|needs|waiting for) (?:my )?approval)(?: (?:are )?(?:waiting|pending))?(?: for me)?$`)
+	reApprove     = regexp.MustCompile(`^(?:please )?(?:approve|allow|confirm)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
+	reAliasAdd    = regexp.MustCompile(`^(?:please )?(?:make|add|create|set|save|set up)(?: an| a| new)? alias(?: of| for| called| named)? (.+?) (?:for|as|to|means|meaning|stands for) (.+)$`)
+	reAliasRemove = regexp.MustCompile(`^(?:please )?(?:remove|delete|forget|clear)(?: the| my)? alias(?: of| for| called| named)? (.+)$`)
+	reAliasList   = regexp.MustCompile(`^(?:please )?(?:what are|list|show|tell me|read(?: out)?)(?: me)?(?: all)?(?: of)?(?: my| the)? aliases$`)
+	reReject      = regexp.MustCompile(`^(?:please )?(?:reject|deny|decline)(?: it| that| this| the (.+?)| (.+?))?(?: karo)?$`)
 )
 
 func isAllApprovalWord(ref string) bool {
@@ -154,6 +168,17 @@ func isTaskListQuery(s string) (bool, string) {
 		return true, "all"
 	}
 
+	// 3b. Short list/question about tasks with a state word, in any word order.
+	if len(strings.Fields(s)) <= 12 && reQualLead.MatchString(s) && reQualTasks.MatchString(s) {
+		if m := reQualState.FindString(s); m != "" {
+			switch m {
+			case "still", "opened":
+				m = "open"
+			}
+			return true, scopeOf(m)
+		}
+	}
+
 	// 4. Request queries
 	if m := reList.FindStringSubmatch(s); m != nil {
 		return true, scopeOf(m[1])
@@ -177,6 +202,17 @@ func ParseTaskCommand(text string) TaskCommand {
 	s := norm(text)
 	if s == "" {
 		return TaskCommand{}
+	}
+
+	// Aliases ("make an alias of mummy for mom"): small, reversible, so they are done at once.
+	if m := reAliasAdd.FindStringSubmatch(s); m != nil {
+		return TaskCommand{Kind: CmdAddAlias, Ref: strings.TrimPrefix(m[1], "my "), Target: strings.TrimPrefix(m[2], "my ")}
+	}
+	if m := reAliasRemove.FindStringSubmatch(s); m != nil {
+		return TaskCommand{Kind: CmdRemoveAlias, Ref: strings.TrimPrefix(m[1], "my ")}
+	}
+	if reAliasList.MatchString(s) {
+		return TaskCommand{Kind: CmdListAliases}
 	}
 
 	// Approvals queries and decisions
@@ -264,8 +300,10 @@ type VoiceCommands struct {
 	Approvals VoiceApprovals
 	// Secret signs confirmation tokens. Empty means a random one for this process (tokens then do not survive a restart).
 	Secret []byte
-	Now    func() time.Time
-	secret []byte
+	// Aliases holds the owner's aliases; nil switches the alias commands off.
+	Aliases repository.AliasRepository
+	Now     func() time.Time
+	secret  []byte
 }
 
 // Result is what to say, and, for a change, the token to send back with the owner's yes or no.
@@ -457,6 +495,8 @@ func (v *VoiceCommands) Run(ctx context.Context, user uuid.UUID, c TaskCommand, 
 		return v.decideApproval(ctx, user, c, unlocked)
 	case CmdSteerTask:
 		return v.steerTask(ctx, user, c)
+	case CmdAddAlias, CmdRemoveAlias, CmdListAliases:
+		return v.aliasCommand(ctx, user, c)
 	}
 	return Result{}, errors.New("not a task command")
 }
@@ -815,4 +855,75 @@ func (v *VoiceCommands) Confirm(ctx context.Context, user uuid.UUID, token strin
 		return Result{Reply: verb + "."}, nil
 	}
 	return Result{Reply: fmt.Sprintf("%s %d.", verb, done)}, nil
+}
+
+// Expand rewrites the owner's aliases in text to what they stand for ("call mummy" becomes "call mom"). Alias
+// commands themselves are left alone, and a missing store or a failed read leaves the text as it was.
+func (v *VoiceCommands) Expand(ctx context.Context, user uuid.UUID, text string) string {
+	if v == nil || v.Aliases == nil {
+		return text
+	}
+	switch ParseTaskCommand(text).Kind {
+	case CmdAddAlias, CmdRemoveAlias, CmdListAliases:
+		return text
+	}
+	m, err := v.Aliases.List(ctx, user)
+	if err != nil {
+		return text
+	}
+	return domain.ApplyAliases(text, m)
+}
+
+func (v *VoiceCommands) aliasCommand(ctx context.Context, user uuid.UUID, c TaskCommand) (Result, error) {
+	if v.Aliases == nil {
+		return Result{NotHandled: true}, nil
+	}
+	switch c.Kind {
+	case CmdAddAlias:
+		alias, err := domain.NormalizeAlias(c.Ref, 40)
+		if err != nil {
+			return Result{Reply: "I could not use that name for an alias."}, nil
+		}
+		target, err := domain.NormalizeAlias(c.Target, 80)
+		if err != nil {
+			return Result{Reply: "I could not use that as the name it stands for."}, nil
+		}
+		if alias == target {
+			return Result{Reply: "An alias has to be a different name."}, nil
+		}
+		if err := v.Aliases.Put(ctx, user, alias, target); err != nil {
+			return Result{}, err
+		}
+		return Result{Reply: fmt.Sprintf("Done. When you say %s, I will understand %s.", alias, target)}, nil
+	case CmdRemoveAlias:
+		alias, err := domain.NormalizeAlias(c.Ref, 40)
+		if err != nil {
+			return Result{Reply: "I could not tell which alias to remove."}, nil
+		}
+		ok, err := v.Aliases.Delete(ctx, user, alias)
+		if err != nil {
+			return Result{}, err
+		}
+		if !ok {
+			return Result{Reply: fmt.Sprintf("You have no alias called %s.", alias)}, nil
+		}
+		return Result{Reply: fmt.Sprintf("Removed the alias %s.", alias)}, nil
+	}
+	m, err := v.Aliases.List(ctx, user)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(m) == 0 {
+		return Result{Reply: "You have no aliases yet. Say, for example: make an alias of mummy for mom."}, nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = k + " means " + m[k]
+	}
+	return Result{Reply: strings.Join(parts, ". ") + "."}, nil
 }

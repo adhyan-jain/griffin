@@ -130,6 +130,9 @@ func (h *VoiceHandler) PostTurn(w http.ResponseWriter, r *http.Request) {
 	out := VoiceTurnResponse{ManagerName: name}
 
 	message := service.StripLeadingName(text, name)
+	if h.commands != nil && message != "" {
+		message = h.commands.Expand(r.Context(), userID, message)
+	}
 	if message == "" {
 		out.Kind, out.Reply = "wake", "Yes?"
 		httputil.JSON(w, http.StatusOK, out)

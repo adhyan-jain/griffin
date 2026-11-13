@@ -202,6 +202,10 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		httputil.ErrorJSON(w, chatValidation("message must be at most %d characters", chatMaxMessageChars))
 		return
 	}
+	// The owner's aliases ("mummy" means "mom") are understood everywhere: rewrite them before anything reads the text.
+	if h.commands != nil {
+		message = h.commands.Expand(r.Context(), userID, message)
+	}
 	if err := domain.ValidatePriority(req.Priority); err != nil {
 		httputil.ErrorJSON(w, err)
 		return
