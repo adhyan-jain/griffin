@@ -389,7 +389,7 @@ This document is the canonical ledger of all architectural, product, engineering
 
 #### ADR-053: Canonical-origin redirect and exact-origin CORS
 - **Status**: IMPLEMENTED & DEPLOYED
-- **Decision**: CORS allows only `https://griffin-pwa.vercel.app`. In production, non-canonical Vercel hosts redirect to it.
+- **Decision**: CORS allows only `https://<your-app>.vercel.app`. In production, non-canonical Vercel hosts redirect to it.
 
 #### ADR-054: Backend deploys go through one dry-run-by-default script
 - **Status**: IMPLEMENTED (script uncommitted until this entry), not run with `--apply`
@@ -713,7 +713,7 @@ This document is the canonical ledger of all architectural, product, engineering
 #### ADR-099: Dual-Interface Topology (Web PWA as Primary Console vs. Android Companion App)
 - **Status**: IMPLEMENTED & DOCUMENTED.
 - **Decision**: Clarify roles between the Web Application and the Android Native Companion:
-  - **Web Application (Progressive Web App at `griffin-pwa.vercel.app`)**: The single primary user interface for all devices (laptop, desktop, phone). Provides full chat with JJ, task tree inspection, manual approvals, device status, file/vault explorer, and audio TTS. Can be installed directly on Android via Chrome ("Add to Home screen").
+  - **Web Application (Progressive Web App at `<your-app>.vercel.app`)**: The single primary user interface for all devices (laptop, desktop, phone). Provides full chat with JJ, task tree inspection, manual approvals, device status, file/vault explorer, and audio TTS. Can be installed directly on Android via Chrome ("Add to Home screen").
   - **Android Native App (`android/`)**: Built strictly as a background device bridge for voice wake-word listening ("Hey Griffin"), Quick Settings tile, call screening, and notification reply hooks. Users do NOT need the Android native app for standard task and chat interactions.
 
 #### ADR-100: Multi-Channel Messaging Device Hands (WhatsApp & Instagram over Android ADB and Web Fallback)

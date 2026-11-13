@@ -3,15 +3,16 @@ import type { NextConfig } from "next";
 // The API's CORS allowlist is a strict exact-match list containing only this origin. Any other
 // hostname that serves the app (the per-deployment URL Vercel prints after a deploy, the team
 // alias, branch aliases) would be rejected by the API at preflight, so production builds send
-// visitors to the canonical host instead of leaving them on an origin that cannot work.
-const CANONICAL_HOST = process.env.CANONICAL_HOST ?? "griffin-pwa.vercel.app";
+// visitors to the canonical host (set CANONICAL_HOST, e.g. your-app.vercel.app) instead of leaving
+// them on an origin that cannot work. Unset: no canonical redirect.
+const CANONICAL_HOST = process.env.CANONICAL_HOST;
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const nextConfig: NextConfig = {
   // Lets check:bundle build into a throwaway directory without clobbering .next.
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   async redirects() {
-    if (process.env.VERCEL_ENV !== "production") return [];
+    if (process.env.VERCEL_ENV !== "production" || !CANONICAL_HOST) return [];
     return [
       {
         source: "/:path*",

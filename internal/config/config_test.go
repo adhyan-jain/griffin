@@ -21,7 +21,7 @@ func clearEnv(t *testing.T) {
 		"ENVIRONMENT", "PORT", "DATABASE_URL", "SUPABASE_JWT_SECRET", "WORKER_API_KEY", "GRIFFIN_MODE",
 		"STORAGE_PROVIDER", "S3_BUCKET", "S3_REGION", "S3_ENDPOINT", "AWS_PROFILE", "AWS_REGION",
 		"CORS_ALLOWED_ORIGINS", "ENABLE_DEV_LOGIN", "SUPABASE_JWKS_URL", "AI_PROVIDER", "SCALE_TO_ZERO_ENABLED",
-		"EC2_INSTANCE_ID", "S3_PRESIGN_EXPIRY_MINUTES", "MAX_CONCURRENT_WORKERS", "MAX_UPLOAD_BYTES", "USER_DATABASE_URL", "ALLOWED_USER_EMAILS", "ALLOWED_USER_IDS",
+		"EC2_INSTANCE_ID", "S3_PRESIGN_EXPIRY_MINUTES", "MAX_CONCURRENT_WORKERS", "MAX_UPLOAD_BYTES", "USER_DATABASE_URL", "ALLOWED_USER_EMAILS", "ALLOWED_USER_IDS", "APP_URL",
 	} {
 		t.Setenv(k, "")
 	}
@@ -90,6 +90,27 @@ func TestDevelopmentLoadsWithExplicitValues(t *testing.T) {
 	}
 	if cfg.Port != 8080 || cfg.MaxConcurrentWorkers != 2 || cfg.LeaseDurationSeconds != 60 {
 		t.Errorf("defaults changed: %+v", cfg)
+	}
+}
+
+func TestAppURLDefault(t *testing.T) {
+	for _, tc := range []struct{ name, appURL, cors, want string }{
+		{"APP_URL wins", "https://app.example", "https://a.example", "https://app.example"},
+		{"first CORS origin", "", "https://a.example/,https://b.example", "https://a.example"},
+		{"localhost fallback", "", "", "http://localhost:3000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			devEnv(t)
+			t.Setenv("APP_URL", tc.appURL)
+			t.Setenv("CORS_ALLOWED_ORIGINS", tc.cors)
+			cfg, err := config.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.AppURL != tc.want {
+				t.Errorf("AppURL = %q, want %q", cfg.AppURL, tc.want)
+			}
+		})
 	}
 }
 

@@ -44,7 +44,7 @@ The only maintained docs are this PRD, `decisions.md` (why each decision was mad
 
 | Part | Technology | Where |
 |---|---|---|
-| Web app (PWA) | Next.js 16, React 19, Tailwind v4, shadcn/ui, React Three Fiber, GSAP, Lenis | Vercel, `https://griffin-pwa.vercel.app`, auto-deploys from `master` |
+| Web app (PWA) | Next.js 16, React 19, Tailwind v4, shadcn/ui, React Three Fiber, GSAP, Lenis | Vercel, `https://<your-app>.vercel.app`, auto-deploys from `master` |
 | API | Go, Lambda (arm64) behind API Gateway HTTP API | `griffin-api`, ap-south-1 |
 | Database and auth | Supabase Postgres with row-level security; Supabase Auth (JWKS) | pooler connections; `griffin_app` (runtime), `griffin_system` (system) roles |
 | Files | S3 bucket, per-user key prefix | `griffin-artifacts-<AWS_ACCOUNT_ID>-ap-south-1` |
@@ -262,7 +262,7 @@ Honest limits: open-weights models are weaker than the hosted agent at long tool
 **"Give it all access" is delivered as trust the owner turns up**, per app and per contact: start with *ask*, move to *auto* for what has proved reliable. Not built yet: the settings screen for it (3.7) and the voice engine (2.8, 2.9).
 
 ### 7.9 Using it from your phone
-- **Front end:** `https://griffin-pwa.vercel.app`. It is an installable PWA: open it in Chrome (Android) or Safari (iPhone) and choose **Add to Home Screen**; it then opens full screen like an app. Sign in with your Supabase account.
+- **Front end:** `https://<your-app>.vercel.app`. It is an installable PWA: open it in Chrome (Android) or Safari (iPhone) and choose **Add to Home Screen**; it then opens full screen like an app. Sign in with your Supabase account.
 - **"Use my Claude from my phone":** the Claude app on your phone cannot be driven by Griffin, and a phone cannot lend its logged-in session to a server. What *is* possible: sign the Claude CLI in **once on the worker** (device login with your own account, no API key), after which Griffin uses that login for language steps. That is a credential living on the worker (as sensitive as a password; encrypted disk, no remote access except the platform's session manager). Check the Claude terms for automated use of a consumer subscription before relying on it.
 - **Your apps from the phone:** see section 7.4: Layer 2 (web versions) and Layer 3 (an Android bridge) are how Griffin operates apps; iOS only supports Shortcuts into Griffin.
 - **Credentials on the worker are unavoidable** for anything that logs in for you; the design choice is to store them in the cloud parameter store (encrypted) or as saved browser sessions, never in prompts, files or logs.

@@ -25,7 +25,10 @@ Parameters:
     Description: The artifacts bucket name, e.g. griffin-artifacts-<account-id>-<region>
   ApiUrl:
     Type: String
-    Default: https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com
+    Description: Your API base URL (no default; pass it), e.g. https://<api-id>.execute-api.<region>.amazonaws.com
+  WebUrl:
+    Type: String
+    Description: Your web app URL (no default; pass it), e.g. https://<your-app>.vercel.app. Sent as the Origin of the smoke test.
   GoVersion:
     Type: String
     Default: "1.25.0"
@@ -149,6 +152,7 @@ Resources:
           - { Name: INSTANCE_ID, Value: !Ref InstanceId }
           - { Name: BUCKET, Value: !Ref ArtifactBucket }
           - { Name: API_URL, Value: !Ref ApiUrl }
+          - { Name: WEB_URL, Value: !Ref WebUrl }
           - { Name: AWS_REGION, Value: !Ref "AWS::Region" }
 
 Outputs:

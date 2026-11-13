@@ -144,7 +144,7 @@ func Load() (*Config, error) {
 		NtfyServer:                      getEnv("NTFY_SERVER", "https://ntfy.sh"),
 		NtfyTopic:                       getEnv("NTFY_TOPIC", ""),
 		NtfyToken:                       getEnv("NTFY_TOKEN", ""),
-		AppURL:                          getEnv("APP_URL", "https://griffin-pwa.vercel.app"),
+		AppURL:                          getEnv("APP_URL", ""),
 		GeminiAPIKey:                    getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:                     getEnv("GEMINI_MODEL", ""),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
@@ -202,6 +202,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.S3PresignExpiryMinutes <= 0 {
 		cfg.S3PresignExpiryMinutes = 15
+	}
+	if cfg.AppURL == "" { // tap links: the web app is the first allowed CORS origin when APP_URL is not set
+		cfg.AppURL = "http://localhost:3000"
+		if len(cfg.CORSAllowedOrigins) > 0 {
+			cfg.AppURL = cfg.CORSAllowedOrigins[0]
+		}
 	}
 	if cfg.StorageProvider == "s3" && cfg.S3Bucket == "" {
 		return nil, fmt.Errorf("S3_BUCKET is required when STORAGE_PROVIDER is s3")

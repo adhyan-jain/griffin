@@ -6,6 +6,8 @@
 // NEXT_PUBLIC_API_URL=http://localhost:9999 (scripts/measure-polling.sh does this).
 // Usage: node scripts/measure-polling.mjs [--seconds 60] [--scenario active|completes|failing|hidden|chat|chat-failed|chat-404|chat-objective] [--shots DIR]
 //        [--base http://localhost:3300] [--budget 150]
+// With --prod, set GRIFFIN_APP_URL (your deployed web app, or pass --base) and GRIFFIN_API_URL
+// (your API base URL; only the origin is matched by the mock, nothing is sent to it).
 import { chromium } from "playwright-core";
 
 const arg = (name, dflt) => {
@@ -17,13 +19,18 @@ const SCENARIO = arg("scenario", "active");
 const CHAT = SCENARIO.startsWith("chat");
 const SECONDS = Number(arg("seconds", CHAT ? 16 : 60));
 const SHOTS = arg("shots", ""); // directory for 390px screenshots (chat scenarios)
-const BASE = arg("base", process.argv.includes("--prod") ? "https://griffin-pwa.vercel.app" : "http://localhost:3300");
+const need = (name, hint) => {
+  const v = process.env[name];
+  if (!v) { console.error(`set ${name} to ${hint} (needed with --prod)`); process.exit(2); }
+  return v;
+};
+const BASE = arg("base", process.argv.includes("--prod") ? need("GRIFFIN_APP_URL", "your web app URL, e.g. https://<your-app>.vercel.app") : "http://localhost:3300");
 const BUDGET = Number(arg("budget", 150)); // max total API requests allowed in the window
 // --prod measures the DEPLOYED bundle (base defaults to the production PWA). Every API request is
 // still intercepted and answered by the mock below, so no request ever reaches the real API, and
 // a fake Supabase session is injected so the app treats the browser as signed in. No credentials.
 const PROD = process.argv.includes("--prod");
-const API = PROD ? "https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com" : "http://localhost:9999";
+const API = PROD ? need("GRIFFIN_API_URL", "your API base URL, e.g. https://<api-id>.execute-api.<region>.amazonaws.com") : "http://localhost:9999";
 const SUPABASE_REF = "dtsrkpuohnxorxaqeqwr"; // from the public NEXT_PUBLIC_SUPABASE_URL in the bundle
 const LATENCY_MS = 40;
 

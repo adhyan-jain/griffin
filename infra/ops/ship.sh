@@ -20,8 +20,9 @@ APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 export AWS_PROFILE="${AWS_PROFILE:-griffin-bootstrap}" AWS_REGION="${AWS_REGION:-ap-south-1}"
 INSTANCE="${INSTANCE_ID:?set INSTANCE_ID to the worker EC2 instance id}"
-API="${API_URL:-https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com}"
-WEB="${WEB_URL:-https://griffin-pwa.vercel.app}"
+API="${API_URL:?set API_URL to your API base URL, e.g. https://<api-id>.execute-api.<region>.amazonaws.com}"
+WEB="${WEB_URL:?set WEB_URL to your web app URL, e.g. https://<your-app>.vercel.app}"
+export API_URL="$API" WEB_URL="$WEB"
 
 say() { printf '\n== %s\n' "$*"; }
 run() { if [ "$APPLY" = 1 ]; then printf '+ %s\n' "$*"; "$@"; else printf '(dry run) %s\n' "$*"; fi; }

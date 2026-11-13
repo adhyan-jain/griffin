@@ -11,7 +11,8 @@
 #
 # Env: AWS_PROFILE, AWS_REGION=ap-south-1, LAMBDA_FUNCTION=griffin-api, and REQUIRED: INSTANCE_ID (the worker's
 #   EC2 instance) and BUCKET (griffin-artifacts-<account-id>-<region>),
-#   API_URL=https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com
+#   API_URL=https://<api-id>.execute-api.<region>.amazonaws.com and WEB_URL=https://<your-app>.vercel.app
+#   (the smoke test calls the API with the web app's Origin).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
@@ -20,7 +21,8 @@ export AWS_REGION="${AWS_REGION:-ap-south-1}" AWS_DEFAULT_REGION="${AWS_REGION:-
 FN="${LAMBDA_FUNCTION:-griffin-api}"
 INSTANCE_ID="${INSTANCE_ID:?set INSTANCE_ID to the worker EC2 instance id}"
 BUCKET="${BUCKET:?set BUCKET to the artifacts bucket name}"
-API_URL="${API_URL:-https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com}"
+API_URL="${API_URL:?set API_URL to your API base URL, e.g. https://<api-id>.execute-api.<region>.amazonaws.com}"
+WEB_URL="${WEB_URL:?set WEB_URL to your web app URL, e.g. https://<your-app>.vercel.app}"
 SHA="$(git rev-parse --short HEAD)"
 
 case "$TARGET" in lambda|worker|all|rollback-worker) ;; *) sed -n '2,12p' "$0"; exit 2;; esac
@@ -34,7 +36,7 @@ smoke_api() {
   say "smoke test: $API_URL"
   for spec in "GET /healthz 200" "GET /api/v1/system/status 401" "POST /api/v1/jj/messages 401"; do
     set -- $spec
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X "$1" "$API_URL$2" -H 'Origin: https://griffin-pwa.vercel.app')"
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X "$1" "$API_URL$2" -H "Origin: $WEB_URL")"
     [ "$code" = "$3" ] && echo "ok    $1 $2 -> $code" || { echo "FAIL  $1 $2 -> $code (wanted $3)"; return 1; }
   done
 }
