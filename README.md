@@ -87,4 +87,4 @@ Migrations apply on server start and in the test suite; `make migrate` applies t
 
 ## License
 
-No license has been chosen yet; until one is added, all rights are reserved.
+MIT. See [`LICENSE`](./LICENSE).

@@ -151,8 +151,17 @@ class MainActivity : Activity() {
             Step("Keep listening in the background", "Stops the phone's battery saver from switching it off.", battery, "Allow") { allowBackground() },
             Step("Show the listening animation", "The wave along the bottom when it wakes, over any app.", overlay, "Allow") { allowOverlay() },
             Step("Read and reply to your messages", "Lets it read chats out and reply through WhatsApp, Instagram and the rest, without opening them.", notifications, "Allow") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
-            Step("Let Griffin use apps for you", "Optional. Lets it tap and type in other apps for jobs you give it, and it always asks before anything is sent. Turn on \"Griffin phone control\".", access, "Allow") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+            Step("Let Griffin use apps for you", "Optional. Lets it tap and type in other apps for jobs you give it, and it always asks before anything is sent. Turn on \"Griffin phone control\". If it is missing or greyed out, Android is blocking apps installed outside the Play Store: open Settings > Apps > Griffin, tap the three dots, choose \"Allow restricted settings\", then come back here.", access, "Allow") { openAccessibility() },
         )
+    }
+
+    /** Opens Accessibility settings. If the service is not listed, Android's restricted-settings block is why; App info has the switch. */
+    private fun openAccessibility() {
+        val listed = (getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+            ?.installedAccessibilityServiceList ?: emptyList()).any { it.resolveInfo.serviceInfo.packageName == packageName }
+        startActivity(Intent(if (listed) Settings.ACTION_ACCESSIBILITY_SETTINGS else Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            if (!listed) data = android.net.Uri.parse("package:$packageName")
+        })
     }
 
     private fun rebuild() {

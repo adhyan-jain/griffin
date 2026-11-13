@@ -14,10 +14,10 @@
 - **Phone-side device use** (Android accessibility service executing UI steps, claiming `phone_ui` tasks). Until then the phone does WhatsApp/Instagram replies through notifications and the laptop does the rest.
 - **Reply watching**: nothing yet polls an inbox page or turns a Gmail/LinkedIn notification into a `/outreach/replies` call. The endpoint and the Replied list exist.
 - **Automatic campaigns from chat**: the planner routes "cold mail ..." / "on LinkedIn ..." to one browser job. Splitting a request into a researcher and a sender over a campaign is the next step.
-- **Onboarding wizard** in the web app, **LICENSE** (the owner has not chosen one), a Dockerfile for the server and web app (only the database is in `compose.yaml`).
+- **Onboarding wizard** in the web app, a Dockerfile for the server and web app (only the database is in `compose.yaml`).
 
 ## Before publishing
-- Choose and add a LICENSE.
+- (Done) MIT LICENSE added.
 - The two AWS account ids were removed from docs, but they remain in `infra/` scripts, `internal/config/config_test.go` and `tests/s3_live_test.go`; parameterise them.
 - Scan the full git history for secrets (gitleaks or trufflehog) and decide whether to publish a fresh-history repo. Rotate the Supabase database password that was pasted into a chat and the Vercel token in `web/.env.local`.
 - Audit dependency licences (notably GSAP).
