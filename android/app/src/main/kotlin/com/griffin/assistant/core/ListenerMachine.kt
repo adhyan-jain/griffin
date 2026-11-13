@@ -125,7 +125,10 @@ object ListenerMachine {
         LError.Silence -> schedule(s, 400, false)
         LError.Busy -> schedule(s, 900, true)
         LError.Permission -> LStep(s.copy(active = false), listOf(LEffect.Status("microphone permission is missing")))
-        LError.Language -> withStatus("the speech language is unavailable", schedule(s, 5000, true))
+        // The private on-device engine often lacks the language pack; the standard engine has it. Switch once.
+        LError.Language ->
+            if (s.preferOnDevice) withStatus("on-device speech lacks this language; using the standard engine", schedule(s.copy(preferOnDevice = false), 500, true))
+            else withStatus("the speech language is unavailable", schedule(s, 5000, true))
         LError.Client -> {
             val n = s.clientErrors + 1
             val c = s.copy(clientErrors = n)

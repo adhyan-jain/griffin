@@ -65,6 +65,14 @@ class ListenerMachineTest {
         assertTrue(last.effects.contains(LEffect.Schedule(10_000, true)))
     }
 
+    @Test fun `a missing language on the on-device engine falls back to the standard one`() {
+        val first = ListenerMachine.reduce(running.copy(preferOnDevice = true), LEvent.Error(LError.Language, onDeviceUsable = true))
+        assertFalse(first.state.preferOnDevice)
+        assertTrue(first.effects.contains(LEffect.Schedule(500, true)))
+        val second = ListenerMachine.reduce(first.state.copy(restartPending = false), LEvent.Error(LError.Language, onDeviceUsable = true))
+        assertTrue(second.effects.contains(LEffect.Schedule(5000, true)))
+    }
+
     @Test fun `a missing microphone permission ends listening`() {
         val step = ListenerMachine.reduce(running, LEvent.Error(LError.Permission, false))
         assertFalse(step.state.active)
