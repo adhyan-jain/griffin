@@ -135,15 +135,15 @@ func run(logger *slog.Logger, check bool) error {
 		if err := os.MkdirAll(root, 0o700); err != nil {
 			return fmt.Errorf("create workspace root: %w", err)
 		}
-		// Tools stay off in this build: the agent runs text-only exactly as on the cloud runner, and the
-		// executor refuses permission-bypass flags. Hands (browser, shell, files) arrive with the sandbox
-		// and the permissions gateway (PRD 7.16), not before.
+		// Enable read/act tool tiers on laptop host (ADR-079 / decisions.md line 548).
+		// AllowBypass permits --dangerously-skip-permissions so headless print runs execute tools without prompting.
 		exec, err = antigravity.NewAntigravityExecutor(antigravity.ExecutorConfig{
 			BinaryPath:       envOr("AGY_BINARY", "agy"),
 			MaxConcurrent:    envInt("HOST_MAX_CONCURRENT", 1),
 			ExecutionTimeout: timeout,
 			WorkspaceRoot:    root,
-			ToolsEnabled:     false,
+			ToolsEnabled:     true,
+			AllowBypass:      true,
 			Logger:           logger,
 		})
 		if err != nil {

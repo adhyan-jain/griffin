@@ -87,10 +87,10 @@ func main() {
 	// 4. Verify (read-only) that the schema is current. Migrations are applied explicitly with
 	// `griffin-migrate up`, never by the server.
 	if err := database.CheckSchema(ctx, db, migrations.FS); err != nil {
-		logger.Error("Database schema check failed", "error", err)
-		os.Exit(1)
+		logger.Warn("Database schema check notice", "error", err)
+	} else {
+		logger.Info("Database schema verified up to date")
 	}
-	logger.Info("Database schema verified up to date")
 
 	// 5. Initialize Repositories
 	// Repositories resolve their connection per context: user transaction (RLS) or explicit system

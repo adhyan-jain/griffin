@@ -33,6 +33,9 @@ var (
 )
 
 func wantsWhatsApp(text string) bool {
+	if wantsCall(text) {
+		return false
+	}
 	lower := strings.ToLower(text)
 	if buildingVerb.MatchString(lower) || emailWord.MatchString(lower) {
 		return false

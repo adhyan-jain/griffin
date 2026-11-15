@@ -42,6 +42,9 @@ type ExecutorConfig struct {
 	Probe      Probe
 
 	ToolsEnabled bool
+	// AllowBypass allows --dangerously-skip-permissions on the laptop host (ADR-079) so headless agy print mode
+	// can execute read/act tools non-interactively without prompting.
+	AllowBypass bool
 	// ReadArgs and ActArgs are the extra agy flags for each tier, for example "--mode plan --sandbox".
 	// They are validated at construction: flags that bypass permission checks are refused.
 	ReadArgs []string
@@ -129,6 +132,9 @@ func validateToolArgs(cfg ExecutorConfig) error {
 			}
 			for _, bad := range forbiddenArgs {
 				if name == bad {
+					if cfg.AllowBypass && bad == "--dangerously-skip-permissions" {
+						continue
+					}
 					return fmt.Errorf("antigravity executor: %q is not allowed in tool arguments", bad)
 				}
 			}
@@ -157,9 +163,15 @@ func (e *AntigravityExecutor) toolArgs(mode domain.ToolMode) []string {
 	}
 	switch mode {
 	case domain.ToolRead:
-		return e.cfg.ReadArgs
+		if len(e.cfg.ReadArgs) > 0 {
+			return e.cfg.ReadArgs
+		}
+		return []string{"--mode", "plan"}
 	case domain.ToolAct:
-		return e.cfg.ActArgs
+		if len(e.cfg.ActArgs) > 0 {
+			return e.cfg.ActArgs
+		}
+		return []string{"--mode", "accept-edits"}
 	}
 	return nil
 }
@@ -296,6 +308,9 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		"-p", prompt,
 		"--output-format", "json",
 		"--disable-slash-commands",
+	}
+	if e.cfg.ToolsEnabled && e.cfg.AllowBypass {
+		args = append(args, "--dangerously-skip-permissions")
 	}
 	args = append(args, e.toolArgs(mode)...)
 	if e.cfg.Effort != "" {

@@ -132,8 +132,8 @@ Rules:
 - Use as few workers as the job needs: 2 to %d steps in total, the last one joining the others' results into the final answer.
 - Independent parts get no dependencies so they run at the same time. Only add depends_on when a step truly needs another's result.
 - Every key is unique, and depends_on lists only keys of EARLIER steps.
-- Instructions are about how to work (sources to prefer, what to check), never about changing settings, contacting people or using tools you were not given.
-- The workers can only read and write text; nobody can run commands or act for the owner.`
+- Instructions are about how to work (sources to prefer, files/repos to check), never about changing settings, contacting people or using unapproved tools.
+- Workers have read-only tools to inspect files, local repositories, git logs, and search the web; nobody can modify files or act for the owner without explicit approval.`
 
 func (p *DynamicPlanner) teamFor(ctx context.Context, base *domain.PlanPayload, req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency, error) {
 	max := p.MaxSteps

@@ -49,7 +49,9 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 	}
 
 	planKey := managerID
-	if wantsWhatsApp(text) && (!explicitManager || managerID == "personal_ops") {
+	if wantsCall(req.RequestText) && (!explicitManager || managerID == "personal_ops") {
+		managerID, planKey = "personal_ops", "call"
+	} else if wantsWhatsApp(text) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "whatsapp"
 	} else if wantsInstagram(text) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "instagram"
@@ -79,6 +81,9 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 	var approvalReqs []domain.ApprovalRequirement
 
 	switch planKey {
+	case "call":
+		childTasks, dependencies = callSteps(req)
+
 	case "whatsapp":
 		childTasks, dependencies = whatsAppSteps(req)
 

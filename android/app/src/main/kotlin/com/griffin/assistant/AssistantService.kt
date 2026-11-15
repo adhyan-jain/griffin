@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -259,7 +260,7 @@ class AssistantService : Service() {
 
                     nm.notify(task.id.hashCode(), notif)
                 }
-                prefs.edit().putStringSet("seen_tasks", seen.takeLast(100).toSet()).apply()
+                prefs.edit().putStringSet("seen_tasks", seen.toList().takeLast(100).toSet()).apply()
             } catch (e: Exception) {
                 app.dlog("task notif check failed: ${e.message}")
             }
