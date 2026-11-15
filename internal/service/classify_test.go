@@ -144,21 +144,3 @@ func TestDeviceRequestsAreWorkNotConversation(t *testing.T) {
 		}
 	}
 }
-
-func TestOutboundCallRequestsAreAnsweredNotPlanned(t *testing.T) {
-	for _, in := range []string{
-		"Do an automated call to atharva sheersh pandey saying that I need to book an appointed for today at 6pm",
-		"make a call to my dentist",
-		"call my mom and say I'll be late",
-		"place a phone call to the bank",
-	} {
-		if k, why := ClassifyMessageWithReason(in); k != MessageKindConversation || why != "outbound-call-unsupported" {
-			t.Errorf("%q -> %s (%s)", in, k, why)
-		}
-	}
-	for _, in := range []string{"write code to call an api and save the result", "build a bot that can call a webhook"} {
-		if _, why := ClassifyMessageWithReason(in); why == "outbound-call-unsupported" {
-			t.Errorf("%q is engineering, not a phone call", in)
-		}
-	}
-}

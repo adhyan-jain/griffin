@@ -11,6 +11,10 @@ class GriffinApp : Application() {
     lateinit var api: ApiClient
     lateinit var speaker: Speaker
     val net = Executors.newSingleThreadExecutor()
+    /** Only the "I am alive" signal runs here, so a slow or stuck phone job can never make the phone look offline. */
+    val beat = Executors.newSingleThreadExecutor()
+    /** Phone jobs (driving other apps) run here, away from the heartbeat and from voice requests. */
+    val jobs = Executors.newSingleThreadExecutor()
     /** Who the owner is waiting to hear from; only their chat notifications are ever reported to Griffin. */
     val replyWatch = com.griffin.assistant.core.ReplyWatch()
     val main = Handler(Looper.getMainLooper())

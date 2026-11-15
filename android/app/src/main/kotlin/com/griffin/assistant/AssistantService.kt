@@ -198,10 +198,11 @@ class AssistantService : Service() {
     private val deviceBeat: Runnable = object : Runnable {
         override fun run() {
             val refreshNames = beats++ % 10 == 0
-            app.net.execute {
-                try { app.api.phoneHeartbeat(withPhoneUi = GriffinAccess.ready); phoneRunner.tick() } catch (e: Exception) { app.dlog("device heartbeat: ${e.message}") }
-                if (refreshNames) try { app.replyWatch.update(app.api.awaitingNames()) } catch (_: Exception) {}
+            app.beat.execute {
+                try { app.api.phoneHeartbeat(withPhoneUi = GriffinAccess.ready) } catch (e: Exception) { app.log("device heartbeat failed: ${e.message}") }
             }
+            app.jobs.execute { try { phoneRunner.tick() } catch (e: Exception) { app.dlog("phone job: ${e.message}") } }
+            if (refreshNames) app.net.execute { try { app.replyWatch.update(app.api.awaitingNames()) } catch (_: Exception) {} }
             app.main.postDelayed(this, 30_000)
         }
     }
