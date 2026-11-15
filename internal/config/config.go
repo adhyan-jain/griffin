@@ -36,6 +36,11 @@ type Config struct {
 	NtfyTopic                  string // the private topic the phone subscribes to; empty turns notifications off
 	NtfyToken                  string // optional access token for a protected topic
 	AppURL                     string // the web app's address, used for the tap link
+	CallsAuthToken             string // phone provider (Twilio-style) auth token; empty turns inbound calls off
+	CallsPublicURL             string // public base address the provider calls, e.g. https://api.example.com
+	CallsOwnerNumber           string // the owner's own number: trusted calls are forwarded here
+	CallsTrusted               string // comma-separated numbers that ring through without screening
+	CallsUserID                string // the owner's user id (calls are logged to them)
 	GeminiAPIKey               string // fast voice model key; empty disables the fast path (chat then waits for the worker)
 	GeminiModel                string // default gemini-flash-lite-latest
 	HostsEnabled               bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
@@ -145,6 +150,11 @@ func Load() (*Config, error) {
 		NtfyTopic:                       getEnv("NTFY_TOPIC", ""),
 		NtfyToken:                       getEnv("NTFY_TOKEN", ""),
 		AppURL:                          getEnv("APP_URL", ""),
+		CallsAuthToken:                  getEnv("CALLS_AUTH_TOKEN", ""),
+		CallsPublicURL:                  getEnv("CALLS_PUBLIC_URL", ""),
+		CallsOwnerNumber:                getEnv("CALLS_OWNER_NUMBER", ""),
+		CallsTrusted:                    getEnv("CALLS_TRUSTED_NUMBERS", ""),
+		CallsUserID:                     getEnv("CALLS_USER_ID", ""),
 		GeminiAPIKey:                    getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:                     getEnv("GEMINI_MODEL", ""),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),

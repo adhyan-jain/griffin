@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"sync"
@@ -78,15 +79,17 @@ func TestMigrateAppliesOnceAndIsRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first migrate: %v", err)
 	}
-	if len(done) != 7 {
-		t.Fatalf("want 7 migrations applied, got %v", done)
+	ups, _ := fs.Glob(migrations.FS, "*.up.sql")
+	want := len(ups)
+	if len(done) != want {
+		t.Fatalf("want %d migrations applied, got %v", want, done)
 	}
 	done, err = database.Migrate(ctx, db, migrations.FS, database.MigrateOptions{LocalAuthShim: true})
 	if err != nil || len(done) != 0 {
 		t.Fatalf("second migrate must be a no-op: done=%v err=%v", done, err)
 	}
-	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != 7 {
-		t.Fatalf("want 7 recorded versions, got %d", n)
+	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != want {
+		t.Fatalf("want %d recorded versions, got %d", want, n)
 	}
 	if err := database.CheckSchema(ctx, db, migrations.FS); err != nil {
 		t.Fatalf("CheckSchema after migrate: %v", err)
@@ -184,8 +187,8 @@ func TestMigrateConcurrentRunnersSerialize(t *testing.T) {
 			t.Fatalf("concurrent migrate failed: %v", err)
 		}
 	}
-	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != 7 {
-		t.Fatalf("want 4 versions, got %d", n)
+	if n := count(t, db, "SELECT count(*) FROM schema_migrations"); n != embeddedMigrationCount() {
+		t.Fatalf("want %d versions, got %d", embeddedMigrationCount(), n)
 	}
 }
 
@@ -225,4 +228,10 @@ func TestServerNeverMigratesAtStartup(t *testing.T) {
 	if !strings.Contains(s, "database.CheckSchema(") {
 		t.Fatal("the server must verify the schema (read-only) at startup")
 	}
+}
+
+// embeddedMigrationCount is how many migrations the binaries carry, so these tests do not go stale with each new one.
+func embeddedMigrationCount() int {
+	ups, _ := fs.Glob(migrations.FS, "*.up.sql")
+	return len(ups)
 }

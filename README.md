@@ -55,6 +55,16 @@ griffin-host browser-login         # one-time: sign in to Gmail, LinkedIn... in 
 
 Android: build with JDK 17 (`JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug` in `android/`). The app registers itself under Devices after you sign in.
 
+## Evidence, coaching and calls
+
+| Feature | Endpoint | Notes |
+| :--- | :--- | :--- |
+| Scorecard | `GET /api/v1/scorecard?days=30` (`&format=md` for a README table) | Success rate, false-completion rate (a task marked done with an empty result; the worker turns these into failures, and the card counts how many it caught) and how often the owner was asked first. Computed from real task history; chat turns are excluded. |
+| Replayable audit log | `GET /api/v1/tasks/{id}/audit` | The instruction, every event and attempt, each approval request and its decision (linked), and the result, in order. Entries are hash-chained and the response says whether the chain verifies. |
+| DSA coach | `GET /api/v1/dsa`, `PUT /api/v1/dsa/settings`, `POST /api/v1/dsa/sync`, `POST /api/v1/dsa/{slug}/solved` | Two problems a day from a fixed list, a check of public LeetCode accepted submissions (set a LeetCode user name), a missed problem returns a week after it was handed out, and a push nag in the evening. |
+| Morning brief | `GET /api/v1/brief` | Replies (assessment links and deadlines pulled out first), pending approvals, follow-ups due, today's DSA problems, overnight failures. Pushed once a day at 08:00 in the owner's time zone. |
+| Inbound calls | `POST /api/v1/calls/inbound` (provider webhook) | Trusted numbers ring through; others are asked who they are and why, and the owner gets a push. Signature-checked. No outbound calling. See `.env.example`. |
+
 ## Tests
 
 ```bash

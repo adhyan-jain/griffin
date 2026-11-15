@@ -50,6 +50,14 @@ type ServerDependencies struct {
 	OutreachRepo *repository.OutreachRepository
 	// AliasRepo stores the owner's aliases ("mummy" means "mom"); nil leaves aliases off.
 	AliasRepo repository.AliasRepository
+	// ReportRepo enables the scorecard and per-task audit trail; nil leaves those routes off.
+	ReportRepo *repository.ReportRepository
+	// Calls enables the inbound call webhooks (signed by the phone provider, not by the owner); nil leaves them off.
+	Calls *handlers.CallsHandler
+	// Briefer enables GET /api/v1/brief; nil leaves it off.
+	Briefer handlers.BriefBuilder
+	// Dsa enables the DSA coach routes; nil leaves them off.
+	Dsa *service.DsaCoach
 	// ProfileRepo holds the owner's settings (the manager's name).
 	ProfileRepo repository.ProfileRepository
 	// VoiceBrain is the fast model for voice chat; nil means every voice turn hands off to the worker.
@@ -159,6 +167,29 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("DELETE /api/v1/tasks/{id}", userAuth(http.HandlerFunc(taskHandler.DeleteTask)))
 	mux.Handle("GET /api/v1/tasks/{id}/events", userAuth(http.HandlerFunc(taskHandler.GetTaskEvents)))
 	mux.Handle("GET /api/v1/tasks/{id}/attempts", userAuth(http.HandlerFunc(taskHandler.GetTaskAttempts)))
+
+	if deps.ReportRepo != nil {
+		rh := handlers.NewReportHandler(deps.ReportRepo)
+		mux.Handle("GET /api/v1/scorecard", userAuth(http.HandlerFunc(rh.Scorecard)))
+		mux.Handle("GET /api/v1/tasks/{id}/audit", userAuth(http.HandlerFunc(rh.Audit)))
+	}
+
+	if deps.Calls != nil {
+		// The provider cannot sign in as the owner: each request is verified by its signature, then runs as the system.
+		sys := middleware.SystemScope()
+		mux.Handle("POST /api/v1/calls/inbound", sys(http.HandlerFunc(deps.Calls.Inbound)))
+		mux.Handle("POST /api/v1/calls/screened", sys(http.HandlerFunc(deps.Calls.Screened)))
+	}
+	if deps.Briefer != nil {
+		mux.Handle("GET /api/v1/brief", userAuth(handlers.BriefHandler(deps.Briefer)))
+	}
+	if deps.Dsa != nil {
+		dh := handlers.NewDsaHandler(deps.Dsa)
+		mux.Handle("GET /api/v1/dsa", userAuth(http.HandlerFunc(dh.Get)))
+		mux.Handle("PUT /api/v1/dsa/settings", userAuth(http.HandlerFunc(dh.PutSettings)))
+		mux.Handle("POST /api/v1/dsa/sync", userAuth(http.HandlerFunc(dh.Sync)))
+		mux.Handle("POST /api/v1/dsa/{slug}/solved", userAuth(http.HandlerFunc(dh.MarkSolved)))
+	}
 
 	approvalHandler := handlers.NewApprovalHandler(deps.Engine, deps.ApprovalRepo, deps.Wakeup)
 	mux.Handle("GET /api/v1/approvals", userAuth(http.HandlerFunc(approvalHandler.ListApprovals)))

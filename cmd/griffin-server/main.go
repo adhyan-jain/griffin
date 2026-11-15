@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/api"
+	"github.com/griffin/core/internal/api/handlers"
 	"github.com/griffin/core/internal/config"
 	"github.com/griffin/core/internal/database"
 	"github.com/griffin/core/internal/manager"
@@ -355,6 +357,37 @@ func main() {
 		_ = jjOrchestrator.ReconcileInFlight(ctx)
 	}
 
+	// DSA coach: hands out problems, checks LeetCode for submissions, nags through ntfy when configured.
+	dsaCoach := &service.DsaCoach{Store: repository.NewDsaRepository(repoDB), Checker: &service.LeetCodeChecker{}, AppURL: cfg.AppURL, Logger: logger}
+	if cfg.NtfyTopic != "" {
+		dsaCoach.Sender = &notify.Ntfy{Server: cfg.NtfyServer, Topic: cfg.NtfyTopic, Token: cfg.NtfyToken}
+	}
+	briefer := &service.Briefer{Sources: repository.NewReportRepository(repoDB), Coach: dsaCoach, Sender: dsaCoach.Sender, AppURL: cfg.AppURL, Logger: logger}
+	if runWorkers { // a long-lived process; the API alone may be a short-lived function
+		go dsaCoach.Run(ctx, 15*time.Minute)
+		go briefer.Run(ctx, 15*time.Minute)
+	}
+
+	var callsHandler *handlers.CallsHandler
+	if cfg.CallsAuthToken != "" {
+		ownerID, perr := uuid.Parse(cfg.CallsUserID)
+		if perr != nil || cfg.CallsPublicURL == "" {
+			logger.Error("CALLS_AUTH_TOKEN is set but CALLS_USER_ID or CALLS_PUBLIC_URL is missing; inbound calls stay off")
+		} else {
+			name, _ := profileRepo.ManagerName(database.WithSystem(ctx), ownerID)
+			callsHandler = &handlers.CallsHandler{
+				Log: repository.NewCallRepository(repoDB), Sender: dsaCoach.Sender, AuthToken: cfg.CallsAuthToken, PublicURL: cfg.CallsPublicURL,
+				OwnerUserID: ownerID, OwnerName: name, OwnerNumber: cfg.CallsOwnerNumber, Logger: logger,
+			}
+			for _, n := range strings.Split(cfg.CallsTrusted, ",") {
+				if n = strings.TrimSpace(n); n != "" {
+					callsHandler.Trusted = append(callsHandler.Trusted, n)
+				}
+			}
+			logger.Info("inbound call screening is on", "trusted_numbers", len(callsHandler.Trusted))
+		}
+	}
+
 	var server *api.Server
 	if runAPI {
 		// 10. HTTP API Server
@@ -379,6 +412,10 @@ func main() {
 			ProfileRepo:     profileRepo,
 			AliasRepo:       aliasRepo,
 			OutreachRepo:    outreachRepo,
+			ReportRepo:      repository.NewReportRepository(repoDB),
+			Dsa:             dsaCoach,
+			Calls:           callsHandler,
+			Briefer:         briefer,
 			OutreachDrafter: outreachDrafter(cfg),
 			DeviceDecider:   deviceDecider(cfg),
 			VoiceBrain:      voiceBrain(cfg),
