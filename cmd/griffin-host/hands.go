@@ -144,26 +144,8 @@ func runSubcommand(ctx context.Context, logger *slog.Logger, name string, args .
 		return vaultSync(ctx, logger)
 	case "vault-tracker", "doc-cache":
 		return docCacheStatus(ctx, logger)
-	case "watch-hackathons":
-		return watchHackathonsCmd(ctx, logger)
-	case "watch-oss":
-		return watchOSSCmd(ctx, logger)
-	case "watch":
-		return watchSchedulerCmd(ctx, logger)
-	case "targets-upload":
-		targetPath := ""
-		if len(args) > 0 {
-			targetPath = args[0]
-		}
-		return targetsUploadCmd(ctx, logger, targetPath)
-	case "run":
-		return pipelineRunCmd(ctx, logger, args...)
-	case "sync":
-		return pipelineSyncCmd(ctx, logger)
-	case "audit":
-		return pipelineAuditCmd(ctx, logger)
 	}
-	return fmt.Errorf("unknown command %q (expected run, sync, audit, watch-hackathons, watch-oss, watch, targets-upload, whatsapp-login, whatsapp-check, browser-login, handover-check, handover-test, vault-scan, vault-sync, or doc-cache)", name)
+	return fmt.Errorf("unknown command %q (expected whatsapp-login, whatsapp-check, browser-login, handover-check, handover-test, vault-scan, vault-sync, or doc-cache)", name)
 }
 
 func whatsappLogin(ctx context.Context, logger *slog.Logger) error {

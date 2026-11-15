@@ -44,7 +44,6 @@ import (
 	"github.com/griffin/core/internal/provider/antigravity"
 	"github.com/griffin/core/internal/sandbox"
 	"github.com/griffin/core/internal/vault"
-	"github.com/griffin/core/internal/watch"
 	"github.com/griffin/core/internal/worker"
 )
 
@@ -224,12 +223,6 @@ func run(logger *slog.Logger, check bool) error {
 		}
 		h.start(ctx, logger)
 	}
-	watchSvc := watch.NewWatchService(newWatcherConfig(logger))
-	go func() {
-		if werr := watchSvc.RunScheduler(ctx); werr != nil && !errors.Is(werr, context.Canceled) {
-			logger.Warn("watch scheduler stopped", "error", werr)
-		}
-	}()
 	logger.Info("griffin-host online", "version", Version, "api", apiURL, "capabilities", caps)
 	err = agent.Run(ctx)
 	if errors.Is(err, hostagent.ErrUnauthorized) {

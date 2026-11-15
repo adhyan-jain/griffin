@@ -186,14 +186,26 @@ type DsaSettings struct {
 	NagFromHour      int    `json:"nag_from_hour"`
 }
 
+// CleanLeetCodeUsername normalizes a LeetCode username or profile URL (e.g. "https://leetcode.com/u/AdhyanJain/").
+func CleanLeetCodeUsername(raw string) string {
+	u := strings.TrimSpace(raw)
+	u = strings.TrimPrefix(u, "https://leetcode.com/u/")
+	u = strings.TrimPrefix(u, "https://leetcode.com/")
+	u = strings.TrimPrefix(u, "http://leetcode.com/u/")
+	u = strings.TrimPrefix(u, "http://leetcode.com/")
+	u = strings.Trim(u, "/")
+	return u
+}
+
 // DefaultDsaSettings is what a new owner starts with.
 func DefaultDsaSettings() DsaSettings {
-	return DsaSettings{DailyCount: 2, Timezone: "Asia/Kolkata", NagFromHour: 18}
+	return DsaSettings{DailyCount: 2, Timezone: "Asia/Kolkata", LeetcodeUsername: "AdhyanJain", NagFromHour: 18}
 }
 
 // Validate checks the settings and that the time zone exists.
 func (s DsaSettings) Validate() error {
-	if s.DailyCount < 1 || s.DailyCount > 10 || s.NagFromHour < 0 || s.NagFromHour > 23 || len(s.LeetcodeUsername) > 40 {
+	clean := CleanLeetCodeUsername(s.LeetcodeUsername)
+	if s.DailyCount < 1 || s.DailyCount > 10 || s.NagFromHour < 0 || s.NagFromHour > 23 || len(clean) > 40 {
 		return ErrValidation
 	}
 	if _, err := time.LoadLocation(s.Timezone); err != nil {

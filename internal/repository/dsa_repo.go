@@ -20,8 +20,8 @@ func NewDsaRepository(pool database.Querier) *DsaRepository { return &DsaReposit
 // Settings returns the owner's settings, creating the default row (which enrols them) when there is none.
 func (r *DsaRepository) Settings(ctx context.Context, userID uuid.UUID) (domain.DsaSettings, error) {
 	d := domain.DefaultDsaSettings()
-	if _, err := r.pool.Exec(ctx, `INSERT INTO dsa_settings (user_id, daily_count, timezone, nag_from_hour) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
-		userID, d.DailyCount, d.Timezone, d.NagFromHour); err != nil {
+	if _, err := r.pool.Exec(ctx, `INSERT INTO dsa_settings (user_id, daily_count, timezone, leetcode_username, nag_from_hour) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+		userID, d.DailyCount, d.Timezone, d.LeetcodeUsername, d.NagFromHour); err != nil {
 		return d, fmt.Errorf("enrol dsa: %w", err)
 	}
 	var s domain.DsaSettings
@@ -30,11 +30,19 @@ func (r *DsaRepository) Settings(ctx context.Context, userID uuid.UUID) (domain.
 	if err != nil {
 		return d, fmt.Errorf("dsa settings: %w", err)
 	}
+	s.LeetcodeUsername = domain.CleanLeetCodeUsername(s.LeetcodeUsername)
+	if s.LeetcodeUsername == "" {
+		s.LeetcodeUsername = "AdhyanJain"
+	}
 	return s, nil
 }
 
 // SaveSettings replaces the owner's settings.
 func (r *DsaRepository) SaveSettings(ctx context.Context, userID uuid.UUID, s domain.DsaSettings) error {
+	s.LeetcodeUsername = domain.CleanLeetCodeUsername(s.LeetcodeUsername)
+	if s.LeetcodeUsername == "" {
+		s.LeetcodeUsername = "AdhyanJain"
+	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO dsa_settings (user_id, daily_count, timezone, leetcode_username, nag_from_hour) VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (user_id) DO UPDATE SET daily_count=$2, timezone=$3, leetcode_username=$4, nag_from_hour=$5, updated_at=NOW()`,

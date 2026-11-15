@@ -65,6 +65,12 @@ class AssistantService : Service() {
             lockscreenVisibility = Notification.VISIBILITY_SECRET
         }
         nm.createNotificationChannel(channel)
+        val updateChannel = NotificationChannel("griffin_task_updates", "Griffin Tasks & Reports", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Notifications for completed tasks, daily/weekly briefings, and DSA updates"
+            enableVibration(true)
+            setShowBadge(true)
+        }
+        nm.createNotificationChannel(updateChannel)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification: Notification = NotificationCompat.Builder(this, "assistant_silent")
             .setSmallIcon(R.drawable.ic_stat_griffin)
@@ -205,7 +211,58 @@ class AssistantService : Service() {
             }
             app.jobs.execute { try { phoneRunner.tick() } catch (e: Exception) { app.dlog("phone job: ${e.message}") } }
             if (refreshNames) app.net.execute { try { app.replyWatch.update(app.api.awaitingNames()) } catch (_: Exception) {} }
+            checkAndNotifyCompletedTasks()
             app.main.postDelayed(this, 30_000)
+        }
+    }
+
+    private fun checkAndNotifyCompletedTasks() {
+        if (!app.api.signedIn) return
+        app.net.execute {
+            try {
+                val tasks = app.api.fetchRecentCompletedTasks()
+                if (tasks.isEmpty()) return@execute
+                val prefs = getSharedPreferences("griffin_task_notifs", Context.MODE_PRIVATE)
+                val seen = prefs.getStringSet("seen_tasks", emptySet())?.toMutableSet() ?: mutableSetOf()
+                val newlyCompleted = tasks.filter { it.id !in seen }
+                if (newlyCompleted.isEmpty()) return@execute
+
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                for (task in newlyCompleted) {
+                    seen.add(task.id)
+                    val title = when {
+                        task.title.contains("DSA", ignoreCase = true) || task.title.contains("LeetCode", ignoreCase = true) ->
+                            "⚡ DSA / LeetCode Update"
+                        task.title.contains("Brief", ignoreCase = true) || task.title.contains("Morning", ignoreCase = true) ->
+                            "🌅 Daily Executive Briefing Ready"
+                        task.title.contains("Post", ignoreCase = true) || task.title.contains("Weekly", ignoreCase = true) ->
+                            "📊 Weekly Report Ready"
+                        else -> "✅ Task Completed: ${task.title.take(50)}"
+                    }
+                    val body = task.response.ifEmpty { task.goal }.take(250)
+                    val clickUri = Uri.parse("https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com/tasks/${task.id}")
+                    val viewIntent = Intent(Intent.ACTION_VIEW, clickUri).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    val pi = PendingIntent.getActivity(this, task.id.hashCode(), viewIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+                    val notif = NotificationCompat.Builder(this, "griffin_task_updates")
+                        .setSmallIcon(R.drawable.ic_stat_griffin)
+                        .setContentTitle(title)
+                        .setContentText(body)
+                        .setStyle(NotificationCompat.BigTextStyle().bigText(task.response.ifEmpty { task.goal }))
+                        .setContentIntent(pi)
+                        .setAutoCancel(true)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setDefaults(Notification.DEFAULT_ALL)
+                        .build()
+
+                    nm.notify(task.id.hashCode(), notif)
+                }
+                prefs.edit().putStringSet("seen_tasks", seen.takeLast(100).toSet()).apply()
+            } catch (e: Exception) {
+                app.dlog("task notif check failed: ${e.message}")
+            }
         }
     }
 

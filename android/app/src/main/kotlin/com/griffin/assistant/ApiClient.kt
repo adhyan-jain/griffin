@@ -303,4 +303,40 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         }
         api("POST", "/api/v1/calls/record", body)
     }
+
+    data class CompletedTaskNotice(
+        val id: String,
+        val title: String,
+        val goal: String,
+        val status: String,
+        val response: String,
+        val completedAt: String,
+    )
+
+    /** Fetches recently completed tasks from Griffin API to notify the owner on their phone. */
+    fun fetchRecentCompletedTasks(): List<CompletedTaskNotice> {
+        val jsonStr = try {
+            api("GET", "/api/v1/tasks?status=COMPLETED&limit=10")
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        val out = mutableListOf<CompletedTaskNotice>()
+        try {
+            val root = JSONObject(jsonStr)
+            val data = root.optJSONArray("data") ?: root.optJSONArray("tasks") ?: return emptyList()
+            for (i in 0 until data.length()) {
+                val obj = data.getJSONObject(i)
+                val id = obj.optString("id")
+                val title = obj.optString("title").ifEmpty { obj.optString("goal") }
+                val goal = obj.optString("goal")
+                val status = obj.optString("status")
+                val output = obj.optJSONObject("output_payload")?.optString("response").orEmpty()
+                val completedAt = obj.optString("completed_at").ifEmpty { obj.optString("updated_at") }
+                if (id.isNotBlank()) {
+                    out.add(CompletedTaskNotice(id, title, goal, status, output, completedAt))
+                }
+            }
+        } catch (_: Exception) {}
+        return out
+    }
 }

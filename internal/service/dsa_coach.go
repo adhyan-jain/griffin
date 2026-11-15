@@ -40,6 +40,10 @@ type LeetCodeChecker struct {
 
 // Solved implements SolvedChecker. The newest accepted time per problem wins.
 func (c *LeetCodeChecker) Solved(ctx context.Context, username string) (map[string]time.Time, error) {
+	username = domain.CleanLeetCodeUsername(username)
+	if username == "" {
+		username = "AdhyanJain"
+	}
 	endpoint := c.Endpoint
 	if endpoint == "" {
 		endpoint = "https://leetcode.com/graphql"
@@ -50,7 +54,7 @@ func (c *LeetCodeChecker) Solved(ctx context.Context, username string) (map[stri
 	}
 	body, _ := json.Marshal(map[string]any{
 		"query":     `query recent($u: String!, $n: Int!) { recentAcSubmissionList(username: $u, limit: $n) { titleSlug timestamp } }`,
-		"variables": map[string]any{"u": username, "n": 20},
+		"variables": map[string]any{"u": username, "n": 50},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -130,6 +134,9 @@ func (c *DsaCoach) Today(ctx context.Context, userID uuid.UUID) ([]*domain.DsaIt
 	if err != nil {
 		return nil, err
 	}
+	// Sync solved problems from LeetCode first so problems already completed by the owner are NEVER assigned as repeats.
+	_, _ = c.Sync(ctx, userID)
+
 	items, err := c.Store.Items(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -150,14 +157,22 @@ func (c *DsaCoach) Today(ctx context.Context, userID uuid.UUID) ([]*domain.DsaIt
 	return out, nil
 }
 
-// Sync asks LeetCode which problems were accepted and marks today's (and any resting) problems solved. It
-// returns the slugs it just marked. With no LeetCode user name set it does nothing.
+// Sync asks LeetCode which problems were accepted and marks today's (and any resting or queued) problems solved. It
+// returns the slugs it just marked. If a problem was already solved on LeetCode, it is marked solved so
+// it is never handed out again as a repeat.
 func (c *DsaCoach) Sync(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	s, err := c.Store.Settings(ctx, userID)
-	if err != nil || s.LeetcodeUsername == "" || c.Checker == nil {
+	if err != nil {
 		return nil, err
 	}
-	accepted, err := c.Checker.Solved(ctx, s.LeetcodeUsername)
+	username := domain.CleanLeetCodeUsername(s.LeetcodeUsername)
+	if username == "" {
+		username = "AdhyanJain"
+	}
+	if c.Checker == nil {
+		return nil, nil
+	}
+	accepted, err := c.Checker.Solved(ctx, username)
 	if err != nil {
 		return nil, err
 	}
@@ -169,12 +184,7 @@ func (c *DsaCoach) Sync(ctx context.Context, userID uuid.UUID) ([]string, error)
 	var slugs []string
 	for _, it := range items {
 		at, ok := accepted[it.Slug]
-		if !ok || it.State == domain.DsaSolved || it.State == domain.DsaQueued || it.AssignedOn == nil {
-			continue
-		}
-		// Only an acceptance after the problem was handed out counts: an old solve proves nothing.
-		y, m, d := it.AssignedOn.Date()
-		if at.Before(time.Date(y, m, d, 0, 0, 0, 0, c.location(s))) {
+		if !ok || it.State == domain.DsaSolved {
 			continue
 		}
 		t := at
@@ -182,7 +192,12 @@ func (c *DsaCoach) Sync(ctx context.Context, userID uuid.UUID) ([]string, error)
 		changed = append(changed, it)
 		slugs = append(slugs, it.Slug)
 	}
-	return slugs, c.Store.SaveItems(ctx, userID, changed)
+	if len(changed) > 0 {
+		if err := c.Store.SaveItems(ctx, userID, changed); err != nil {
+			return nil, err
+		}
+	}
+	return slugs, nil
 }
 
 // MarkSolved is the manual way, for when the owner solved it somewhere LeetCode cannot see.

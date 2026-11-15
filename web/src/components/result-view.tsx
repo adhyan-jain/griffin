@@ -72,7 +72,8 @@ export function MarkdownText({ text }: { text: string }) {
 export function ResultView({ payload, title }: { payload: unknown; title: string }) {
   const { text, rest, noInfo, trimmed } = parseResult(payload);
   const [raw, setRaw] = useState(false);
-  const [open, setOpen] = useState(false);
+  const isReport = /report|brief|scorecard|audit|digest|dsa|daily|weekly/i.test(title);
+  const [open, setOpen] = useState(isReport);
   const [copied, setCopied] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [lists, setLists] = useState<Artifact[] | null>(null);
