@@ -271,13 +271,13 @@ func TestWorkerAntigravityAuthFailureEvent(t *testing.T) {
 		t.Fatal("expected task to be processed")
 	}
 
-	// Verify task failed permanently (no retries scheduled)
+	// An expired provider sign-in blocks the task until the owner signs in again; it is not retried or failed.
 	failedTask, err := env.Engine.GetTask(ctx, task.ID)
 	if err != nil {
 		t.Fatalf("get task: %v", err)
 	}
-	if failedTask.Status != domain.TaskStatusFailed {
-		t.Fatalf("expected task status FAILED, got %s", failedTask.Status)
+	if failedTask.Status != domain.TaskStatusBlockedAwaitingProvider {
+		t.Fatalf("expected task status BLOCKED_AWAITING_PROVIDER, got %s", failedTask.Status)
 	}
 	if failedTask.RetryCount != 0 {
 		t.Fatalf("expected RetryCount 0 (retries disabled for auth failure), got %d", failedTask.RetryCount)

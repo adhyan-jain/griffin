@@ -1009,3 +1009,37 @@ func (r *PostgresTaskRepository) ListTasksNeedingHosts(ctx context.Context, user
 	}
 	return out, rows.Err()
 }
+
+// DeviceWaitReason is what a step that never found a device is told, and what the owner reads.
+const DeviceWaitReason = "No laptop or phone running the Griffin host came online in time to do this step. Nothing was done. Start the host (see Devices) and send the request again."
+
+// ExpireStaleDeviceWaits fails steps that need a laptop or phone and have waited, never started, for longer than
+// the limit. A live device claims such a step within seconds, so a long wait means none is coming; without this the
+// request sat "Running" for days. It returns the ids it failed so their plans can be brought up to date.
+func (r *PostgresTaskRepository) ExpireStaleDeviceWaits(ctx context.Context, wait time.Duration) ([]uuid.UUID, error) {
+	now := time.Now().UTC()
+	rows, err := r.pool.Query(ctx, `
+		WITH expired AS (
+			UPDATE tasks SET status = 'FAILED', failure_reason = $1, completed_at = $2, updated_at = $2,
+				leased_by = NULL, lease_expires_at = NULL
+			WHERE status IN ('QUEUED', 'RETRYING') AND started_at IS NULL AND created_at < $3 AND `+needsHandsSQL("")+`
+			RETURNING id
+		), logged AS (
+			INSERT INTO task_events (task_id, event_type, message, created_at)
+			SELECT id, 'STATUS_CHANGE', 'Failed: no device came online to do this step', $2 FROM expired
+		)
+		SELECT id FROM expired`, DeviceWaitReason, now, now.Add(-wait))
+	if err != nil {
+		return nil, fmt.Errorf("expire device waits: %w", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

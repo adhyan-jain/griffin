@@ -42,6 +42,10 @@ var (
 	needWordRe    = regexp.MustCompile(`\b(?:need|want|give|produce|generate|prepare|draft|write|compile)\b`)
 )
 
+// outboundCallRe spots a request to phone someone. Griffin cannot place calls, so it must not become a plan that
+// quietly turns into a different job (it once became a WhatsApp step that then waited a day for a laptop).
+var outboundCallRe = regexp.MustCompile(`\b(?:automated|phone|voice)\s+call\b|\b(?:make|place|do|give)\s+(?:a|an)\s+(?:\w+\s+)?call\b|\b(?:call|phone|ring)\s+(?:up\s+)?(?:him|her|them|my\s+\w+|mom|mum|mummy|dad|papa)\b`)
+
 // ClassifyMessageWithReason is ClassifyMessage plus a short, stable reason for logs and tests.
 func ClassifyMessageWithReason(text string) (MessageKind, string) {
 	t := strings.ToLower(strings.TrimSpace(text))
@@ -50,6 +54,9 @@ func ClassifyMessageWithReason(text string) (MessageKind, string) {
 	}
 	if cmd := ParseTaskCommand(t); cmd.Kind != CmdNone {
 		return MessageKindConversation, "task-command:" + string(cmd.Kind)
+	}
+	if outboundCallRe.MatchString(t) && !buildingVerb.MatchString(t) {
+		return MessageKindConversation, "outbound-call-unsupported"
 	}
 	for _, s := range sentenceSplitRe.FindAllString(t, -1) {
 		if reason := objectiveSentenceReason(strings.TrimSpace(s)); reason != "" {

@@ -21,6 +21,7 @@ import (
 	"github.com/griffin/core/internal/api/handlers"
 	"github.com/griffin/core/internal/config"
 	"github.com/griffin/core/internal/database"
+	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/provider/antigravity"
 	"github.com/griffin/core/internal/provider/claudecli"
@@ -364,6 +365,35 @@ func main() {
 	}
 	briefer := &service.Briefer{Sources: repository.NewReportRepository(repoDB), Coach: dsaCoach, Sender: dsaCoach.Sender, AppURL: cfg.AppURL, Logger: logger}
 	if runWorkers { // a long-lived process; the API alone may be a short-lived function
+		// Steps that need a laptop or phone and found none online fail with a plain reason instead of waiting forever.
+		go func() {
+			sweep := func() {
+				ids, err := taskRepo.ExpireStaleDeviceWaits(ctx, time.Duration(domain.DeviceWaitLimit)*time.Second)
+				if err != nil {
+					logger.Warn("Expiring steps that waited for a device failed", "error", err)
+					return
+				}
+				for _, id := range ids {
+					if err := jjOrchestrator.ReconcileByChildTask(ctx, id); err != nil {
+						logger.Warn("Reconcile after a device wait expired failed", "task_id", id, "error", err)
+					}
+				}
+				if len(ids) > 0 {
+					logger.Info("Failed steps that waited too long for a device", "count", len(ids))
+				}
+			}
+			sweep()
+			t := time.NewTicker(5 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					sweep()
+				}
+			}
+		}()
 		go dsaCoach.Run(ctx, 15*time.Minute)
 		go briefer.Run(ctx, 15*time.Minute)
 	}
