@@ -36,6 +36,9 @@ class Listener(private val context: Context, private val onHeard: (List<String>)
     /** Forces a one-turn listen even if media or music is playing. */
     fun forceListen() = send(LEvent.ForceListen)
 
+    /** Tap-only mode: one utterance, then the microphone goes quiet again. */
+    fun listenOnce() = send(LEvent.ListenOnce)
+
     private fun send(event: LEvent) {
         val step = ListenerMachine.reduce(state, event)
         state = step.state

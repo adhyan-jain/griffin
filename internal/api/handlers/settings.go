@@ -16,6 +16,8 @@ import (
 type ProfileStore interface {
 	ManagerName(ctx context.Context, userID uuid.UUID) (string, error)
 	SetManagerName(ctx context.Context, userID uuid.UUID, name string) error
+	InboundCallsEnabled(ctx context.Context, userID uuid.UUID) (bool, error)
+	SetInboundCallsEnabled(ctx context.Context, userID uuid.UUID, enabled bool) error
 }
 
 // ResolveManagerName returns the owner's chosen name, or the default when none is set, the store is
@@ -80,4 +82,45 @@ func (h *SettingsHandler) PutManagerName(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	httputil.JSON(w, http.StatusOK, managerNameBody(name))
+}
+
+// GetCallSettings handles GET /api/v1/settings/calls.
+func (h *SettingsHandler) GetCallSettings(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+	var enabled bool
+	if h.profiles != nil {
+		enabled, _ = h.profiles.InboundCallsEnabled(r.Context(), userID)
+	}
+	httputil.JSON(w, http.StatusOK, map[string]any{
+		"inbound_calls_enabled": enabled,
+	})
+}
+
+// PutCallSettings handles PUT /api/v1/settings/calls.
+func (h *SettingsHandler) PutCallSettings(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+	var body struct {
+		InboundCallsEnabled bool `json:"inbound_calls_enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		httputil.ErrorJSON(w, badRequestFromDecode(err))
+		return
+	}
+	if h.profiles != nil {
+		if err := h.profiles.SetInboundCallsEnabled(r.Context(), userID, body.InboundCallsEnabled); err != nil {
+			httputil.ErrorJSON(w, err)
+			return
+		}
+	}
+	httputil.JSON(w, http.StatusOK, map[string]any{
+		"inbound_calls_enabled": body.InboundCallsEnabled,
+	})
 }

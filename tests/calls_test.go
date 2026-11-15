@@ -15,6 +15,7 @@ import (
 	"github.com/griffin/core/internal/api/handlers"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/service"
 )
 
 const callsToken = "twilio-test-token"
@@ -121,4 +122,130 @@ func TestCallsWithNoTokenConfiguredAcceptNothing(t *testing.T) {
 	req.Header.Set("X-Twilio-Signature", "anything")
 	h.Inbound(rec, req)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestInboundScreeningDisabledForwardsDirectly(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+	owner := CreateTestUser(t, env.DB, "calls_off@example.com")
+	calls := repository.NewCallRepository(env.DB.Pool)
+
+	server := api.NewServer(api.ServerDependencies{
+		Config: env.Config, DB: env.DB, Engine: env.Engine, TaskRepo: env.TaskRepo, ApprovalRepo: env.ApprovalRepo, AgentRepo: env.AgentRepo,
+		ArtifactRepo: env.ArtifactRepo, StorageService: env.StorageService, WorkerDefRepo: env.WorkerDefRepo, OrchRepo: env.OrchRepo,
+		Orchestrator: env.Orchestrator, Factory: env.AgentFactory, ManagerRegistry: env.ManagerReg,
+		Calls: &handlers.CallsHandler{
+			Log: calls, AuthToken: callsToken, PublicURL: callsBase, OwnerUserID: owner,
+			OwnerName: "Adhyan", OwnerNumber: "+919000000001",
+			InboundEnabled: func(ctx context.Context) bool { return false }, // toggled off
+		},
+	})
+	ts := httptest.NewServer(server.Handler())
+	defer ts.Close()
+
+	// A stranger calls while automated screening is toggled off: forwarded straight through to owner's number.
+	form := url.Values{"CallSid": {"CA-off-1"}, "From": {"+15559998888"}}
+	resp, body := signedPost(t, ts, "/api/v1/calls/inbound", form, callsToken)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, body, "<Dial")
+	assert.Contains(t, body, "+919000000001")
+	assert.NotContains(t, body, "<Gather")
+}
+
+func TestAutonomousOutboundCallFlow(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+	ctx := context.Background()
+	owner := CreateTestUser(t, env.DB, "outbound_calls@example.com")
+	calls := repository.NewCallRepository(env.DB.Pool)
+	push := &pushLog{}
+
+	callHandler := &handlers.CallsHandler{
+		Log: calls, Sender: push, AuthToken: callsToken, PublicURL: callsBase,
+		OwnerUserID: owner, OwnerName: "Adhyan", OwnerNumber: "+919000000001",
+	}
+
+	server := api.NewServer(api.ServerDependencies{
+		Config: env.Config, DB: env.DB, Engine: env.Engine, TaskRepo: env.TaskRepo, ApprovalRepo: env.ApprovalRepo, AgentRepo: env.AgentRepo,
+		ArtifactRepo: env.ArtifactRepo, StorageService: env.StorageService, WorkerDefRepo: env.WorkerDefRepo, OrchRepo: env.OrchRepo,
+		Orchestrator: env.Orchestrator, Factory: env.AgentFactory, ManagerRegistry: env.ManagerReg,
+		Calls: callHandler,
+	})
+	ts := httptest.NewServer(server.Handler())
+	defer ts.Close()
+
+	// 1. Initiate outbound call
+	callID, err := callHandler.MakeOutboundCall(ctx, owner, "+919876543210", "Bhai", "Pick up milk on your way home")
+	require.NoError(t, err)
+	require.NotEmpty(t, callID)
+
+	// 2. Twilio requests the TwiML for when Bhai answers
+	resp, body := signedPost(t, ts, "/api/v1/calls/outbound/twiml?id="+callID, url.Values{}, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, body, "Hello, this is an automated message from Adhyan: Pick up milk on your way home")
+	assert.Contains(t, body, "<Gather")
+	assert.Contains(t, body, "/api/v1/calls/outbound/gather?id="+callID)
+
+	// 3. Bhai responds with something to say
+	form := url.Values{"SpeechResult": {"I will be home by 7, is that fine?"}}
+	resp, body = signedPost(t, ts, "/api/v1/calls/outbound/gather?id="+callID, form, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// Must say: "I will ask [Owner] and reply in a while, is there anything that you want to mention?"
+	assert.Contains(t, body, "I will ask Adhyan and reply in a while, is there anything that you want to mention?")
+	assert.Contains(t, body, "<Gather")
+	assert.Contains(t, body, "/api/v1/calls/outbound/followup?id="+callID)
+
+	// 4. Bhai answers the followup question
+	formFollowup := url.Values{"SpeechResult": {"Also tell him to keep dinner ready"}}
+	resp, body = signedPost(t, ts, "/api/v1/calls/outbound/followup?id="+callID, formFollowup, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, body, "Thank you. I have noted that and will inform Adhyan. Goodbye.")
+
+	// 5. Owner receives push notification with both parts
+	require.Len(t, push.msgs, 1)
+	assert.Contains(t, push.msgs[0].Title, "Bhai")
+	assert.Contains(t, push.msgs[0].Body, "I will be home by 7, is that fine?")
+	assert.Contains(t, push.msgs[0].Body, "Also tell him to keep dinner ready")
+
+	// 6. Call log recorded
+	recent, err := calls.Recent(ctx, owner, 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, recent)
+	assert.Equal(t, "message", recent[0].Outcome)
+	assert.Contains(t, recent[0].Message, "Pick up milk")
+	assert.Contains(t, recent[0].Message, "I will be home by 7")
+}
+
+func TestParseAutomatedCallCommand(t *testing.T) {
+	cases := []struct {
+		input      string
+		wantKind   service.TaskCommandKind
+		wantRef    string
+		wantTarget string
+	}{
+		{
+			input:      "make an automated call to mom and tell them I will be late",
+			wantKind:   service.CmdAutomatedCall,
+			wantRef:    "mom",
+			wantTarget: "I will be late",
+		},
+		{
+			input:      "make automated call to +919876543210 saying meeting at 5pm",
+			wantKind:   service.CmdAutomatedCall,
+			wantRef:    "+919876543210",
+			wantTarget: "meeting at 5pm",
+		},
+		{
+			input:      "call rahul and tell him I reached safely",
+			wantKind:   service.CmdAutomatedCall,
+			wantRef:    "rahul",
+			wantTarget: "I reached safely",
+		},
+	}
+	for _, tc := range cases {
+		cmd := service.ParseTaskCommand(tc.input)
+		assert.Equal(t, tc.wantKind, cmd.Kind, "for input: "+tc.input)
+		assert.Equal(t, tc.wantRef, cmd.Ref, "for input: "+tc.input)
+		assert.Equal(t, tc.wantTarget, cmd.Target, "for input: "+tc.input)
+	}
 }

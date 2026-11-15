@@ -20,6 +20,9 @@ type ProfileRepository interface {
 	// VaultMisses returns the stored list of documents that were needed and were not there (JSON array).
 	VaultMisses(ctx context.Context, userID uuid.UUID) ([]byte, error)
 	SetVaultMisses(ctx context.Context, userID uuid.UUID, misses []byte) error
+	// InboundCallsEnabled returns whether automated call screening is active for unknown callers.
+	InboundCallsEnabled(ctx context.Context, userID uuid.UUID) (bool, error)
+	SetInboundCallsEnabled(ctx context.Context, userID uuid.UUID, enabled bool) error
 }
 
 // PostgresProfileRepository implements ProfileRepository on profiles.settings (no schema change).
@@ -76,6 +79,31 @@ func (r *PostgresProfileRepository) SetVaultMisses(ctx context.Context, userID u
 		WHERE id = $1`, userID, misses)
 	if err != nil {
 		return fmt.Errorf("save vault misses: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresProfileRepository) InboundCallsEnabled(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var enabled *bool
+	err := r.pool.QueryRow(ctx, `SELECT (settings->>'inbound_calls_enabled')::boolean FROM profiles WHERE id = $1`, userID).Scan(&enabled)
+	if errors.Is(err, pgx.ErrNoRows) || enabled == nil {
+		return false, nil // default off
+	}
+	if err != nil {
+		return false, fmt.Errorf("read inbound calls enabled: %w", err)
+	}
+	return *enabled, nil
+}
+
+func (r *PostgresProfileRepository) SetInboundCallsEnabled(ctx context.Context, userID uuid.UUID, enabled bool) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE profiles SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{inbound_calls_enabled}', to_jsonb($2::boolean), true), updated_at = NOW()
+		WHERE id = $1`, userID, enabled)
+	if err != nil {
+		return fmt.Errorf("save inbound calls enabled: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound

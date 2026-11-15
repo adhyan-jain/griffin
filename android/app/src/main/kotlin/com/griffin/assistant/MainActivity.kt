@@ -183,8 +183,13 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(dp(44), dp(44)))
             addView(label("Griffin", 17f, Ink.text, true).apply { setPadding(dp(12), 0, 0, 0) })
         })
-        root.addView(label("Say \"hey $name\" or \"oye bhosadike\"", 24f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
-        root.addView(label(if (running) "Listening on this phone. Nothing is kept unless it starts with that." else "Not listening right now.", 14f, Ink.muted).apply { setPadding(0, dp(6), 0, 0) })
+        val wake = ListenMode.wakeWord(this)
+        root.addView(label(if (wake) "Say \"hey $name\" or \"oye bhosadike\"" else "Tap the ball or the button to talk", 24f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
+        root.addView(label(when {
+            !running -> "Not listening right now."
+            wake -> "Listening on this phone. Nothing is kept unless it starts with that."
+            else -> "The microphone is off until you tap. It opens once, then closes."
+        }, 14f, Ink.muted).apply { setPadding(0, dp(6), 0, 0) })
 
         if (app.api.usingTestServer) {
             root.addView(card(label("Test server in use", 15f, Ink.warn, true), label("This build is talking to ${app.api.apiUrl}, not the real Griffin. Tap Sign out at the bottom to go back to the real one.", 13f, Ink.muted).apply { setPadding(0, dp(4), 0, 0) }))
@@ -207,6 +212,21 @@ class MainActivity : Activity() {
             isEnabled = app.api.signedIn
             alpha = if (isEnabled) 1f else 0.4f
         })
+        // How it wakes: the wake word listens all the time (and sometimes mishears); tap-only keeps the mic off.
+        root.addView(label("How to wake it", 13f, Ink.muted).apply { setPadding(dp(4), dp(18), 0, dp(6)) })
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            fun choice(text: String, selected: Boolean, wakeWord: Boolean) = pill(text, filled = selected) {
+                if (ListenMode.wakeWord(this@MainActivity) != wakeWord) {
+                    ListenMode.setWakeWord(this@MainActivity, wakeWord)
+                    if (app.assistantRunning) startService(Intent(this@MainActivity, AssistantService::class.java).setAction(AssistantService.ACTION_APPLY_MODE))
+                    app.main.postDelayed({ rebuild() }, 300)
+                }
+            }.apply { textSize = 14f; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) } }
+            addView(choice("Wake word + tap", wake, true))
+            addView(choice("Tap only (quiet)", !wake, false))
+        })
+        root.addView(label(if (wake) "Always listening for the wake word. The ball, button and tile also work." else "No always-on microphone. Tap the ball, button, notification or tile; each tap listens once.", 12f, Ink.muted).apply { setPadding(dp(4), dp(6), 0, 0) })
         root.addView(small("Preview the animation") { previewAnimation() }.apply {
             (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.topMargin = dp(10); it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it }
             visibility = if (running) View.GONE else View.VISIBLE
@@ -218,6 +238,22 @@ class MainActivity : Activity() {
             root.addView(small(if (on) "Hide the floating ball" else "Show the floating ball") { FloatingBall.setEnabled(this, !on); rebuild() }.apply {
                 (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.topMargin = dp(6); it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it }
             })
+            if (on) {
+                val halfHide = FloatingBall.halfHideEnabled(this)
+                root.addView(small(if (halfHide) "Edge half-hide: On (tucks away)" else "Edge half-hide: Off (always full)") {
+                    FloatingBall.setHalfHideEnabled(this, !halfHide)
+                    rebuild()
+                }.apply {
+                    (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.topMargin = dp(4); it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it }
+                })
+                val paymentHide = FloatingBall.hideOnPaymentApps(this)
+                root.addView(small(if (paymentHide) "Hide on payment apps: On" else "Hide on payment apps: Off") {
+                    FloatingBall.setHideOnPaymentApps(this, !paymentHide)
+                    rebuild()
+                }.apply {
+                    (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)).also { it.topMargin = dp(4); it.gravity = Gravity.CENTER_HORIZONTAL; layoutParams = it }
+                })
+            }
         }
 
         // Account.

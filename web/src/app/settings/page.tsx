@@ -141,6 +141,68 @@ function VoicePicker() {
   );
 }
 
+/** Toggle inbound automated call screening on or off. */
+function CallSettingsSection() {
+  const [enabled, setEnabled] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    api
+      .getCallSettings()
+      .then((res) => {
+        setEnabled(res.inbound_calls_enabled);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggle = async (newVal: boolean) => {
+    setSaving(true);
+    try {
+      const res = await api.putCallSettings(newVal);
+      setEnabled(res.inbound_calls_enabled);
+      toast.success(
+        res.inbound_calls_enabled
+          ? "Receiving automated calls turned on."
+          : "Receiving automated calls turned off."
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update call settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Section title="Automated call receiving">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className="text-muted-foreground">Screen unknown callers</span>
+          {loading ? (
+            <span className="text-xs text-muted-foreground">Checking...</span>
+          ) : (
+            <Tabs value={enabled ? "on" : "off"} onValueChange={(v) => void toggle(v === "on")}>
+              <TabsList className="grid h-9 grid-cols-2 w-32">
+                <TabsTrigger value="off" disabled={saving}>
+                  Off
+                </TabsTrigger>
+                <TabsTrigger value="on" disabled={saving}>
+                  On
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          When turned off, Griffin will not autonomously answer or screen inbound phone calls from unknown callers.
+          When turned on, Griffin greets unknown callers and asks why they are calling.
+        </p>
+      </div>
+    </Section>
+  );
+}
+
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
@@ -222,6 +284,7 @@ export default function SettingsPage() {
         <Section title="Voice">
           <VoicePicker />
         </Section>
+        <CallSettingsSection />
         <Section title="Runner">
           <Row label="State" value={runner ? runner.state : "Unknown"} />
           <Row label="Sleeps when idle" value={runner ? (runner.scale_to_zero_enabled ? "Yes" : "No") : "Unknown"} />

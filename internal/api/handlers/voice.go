@@ -26,10 +26,9 @@ type VoiceBrain interface {
 // talk at once and tells the caller when the request is real work, so the caller can post it to
 // /api/v1/jj/messages with the conversation so far and the worker continues from there.
 type VoiceHandler struct {
-	brain      VoiceBrain
-	profiles   ProfileStore
-	commands   *service.VoiceCommands
-	classifier *service.SmartClassifier
+	brain    VoiceBrain
+	profiles ProfileStore
+	commands *service.VoiceCommands
 }
 
 // WithCommands lets the voice route list, cancel and delete tasks and handle approvals (see service.VoiceCommands).
@@ -40,11 +39,7 @@ func (h *VoiceHandler) WithCommands(c *service.VoiceCommands) *VoiceHandler {
 
 // NewVoiceHandler constructs a VoiceHandler. brain may be nil: every turn then hands off.
 func NewVoiceHandler(brain VoiceBrain, profiles ProfileStore) *VoiceHandler {
-	var classifier *service.SmartClassifier
-	if brain != nil {
-		classifier = service.NewSmartClassifier(brain)
-	}
-	return &VoiceHandler{brain: brain, profiles: profiles, classifier: classifier}
+	return &VoiceHandler{brain: brain, profiles: profiles}
 }
 
 // VoiceTurnRequest is the POST body.
@@ -139,25 +134,10 @@ func (h *VoiceHandler) PostTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var intent service.ParsedIntent
-	if h.classifier != nil {
-		intent = h.classifier.Classify(r.Context(), message)
-	}
-
 	// Tasks and approvals by voice: answered here, the same for every client. A sentence that only looked like one
 	// (it names none of the owner's tasks) carries on as ordinary conversation or work.
 	if h.commands != nil {
-		var cmd service.TaskCommand
-		var isCmd bool
-		if intent.Kind != service.IntentNone {
-			cmd, isCmd = intent.ToTaskCommand()
-		}
-		if !isCmd {
-			cmd = service.ParseTaskCommand(message)
-			isCmd = cmd.Kind != service.CmdNone
-		}
-
-		if isCmd {
+		if cmd := service.ParseTaskCommand(message); cmd.Kind != service.CmdNone {
 			res, err := h.commands.Run(r.Context(), userID, cmd, req.Unlocked)
 			switch {
 			case err != nil:
@@ -173,14 +153,7 @@ func (h *VoiceHandler) PostTurn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	isObjective := false
-	if intent.Kind == service.IntentObjective {
-		isObjective = true
-	} else if intent.Kind == "" && service.ClassifyMessage(message) == service.MessageKindObjective {
-		isObjective = true
-	}
-
-	if isObjective {
+	if service.ClassifyMessage(message) == service.MessageKindObjective {
 		out.Kind, out.Reply, out.Handoff = "objective", "On it.", true
 		httputil.JSON(w, http.StatusOK, out)
 		return

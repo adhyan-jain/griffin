@@ -861,6 +861,119 @@ This document is the canonical ledger of all architectural, product, engineering
      - Added an interactive "Run Task on List" action bar with presets for refreshing internship trackers, tailoring resumes for listed openings, and monitoring outreach logs.
 - **Why**: Eliminates repetitive one-by-one approval friction when managing dozens of job applications or outreach drafts, while turning static lists and file dumps into actionable execution hubs.
 
+#### ADR-118: Edge Half-Hide & Swipe-from-Recents Persistence for the Floating Ball
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/AssistantBall.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/AndroidManifest.xml`).
+- **Decision**:
+  1. **Edge Snapping & Half-Hiding**:
+     - After dragging and releasing the floating ball, it smoothly animates and snaps to the nearest horizontal screen edge (left or right).
+     - Once snapped to an edge, an idle timer transitions the ball into a "half-hidden" collapsed state: 60% of the ball tucks off-screen against the display edge, leaving a slim, semi-transparent tab/handle visible.
+     - Touching or dragging the half-hidden tab springs the full ball back into view.
+  2. **Persistence Across Swipe from Recents**:
+     - `AssistantService` is an Android foreground service with a persistent foreground notification, `stopWithTask="false"` in `AndroidManifest.xml`, and returns `START_STICKY` in `onStartCommand()`.
+     - `onTaskRemoved()` does NOT tear down the overlay or stop the service; it schedules a restart alarm and maintains the overlay window attached via `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY`.
+- **Why**: Standard Android accessibility balls (e.g. AssistiveTouch / MIUI / ColorOS ball) tuck discreetly into the side of the screen after inactivity so they don't block user touch targets or UI elements, while ensuring the assistant remains alive even if the user clears recent apps.
+
+#### ADR-119: Temporary Ball Overlay Dismissal on Payment, Banking & UPI Apps
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/AssistantAccessibilityService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantBall.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`).
+- **Decision**:
+  - Floating overlays can trigger tapjacking security protections or obstruct QR scanners, PIN entry pads, and biometric prompts on financial applications.
+  - An Android `AccessibilityService` listens for window state changes (`TYPE_WINDOW_STATE_CHANGED`).
+  - When the foreground package name or application label matches financial/UPI apps (e.g., Google Pay, PhonePe, Paytm, CRED, BHIM, Navi, banking apps, or apps matching financial keywords):
+    - `AssistantBall.hideTemporarily()` immediately sets overlay view visibility to `GONE` or detaches it from the window manager.
+    - When the user exits the financial app back to launcher or any non-financial app, `AssistantBall.restoreTemporarilyHidden()` restores the ball overlay to its previous edge position.
+- **Why**: Prevents overlay tapjacking errors, keeps sensitive payment flows unobstructed, and automatically restores assistant availability as soon as the user returns to normal tasks.
+
+#### ADR-120: Scheduled Watchers Daemon for Hackathons and OSS Issues
+- **Status**: IMPLEMENTED (`cmd/griffin-host/watchers.go`, `cmd/griffin-host/main.go`, `internal/domain/targets.go`, `data/targets.json`).
+- **Decision**:
+  - The host daemon runs background scheduled watchers on the user's laptop reading `targets.json`:
+    1. **Hackathon Watchers**: Periodically inspects Devfolio, Devpost, and Unstop APIs for new hackathons matching user interests, prize criteria, registration deadlines, and eligibility.
+    2. **GitHub OSS Watchers**: Periodically queries GitHub Search API for open "good first issue" or "help wanted" tickets in specified target repositories or languages.
+    3. **Deduplication & Local Store**: Identified opportunities are deduplicated against a local SQLite/JSON ledger and posted directly to Griffin's task ingestion API (`POST /api/v1/tasks`) or outreach pipeline as structured drafts for owner review.
+- **Why**: Automates continuous discovery of career, freelance, and competitive programming opportunities on the user's local workstation without consuming cloud resources or cloud API limits.
+
+#### ADR-121: Autonomous Outbound Calling Engine & Inbound Call Screening Toggle
+- **Status**: IMPLEMENTED (`internal/domain/calls.go`, `internal/api/handlers/calls.go`, `internal/api/handlers/settings.go`, `internal/service/voice_commands.go`, `web/src/app/settings/page.tsx`, `android/app/src/main/kotlin/com/griffin/assistant/ApiClient.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`).
+- **Decision**:
+  1. **Inbound Screening Off-by-Default with Web Toggle**:
+     - Inbound automated screening is turned OFF by default (`inbound_calls_enabled = false` in `profiles.settings`).
+     - Added `GET /api/v1/settings/calls` and `PUT /api/v1/settings/calls` to read and update the call settings.
+     - Added an intuitive switch toggle on the Griffin Settings webpage under "Call Screening".
+     - When disabled, incoming Twilio calls immediately forward directly to the owner's personal phone number (`OwnerNumber`) or cleanly hang up, rather than interrogating callers.
+  2. **Autonomous Outbound Calling ("make an automated call to xyz and tell them abc")**:
+     - Voice assistant and chat recognize commands like:
+       - `"make an automated call to xyz and tell them abc"`
+       - `"make automated call to <number> saying <message>"`
+       - `"call <person> and tell them <message>"`
+     - Phone app resolves recipient names via on-device contacts; backend resolves aliases/contacts or uses raw E.164 phone numbers.
+     - Initiates outbound call via Twilio REST API (`/2010-04-01/Accounts/{SID}/Calls.json`) with webhook URLs pointing to `/api/v1/calls/outbound/twiml?id=<call_id>`.
+  3. **Context Fallback & Followup Loop**:
+     - Griffin delivers the owner's message and prompts the recipient: `"Is there anything you would like me to convey back to [Owner]?"`
+     - When the recipient responds, Griffin evaluates if it has the required context to reply.
+     - **Context Fallback Protocol**: If the recipient asks something beyond the initial message context, Griffin states:
+       `"I will ask [Owner] and reply in a while, is there anything that you want to mention?"`
+     - Collects the recipient's follow-up statement, cleanly says `"Thank you. I have noted that and will inform [Owner]. Goodbye."`, and hangs up.
+     - Immediately dispatches a high-priority push notification and records a detailed call log entry for the owner containing the recipient's verbatim response.
+- **Why**: Allows hands-free dispatch of outbound informational calls with a polite, safe conversational escape hatch when callers ask questions Griffin cannot answer, while keeping inbound screening strictly opt-in.
+
+#### ADR-122: LLM-First Intent Classification & Independent Multi-Task Decomposition
+- **Status**: IMPLEMENTED (`internal/service/intent_classifier.go`, `internal/api/handlers/jj_chat.go`, `internal/service/planner.go`, `internal/service/intent_classifier_test.go`, `internal/api/handlers/jj_chat_test.go`).
+- **Decision**:
+  1. **LLM-First Semantic Decision Making**:
+     - Griffin uses the fast LLM brain (Gemini Flash Lite) as the primary decision-making and intent classification engine for non-trivial turns, task creation, and decomposition rather than brittle regex patterns.
+     - Deterministic local database control commands (`list tasks`, `approvals`, `approve`, `reject`, `cancel`, `delete`) bypass the LLM for immediate 0ms, zero-token execution.
+     - For everything else, the LLM is consulted to understand semantics, domain routing, and intent.
+  2. **Multi-Task & Independent Task Decomposition**:
+     - When a user specifies 2 or more independent tasks that do not interact with each other (e.g., numbered lists `"1. Research X 2. Buy groceries 3. Fix auth bug"`, compound asks `"make a task to buy groceries and another task to clean disk"`, or conversational multi-intent requests), the LLM decomposes them into separate items in `tasks: [...]`.
+     - Each item contains its own standalone `title`, `goal`, specialist `manager_domain`, and `priority`.
+     - In `JJChatHandler`, when 2 or more independent tasks are provided, Griffin creates separate, independent root orchestrations / tasks in the system rather than merging them into one tangled request.
+     - Each task is executed independently by its respective manager domain (`research`, `engineering`, `personal_ops`, `career`, `finance`, etc.).
+  3. **Graceful Offline Fallback**:
+     - When the LLM brain is offline or unconfigured, regex fallback rules (`extractTasksRegex`) extract numbered lists, compound tasks, and single task requests and route them to their respective managers.
+- **Why**: Prevents independent user tasks from being lumped together into colliding plans or misclassified as chit-chat, replacing brittle keyword regexes with flexible semantic reasoning.
 
 
+#### ADR-123: Native SIM Autonomous Cellular Calling (Zero-Cost Local Telecom)
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/CellularCallManager.kt`, `android/app/src/main/kotlin/com/griffin/assistant/PhoneRunner.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/ApiClient.kt`, `internal/api/handlers/calls.go`, `tests/calls_test.go`, `android/app/src/test/kotlin/com/griffin/assistant/CellularCallManagerTest.kt`).
+- **Decision**:
+  1. **Direct SIM Outbound Calling**:
+     - When cloud telecom credentials (Twilio) are not configured, or when dispatched directly by voice on the phone, Griffin utilizes the Android phone's native SIM card via `TelecomManager.placeCall(...)` under `CALL_PHONE` and `READ_PHONE_STATE` permissions.
+     - Entirely free ($0.00/mo), requires no virtual phone number rental or PSTN usage rates, bypasses commercial KYC hurdles, and displays the owner's genuine mobile number so friends and family answer normally without spam flagging.
+  2. **Call State Detection & In-Call Conversation**:
+     - The Android companion app monitors call state transitions (`CALL_STATE_OFFHOOK`) using `TelephonyCallback` (API 31+) / `PhoneStateListener` (legacy).
+     - Once connected, it activates speakerphone (`MODE_IN_COMMUNICATION`, `isSpeakerphoneOn = true`) and delivers the owner's message via `Speaker` (TTS):
+       `"Hello, this is Griffin calling on behalf of [Owner]. [Message]. Is there anything you would like me to convey back to [Owner]?"`
+     - Uses `SpeechRecognizer` to capture the recipient's verbatim reply.
+     - **Context Fallback Protocol**: If the recipient asks something beyond the message context (questions like "why", "where", "what", "what time", "?"), Griffin states:
+       `"I will ask [Owner] and reply in a while, is there anything else you want to mention?"`
+       and captures any follow-up notes.
+     - Speaks a polite closing (`"Thank you. I have noted that and will inform [Owner]. Goodbye."`), hangs up via `TelecomManager.endCall()`, and restores audio settings.
+  3. **High-Priority Notifications & Server Synchronization**:
+     - Displays a high-priority system notification to the owner with the recipient's verbatim reply and follow-up notes.
+     - Syncs call outcome and transcript back to the Griffin server via `POST /api/v1/calls/record`.
+     - When triggered from JJ Chat (web or API), the backend creates a high-priority task requiring capability `calls` (`HostCapCalls`). `PhoneRunner` on the phone companion app claims this task, executes the cellular call via `CellularCallManager`, and completes the task with the recipient's reply.
+     - When spoken directly into the phone ("make an automated call to mom and tell her xyz"), `AssistantService` dispatches the call immediately through `CellularCallManager`.
+- **Why**: Eliminates third-party telecom costs and subscription overhead, allows autonomous calling from personal phone numbers, and handles unexpected questions with an informative context fallback.
+
+#### ADR-124: Complete Twilio Decommissioning, Background Calling/Messaging, and Emergency Call Cancellation
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/GriffinAccess.kt`, `android/app/src/main/kotlin/com/griffin/assistant/CellularCallManager.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/PhoneRunner.kt`, `android/app/src/main/kotlin/com/griffin/assistant/ApiClient.kt`, `internal/api/handlers/calls.go`, `internal/config/config.go`, `internal/watch/pipelines.go`, `internal/watch/tailor.go`).
+- **Decision**:
+  1. **Twilio Outbound Calling Fully Decommissioned**:
+     - Decommissioned all Twilio REST API outbound dispatching and associated configuration (`CALLS_ACCOUNT_SID`, `TWILIO_ACCOUNT_SID`, `CALLS_FROM_NUMBER`, `TWILIO_PHONE_NUMBER`).
+     - Native SIM cellular calling through the Android companion app is now the sole provider for automated outbound calls.
+     - Telephony webhooks remain strictly for optional inbound webhook screening (via standard HMAC-SHA1 signature).
+  2. **Background Execution for Calls & Messaging ("in background")**:
+     - Voice assistant and chat recognize phrases such as "in background", "in the background", "silently", or "without opening app".
+     - Default behavior preserves standard foreground screen opening.
+     - **Background Cellular Calls**: When requested with "in background", `CellularCallManager` flags `GriffinAccess.suppressDialer = true` and passes `TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE = true`.
+     - `GriffinAccess` (Accessibility Service) detects the appearance of system dialer windows (`com.google.android.dialer`, `com.samsung.android.incallui`, etc.) and immediately issues `performGlobalAction(GLOBAL_ACTION_BACK)` within <100ms, seamlessly returning the user to their active game or application without interruption while the call continues on speakerphone.
+     - **Background Messaging**: Messages flagged with `inBackground` are delivered headlessly without opening chat screens (utilizing Android `Inbox.reply` inline RemoteInput actions, direct SMS, or laptop WhatsApp Web automation).
+  3. **Instant Emergency Call Cancellation ("cancel call" / "cut the call")**:
+     - Users can immediately terminate in-progress or dialing calls by saying:
+       - `"cancel call"`, `"cancel the call"`, `"cut the call"`, `"hang up"`, or `"cancel call to <person>"`.
+     - **If not yet answered / ringing**: Griffin cuts the call immediately via `TelecomManager.endCall()`.
+     - **If already answered / offhook**: Griffin immediately interrupts current dialog, speaks a polite excuse over the cellular line (*"Sorry, there might have been a change of plan, I need to drop off now. Talk soon, bye!"*), and hangs up within 600ms.
+  4. **Autonomous Career, Freelance & Dev Opportunity Pipelines**:
+     - Implemented 13 autonomous background pipeline modules in `internal/watch/` enforcing strict human-in-the-loop approvals, resume ground truth (/home/adhyan/Downloads/AJ_Resume_Context.md), 24h CAPTCHA circuit breakers, and daily volume safety caps.
+- **Why**: Eliminates third-party telecom costs, prevents UI disruption during gaming or active multitasking, and provides safe, instant voice cancellation for autonomous calls.
 

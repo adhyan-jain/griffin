@@ -298,19 +298,19 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 
 	kind := service.MessageKindConversation
 	reason := "default-conversation"
-	if intent.Kind == service.IntentObjective {
+	if intent.Kind == service.IntentObjective || intent.Kind == service.IntentCreateTasks {
 		kind = service.MessageKindObjective
 		reason = intent.Reason
 	} else if intent.Kind == "" {
 		kind, reason = service.ClassifyMessageWithReason(toClassify)
 	}
-	if h.objectives == nil {
+	if h.objectives == nil && len(intent.Tasks) == 0 {
 		kind, reason = service.MessageKindConversation, "no-orchestrator"
 	}
-	slog.Info("jj chat: message classified", "user_id", userID, "conversation_id", conversationID, "kind", kind, "reason", reason)
+	slog.Info("jj chat: message classified", "user_id", userID, "conversation_id", conversationID, "kind", kind, "reason", reason, "extracted_tasks", len(intent.Tasks))
 
-	if kind == service.MessageKindObjective {
-		h.postObjectiveIn(w, r, userID, conversationID, message, req, history, managerName, nil, respExtra)
+	if kind == service.MessageKindObjective || len(intent.Tasks) > 0 {
+		h.postObjectiveIn(w, r, userID, conversationID, message, req, history, managerName, nil, respExtra, intent.Tasks...)
 		return
 	}
 	h.postConversationIn(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName, nil, "Chat: ", respExtra)
@@ -412,7 +412,7 @@ func (h *JJChatHandler) writeDuplicate(w http.ResponseWriter, existing *domain.T
 }
 
 // postObjectiveIn is postObjective for a request that may belong to a thread (extra holds the thread fields).
-func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string, extra map[string]any, respExtra map[string]any) {
+func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message string, req JJMessageRequest, history []chatTurn, managerName string, extra map[string]any, respExtra map[string]any, tasks ...service.ExtractedTask) {
 	ctxMap := map[string]any{"conversation_id": conversationID.String(), "source": "jj_messages", "manager_name": managerName}
 	if len(history) > 0 {
 		// A conversation that became work (for example a voice chat) carries what was already said.
@@ -421,44 +421,204 @@ func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, 
 	for k, v := range extra {
 		ctxMap[k] = v
 	}
+
+	// MULTI-TASK HANDLING: When 2 or more independent tasks are provided,
+	// create separate, independent tasks for each one!
+	if len(tasks) > 1 {
+		var orchs []*domain.OrchestrationRecord
+		var plans []*domain.OrchestrationPlan
+		var createdTasks []*domain.Task
+		totalRunnable := 0
+
+		for _, t := range tasks {
+			tGoal := strings.TrimSpace(t.Goal)
+			if tGoal == "" {
+				tGoal = strings.TrimSpace(t.Title)
+			}
+			if tGoal == "" {
+				continue
+			}
+
+			tPriority := req.Priority
+			if t.Priority.Valid() {
+				tPriority = t.Priority
+			}
+
+			taskCtx := make(map[string]any, len(ctxMap)+2)
+			for k, v := range ctxMap {
+				taskCtx[k] = v
+			}
+			if t.ManagerDomain != "" {
+				taskCtx["manager_domain"] = t.ManagerDomain
+			}
+			taskCtxPayload, _ := json.Marshal(taskCtx)
+
+			if h.objectives != nil {
+				orch, plan, err := h.objectives.SubmitRequest(r.Context(), &domain.UserRequest{
+					UserID:      userID,
+					RequestText: tGoal,
+					Context:     taskCtxPayload,
+					Priority:    tPriority,
+				})
+				if err != nil {
+					slog.Warn("jj chat: failed to submit independent task", "goal", tGoal, "error", err)
+					continue
+				}
+				orchs = append(orchs, orch)
+				plans = append(plans, plan)
+				if n, err := h.objectives.RunnableChildCount(r.Context(), orch.ID); err == nil {
+					totalRunnable += n
+				}
+			} else if h.tasks != nil {
+				title := strings.TrimSpace(t.Title)
+				if title == "" {
+					title = truncateRunes(tGoal, 60)
+				}
+				task := &domain.Task{
+					UserID:        userID,
+					Title:         title,
+					Goal:          tGoal,
+					ManagerDomain: t.ManagerDomain,
+					Priority:      tPriority,
+					Status:        domain.TaskStatusQueued,
+					InputPayload:  taskCtxPayload,
+				}
+				created, err := h.tasks.CreateTask(r.Context(), task, nil)
+				if err == nil {
+					createdTasks = append(createdTasks, created)
+					totalRunnable++
+				}
+			}
+		}
+
+		if len(orchs) > 0 || len(createdTasks) > 0 {
+			var out runnerOutcome
+			if totalRunnable > 0 && len(orchs) > 0 {
+				out = h.wakeRunner(orchs[0].ID, totalRunnable)
+			} else if totalRunnable > 0 && len(createdTasks) > 0 {
+				out = h.wakeRunner(createdTasks[0].ID, totalRunnable)
+			}
+
+			var primaryOrch *domain.OrchestrationRecord
+			var primaryPlan *domain.OrchestrationPlan
+			if len(orchs) > 0 {
+				primaryOrch = orchs[0]
+			}
+			if len(plans) > 0 {
+				primaryPlan = plans[0]
+			}
+
+			body := map[string]any{
+				"kind":            string(service.MessageKindObjective),
+				"conversation_id": conversationID.String(),
+				"orchestration":   primaryOrch,
+				"plan":            primaryPlan,
+				"orchestrations":  orchs,
+				"plans":           plans,
+				"tasks":           createdTasks,
+				"runner":          out,
+			}
+			for k, v := range respExtra {
+				body[k] = v
+			}
+			if primaryPlan != nil {
+				if missing := h.missingDevices(r.Context(), userID, primaryPlan); len(missing) > 0 {
+					body["needs_device"] = deviceNote(missing)
+				}
+			}
+			httputil.JSON(w, http.StatusCreated, body)
+			return
+		}
+	}
+
+	// SINGLE TASK OR STANDARD WORKFLOW:
+	reqText := message
+	if len(tasks) == 1 {
+		if tasks[0].ManagerDomain != "" {
+			ctxMap["manager_domain"] = tasks[0].ManagerDomain
+		}
+		if strings.TrimSpace(tasks[0].Goal) != "" {
+			reqText = tasks[0].Goal
+		}
+	}
 	ctxPayload, _ := json.Marshal(ctxMap)
-	orch, plan, err := h.objectives.SubmitRequest(r.Context(), &domain.UserRequest{
-		UserID:      userID,
-		RequestText: message,
-		Context:     ctxPayload,
-		Priority:    req.Priority,
-	})
-	if err != nil {
-		httputil.ErrorJSON(w, err)
+
+	if h.objectives != nil {
+		orch, plan, err := h.objectives.SubmitRequest(r.Context(), &domain.UserRequest{
+			UserID:      userID,
+			RequestText: reqText,
+			Context:     ctxPayload,
+			Priority:    req.Priority,
+		})
+		if err != nil {
+			httputil.ErrorJSON(w, err)
+			return
+		}
+
+		n, err := h.objectives.RunnableChildCount(r.Context(), orch.ID)
+		var out runnerOutcome
+		switch {
+		case err != nil:
+			slog.Warn("jj chat: could not determine runnable children; skipping wake", "orchestration_id", orch.ID, "error", err)
+			out = runnerOutcome{Wake: "skipped", Detail: "could not determine runnable work; the scheduler will pick it up"}
+		case n == 0:
+			out = runnerOutcome{Wake: "skipped", Detail: "no runnable work was created"}
+		default:
+			out = h.wakeRunner(orch.ID, n)
+		}
+
+		body := map[string]any{
+			"kind":            string(service.MessageKindObjective),
+			"conversation_id": conversationID.String(),
+			"orchestration":   orch,
+			"plan":            plan,
+			"runner":          out,
+		}
+		for k, v := range respExtra {
+			body[k] = v
+		}
+		if missing := h.missingDevices(r.Context(), userID, plan); len(missing) > 0 {
+			body["needs_device"] = deviceNote(missing)
+		}
+		httputil.JSON(w, http.StatusCreated, body)
 		return
 	}
 
-	n, err := h.objectives.RunnableChildCount(r.Context(), orch.ID)
-	var out runnerOutcome
-	switch {
-	case err != nil:
-		slog.Warn("jj chat: could not determine runnable children; skipping wake", "orchestration_id", orch.ID, "error", err)
-		out = runnerOutcome{Wake: "skipped", Detail: "could not determine runnable work; the scheduler will pick it up"}
-	case n == 0:
-		out = runnerOutcome{Wake: "skipped", Detail: "no runnable work was created"}
-	default:
-		out = h.wakeRunner(orch.ID, n)
+	// If no orchestrator but task creation is requested, create directly in tasks store
+	if h.tasks != nil && len(tasks) == 1 {
+		title := strings.TrimSpace(tasks[0].Title)
+		if title == "" {
+			title = truncateRunes(reqText, 60)
+		}
+		task := &domain.Task{
+			UserID:        userID,
+			Title:         title,
+			Goal:          reqText,
+			ManagerDomain: tasks[0].ManagerDomain,
+			Priority:      req.Priority,
+			Status:        domain.TaskStatusQueued,
+			InputPayload:  ctxPayload,
+		}
+		created, err := h.tasks.CreateTask(r.Context(), task, nil)
+		if err != nil {
+			httputil.ErrorJSON(w, err)
+			return
+		}
+		out := h.wakeRunner(created.ID, 1)
+		body := map[string]any{
+			"kind":            string(service.MessageKindObjective),
+			"conversation_id": conversationID.String(),
+			"task_id":         created.ID.String(),
+			"runner":          out,
+		}
+		for k, v := range respExtra {
+			body[k] = v
+		}
+		httputil.JSON(w, http.StatusCreated, body)
+		return
 	}
 
-	body := map[string]any{
-		"kind":            string(service.MessageKindObjective),
-		"conversation_id": conversationID.String(),
-		"orchestration":   orch,
-		"plan":            plan,
-		"runner":          out,
-	}
-	for k, v := range respExtra {
-		body[k] = v
-	}
-	if missing := h.missingDevices(r.Context(), userID, plan); len(missing) > 0 {
-		body["needs_device"] = deviceNote(missing)
-	}
-	httputil.JSON(w, http.StatusCreated, body)
+	h.postConversationIn(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName, nil, "Chat: ", respExtra)
 }
 
 // wakeRunner synchronously (bounded; Lambda freezes after the response) wakes a scale-to-zero

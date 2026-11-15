@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
-import { Check, CheckCheck, Loader2, Pencil, ShieldCheck, X } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, FileText, Loader2, Pencil, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Approval } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,43 @@ function draftOf(a: Approval): { contact: string; text: string } | null {
   if (!p || typeof p !== "object") return null;
   const { text, contact } = p as { text?: unknown; contact?: unknown };
   return typeof text === "string" && text !== "" ? { text, contact: typeof contact === "string" ? contact : "" } : null;
+}
+
+interface TailoringInfo {
+  company: string;
+  role: string;
+  tier: string;
+  job_link: string;
+  source_url: string;
+  base_resume: string;
+  bullet_diff: string;
+  cover_note: string;
+  screening_answers: Record<string, string>;
+}
+
+function tailoringOf(a: Approval): TailoringInfo | null {
+  const p = a.action_payload;
+  if (!p || typeof p !== "object") return null;
+  const payload = (p as { payload?: unknown }).payload || p;
+  if (!payload || typeof payload !== "object") return null;
+  const t = payload as Record<string, unknown>;
+  if (typeof t.company === "string" && (typeof t.bullet_diff === "string" || typeof t.cover_note === "string")) {
+    return {
+      company: String(t.company),
+      role: typeof t.role === "string" ? t.role : "",
+      tier: typeof t.tier === "string" ? t.tier : "",
+      job_link: typeof t.job_link === "string" ? t.job_link : "",
+      source_url: typeof t.source_url === "string" ? t.source_url : "",
+      base_resume: typeof t.base_resume === "string" ? t.base_resume : "",
+      bullet_diff: typeof t.bullet_diff === "string" ? t.bullet_diff : "",
+      cover_note: typeof t.cover_note === "string" ? t.cover_note : "",
+      screening_answers:
+        t.screening_answers && typeof t.screening_answers === "object"
+          ? (t.screening_answers as Record<string, string>)
+          : {},
+    };
+  }
+  return null;
 }
 
 export default function ApprovalsPage() {
@@ -196,6 +233,98 @@ export default function ApprovalsPage() {
                   </p>
                   {a.decision_reason && <p className="mt-1 text-xs text-muted-foreground">Note: {a.decision_reason}</p>}
                 </div>
+                {(() => {
+                  const tail = tailoringOf(a);
+                  if (!tail) return null;
+                  return (
+                    <div className="space-y-3 rounded-xl border border-primary/20 bg-muted/30 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex size-6 items-center justify-center rounded-full bg-primary/20 text-primary">
+                            <Sparkles className="size-3.5" />
+                          </span>
+                          <span className="text-xs font-semibold uppercase tracking-wider text-primary">
+                            Tailored Application Card
+                          </span>
+                        </div>
+                        {tail.tier && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                            {tail.tier}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Role & Company & Links */}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        {tail.base_resume && (
+                          <span className="inline-flex items-center gap-1 font-mono text-foreground">
+                            <FileText className="size-3.5 text-muted-foreground" />
+                            {tail.base_resume}
+                          </span>
+                        )}
+                        {tail.source_url && (
+                          <a
+                            href={tail.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <ExternalLink className="size-3.5" />
+                            Source Reference
+                          </a>
+                        )}
+                        {tail.job_link && (
+                          <a
+                            href={tail.job_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <ExternalLink className="size-3.5" />
+                            Job Listing
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Bullet Diff */}
+                      {tail.bullet_diff && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-muted-foreground">Resume Bullet Diff (Claude CLI)</p>
+                          <div className="rounded-lg border bg-background/80 p-3 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap">
+                            {tail.bullet_diff}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sourced Cover Note */}
+                      {tail.cover_note && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-muted-foreground">
+                            Cover Note (Max 90 words with grounded source citation)
+                          </p>
+                          <div className="rounded-lg border bg-background/80 p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap">
+                            {tail.cover_note}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Screening Answers */}
+                      {Object.keys(tail.screening_answers).length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground">Screening Answers</p>
+                          <div className="space-y-2 rounded-lg border bg-background/80 p-3 text-xs">
+                            {Object.entries(tail.screening_answers).map(([q, ans], i) => (
+                              <div key={i} className="border-b border-border/40 pb-2 last:border-b-0 last:pb-0">
+                                <p className="font-medium text-foreground">Q: {q}</p>
+                                <p className="mt-0.5 text-muted-foreground">A: {ans}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {(() => {
                   const draft = draftOf(a);
                   if (!draft) return null;

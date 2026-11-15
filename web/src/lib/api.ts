@@ -742,6 +742,14 @@ export const api = {
       body: JSON.stringify({ manager_name: name }),
     }),
 
+  // Inbound call screening settings
+  getCallSettings: () => fetchWithAuth<{ inbound_calls_enabled: boolean }>("/api/v1/settings/calls"),
+  putCallSettings: (enabled: boolean) =>
+    fetchWithAuth<{ inbound_calls_enabled: boolean }>("/api/v1/settings/calls", {
+      method: "PUT",
+      body: JSON.stringify({ inbound_calls_enabled: enabled }),
+    }),
+
   // Approvals
   listApprovals: (status?: ApprovalStatus, opts?: ReqOpts) =>
     fetchList<Approval>(`/api/v1/approvals${status ? `?status=${status}` : ""}`, opts),

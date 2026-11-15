@@ -40,6 +40,7 @@ const (
 	CmdAddAlias      TaskCommandKind = "add_alias"
 	CmdRemoveAlias   TaskCommandKind = "remove_alias"
 	CmdListAliases   TaskCommandKind = "list_aliases"
+	CmdAutomatedCall TaskCommandKind = "automated_call"
 )
 
 // TaskCommand is a parsed request. Scope is "all", "active", "done" or "failed" (or "old" for delete); Ref is the
@@ -53,6 +54,7 @@ type TaskCommand struct {
 }
 
 var (
+	reAutomatedCall = regexp.MustCompile(`(?i)^(?:please )?(?:(?:make|place|do|trigger|start) (?:an? )?)?(?:automated |automatic )?call (?:to )?([a-z0-9+ ']+?) (?:and |to )?(?:tell them|tell him|tell her|saying|say|to say|with message|that)\s*(.+)$`)
 	reList          = regexp.MustCompile(`^(?:please )?(?:(?:give me|get me|fetch|show(?: me)?|tell me|read(?: out)?(?: me)?|list|check|display|bring up)(?: me)?(?: all)?(?: of)?(?: my| the| a)?(?: list of)?|(?:the |a )?list of(?: all)?(?: of)?(?: my| the)?)(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks?|task list|tasks list)$`)
 	reListQuestions = regexp.MustCompile(`^(?:what|how|are there|is there|do i have|have i got)(?: is| are| were| many)?(?: the| any| all| of)?(?: my| the)?(?: list of)?(?: (running|active|finished|completed|done|failed|pending|open|in progress|old))? (?:tasks?|task list|tasks list)(?: (?:are )?(running|active|done|finished|completed|failed|open|left|pending|in progress))?(?: do i have)?$`)
 	// A short request that asks about tasks and names a state ("give me the list of task that I still open",
@@ -199,6 +201,14 @@ func isTaskListQuery(s string) (bool, string) {
 // ParseTaskCommand recognises task and approval requests. It is strict: a sentence only matches when it starts like
 // the command, so ordinary conversation is never turned into an action.
 func ParseTaskCommand(text string) TaskCommand {
+	if m := reAutomatedCall.FindStringSubmatch(strings.TrimSpace(text)); len(m) == 3 {
+		who := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(m[1], "my "), "to "))
+		msg := strings.TrimSpace(m[2])
+		if who != "" && msg != "" {
+			return TaskCommand{Kind: CmdAutomatedCall, Ref: who, Target: msg}
+		}
+	}
+
 	s := norm(text)
 	if s == "" {
 		return TaskCommand{}
@@ -294,10 +304,16 @@ type VoiceApprovals interface {
 	RespondApproval(ctx context.Context, id, userID uuid.UUID, approved bool, reason string) (*domain.Approval, error)
 }
 
+// OutboundCaller places an autonomous call to deliver a message and gather response.
+type OutboundCaller interface {
+	MakeOutboundCall(ctx context.Context, userID uuid.UUID, to, recipientName, message string) (string, error)
+}
+
 // VoiceCommands runs parsed commands for one owner.
 type VoiceCommands struct {
 	Tasks     VoiceStore
 	Approvals VoiceApprovals
+	Caller    OutboundCaller
 	// Secret signs confirmation tokens. Empty means a random one for this process (tokens then do not survive a restart).
 	Secret []byte
 	// Aliases holds the owner's aliases; nil switches the alias commands off.
@@ -497,6 +513,8 @@ func (v *VoiceCommands) Run(ctx context.Context, user uuid.UUID, c TaskCommand, 
 		return v.steerTask(ctx, user, c)
 	case CmdAddAlias, CmdRemoveAlias, CmdListAliases:
 		return v.aliasCommand(ctx, user, c)
+	case CmdAutomatedCall:
+		return v.makeAutomatedCall(ctx, user, c)
 	}
 	return Result{}, errors.New("not a task command")
 }
@@ -926,4 +944,17 @@ func (v *VoiceCommands) aliasCommand(ctx context.Context, user uuid.UUID, c Task
 		parts[i] = k + " means " + m[k]
 	}
 	return Result{Reply: strings.Join(parts, ". ") + "."}, nil
+}
+
+func (v *VoiceCommands) makeAutomatedCall(ctx context.Context, user uuid.UUID, c TaskCommand) (Result, error) {
+	if v.Caller == nil {
+		return Result{Reply: "Autonomous calling is not configured on this server."}, nil
+	}
+	who := v.Expand(ctx, user, c.Ref)
+	msg := c.Target
+	_, err := v.Caller.MakeOutboundCall(ctx, user, who, c.Ref, msg)
+	if err != nil {
+		return Result{Reply: "I could not place the automated call: " + err.Error()}, nil
+	}
+	return Result{Reply: fmt.Sprintf("I am placing an automated call to %s to tell them: %s", c.Ref, msg)}, nil
 }

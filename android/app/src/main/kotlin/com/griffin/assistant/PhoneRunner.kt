@@ -16,19 +16,32 @@ import java.util.concurrent.atomic.AtomicBoolean
  * the prepared steps are kept on the phone under their digest and the owner is asked to approve exactly those.
  * When the owner approves, the next claim carries that approval and the steps are replayed as recorded.
  */
-class PhoneRunner(context: Context, private val api: ApiClient, private val log: (String) -> Unit) {
+class PhoneRunner(
+    private val context: Context,
+    private val api: ApiClient,
+    private val cellularCallManager: CellularCallManager? = null,
+    private val log: (String) -> Unit,
+) {
     private val prefs = context.getSharedPreferences("phone_staged", Context.MODE_PRIVATE)
     private val busy = AtomicBoolean(false)
 
-    /** Call from a background thread. Does nothing unless the accessibility service is on. */
+    /** Call from a background thread. Runs phone automation tasks and automated cellular calls. */
     fun tick() {
-        val screen = GriffinAccess.instance ?: return
         if (!busy.compareAndSet(false, true)) return
         try {
             val task = api.claimPhoneTask() ?: return
-            log("phone job started")
+            log("phone job started: ${task.id}")
             try {
-                handle(task, screen)
+                if (task.action == "automated_call") {
+                    handleAutomatedCall(task)
+                } else {
+                    val screen = GriffinAccess.instance
+                    if (screen == null) {
+                        api.failTask(task.id, "Accessibility service is off.", retryable = true)
+                        return
+                    }
+                    handle(task, screen)
+                }
             } catch (e: Exception) {
                 runCatching { api.failTask(task.id, "The phone job stopped: ${e.message}", retryable = false) }
             }
@@ -36,6 +49,69 @@ class PhoneRunner(context: Context, private val api: ApiClient, private val log:
             log("phone job claim: ${e.message}")
         } finally {
             busy.set(false)
+        }
+    }
+
+    private fun handleAutomatedCall(task: ApiClient.PhoneTask) {
+        val manager = cellularCallManager ?: run {
+            api.failTask(task.id, "CellularCallManager is not available on this device.", retryable = false)
+            return
+        }
+
+        var targetNumber = task.number.trim()
+        var targetName = task.recipientName.trim()
+        if (targetNumber.isEmpty() || !targetNumber.any { it.isDigit() }) {
+            val query = targetName.ifEmpty { targetNumber }
+            val match = Contacts.find(context, query).firstOrNull()
+            if (match != null) {
+                targetNumber = match.number
+                if (targetName.isEmpty()) targetName = match.name
+            } else {
+                api.failTask(task.id, "Contact not found for: $query", retryable = false)
+                return
+            }
+        }
+
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var callOutcome = "failed"
+        var callReply = ""
+        var callFollowup = ""
+
+        val started = manager.startAutomatedCall(
+            number = targetNumber,
+            recipientName = targetName,
+            message = task.message,
+            callId = task.callId,
+            inBackground = task.inBackground,
+            onDone = { outcome, reply, followup ->
+                callOutcome = outcome
+                callReply = reply
+                callFollowup = followup
+                latch.countDown()
+            }
+        )
+
+        if (!started) {
+            api.failTask(task.id, "Could not place the automated call (busy or missing permissions).", retryable = false)
+            return
+        }
+
+        // Wait up to 3 minutes for the call to finish, renewing lease every 15 seconds
+        val deadline = System.currentTimeMillis() + 180_000
+        while (!latch.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+            if (System.currentTimeMillis() > deadline) break
+            runCatching { api.renewLease(task.id) }
+        }
+
+        if (callOutcome in listOf("delivered", "replied", "completed")) {
+            val responseText = buildString {
+                append("Call to ${task.recipientName.ifEmpty { task.number }} completed ($callOutcome).")
+                if (callReply.isNotBlank()) append(" Reply: \"$callReply\"")
+                if (callFollowup.isNotBlank()) append(" Notes: \"$callFollowup\"")
+            }
+            api.completeTask(task.id, responseText)
+        } else {
+            api.failTask(task.id, "Call to ${task.recipientName.ifEmpty { task.number }} ended with outcome: $callOutcome", retryable = false)
         }
     }
 

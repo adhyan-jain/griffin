@@ -36,7 +36,7 @@ type Config struct {
 	NtfyTopic                  string // the private topic the phone subscribes to; empty turns notifications off
 	NtfyToken                  string // optional access token for a protected topic
 	AppURL                     string // the web app's address, used for the tap link
-	CallsAuthToken             string // phone provider (Twilio-style) auth token; empty turns inbound calls off
+	CallsAuthToken             string // phone provider webhook auth token; empty turns inbound calls off
 	CallsPublicURL             string // public base address the provider calls, e.g. https://api.example.com
 	CallsOwnerNumber           string // the owner's own number: trusted calls are forwarded here
 	CallsTrusted               string // comma-separated numbers that ring through without screening

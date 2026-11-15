@@ -19,11 +19,21 @@ import (
 	"github.com/griffin/core/internal/provider/gemini"
 )
 
-type name struct{ v string }
+type name struct {
+	v              string
+	inboundEnabled bool
+}
 
 func (n *name) ManagerName(context.Context, uuid.UUID) (string, error) { return n.v, nil }
 func (n *name) SetManagerName(_ context.Context, _ uuid.UUID, v string) error {
 	n.v = v
+	return nil
+}
+func (n *name) InboundCallsEnabled(context.Context, uuid.UUID) (bool, error) {
+	return n.inboundEnabled, nil
+}
+func (n *name) SetInboundCallsEnabled(_ context.Context, _ uuid.UUID, enabled bool) error {
+	n.inboundEnabled = enabled
 	return nil
 }
 

@@ -28,6 +28,8 @@ data class LState(
     /** Try the private on-device engine first; cleared when it fails. */
     val preferOnDevice: Boolean = true,
     val preferOffline: Boolean = false,
+    /** Listening for ONE utterance (tap-only mode): after it, or after silence, go idle instead of re-arming the mic. */
+    val oneShot: Boolean = false,
 )
 
 /** Why the recogniser stopped, with Android's numeric codes mapped once, in the shell. */
@@ -39,6 +41,8 @@ sealed class LEvent {
     object Pause : LEvent()
     object Resume : LEvent()
     object ForceListen : LEvent()
+    /** Tap-only mode: listen once, now, then go idle. The microphone is not used again until the next tap. */
+    object ListenOnce : LEvent()
     /** The restart timer fired. */
     data class TimerFired(val recreate: Boolean) : LEvent()
     /** The shell is about to start the recogniser. [mediaActive] is whether music or video is playing. */
@@ -74,7 +78,7 @@ data class LStep(val state: LState, val effects: List<LEffect> = emptyList())
 object ListenerMachine {
     fun reduce(s: LState, e: LEvent): LStep = when (e) {
         LEvent.Start ->
-            if (s.active) LStep(s) else LStep(s.copy(active = true, paused = false, clientErrors = 0), listOf(LEffect.BeginNow))
+            if (s.active) LStep(s) else LStep(s.copy(active = true, paused = false, clientErrors = 0, oneShot = false), listOf(LEffect.BeginNow))
 
         // Stop clears restartPending too: its timers are cancelled, so a leftover flag would block every later restart.
         LEvent.Stop ->
@@ -88,6 +92,10 @@ object ListenerMachine {
 
         LEvent.ForceListen ->
             LStep(s.copy(forceNext = true, restartPending = false, paused = false, active = true),
+                listOf(LEffect.CancelTimers, LEffect.CancelListen, LEffect.BeginNow))
+
+        LEvent.ListenOnce ->
+            LStep(s.copy(forceNext = true, restartPending = false, paused = false, active = true, oneShot = true),
                 listOf(LEffect.CancelTimers, LEffect.CancelListen, LEffect.BeginNow))
 
         is LEvent.TimerFired ->
@@ -114,15 +122,25 @@ object ListenerMachine {
 
         is LEvent.Results -> {
             val heard = e.texts.map { it.trim() }.filter { it.isNotEmpty() }
-            val next = schedule(s.copy(clientErrors = 0), 250, false)
-            LStep(next.state, (if (heard.isNotEmpty()) listOf<LEffect>(LEffect.Heard(heard)) else emptyList()) + next.effects)
+            val heardEffects = if (heard.isNotEmpty()) listOf<LEffect>(LEffect.Heard(heard)) else emptyList()
+            if (s.oneShot) {
+                LStep(idle(s), listOf<LEffect>(LEffect.CancelTimers, LEffect.Destroy) + heardEffects + LEffect.Status("idle"))
+            } else {
+                val next = schedule(s.copy(clientErrors = 0), 250, false)
+                LStep(next.state, heardEffects + next.effects)
+            }
         }
 
         is LEvent.Error -> error(s, e)
     }
 
+    /** One-shot listening is over: not wanted any more, nothing pending. */
+    private fun idle(s: LState) = s.copy(active = false, oneShot = false, restartPending = false, forceNext = false)
+
     private fun error(s: LState, e: LEvent.Error): LStep = when (e.kind) {
-        LError.Silence -> schedule(s, 400, false)
+        LError.Silence ->
+            if (s.oneShot) LStep(idle(s), listOf(LEffect.CancelTimers, LEffect.Destroy, LEffect.Status("idle")))
+            else schedule(s, 400, false)
         LError.Busy -> schedule(s, 900, true)
         LError.Permission -> LStep(s.copy(active = false), listOf(LEffect.Status("microphone permission is missing")))
         // The private on-device engine often lacks the language pack; the standard engine has it. Switch once.

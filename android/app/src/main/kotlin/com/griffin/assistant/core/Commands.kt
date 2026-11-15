@@ -10,14 +10,17 @@ import java.util.Locale
  * conversation ("call it a day", "I might set up a timer later") is never turned into an action.
  */
 sealed class Command {
-    data class Call(val who: String) : Command()
-    data class Text(val who: String, val message: String) : Command()
+    data class Call(val who: String, val inBackground: Boolean = false) : Command()
+    data class AutomatedCall(val who: String, val message: String, val inBackground: Boolean = false) : Command()
+    data class Text(val who: String, val message: String, val inBackground: Boolean = false) : Command()
     /** Read out new messages, from one person or from everyone. */
     data class ReadMessages(val from: String?) : Command()
     /** Reply to the chat just read (who is null) or to a named person, optionally in a named app. */
-    data class Reply(val text: String, val who: String? = null, val app: String? = null) : Command()
+    data class Reply(val text: String, val who: String? = null, val app: String? = null, val inBackground: Boolean = false) : Command()
     /** Message someone in a named app ("message bro on whatsapp saying ..."). */
-    data class MessageVia(val who: String, val text: String, val app: String) : Command()
+    data class MessageVia(val who: String, val text: String, val app: String, val inBackground: Boolean = false) : Command()
+    /** Cancel or hang up an active or connecting call immediately. */
+    data class CancelCall(val who: String? = null) : Command()
     data class Timer(val seconds: Int) : Command()
     data class Alarm(val hour: Int, val minute: Int) : Command()
     data class Flashlight(val on: Boolean? = null) : Command()
@@ -78,58 +81,89 @@ object Commands {
         when (s) {
             "answer", "answer it", "answer the call", "pick up", "pick it up", "pick up the call", "accept", "accept the call" -> return Command.Answer
             "reject", "reject it", "reject the call", "decline", "decline the call", "hang up", "ignore", "ignore it", "cut the call" -> return Command.Reject
-            "stop", "be quiet", "quiet", "shut up", "cancel", "never mind", "nevermind", "that's all", "thats all", "that is all", "thanks", "thank you", "okay thanks", "ok thanks", "no thanks", "i'm done", "done" -> return Command.Stop
+            "stop", "be quiet", "quiet", "shut up", "never mind", "nevermind", "that's all", "thats all", "that is all", "thanks", "thank you", "okay thanks", "ok thanks", "no thanks", "i'm done", "done" -> return Command.Stop
         }
 
-        Regex("^(?:please )?(?:call|phone|ring|dial) (.+)$").find(s)?.let { m ->
+        // Explicit call cancellation / hangup: "cancel call", "cancel the call", "cancel call to hiten", "cut the call"
+        Regex("^(?:please )?(?:cancel|drop|abort|cut|end) (?:the )?call(?: (?:with|to) (.+))?$").find(s)?.let { m ->
+            val who = m.groupValues[1].ifEmpty { null }?.removePrefix("my ")?.trim()
+            return Command.CancelCall(who)
+        }
+        Regex("^(?:please )?(?:hang up|cut the call|disconnect|drop call|cancel call)(?: (?:with|to) (.+))?$").find(s)?.let { m ->
+            val who = m.groupValues[1].ifEmpty { null }?.removePrefix("my ")?.trim()
+            return Command.CancelCall(who)
+        }
+
+        // Detect background mode requested by owner
+        val inBackground = s.contains("in background") || s.contains("in the background") || s.contains("silently") || s.contains("without opening")
+        val sParsed = if (inBackground) {
+            s.replace("in the background", "")
+                .replace("in background", "")
+                .replace("silently", "")
+                .replace("without opening", "")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        } else {
+            s
+        }
+
+        Regex("^(?:please )?(?:(?:make|place|do|trigger|start) (?:an? )?)?(?:automated |automatic )?call (?:to )?([a-z0-9+ ']+?) (?:and |to )?(?:tell them|tell him|tell her|saying|say|to say|with message|that)\\s*(.+)$").find(sParsed)?.let { m ->
+            val who = m.groupValues[1].removePrefix("my ").removePrefix("to ").trim()
+            val msg = m.groupValues[2].trim()
+            if (who.isNotEmpty() && msg.isNotEmpty() && who !in notAName) {
+                return Command.AutomatedCall(who, msg, inBackground = inBackground)
+            }
+        }
+
+        Regex("^(?:please )?(?:call|phone|ring|dial) (.+)$").find(sParsed)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").trim()
-            if (who.isNotEmpty() && who !in notAName && who.split(" ").first() !in notAName) return Command.Call(who)
+            if (who.isNotEmpty() && who !in notAName && who.split(" ").first() !in notAName) return Command.Call(who, inBackground = inBackground)
         }
 
         // Reading and replying to chats (the apps' own notifications), and messaging in a named app.
-        Regex("^(?:please )?(?:read|check)(?: out)?(?: me)?(?: my| the)?(?: new| unread)? (?:messages?|texts?|chats?|dms?|notifications?)(?: from (.+))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
-        Regex("^(?:do i have |are there |any |have i got )(?:any )?(?:new |unread )?(?:messages?|texts?|dms?)(?: from (.+))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
+        Regex("^(?:please )?(?:read|check)(?: out)?(?: me)?(?: my| the)?(?: new| unread)? (?:messages?|texts?|chats?|dms?|notifications?)(?: from (.+))?$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
+        Regex("^(?:do i have |are there |any |have i got )(?:any )?(?:new |unread )?(?:messages?|texts?|dms?)(?: from (.+))?$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].ifEmpty { null }?.removePrefix("my ")) }
         // "what's the latest message I got from my bhai", "last message from bhai", "bhai ka last message", "bhai ne kya bheja"
-        Regex("^(?:please )?(?:what(?:'s| is|s)? |tell me |show me |read (?:me )?|give me )?(?:the |my )?(?:latest|last|newest|most recent|recent|new) (?:message|msg|text|dm)s?(?: (?:that )?(?:i|you) (?:got|received|have))?(?: from| of| by) (.+?)(?: (?:on|in) (?:whatsapp|instagram|insta|messenger|telegram|signal|sms))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
-        Regex("^(?:what|which)(?:'s| is|s)? (?:the )?(?:latest|last|newest|most recent) (?:message|msg|text) (?:i )?(?:got|received) from (.+)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
-        Regex("^(.+?) (?:ka|ke|ki) (?:latest|last|new) (?:message|msg|text)(?: (?:batao|bolo|padho|sunao|dikhao))?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
-        Regex("^(.+?) ne (?:kya|kuch) (?:bheja|likha|bola|kaha|message kiya)(?: hai)?$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
-        Regex("^(?:any|is there(?: a)?|did i get(?: a)?|have i got(?: a)?) (?:new |latest |recent )?(?:message|msg|text)s? from (.+)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(?:please )?(?:what(?:'s| is|s)? |tell me |show me |read (?:me )?|give me )?(?:the |my )?(?:latest|last|newest|most recent|recent|new) (?:message|msg|text|dm)s?(?: (?:that )?(?:i|you) (?:got|received|have))?(?: from| of| by) (.+?)(?: (?:on|in) (?:whatsapp|instagram|insta|messenger|telegram|signal|sms))?$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(?:what|which)(?:'s| is|s)? (?:the )?(?:latest|last|newest|most recent) (?:message|msg|text) (?:i )?(?:got|received) from (.+)$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(.+?) (?:ka|ke|ki) (?:latest|last|new) (?:message|msg|text)(?: (?:batao|bolo|padho|sunao|dikhao))?$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(.+?) ne (?:kya|kuch) (?:bheja|likha|bola|kaha|message kiya)(?: hai)?$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
+        Regex("^(?:any|is there(?: a)?|did i get(?: a)?|have i got(?: a)?) (?:new |latest |recent )?(?:message|msg|text)s? from (.+)$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ").trim()) }
 
         // "open whatsapp chat with bhai", "open bhai's chat on whatsapp", "whatsapp pe bhai ki chat kholo"
-        Regex("^(?:please )?(?:open|show|go to|launch|start)(?: up)? (whatsapp|instagram|insta|messenger|telegram|signal|sms)(?: chat| chats| conversation| thread)?(?: with| of| for| from) (.+)$").find(s)?.let { m ->
+        Regex("^(?:please )?(?:open|show|go to|launch|start)(?: up)? (whatsapp|instagram|insta|messenger|telegram|signal|sms)(?: chat| chats| conversation| thread)?(?: with| of| for| from) (.+)$").find(sParsed)?.let { m ->
             val who = m.groupValues[2].removePrefix("my ").trim()
             if (who.isNotEmpty() && who !in notAName) return Command.OpenChat(who, appName(m.groupValues[1])!!)
         }
-        Regex("^(?:please )?(?:open|show|go to)(?: up)? (?:my )?(?:chat|conversation|thread) (?:with|of|from) (.+?) (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms)$").find(s)?.let { m ->
+        Regex("^(?:please )?(?:open|show|go to)(?: up)? (?:my )?(?:chat|conversation|thread) (?:with|of|from) (.+?) (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms)$").find(sParsed)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").trim()
             if (who.isNotEmpty() && who !in notAName) return Command.OpenChat(who, appName(m.groupValues[2])!!)
         }
-        Regex("^(?:please )?(?:open|show)(?: up)? ([a-z0-9' ]+?)'?s? (?:chat|conversation|thread) (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms)$").find(s)?.let { m ->
+        Regex("^(?:please )?(?:open|show)(?: up)? ([a-z0-9' ]+?)'?s? (?:chat|conversation|thread) (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms)$").find(sParsed)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").trim()
             if (who.isNotEmpty() && who !in notAName) return Command.OpenChat(who, appName(m.groupValues[2])!!)
         }
-        Regex("^(whatsapp|instagram|insta|messenger|telegram|signal) (?:pe|par|mein|me) ([a-z0-9' ]+?) (?:ka|ki|ke) (?:chat|conversation) (?:kholo|dikhao|open karo|khol do)$").find(s)?.let { m ->
+        Regex("^(whatsapp|instagram|insta|messenger|telegram|signal) (?:pe|par|mein|me) ([a-z0-9' ]+?) (?:ka|ki|ke) (?:chat|conversation) (?:kholo|dikhao|open karo|khol do)$").find(sParsed)?.let { m ->
             val who = m.groupValues[2].removePrefix("my ").trim()
             if (who.isNotEmpty()) return Command.OpenChat(who, appName(m.groupValues[1])!!)
         }
 
-        Regex("^what did (.+?) (?:say|text|send|write)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
-        Regex("^read (?:me )?(.+?)'?s? (?:messages?|texts?|chats?)$").find(s)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
-        Regex("^(?:please )?reply(?: to (.+?))?(?: (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms))?(?: saying| with| that| say)?:? (.+)$").find(s)?.let { m ->
+        Regex("^what did (.+?) (?:say|text|send|write)$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
+        Regex("^read (?:me )?(.+?)'?s? (?:messages?|texts?|chats?)$").find(sParsed)?.let { m -> return Command.ReadMessages(m.groupValues[1].removePrefix("my ")) }
+        Regex("^(?:please )?reply(?: to (.+?))?(?: (?:on|in|via) (whatsapp|instagram|insta|messenger|telegram|signal|sms))?(?: saying| with| that| say)?:? (.+)$").find(sParsed)?.let { m ->
             val text = m.groupValues[3].trim()
-            if (text.isNotEmpty()) return Command.Reply(text, m.groupValues[1].ifEmpty { null }?.removePrefix("my "), appName(m.groupValues[2]))
+            if (text.isNotEmpty()) return Command.Reply(text, m.groupValues[1].ifEmpty { null }?.removePrefix("my "), appName(m.groupValues[2]), inBackground = inBackground)
         }
-        Regex("^(?:please )?(?:message|dm|whatsapp|text|tell|send (?:a )?(?:message |text |dm )?to) ([a-z0-9' ]+?) (?:on|in|via|using) (whatsapp|instagram|insta|messenger|telegram|signal|sms)(?: that| saying| say| to say|:)\\s*(.+)$").find(s)?.let { m ->
+        Regex("^(?:please )?(?:message|dm|whatsapp|text|tell|send (?:a )?(?:message |text |dm )?to) ([a-z0-9' ]+?) (?:on|in|via|using) (whatsapp|instagram|insta|messenger|telegram|signal|sms)(?: that| saying| say| to say|:)\\s*(.+)$").find(sParsed)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").trim()
             val text = m.groupValues[3].trim()
-            if (who.isNotEmpty() && text.isNotEmpty() && who !in notAName) return Command.MessageVia(who, text, appName(m.groupValues[2])!!)
+            if (who.isNotEmpty() && text.isNotEmpty() && who !in notAName) return Command.MessageVia(who, text, appName(m.groupValues[2])!!, inBackground = inBackground)
         }
 
-        Regex("^(?:please )?(?:text|message|sms|send (?:a )?(?:text|message|sms) to) ([a-z0-9' ]+?) (?:that|saying|say|to say|tell(?:ing)? (?:him|her|them)|:)\\s*(.+)$").find(s)?.let { m ->
+        Regex("^(?:please )?(?:text|message|sms|send (?:a )?(?:text|message|sms) to) ([a-z0-9' ]+?) (?:that|saying|say|to say|tell(?:ing)? (?:him|her|them)|:)\\s*(.+)$").find(sParsed)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").trim()
             val body = m.groupValues[2].trim()
-            if (who.isNotEmpty() && body.isNotEmpty() && who !in notAName) return Command.Text(who, body)
+            if (who.isNotEmpty() && body.isNotEmpty() && who !in notAName) return Command.Text(who, body, inBackground = inBackground)
         }
 
         Regex("^(?:please )?(?:set (?:a )?|start (?:a )?)?timer(?: for)? (.+)$").find(s)?.let { m -> parseDuration(m.groupValues[1])?.let { return Command.Timer(it) } }

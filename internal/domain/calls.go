@@ -66,6 +66,33 @@ func TwiMLThanks(ownerName string) string {
 	return twimlHead + `<Say>Thank you. I will pass your message to ` + xmlEscape(ownerName) + `. Goodbye.</Say><Hangup/></Response>`
 }
 
+// TwiMLHangup hangs up immediately without greeting.
+func TwiMLHangup() string {
+	return twimlHead + `<Hangup/></Response>`
+}
+
+// TwiMLOutboundDeliver greets the recipient with the owner's message and gathers their response.
+func TwiMLOutboundDeliver(ownerName, message, action string) string {
+	return twimlHead + `<Say>Hello, this is an automated message from ` + xmlEscape(ownerName) + `: ` + xmlEscape(message) + `.</Say>` +
+		`<Gather input="speech" speechTimeout="auto" timeout="6" action="` + xmlEscape(action) + `" method="POST">` +
+		`<Say>If you have anything to say in response, please speak now.</Say>` +
+		`</Gather>` +
+		`<Say>Thank you, goodbye.</Say><Hangup/></Response>`
+}
+
+// TwiMLOutboundContextFallback handles when the recipient speaks: states that the assistant will ask the owner
+// and reply in a while, and asks if there is anything else to mention.
+func TwiMLOutboundContextFallback(ownerName, action string) string {
+	return twimlHead + `<Say>I will ask ` + xmlEscape(ownerName) + ` and reply in a while, is there anything that you want to mention?</Say>` +
+		`<Gather input="speech" speechTimeout="auto" timeout="6" action="` + xmlEscape(action) + `" method="POST"/>` +
+		`<Say>Thank you. Goodbye.</Say><Hangup/></Response>`
+}
+
+// TwiMLOutboundFinalThanks thanks the recipient and closes the call.
+func TwiMLOutboundFinalThanks(ownerName string) string {
+	return twimlHead + `<Say>Thank you. I have noted that and will inform ` + xmlEscape(ownerName) + `. Goodbye.</Say><Hangup/></Response>`
+}
+
 // SameNumber compares phone numbers by their digits, so "+91 98765-43210" equals "+919876543210".
 func SameNumber(a, b string) bool {
 	da, db := digits(a), digits(b)

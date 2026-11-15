@@ -68,12 +68,14 @@ type fakeObjectives struct {
 	runnable int
 	err      error
 	last     *domain.UserRequest
+	requests []*domain.UserRequest
 	plan     *domain.OrchestrationPlan
 }
 
 func (f *fakeObjectives) SubmitRequest(_ context.Context, req *domain.UserRequest) (*domain.OrchestrationRecord, *domain.OrchestrationPlan, error) {
 	f.calls++
 	f.last = req
+	f.requests = append(f.requests, req)
 	if f.err != nil {
 		return nil, nil, f.err
 	}
@@ -330,4 +332,91 @@ func TestJJChat_StoreErrorIsNotSwallowed(t *testing.T) {
 	h.tasks.(*fakeChatStore).failErr = errors.New("db down")
 	code, _ := sendChat(t, h, uuid.New(), `{"message":"hello"}`, nil)
 	assert.Equal(t, http.StatusInternalServerError, code)
+}
+
+func TestJJChat_MultiTaskDecompositionWithBrain(t *testing.T) {
+	mockResponse := `{
+		"intent": "create_tasks",
+		"tasks": [
+			{
+				"title": "Research quantum computing",
+				"goal": "Research quantum computing architectures",
+				"manager_domain": "research",
+				"priority": "NORMAL_P2"
+			},
+			{
+				"title": "Buy groceries",
+				"goal": "Buy groceries: milk, eggs, bread",
+				"manager_domain": "personal_ops",
+				"priority": "NORMAL_P2"
+			},
+			{
+				"title": "Fix auth bug",
+				"goal": "Fix the authentication bug on github repository",
+				"manager_domain": "engineering",
+				"priority": "HIGH_P1"
+			}
+		],
+		"reason": "decomposed 3 independent user tasks"
+	}`
+
+	brain := &fakeBrain{enabled: true, reply: mockResponse}
+	wake := &chatWake{}
+	h, _, obj := newChat(wake, true)
+	h.WithBrain(brain)
+
+	user := uuid.New()
+	msg := "1. Research quantum computing\n2. Buy groceries\n3. Fix auth bug on github"
+	code, env := sendChat(t, h, user, fmt.Sprintf(`{"message":%q}`, msg), nil)
+
+	require.Equal(t, http.StatusCreated, code)
+	assert.Equal(t, "objective", env.Data.Kind)
+	assert.Equal(t, 3, obj.calls, "each independent task must be submitted as its own orchestration request")
+	require.Len(t, obj.requests, 3)
+
+	assert.Equal(t, "Research quantum computing architectures", obj.requests[0].RequestText)
+	assert.Equal(t, "Buy groceries: milk, eggs, bread", obj.requests[1].RequestText)
+	assert.Equal(t, "Fix the authentication bug on github repository", obj.requests[2].RequestText)
+	assert.Equal(t, domain.TaskPriorityHighP1, obj.requests[2].Priority)
+
+	// Check task context has manager_domain
+	var ctxMap map[string]any
+	require.NoError(t, json.Unmarshal(obj.requests[2].Context, &ctxMap))
+	assert.Equal(t, "engineering", ctxMap["manager_domain"])
+
+	assert.Equal(t, 1, wake.calls, "runner signaled once for batch")
+}
+
+func TestJJChat_SingleTaskCreationCreatesRealTask(t *testing.T) {
+	mockResponse := `{
+		"intent": "create_tasks",
+		"tasks": [
+			{
+				"title": "Buy groceries",
+				"goal": "Buy groceries for dinner tonight",
+				"manager_domain": "personal_ops",
+				"priority": "NORMAL_P2"
+			}
+		],
+		"reason": "single task creation"
+	}`
+
+	brain := &fakeBrain{enabled: true, reply: mockResponse}
+	wake := &chatWake{}
+	s := &fakeChatStore{}
+	// Without objectives (plain task store)
+	h := NewJJChatHandler(s, nil, wake, true).WithBrain(brain)
+
+	user := uuid.New()
+	code, env := sendChat(t, h, user, `{"message":"make a task to buy groceries for dinner tonight"}`, nil)
+
+	require.Equal(t, http.StatusCreated, code)
+	assert.Equal(t, "objective", env.Data.Kind)
+	require.Len(t, s.tasks, 1, "persisted actual task in database")
+	task := s.tasks[0]
+	assert.Equal(t, "Buy groceries", task.Title)
+	assert.Equal(t, "Buy groceries for dinner tonight", task.Goal)
+	assert.Equal(t, "personal_ops", task.ManagerDomain)
+	assert.Equal(t, domain.TaskStatusQueued, task.Status)
+	assert.Equal(t, 1, wake.calls)
 }

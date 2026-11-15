@@ -175,10 +175,18 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 
 	if deps.Calls != nil {
+		if deps.TaskRepo != nil && deps.Calls.Tasks == nil {
+			deps.Calls.Tasks = deps.TaskRepo
+		}
 		// The provider cannot sign in as the owner: each request is verified by its signature, then runs as the system.
 		sys := middleware.SystemScope()
 		mux.Handle("POST /api/v1/calls/inbound", sys(http.HandlerFunc(deps.Calls.Inbound)))
 		mux.Handle("POST /api/v1/calls/screened", sys(http.HandlerFunc(deps.Calls.Screened)))
+		mux.Handle("POST /api/v1/calls/outbound/twiml", sys(http.HandlerFunc(deps.Calls.OutboundTwiML)))
+		mux.Handle("POST /api/v1/calls/outbound/gather", sys(http.HandlerFunc(deps.Calls.OutboundGather)))
+		mux.Handle("POST /api/v1/calls/outbound/followup", sys(http.HandlerFunc(deps.Calls.OutboundFollowup)))
+		mux.Handle("POST /api/v1/calls/outbound", userAuth(http.HandlerFunc(deps.Calls.MakeOutboundCallHTTP)))
+		mux.Handle("POST /api/v1/calls/record", userAuth(http.HandlerFunc(deps.Calls.RecordCallHTTP)))
 	}
 	if deps.Briefer != nil {
 		mux.Handle("GET /api/v1/brief", userAuth(handlers.BriefHandler(deps.Briefer)))
@@ -234,7 +242,13 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	var voiceCmds *service.VoiceCommands
 	if deps.Engine != nil && deps.ApprovalRepo != nil {
-		voiceCmds = &service.VoiceCommands{Tasks: deps.Engine, Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine}, Secret: []byte(deps.Config.SupabaseJWTSecret), Aliases: deps.AliasRepo}
+		voiceCmds = &service.VoiceCommands{
+			Tasks:     deps.Engine,
+			Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine},
+			Secret:    []byte(deps.Config.SupabaseJWTSecret),
+			Aliases:   deps.AliasRepo,
+			Caller:    deps.Calls,
+		}
 	}
 
 	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero).
@@ -253,6 +267,8 @@ func NewServer(deps ServerDependencies) *Server {
 		settingsHandler := handlers.NewSettingsHandler(profiles)
 		mux.Handle("GET /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.GetManagerName)))
 		mux.Handle("PUT /api/v1/settings/manager-name", userAuth(http.HandlerFunc(settingsHandler.PutManagerName)))
+		mux.Handle("GET /api/v1/settings/calls", userAuth(http.HandlerFunc(settingsHandler.GetCallSettings)))
+		mux.Handle("PUT /api/v1/settings/calls", userAuth(http.HandlerFunc(settingsHandler.PutCallSettings)))
 	}
 	spokenHandler := handlers.NewSpokenHandler(deps.Engine, &service.Summarizer{Brain: summaryBrain(deps.VoiceBrain)}, profiles)
 	mux.Handle("GET /api/v1/tasks/{id}/spoken-summary", userAuth(http.HandlerFunc(spokenHandler.Get)))

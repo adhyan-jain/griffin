@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <queries>
         <intent>
@@ -40,7 +41,10 @@
         android:networkSecurityConfig="@xml/network_security"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:excludeFromRecents="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -50,6 +54,7 @@
         <service
             android:name=".AssistantService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="microphone" />
 
         <service
@@ -64,6 +69,7 @@
         <service
             android:name=".GriffinAccess"
             android:exported="true"
+            android:stopWithTask="false"
             android:label="Griffin phone control"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
@@ -75,6 +81,7 @@
         <service
             android:name=".NotificationReader"
             android:exported="true"
+            android:stopWithTask="false"
             android:label="Griffin message reader"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>

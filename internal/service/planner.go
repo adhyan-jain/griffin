@@ -35,16 +35,29 @@ func NewRuleBasedPlanner() *RuleBasedPlanner {
 func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserRequest, mgrReg *manager.Registry) (*domain.PlanPayload, error) {
 	text := strings.ToLower(req.RequestText)
 	managerID := classifyIntent(text)
+	explicitManager := false
+	if len(req.Context) > 0 {
+		var reqCtx struct {
+			ManagerDomain string `json:"manager_domain"`
+		}
+		if json.Unmarshal(req.Context, &reqCtx) == nil && reqCtx.ManagerDomain != "" {
+			if _, ok := mgrReg.Get(reqCtx.ManagerDomain); ok {
+				managerID = reqCtx.ManagerDomain
+				explicitManager = true
+			}
+		}
+	}
+
 	planKey := managerID
-	if wantsWhatsApp(text) {
+	if wantsWhatsApp(text) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "whatsapp"
-	} else if wantsInstagram(text) {
+	} else if wantsInstagram(text) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "instagram"
-	} else if wantsPhone(req.RequestText) {
+	} else if wantsPhone(req.RequestText) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "phone"
-	} else if wantsBrowser(req.RequestText) {
+	} else if wantsBrowser(req.RequestText) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "browser"
-	} else if wantsWeb(req.RequestText) {
+	} else if wantsWeb(req.RequestText) && (!explicitManager || managerID == "research") {
 		managerID, planKey = "research", "web"
 	}
 
@@ -283,14 +296,14 @@ type intentRule struct {
 // the general research manager.
 var intentRules = []intentRule{
 	{"career", regexp.MustCompile(`\b(jobs?|resumes?|interview\w*|recruiters?|career\w*|intern\w*)\b`)},
-	{"engineering", regexp.MustCompile(`\b(code|codes|coding|codebase|bugs?|bugfix\w*|debug\w*|refactor\w*|tests?|testing|git|github|repos?|repositor(y|ies))\b`)},
+	{"engineering", regexp.MustCompile(`\b(code|codes|coding|codebase|bugs?|bugfix\w*|debug\w*|refactor\w*|tests?|testing|git|github|repos?|repositor(y|ies)|docker)\b`)},
 	{"hackathon", regexp.MustCompile(`\b(hackathons?|bount(y|ies)|grants?)\b`)},
 	{"freelance", regexp.MustCompile(`\b(freelanc\w*|gigs?|proposals?|contracts?)\b`)},
 	{"networking", regexp.MustCompile(`\b(networking|crm|outreach|meetings?)\b`)},
 	{"tech_intelligence", regexp.MustCompile(`\b(news|ai releases?|models?|benchmarks?)\b`)},
-	{"learning", regexp.MustCompile(`\b(learn\w*|stud(y|ies|ying)|curricul(um|a)|quiz(zes)?)\b`)},
-	{"personal_ops", regexp.MustCompile(`\b(calendars?|agenda|schedul\w*|travel\w*)\b`)},
-	{"finance", regexp.MustCompile(`\b(credits?|aws bills?|financ\w*|subscriptions?)\b`)},
+	{"learning", regexp.MustCompile(`\b(learn\w*|stud(y|ies|ying)|curricul(um|a)|quiz(zes)?|dsa)\b`)},
+	{"personal_ops", regexp.MustCompile(`\b(calendars?|agenda|schedul\w*|travel\w*|whatsapp|grocer\w*|buy\w*|order\w*|remind\w*|messages?|texts?|calls?)\b`)},
+	{"finance", regexp.MustCompile(`\b(credits?|aws bills?|financ\w*|subscriptions?|bills?|costs?|spends?|spending|budgets?|audit\w*)\b`)},
 	{"product_ideas", regexp.MustCompile(`\b(prds?|features?|ideas?|products?)\b`)},
 }
 

@@ -38,7 +38,7 @@ var (
 	// Imperatives that only count when a deliverable is named.
 	conditionalVerbRe = regexp.MustCompile(`^(?:write|summari[sz]e|produce|generate|make|put together|give me|draw up)\b`)
 
-	deliverableRe = regexp.MustCompile(`\b(?:reports?|tables?|documents?|proposals?|spreadsheets?|presentations?|slide deck|whitepaper|dossier|essay|article|email|letter|brief|spec|readme|script|program|plan|comparison|sources|citations|references|roadmap|checklist|lists?)\b`)
+	deliverableRe = regexp.MustCompile(`\b(?:tasks?|reports?|tables?|documents?|proposals?|spreadsheets?|presentations?|slide deck|whitepaper|dossier|essay|article|email|letter|brief|spec|readme|script|program|plan|comparison|sources|citations|references|roadmap|checklist|lists?)\b`)
 	needWordRe    = regexp.MustCompile(`\b(?:need|want|give|produce|generate|prepare|draft|write|compile)\b`)
 )
 

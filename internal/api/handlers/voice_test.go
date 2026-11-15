@@ -36,6 +36,12 @@ func (f *fakeProfiles) SetManagerName(_ context.Context, _ uuid.UUID, n string) 
 	}
 	return f.setErr
 }
+func (f *fakeProfiles) InboundCallsEnabled(context.Context, uuid.UUID) (bool, error) {
+	return false, nil
+}
+func (f *fakeProfiles) SetInboundCallsEnabled(_ context.Context, _ uuid.UUID, _ bool) error {
+	return nil
+}
 
 type fakeBrain struct {
 	enabled bool

@@ -128,17 +128,34 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     fun phoneHeartbeat(withPhoneUi: Boolean = false) {
         var hostToken = store.get("host_token")
         if (hostToken == null) {
-            val body = JSONObject().put("name", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim()).put("kind", "phone")
-                .put("capabilities", JSONArray(PHONE_CAPABILITIES + PHONE_UI))
-            val reply = JSONObject(api("POST", "/api/v1/hosts", body)).let { it.optJSONObject("data") ?: it }
+            fun register(caps: List<String>) = api("POST", "/api/v1/hosts", JSONObject()
+                .put("name", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim()).put("kind", "phone").put("capabilities", JSONArray(caps)))
+            val registered = try { register(PHONE_CAPABILITIES + PHONE_UI) } catch (e: ApiException) {
+                if (e.message?.contains("unknown host capability") == true) register(PHONE_CAPABILITIES) else throw e // an older server
+            }
+            val reply = JSONObject(registered).let { it.optJSONObject("data") ?: it }
             hostToken = reply.getString("token")
             store.put("host_token", hostToken)
         }
-        val (code, text) = call("POST", "$apiUrl/api/v1/host/heartbeat", mapOf("Authorization" to "Bearer $hostToken"),
-            JSONObject().put("capabilities", JSONArray(if (withPhoneUi) PHONE_CAPABILITIES + PHONE_UI else PHONE_CAPABILITIES)).put("version", BuildConfig.VERSION_NAME).toString())
+        var advertise = if (withPhoneUi && !serverLacksPhoneUi) PHONE_CAPABILITIES + PHONE_UI else PHONE_CAPABILITIES
+        var (code, text) = beat(hostToken, advertise)
+        if (code == 400 && text.contains("unknown host capability") && PHONE_UI in advertise) {
+            // An older server does not know phone_ui and would reject the whole beat, leaving the phone looking
+            // offline. Stay online with what it does know; phone control returns when the server is updated.
+            serverLacksPhoneUi = true
+            advertise = PHONE_CAPABILITIES
+            beat(hostToken, advertise).let { code = it.first; text = it.second }
+        }
         if (code == 401) store.put("host_token", null)
         if (code !in 200..299) throw ApiException(message(text, "Device heartbeat failed (HTTP $code)."), code)
     }
+
+    /** Set once a server has refused phone_ui, so later beats do not send it twice. */
+    @Volatile private var serverLacksPhoneUi = false
+
+    private fun beat(hostToken: String, caps: List<String>): Pair<Int, String> =
+        call("POST", "$apiUrl/api/v1/host/heartbeat", mapOf("Authorization" to "Bearer $hostToken"),
+            JSONObject().put("capabilities", JSONArray(caps)).put("version", BuildConfig.VERSION_NAME).toString())
 
     /** Names of the people an outreach campaign is waiting to hear from (nothing else is ever sent about chats). */
     fun awaitingNames(): List<String> {
@@ -162,8 +179,18 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         return r
     }
 
-    /** A claimed phone task: its id, the phone job's goal and the approvals the owner already granted. */
-    data class PhoneTask(val id: String, val goal: String, val approved: Set<String>)
+    /** A claimed phone task: its id, the phone job's goal, the approvals granted, and optional automated call parameters. */
+    data class PhoneTask(
+        val id: String,
+        val goal: String,
+        val approved: Set<String>,
+        val action: String = "",
+        val number: String = "",
+        val recipientName: String = "",
+        val message: String = "",
+        val callId: String = "",
+        val inBackground: Boolean = false,
+    )
 
     /** Leases the next task for this phone, or null. Tasks that are not phone jobs are failed back, not run. */
     fun claimPhoneTask(): PhoneTask? {
@@ -173,8 +200,29 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         val task = root.optJSONObject("task") ?: return null
         val id = task.getString("id")
         val payload = task.optJSONObject("input_payload")
-        val goal = payload?.optJSONObject("phone")?.optString("goal").orEmpty()
+            ?: runCatching { JSONObject(task.optString("input_payload")) }.getOrNull()
+        val phoneObj = payload?.optJSONObject("phone")
+        val action = phoneObj?.optString("action").orEmpty()
+        val goal = phoneObj?.optString("goal").orEmpty().ifEmpty { task.optString("goal").orEmpty() }
         val approved = root.optJSONArray("approved_actions")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+        if (action == "automated_call") {
+            val number = phoneObj?.optString("number").orEmpty()
+            val recipientName = phoneObj?.optString("recipient_name").orEmpty()
+            val message = phoneObj?.optString("message").orEmpty()
+            val callId = phoneObj?.optString("call_id").orEmpty()
+            val inBackground = phoneObj?.optBoolean("in_background", false) ?: false
+            return PhoneTask(
+                id = id,
+                goal = "Call $recipientName: $message",
+                approved = approved,
+                action = action,
+                number = number,
+                recipientName = recipientName,
+                message = message,
+                callId = callId,
+                inBackground = inBackground,
+            )
+        }
         if (goal.isEmpty()) { failTask(id, "This phone only runs phone jobs.", retryable = true); return null }
         return PhoneTask(id, goal, approved)
     }
@@ -230,5 +278,29 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
     /** Sends real work to the manager with the conversation so far. */
     fun sendMessage(text: String, history: List<Pair<String, String>>) {
         api("POST", "/api/v1/jj/messages", JSONObject().put("message", text).put("history", historyJson(history)).put("idempotency_key", UUID.randomUUID().toString()))
+    }
+
+    /** Triggers an autonomous outbound call through Griffin. */
+    fun makeAutomatedCall(to: String, recipientName: String, message: String): String {
+        val body = JSONObject().apply {
+            put("to", to)
+            put("recipient_name", recipientName)
+            put("message", message)
+        }
+        return api("POST", "/api/v1/calls/outbound", body)
+    }
+
+    /** Records the outcome, recipient reply and notes of an automated cellular call. */
+    fun recordCall(to: String, recipientName: String, outcome: String, message: String, reply: String, followup: String = "", callId: String = "") {
+        val body = JSONObject().apply {
+            put("to", to)
+            if (recipientName.isNotBlank()) put("recipient_name", recipientName)
+            put("outcome", outcome)
+            put("message", message)
+            if (reply.isNotBlank()) put("reply", reply)
+            if (followup.isNotBlank()) put("followup", followup)
+            if (callId.isNotBlank()) put("call_id", callId)
+        }
+        api("POST", "/api/v1/calls/record", body)
     }
 }

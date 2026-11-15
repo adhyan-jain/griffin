@@ -399,22 +399,27 @@ func main() {
 	}
 
 	var callsHandler *handlers.CallsHandler
-	if cfg.CallsAuthToken != "" {
+	if cfg.CallsUserID != "" {
 		ownerID, perr := uuid.Parse(cfg.CallsUserID)
 		if perr != nil || cfg.CallsPublicURL == "" {
-			logger.Error("CALLS_AUTH_TOKEN is set but CALLS_USER_ID or CALLS_PUBLIC_URL is missing; inbound calls stay off")
+			logger.Error("CALLS_USER_ID or CALLS_PUBLIC_URL is missing or invalid; calling features remain off")
 		} else {
 			name, _ := profileRepo.ManagerName(database.WithSystem(ctx), ownerID)
 			callsHandler = &handlers.CallsHandler{
 				Log: repository.NewCallRepository(repoDB), Sender: dsaCoach.Sender, AuthToken: cfg.CallsAuthToken, PublicURL: cfg.CallsPublicURL,
 				OwnerUserID: ownerID, OwnerName: name, OwnerNumber: cfg.CallsOwnerNumber, Logger: logger,
+				Tasks: taskRepo,
+				InboundEnabled: func(callCtx context.Context) bool {
+					enabled, err := profileRepo.InboundCallsEnabled(database.WithSystem(callCtx), ownerID)
+					return err == nil && enabled
+				},
 			}
 			for _, n := range strings.Split(cfg.CallsTrusted, ",") {
 				if n = strings.TrimSpace(n); n != "" {
 					callsHandler.Trusted = append(callsHandler.Trusted, n)
 				}
 			}
-			logger.Info("inbound call screening is on", "trusted_numbers", len(callsHandler.Trusted))
+			logger.Info("calling handler initialized", "inbound_token_set", cfg.CallsAuthToken != "", "outbound_cellular", taskRepo != nil)
 		}
 	}
 

@@ -92,6 +92,48 @@ class ListenerMachineTest {
         assertEquals(listOf(LEffect.CancelTimers, LEffect.CancelListen, LEffect.BeginNow), step.effects)
     }
 
+    @Test fun `listen once hears one thing and then the microphone goes idle`() {
+        val a = run(LState(), LEvent.ListenOnce)
+        assertTrue(a.state.active && a.state.oneShot)
+        assertTrue(a.effects.contains(LEffect.BeginNow))
+        val heard = ListenerMachine.reduce(a.state, LEvent.Results(listOf("what time is it")))
+        assertFalse("no restart is scheduled", heard.effects.any { it is LEffect.Schedule })
+        assertFalse(heard.state.active)
+        assertFalse(heard.state.oneShot)
+        assertTrue(heard.effects.any { it is LEffect.Heard })
+        assertTrue(heard.effects.contains(LEffect.Destroy))
+    }
+
+    @Test fun `listen once with silence goes idle instead of retrying forever`() {
+        val a = run(LState(), LEvent.ListenOnce)
+        val quiet = ListenerMachine.reduce(a.state, LEvent.Error(LError.Silence, false))
+        assertFalse(quiet.state.active)
+        assertFalse(quiet.effects.any { it is LEffect.Schedule })
+        // and a later pause/resume (the assistant speaking) must not turn the mic back on
+        val after = run(quiet.state, LEvent.Pause, LEvent.Resume)
+        assertFalse(after.effects.any { it is LEffect.Schedule || it == LEffect.BeginNow })
+    }
+
+    @Test fun `a real error while listening once still retries`() {
+        val a = run(LState(), LEvent.ListenOnce)
+        val e = ListenerMachine.reduce(a.state, LEvent.Error(LError.Network, false))
+        assertTrue(e.effects.any { it is LEffect.Schedule })
+        assertTrue(e.state.oneShot)
+    }
+
+    @Test fun `always-listening mode is unchanged by a tap`() {
+        val s = run(LState(), LEvent.Start, LEvent.ForceListen).state
+        assertFalse(s.oneShot)
+        val r = ListenerMachine.reduce(s, LEvent.Results(listOf("hi")))
+        assertTrue(r.effects.any { it is LEffect.Schedule })
+        assertTrue(r.state.active)
+    }
+
+    @Test fun `start after a one-shot is continuous again`() {
+        val idle = ListenerMachine.reduce(run(LState(), LEvent.ListenOnce).state, LEvent.Results(listOf("x"))).state
+        assertFalse(run(idle, LEvent.Start).state.oneShot)
+    }
+
     @Test fun `fuzz keeps the invariants`() {
         val rnd = Random(7)
         val errors = LError.values()
@@ -99,11 +141,11 @@ class ListenerMachineTest {
             rnd.setSeed(seed.toLong())
             var s = LState()
             repeat(40) {
-                val e: LEvent = when (rnd.nextInt(14)) {
+                val e: LEvent = when (rnd.nextInt(15)) {
                     0 -> LEvent.Start; 1 -> LEvent.Stop; 2 -> LEvent.Pause; 3 -> LEvent.Resume; 4 -> LEvent.ForceListen
                     5 -> LEvent.TimerFired(rnd.nextBoolean()); 6 -> LEvent.BeginAttempt(rnd.nextBoolean()); 7 -> LEvent.NoRecognizer
                     8 -> LEvent.StartFailed("x"); 9 -> LEvent.Ready; 10 -> LEvent.SpeechBegan
-                    11 -> LEvent.Results(listOf("a")); else -> LEvent.Error(errors[rnd.nextInt(errors.size)], rnd.nextBoolean())
+                    11 -> LEvent.Results(listOf("a")); 12 -> LEvent.ListenOnce; else -> LEvent.Error(errors[rnd.nextInt(errors.size)], rnd.nextBoolean())
                 }
                 val step = ListenerMachine.reduce(s, e)
                 assertTrue("at most one schedule per step", step.effects.count { it is LEffect.Schedule } <= 1)

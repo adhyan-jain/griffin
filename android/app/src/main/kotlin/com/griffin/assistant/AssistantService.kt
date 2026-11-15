@@ -97,7 +97,7 @@ class AssistantService : Service() {
             { status -> app.log("mic: $status") },
             { level -> if (app.mode == OrbView.Mode.Listening) app.showLevel(level) }
         )
-        listener.start()
+        if (ListenMode.wakeWord(this)) listener.start() else app.log("tap-only: the microphone stays off until you tap")
         refreshName()
         app.net.execute { try { if (app.api.signedIn) app.api.refreshAliases() } catch (_: Exception) {} }
         app.main.post(deviceBeat)
@@ -111,10 +111,12 @@ class AssistantService : Service() {
             // From the button, the notification or the tile: the same as hearing "hey <name>" on its own.
             ACTION_LISTEN -> {
                 app.log("woke by button")
-                if (::listener.isInitialized) listener.forceListen()
+                if (::listener.isInitialized) { if (ListenMode.wakeWord(this)) listener.forceListen() else listener.listenOnce() }
                 dispatch(AEvent.ManualWake(System.currentTimeMillis()))
                 beepSoon()
             }
+            // The owner changed how it wakes: turn the always-on microphone on or off to match.
+            ACTION_APPLY_MODE -> if (::listener.isInitialized) { if (ListenMode.wakeWord(this)) listener.start() else listener.stop() }
         }
         return START_STICKY
     }
@@ -194,7 +196,7 @@ class AssistantService : Service() {
 
     /** Tells Griffin this phone is alive every 30 seconds, so it shows as a live device (it counts as live for 45). */
     private var beats = 0
-    private val phoneRunner by lazy { PhoneRunner(this, app.api) { app.dlog(it) } }
+    private val phoneRunner by lazy { PhoneRunner(this, app.api, app.cellularCallManager) { app.dlog(it) } }
     private val deviceBeat: Runnable = object : Runnable {
         override fun run() {
             val refreshNames = beats++ % 10 == 0
@@ -261,8 +263,10 @@ class AssistantService : Service() {
         val request = heard
         val cmd0 = Commands.parse(Aliases.apply(heard, app.api.aliases()))
         when (val cmd = cmd0) {
-            is Command.Call -> placeCall(cmd.who)
-            is Command.Text -> textOrReply(cmd.who, cmd.message)
+            is Command.Call -> placeCall(cmd.who, cmd.inBackground)
+            is Command.AutomatedCall -> makeAutomatedCall(cmd.who, cmd.message, cmd.inBackground)
+            is Command.CancelCall -> cancelActiveCall(cmd.who)
+            is Command.Text -> textOrReply(cmd.who, cmd.message, cmd.inBackground)
             is Command.Timer -> say(actions.timer(cmd.seconds))
             is Command.Alarm -> say(actions.alarm(cmd.hour, cmd.minute))
             is Command.Flashlight -> say(actions.flashlight(cmd.on))
@@ -284,11 +288,24 @@ class AssistantService : Service() {
             Command.DeveloperOptions -> say(actions.openDeveloperOptions())
             is Command.WebSearch -> say(actions.searchWeb(cmd.query))
             is Command.ReadMessages -> readMessages(cmd.from)
-            is Command.Reply -> replyTo(cmd.who, cmd.app, cmd.text)
-            is Command.MessageVia -> messageVia(cmd.who, cmd.app, cmd.text)
+            is Command.Reply -> replyTo(cmd.who, cmd.app, cmd.text, cmd.inBackground)
+            is Command.MessageVia -> messageVia(cmd.who, cmd.app, cmd.text, cmd.inBackground)
             Command.Stop -> { app.speaker.stop(); finished() }
             Command.Answer, Command.Reject -> say("There is no call ringing.")
             Command.None -> askGriffin(request)
+        }
+    }
+
+    private fun cancelActiveCall(who: String?) {
+        if (!app.cellularCallManager.isCallActive) {
+            say("There is no active call to cancel.")
+            return
+        }
+        say("Cancelling call.")
+        app.cellularCallManager.cancelCurrentCall(who) { result ->
+            app.main.post {
+                say(result)
+            }
         }
     }
 
@@ -302,17 +319,79 @@ class AssistantService : Service() {
         }
     }
 
-    private fun placeCall(who: String) {
+    private fun placeCall(who: String, inBackground: Boolean = false) {
         val m = pickContact(who) ?: return
-        say("Calling ${m.name}.")
+        if (inBackground) {
+            GriffinAccess.suppressDialer = true
+            say("Calling ${m.name} in background.")
+        } else {
+            say("Calling ${m.name}.")
+        }
         actions.call(m.number)?.let { say(it) }
     }
 
-    private fun textOrReply(who: String, message: String) {
+    private fun makeAutomatedCall(who: String, message: String, inBackground: Boolean = false) {
+        val isDigits = who.matches(Regex("^[+0-9 -]{7,}$"))
+        val number: String
+        val displayName: String
+        if (isDigits) {
+            number = who
+            displayName = who
+        } else {
+            val m = pickContact(who) ?: return
+            number = m.number
+            displayName = m.name
+        }
+        if (inBackground) {
+            say("Placing an automated call to $displayName in background to tell them: $message.")
+        } else {
+            say("Placing an automated call to $displayName to tell them: $message.")
+        }
+        if (::listener.isInitialized) listener.pause()
+        app.jobs.execute {
+            try {
+                app.cellularCallManager.startAutomatedCall(
+                    number = number,
+                    recipientName = displayName,
+                    message = message,
+                    inBackground = inBackground,
+                    onDone = { _, _, _ ->
+                        app.main.post {
+                            if (::listener.isInitialized && ListenMode.wakeWord(this)) {
+                                listener.resume()
+                            }
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                app.log("automated call failed: ${e.message}")
+                app.main.post {
+                    if (::listener.isInitialized && ListenMode.wakeWord(this)) {
+                        listener.resume()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun textOrReply(who: String, message: String, inBackground: Boolean = false) {
         // If that person has just messaged in a chat app, a text means "answer them there"; otherwise a plain text message.
         val chats = Inbox.book.replyTarget(who, null, System.currentTimeMillis())
-        if (chats.size == 1) { confirmReply(chats[0], message); return }
+        if (chats.size == 1) {
+            if (inBackground) {
+                val err = Inbox.reply(this, chats[0].key, message)
+                if (err == null) say("Replied to ${chats[0].title} on ${chats[0].appName} in background.") else say(err)
+            } else {
+                confirmReply(chats[0], message)
+            }
+            return
+        }
         val m = pickContact(who) ?: return
+        if (inBackground) {
+            val err = actions.sendSms(m.number, message)
+            if (err == null) say("Sent text to ${m.name} in background.") else say(err)
+            return
+        }
         confirm(PendingAction(PendingAction.Kind.Sms, m.name, m.number, message, "text message"), "Text ${m.name}: $message. Say send to confirm.")
     }
 
@@ -337,7 +416,7 @@ class AssistantService : Service() {
         say(actions.openWhatsAppChat(m.number, m.name))
     }
 
-    private fun replyTo(who: String?, appSaid: String?, text: String) {
+    private fun replyTo(who: String?, appSaid: String?, text: String, inBackground: Boolean = false) {
         if (!notificationAccess()) { say("I need access to your notifications to reply. Turn it on in the Griffin app."); return }
         val now = System.currentTimeMillis()
         val justRead = if (who == null) lastRead?.let { k -> Inbox.book.all(now).firstOrNull { it.key == k && it.canReply } } else null
@@ -345,25 +424,51 @@ class AssistantService : Service() {
         when {
             candidates.isEmpty() -> say(if (who == null) "There is no chat to reply to. Say who, for example: reply to Bro saying I am on my way." else "I have no recent chat with $who that I can reply to.")
             candidates.size > 1 && who != null && candidates.map { it.appName }.distinct().size > 1 -> say("I found ${candidates.joinToString(" and ") { "${it.title} on ${it.appName}" }}. Say which app.")
-            else -> confirmReply(candidates[0], text)
+            else -> {
+                if (inBackground) {
+                    val err = Inbox.reply(this, candidates[0].key, text)
+                    if (err == null) say("Replied to ${candidates[0].title} on ${candidates[0].appName} in background.") else say(err)
+                } else {
+                    confirmReply(candidates[0], text)
+                }
+            }
         }
     }
 
-    private fun messageVia(who: String, appName: String, text: String) {
+    private fun messageVia(who: String, appName: String, text: String, inBackground: Boolean = false) {
         val chats = if (notificationAccess()) Inbox.book.replyTarget(who, appName, System.currentTimeMillis()) else emptyList()
         when {
-            chats.size == 1 -> confirmReply(chats[0], text)
-            appName == "Messages" -> textOrReply(who, text)
+            chats.size == 1 -> {
+                if (inBackground) {
+                    val err = Inbox.reply(this, chats[0].key, text)
+                    if (err == null) say("Sent message to ${chats[0].title} on ${chats[0].appName} in background.") else say(err)
+                } else {
+                    confirmReply(chats[0], text)
+                }
+            }
+            appName == "Messages" -> textOrReply(who, text, inBackground)
             appName == "WhatsApp" && app.api.signedIn -> app.net.execute {
-                // No open chat to reply to: let Griffin send it from the laptop's WhatsApp Web, with the usual approval.
+                // No open chat to reply to: let Griffin send it from the laptop's WhatsApp Web in background.
                 try {
                     app.api.sendMessage("Send a WhatsApp message to $who: $text", emptyList())
-                    app.main.post { say("There is no open WhatsApp chat with $who, so I asked Griffin to send it from your laptop. You will be asked to approve it.") }
+                    app.main.post { say("Asked Griffin to send WhatsApp to $who in background from your laptop.") }
                 } catch (e: Exception) {
                     app.main.post { say("I could not reach Griffin to send that.") }
                 }
             }
-            else -> say("I can reply to $appName chats that have just messaged you, but I cannot start a new one in $appName yet.")
+            else -> {
+                if (inBackground) {
+                    val m = pickContact(who)
+                    if (m != null) {
+                        val err = actions.sendSms(m.number, text)
+                        if (err == null) say("Sent text to ${m.name} in background.") else say(err)
+                    } else {
+                        say("I can reply to recent chats in background, but cannot start a new chat in $appName yet.")
+                    }
+                } else {
+                    say("I can reply to $appName chats that have just messaged you, but I cannot start a new one in $appName yet.")
+                }
+            }
         }
     }
 
@@ -412,6 +517,7 @@ class AssistantService : Service() {
     }
 
     companion object {
+        const val ACTION_APPLY_MODE = "com.griffin.assistant.APPLY_MODE"
         const val ACTION_STOP = "com.griffin.assistant.STOP"
         const val ACTION_LISTEN = "com.griffin.assistant.LISTEN"
         const val ACTION_DEBUG_UTTERANCE = "com.griffin.assistant.DEBUG_UTTERANCE"

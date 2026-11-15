@@ -10,6 +10,7 @@ class GriffinApp : Application() {
     lateinit var store: SecretStore
     lateinit var api: ApiClient
     lateinit var speaker: Speaker
+    val cellularCallManager by lazy { CellularCallManager(this, api, speaker) }
     val net = Executors.newSingleThreadExecutor()
     /** Only the "I am alive" signal runs here, so a slow or stuck phone job can never make the phone look offline. */
     val beat = Executors.newSingleThreadExecutor()

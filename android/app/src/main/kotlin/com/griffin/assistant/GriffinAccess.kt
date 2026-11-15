@@ -18,16 +18,61 @@ import com.griffin.assistant.core.PStep
  */
 class GriffinAccess : AccessibilityService(), PScreenDriver {
     private var ball: FloatingBall? = null
+    private var onPaymentApp = false
 
-    override fun onServiceConnected() { instance = this; syncBall() }
-    override fun onUnbind(intent: Intent?): Boolean { ball?.hide(); ball = null; if (instance === this) instance = null; return super.onUnbind(intent) }
+    override fun onServiceConnected() {
+        instance = this
+        val currentPkg = rootInActiveWindow?.packageName?.toString()
+        onPaymentApp = PaymentApps.isPaymentApp(this, currentPkg)
+        syncBall()
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        ball?.hide()
+        ball = null
+        if (instance === this) instance = null
+        return super.onUnbind(intent)
+    }
 
     /** Shows or hides the floating ball to match the owner's setting. */
     fun syncBall() {
         val b = ball ?: FloatingBall(this).also { ball = it }
-        if (FloatingBall.enabled(this)) b.show() else b.hide()
+        val shouldPause = onPaymentApp && FloatingBall.hideOnPaymentApps(this)
+        b.setPausedByPayment(shouldPause)
+        if (!shouldPause) {
+            if (FloatingBall.enabled(this)) {
+                b.show()
+                b.updateSettings()
+            } else {
+                b.hide()
+            }
+        }
     }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val pkg = event.packageName?.toString() ?: return
+            if (suppressDialer && isDialerPackage(pkg)) {
+                // Background call is active: immediately dismiss dialer window back to game/work!
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                return
+            }
+            if (PaymentApps.isPaymentApp(this, pkg)) {
+                if (!onPaymentApp) {
+                    onPaymentApp = true
+                    if (FloatingBall.hideOnPaymentApps(this)) {
+                        ball?.setPausedByPayment(true)
+                    }
+                }
+            } else if (!PaymentApps.isTransientSystemPackage(pkg)) {
+                if (onPaymentApp) {
+                    onPaymentApp = false
+                    ball?.setPausedByPayment(false)
+                }
+            }
+        }
+    }
     override fun onInterrupt() {}
 
     private class Numbered(val view: PElement, val node: AccessibilityNodeInfo)
@@ -125,5 +170,11 @@ class GriffinAccess : AccessibilityService(), PScreenDriver {
     companion object {
         @Volatile var instance: GriffinAccess? = null
         val ready: Boolean get() = instance != null
+        @Volatile var suppressDialer: Boolean = false
+
+        fun isDialerPackage(pkg: String): Boolean {
+            val lower = pkg.lowercase()
+            return lower.contains("dialer") || lower.contains("incall") || lower.contains("telecom") || lower == "com.android.phone"
+        }
     }
 }
