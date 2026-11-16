@@ -956,7 +956,7 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Eliminates third-party telecom costs and subscription overhead, allows autonomous calling from personal phone numbers, and handles unexpected questions with an informative context fallback.
 
 #### ADR-124: Complete Twilio Decommissioning, Background Calling/Messaging, and Emergency Call Cancellation
-- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/GriffinAccess.kt`, `android/app/src/main/kotlin/com/griffin/assistant/CellularCallManager.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/PhoneRunner.kt`, `android/app/src/main/kotlin/com/griffin/assistant/ApiClient.kt`, `internal/api/handlers/calls.go`, `internal/config/config.go`, `internal/watch/pipelines.go`, `internal/watch/tailor.go`).
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/GriffinAccess.kt`, `android/app/src/main/kotlin/com/griffin/assistant/CellularCallManager.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/PhoneRunner.kt`, `android/app/src/main/kotlin/com/griffin/assistant/ApiClient.kt`, `internal/api/handlers/calls.go`, `internal/config/config.go`).
 - **Decision**:
   1. **Twilio Outbound Calling Fully Decommissioned**:
      - Decommissioned all Twilio REST API outbound dispatching and associated configuration (`CALLS_ACCOUNT_SID`, `TWILIO_ACCOUNT_SID`, `CALLS_FROM_NUMBER`, `TWILIO_PHONE_NUMBER`).
@@ -973,7 +973,74 @@ This document is the canonical ledger of all architectural, product, engineering
        - `"cancel call"`, `"cancel the call"`, `"cut the call"`, `"hang up"`, or `"cancel call to <person>"`.
      - **If not yet answered / ringing**: Griffin cuts the call immediately via `TelecomManager.endCall()`.
      - **If already answered / offhook**: Griffin immediately interrupts current dialog, speaks a polite excuse over the cellular line (*"Sorry, there might have been a change of plan, I need to drop off now. Talk soon, bye!"*), and hangs up within 600ms.
-  4. **Autonomous Career, Freelance & Dev Opportunity Pipelines**:
-     - Implemented 13 autonomous background pipeline modules in `internal/watch/` enforcing strict human-in-the-loop approvals, resume ground truth (/home/adhyan/Downloads/AJ_Resume_Context.md), 24h CAPTCHA circuit breakers, and daily volume safety caps.
 - **Why**: Eliminates third-party telecom costs, prevents UI disruption during gaming or active multitasking, and provides safe, instant voice cancellation for autonomous calls.
+
+
+#### ADR-125: Dedicated Cellular Call Planner (`wantsCall`) & Messaging Intent Disambiguation
+- **Status**: IMPLEMENTED (`internal/service/planner_calls.go`, `internal/service/planner_messaging.go`, `internal/service/planner.go`, `internal/service/planner_calls_test.go`).
+- **Decision**:
+  1. **Voice Call Intent Classification (`wantsCall`)**:
+     - Implemented dedicated intent parser `wantsCall(text)` with positive pattern matching for direct voice call commands (`call <name>`, `phone <name>`, `dial <name>`, `voice call`, `make a call to`, `automated call to`) and negative filtering for non-telephony terms (`api call`, `function call`, `system call`, `call stack`, `so-called`, `call it a day`).
+     - Extracts recipient target (`extractCallDetails`), spoken message context (`tell him that...`, `saying...`, `with message...`), and background flag (`in background`).
+  2. **WhatsApp & Messaging Collision Veto**:
+     - In `planner_messaging.go`, `wantsWhatsApp(text)` immediately returns `false` if `wantsCall(text)` evaluates to true.
+     - Eliminates bug where compound voice call instructions (e.g. `"call hiten and tell him that i'll be late for dinner"`) were greedily matched by `messagingVerb` (`tell`, `say`) and routed to WhatsApp Web or Android WhatsApp automation rather than placing a voice call.
+  3. **Cellular Task Delegation**:
+     - In `RuleBasedPlanner.GeneratePlan()`, `wantsCall` routes to manager domain `personal_ops` with plan key `"call"`.
+     - Generates `domain.ChildTaskPlan` requiring `domain.HostCapCalls` and worker `cellular_caller`.
+     - Handled exclusively by the Android companion app's `PhoneRunner` and `CellularCallManager`.
+- **Why**: Prevents messaging planners from hijacking voice call requests, ensuring automated calls are dispatched through the phone's native SIM rather than falling through to text messaging drivers.
+
+
+#### ADR-126: Headless Host Tool Execution Bypass (`--dangerously-skip-permissions`)
+- **Status**: IMPLEMENTED (`internal/provider/antigravity/executor.go`, `cmd/griffin-host/main.go`).
+- **Decision**:
+  1. **Headless Execution on Single-Tenant Host**:
+     - The laptop host daemon (`griffin-host`) runs autonomous workers using Antigravity CLI in print mode (`agy -p`).
+     - In non-interactive daemon execution without a TTY, `agy` pauses or aborts when prompting for interactive confirmation of tools (file reading, bash execution, code search).
+  2. **Controlled Bypass Configuration (`AllowBypass`)**:
+     - Added `AllowBypass: true` flag to `ExecutorConfig`.
+     - When `ToolsEnabled && AllowBypass`, `AntigravityExecutor` passes `--dangerously-skip-permissions` alongside default tool arguments (`--mode plan` for `ToolRead`, `--mode accept-edits` for `ToolAct`).
+     - `validateToolArgs` explicitly permits `--dangerously-skip-permissions` only when `AllowBypass` is enabled.
+  3. **Security Invariant**:
+     - Permission bypass is strictly restricted to the authenticated owner's local laptop runner (`griffin-host`).
+     - Multi-tenant cloud servers (`griffin-server`) and untrusted worker sandboxes continue to strictly forbid `--dangerously-skip-permissions` (ADR-079).
+- **Why**: Allows headless autonomous agent execution on the owner's laptop host without interactive confirmation hangs, while strictly preserving sandbox guardrails on shared cloud infrastructure.
+
+
+#### ADR-127: Mobile Task Updates Notification Channel (`griffin_task_updates`) & Phone-First UX
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/ApiClient.kt`, `web/src/app/tasks/page.tsx`, `web/src/components/result-view.tsx`).
+- **Decision**:
+  1. **Dedicated Android Notification Channel**:
+     - Created `griffin_task_updates` notification channel (`IMPORTANCE_HIGH`, vibration enabled, launcher badge visible) specifically for task completion and executive briefings.
+     - Distinct from the silent persistent foreground service notification (`assistant_silent`).
+  2. **Periodic Task Status Polling & Deduplication**:
+     - `AssistantService` checks for newly completed tasks every 30 seconds via `ApiClient.fetchRecentCompletedTasks()`.
+     - Persists seen task IDs in local `SharedPreferences` (`griffin_task_notifs`, capped to 100 entries) to guarantee each completed task triggers exactly one notification.
+  3. **Semantic Notification Routing & Deep-Linking**:
+     - Context-aware title formatting:
+       - DSA / LeetCode tasks: `"⚡ DSA / LeetCode Update"`
+       - Daily briefings: `"🌅 Daily Executive Briefing Ready"`
+       - Weekly summaries: `"📊 Weekly Report Ready"`
+       - General tasks: `"✅ Task Completed: <Title>"`
+     - Uses `BigTextStyle` for expanded previews of responses or goals.
+     - Tapping the notification deep-links directly to the task detail page (`/tasks/<task_id>`).
+  4. **Mobile-First Task Web Console**:
+     - Overhauled `web/src/app/tasks/page.tsx` with responsive layout, touch-friendly filter pills, expanded card views, and full markdown result rendering (`result-view.tsx`).
+- **Why**: The owner monitors and acts on agent tasks primarily from their phone. High-priority push notifications and responsive mobile views ensure effortless review without requiring desktop console access.
+
+
+#### ADR-128: Decoupled Operational Tasks & LeetCode Profile Deduplication
+- **Status**: IMPLEMENTED (`internal/domain/dsa.go`, `internal/service/dsa_coach.go`, `internal/repository/dsa_repo.go`, `cmd/griffin-host/watch.go`).
+- **Decision**:
+  1. **Decoupled Operational Pipelines**:
+     - Removed hardcoded in-tree pipeline daemons from `internal/watch/` to eliminate code bloat and tight coupling.
+     - Operational pipelines (Internship Tracker, Cold Outreach, Hackathon Watcher, OSS Issue Scraper, etc.) are treated as dynamic, autonomous tasks orchestrated via JJ Chat, web console, and standard specialist workers (`research`, `career`, `engineering`).
+     - Preserves all core safety invariants (human approval gates, digest signing, 24h CAPTCHA circuit breakers, and rate caps) through standard task approval workflows (`ADR-110`, `ADR-111`).
+  2. **LeetCode Profile Deduplication (`AdhyanJain`)**:
+     - Added `CleanLeetCodeUsername()` to parse profile URLs (e.g. `https://leetcode.com/u/AdhyanJain/`) and extract clean username handles, defaulting to `AdhyanJain`.
+     - In `DsaCoach.Today()`, automatically runs `Sync()` against the LeetCode GraphQL API (`recentAcSubmissionList`) prior to assembling the daily problem set.
+     - If a problem is already marked accepted on the owner's LeetCode account, it is immediately flagged as `DsaSolved` in the database and skipped, ensuring the owner is never assigned repeated problems.
+- **Why**: Keeps the core codebase modular and clean while ensuring daily DSA practice respects the owner's actual online solve history.
+
 
