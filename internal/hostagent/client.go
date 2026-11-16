@@ -107,6 +107,29 @@ func (c *Client) doBody(ctx context.Context, method, path string, rd io.Reader, 
 	return true, nil
 }
 
+// doRaw performs an authenticated request and returns the raw response body.
+func (c *Client) doRaw(ctx context.Context, method, path string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", method, path, scrub(err, c.token))
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("api %d: %s", resp.StatusCode, string(raw))
+	}
+	return resp.Body, nil
+}
+
 func scrub(err error, token string) error {
 	if token == "" {
 		return err

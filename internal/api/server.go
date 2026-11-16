@@ -346,6 +346,9 @@ func NewServer(deps ServerDependencies) *Server {
 			mux.Handle("POST /api/v1/host/vault", hostAuth(http.HandlerFunc(vaultHandler.Add)))
 			mux.Handle("GET /api/v1/host/vault/misses", hostAuth(http.HandlerFunc(vaultHandler.ListMisses)))
 			mux.Handle("DELETE /api/v1/host/vault/misses/{id}", hostAuth(http.HandlerFunc(vaultHandler.ResolveMiss)))
+			mux.Handle("GET /api/v1/host/artifacts/{id}", hostAuth(http.HandlerFunc(artifactHandler.GetArtifact)))
+			mux.Handle("GET /api/v1/host/artifacts/{id}/download", hostAuth(http.HandlerFunc(artifactHandler.DownloadArtifact)))
+			mux.Handle("GET /api/v1/host/artifacts/{id}/presign", hostAuth(http.HandlerFunc(artifactHandler.PresignArtifact)))
 		}
 		if deps.DeviceDecider != nil {
 			mux.Handle("POST /api/v1/host/device/next", hostAuth(http.HandlerFunc(handlers.NewDeviceHandler(deps.DeviceDecider).Next)))

@@ -76,10 +76,24 @@ func multipartParseError(err error) error {
 	return errors.Join(domain.ErrValidation, fmt.Errorf("failed parsing multipart form: %w", err))
 }
 
+// owner identifies who is asking: the signed-in user, or a host with the files capability.
+func (h *ArtifactHandler) owner(r *http.Request) (uuid.UUID, error) {
+	if id, err := middleware.GetUserID(r.Context()); err == nil {
+		return id, nil
+	}
+	if host := middleware.GetHost(r.Context()); host != nil {
+		if !host.Covers([]string{domain.HostCapFiles}) {
+			return uuid.Nil, fmt.Errorf("%w: this device has not been given access to files", domain.ErrForbidden)
+		}
+		return host.UserID, nil
+	}
+	return uuid.Nil, domain.ErrUnauthorized
+}
+
 func (h *ArtifactHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
+	userID, err := h.owner(r)
 	if err != nil {
-		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		httputil.ErrorJSON(w, err)
 		return
 	}
 
@@ -106,9 +120,9 @@ func (h *ArtifactHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ArtifactHandler) GetArtifact(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
+	userID, err := h.owner(r)
 	if err != nil {
-		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		httputil.ErrorJSON(w, err)
 		return
 	}
 
@@ -302,9 +316,9 @@ func (h *ArtifactHandler) UploadArtifact(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *ArtifactHandler) DownloadArtifact(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
+	userID, err := h.owner(r)
 	if err != nil {
-		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		httputil.ErrorJSON(w, err)
 		return
 	}
 
@@ -355,9 +369,9 @@ func (h *ArtifactHandler) DownloadArtifact(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ArtifactHandler) PresignArtifact(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
+	userID, err := h.owner(r)
 	if err != nil {
-		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		httputil.ErrorJSON(w, err)
 		return
 	}
 

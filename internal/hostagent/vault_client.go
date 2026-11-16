@@ -3,6 +3,7 @@ package hostagent
 import (
 	"bytes"
 	"context"
+	"io"
 	"mime/multipart"
 	"net/url"
 
@@ -61,4 +62,14 @@ func (c *Client) VaultMisses(ctx context.Context) ([]domain.VaultMiss, error) {
 func (c *Client) ResolveVaultMiss(ctx context.Context, id string) error {
 	_, err := c.do(ctx, "DELETE", "/api/v1/host/vault/misses/"+url.PathEscape(id), nil, nil)
 	return err
+}
+
+// VaultDownload fetches an artifact from the owner's Vault. The host needs the files capability.
+func (c *Client) VaultDownload(ctx context.Context, artifactID string) ([]byte, error) {
+	rc, err := c.doRaw(ctx, "GET", "/api/v1/host/artifacts/"+url.PathEscape(artifactID)+"/download")
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
 }

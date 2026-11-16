@@ -121,6 +121,8 @@ func run(logger *slog.Logger, check bool) error {
 			backedCapabilities[domain.HostCapBrowser] = true
 		}
 	}
+	// Files and vault: backed by the host's filesystem and S3 Vault mirror.
+	backedCapabilities[domain.HostCapFiles] = true
 	caps, err := parseCapabilities(envOr("HOST_CAPABILITIES", domain.HostCapAgent), execKind == "mock")
 	if err != nil {
 		return err
