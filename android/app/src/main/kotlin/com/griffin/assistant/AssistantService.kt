@@ -321,8 +321,20 @@ class AssistantService : Service() {
         val request = heard
         val cmd0 = Commands.parse(Aliases.apply(heard, app.api.aliases()))
         when (val cmd = cmd0) {
-            is Command.Call -> placeCall(cmd.who, cmd.inBackground)
-            is Command.AutomatedCall -> makeAutomatedCall(cmd.who, cmd.message, cmd.inBackground)
+            is Command.Call -> {
+                if (cmd.channel == "whatsapp") {
+                    say(actions.callWhatsApp(cmd.who) ?: "Calling ${cmd.who} on WhatsApp.")
+                } else {
+                    placeCall(cmd.who, cmd.inBackground)
+                }
+            }
+            is Command.AutomatedCall -> {
+                if (cmd.channel == "whatsapp") {
+                    say(actions.callWhatsApp(cmd.who) ?: "Calling ${cmd.who} on WhatsApp.")
+                } else {
+                    makeAutomatedCall(cmd.who, cmd.message, cmd.inBackground, cmd.listenOnly)
+                }
+            }
             is Command.CancelCall -> cancelActiveCall(cmd.who)
             is Command.Text -> textOrReply(cmd.who, cmd.message, cmd.inBackground)
             is Command.Timer -> say(actions.timer(cmd.seconds))
@@ -388,7 +400,7 @@ class AssistantService : Service() {
         actions.call(m.number)?.let { say(it) }
     }
 
-    private fun makeAutomatedCall(who: String, message: String, inBackground: Boolean = false) {
+    private fun makeAutomatedCall(who: String, message: String, inBackground: Boolean = false, listenOnly: Boolean = false) {
         val isDigits = who.matches(Regex("^[+0-9 -]{7,}$"))
         val number: String
         val displayName: String
@@ -402,6 +414,8 @@ class AssistantService : Service() {
         }
         if (inBackground) {
             say("Placing an automated call to $displayName in background to tell them: $message.")
+        } else if (listenOnly) {
+            say("Calling $displayName on speaker. I will speak and you can listen.")
         } else {
             say("Placing an automated call to $displayName to tell them: $message.")
         }

@@ -12,6 +12,12 @@ class CommandsTest {
         assertEquals(Command.Call("rahul sharma"), p("please call Rahul Sharma"))
         assertEquals(Command.Call("dad"), p("phone dad"))
         assertEquals(Command.Call("bhai"), p("ring bhai"))
+        assertEquals(Command.Call("hiten", forMe = true), p("call hiten for me"))
+        assertEquals(Command.Call("hiten", channel = "whatsapp", forMe = true), p("whatsapp call hiten"))
+        assertEquals(Command.Call("hiten", channel = "whatsapp", forMe = true), p("call hiten on whatsapp for me"))
+        assertEquals(Command.Call("hiten", channel = "cellular", forMe = true), p("call hiten for me like in that you just open it and i'll talk"))
+        assertEquals(Command.AutomatedCall("mitul", "that i'll be late for dinner", inBackground = true), p("call mitul in background and tell him that i'll be late for dinner"))
+        assertEquals(Command.AutomatedCall("hiten", "i was building an agent", inBackground = false, listenOnly = true), p("call hiten and you talk and i can listen saying i was building an agent"))
     }
 
     @Test fun `ordinary sentences are never turned into actions`() {

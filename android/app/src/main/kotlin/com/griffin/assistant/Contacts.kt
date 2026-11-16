@@ -37,4 +37,27 @@ object Contacts {
         val exact = out.values.filter { it.name.equals(q, ignoreCase = true) }
         return exact.ifEmpty { out.values.sortedBy { it.name.length } }
     }
+
+    /** Finds the WhatsApp voice call Data ID for a contact name, or returns null. */
+    fun findWhatsAppCallDataId(context: Context, query: String): Long? {
+        val q = query.trim()
+        if (q.isEmpty()) return null
+        try {
+            val projection = arrayOf(ContactsContract.Data._ID, ContactsContract.Data.DISPLAY_NAME)
+            val selection = "${ContactsContract.Data.MIMETYPE} = ? AND ${ContactsContract.Data.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("vnd.android.cursor.item/vnd.com.whatsapp.voip.call", "%$q%")
+            context.contentResolver.query(
+                ContactsContract.Data.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use {
+                if (it.moveToFirst()) {
+                    return it.getLong(0)
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
 }

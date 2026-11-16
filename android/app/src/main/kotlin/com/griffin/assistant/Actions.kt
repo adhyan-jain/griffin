@@ -24,6 +24,40 @@ class Actions(private val context: Context) {
         "I could not place the call."
     }
 
+    fun callWhatsApp(who: String): String? {
+        val dataId = Contacts.findWhatsAppCallDataId(context, who)
+        if (dataId != null) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(
+                        Uri.parse("content://com.android.contacts/data/$dataId"),
+                        "vnd.android.cursor.item/vnd.com.whatsapp.voip.call"
+                    )
+                    setPackage("com.whatsapp")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+                return "Calling $who on WhatsApp."
+            } catch (_: Exception) {}
+        }
+        val match = Contacts.find(context, who).firstOrNull()
+        if (match != null) {
+            val digits = match.number.filter { it.isDigit() }
+            val formatted = if (digits.length == 10) "91$digits" else digits
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$formatted")).apply {
+                    setPackage("com.whatsapp")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+                return "Opening WhatsApp with ${match.name} to call."
+            } catch (_: Exception) {
+                return "Could not open WhatsApp for ${match.name}."
+            }
+        }
+        return "I could not find $who in your WhatsApp contacts."
+    }
+
     fun sendSms(number: String, message: String): String? = try {
         val sms = context.getSystemService(SmsManager::class.java)
         val parts = sms.divideMessage(message)

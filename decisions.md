@@ -1044,3 +1044,25 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Keeps the core codebase modular and clean while ensuring daily DSA practice respects the owner's actual online solve history.
 
 
+#### ADR-129: Multi-Mode Voice/WhatsApp Calling (Background Agent, Supervised Speaker, Direct Talk) & Accurate Screen Lock Detection
+- **Status**: IMPLEMENTED (`android/app/src/main/kotlin/com/griffin/assistant/Actions.kt`, `android/app/src/main/kotlin/com/griffin/assistant/ApiClient.kt`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/Contacts.kt`, `android/app/src/main/kotlin/com/griffin/assistant/PhoneRunner.kt`, `android/app/src/main/kotlin/com/griffin/assistant/core/Commands.kt`, `internal/hands/whatsapp/android.go`, `internal/service/planner_calls.go`).
+- **Decision**:
+  1. **Three Distinct Calling Modes**:
+     - **Mode 1: Automated Background Agent (`automated_bg`)**:
+       - Triggered by *"in background"*, *"on my behalf in the bg"*, *"silently"*.
+       - Griffin dials recipient via cellular SIM, immediately suppresses the dialer window (<100ms via `GriffinAccess`), delivers the message via TTS, captures response via SpeechRecognizer, delivers context fallback if questioned, and hangs up without interrupting foreground games or apps.
+     - **Mode 2: Supervised Speaker Call (`supervised_listen`)**:
+       - Triggered by *"and you talk and i can listen"*, *"you talk, i'll listen"*, *"let me listen"*, or standard automated calling without background suppression.
+       - Griffin places call on speakerphone (`isSpeakerphoneOn = true`), leaves dialer/call UI front-and-center, conducts the conversation on owner's behalf, allowing the owner to listen in continuously and intervene if desired.
+     - **Mode 3: Direct Talk / Hand-Off Call (`direct_talk`)**:
+       - Triggered by *"call for me"*, *"and let me talk"*, *"and i'll talk"*, *"open it and i'll talk"*, or direct name-only dial commands (*"call mom"*).
+       - Griffin opens the system dialer or WhatsApp voice call and hands off the audio line directly to the owner. Griffin disables TTS and SpeechRecognizer so the owner speaks naturally.
+  2. **WhatsApp Voice Calling Support**:
+     - When the owner specifies *"whatsapp call <person>"* or *"call <person> on whatsapp"*, Griffin looks up the contact's WhatsApp VoIP data ID in Android Contacts Contract (`vnd.android.cursor.item/vnd.com.whatsapp.voip.call`) and directly launches WhatsApp's VoIP call intent.
+  3. **Accurate Screen Lock Detection Fix**:
+     - Replaced naive substring matching on SystemUI resource IDs with authoritative `dumpsys trust` (`deviceLocked=false`) and `dumpsys window policy` (`mShowingLockscreen=false`) checks.
+     - Eliminated false-positive lock detections caused by passive SystemUI carrier/status-bar nodes on unlocked screens.
+- **Why**: Gives the owner complete control over who speaks and what channel is used (cellular vs WhatsApp), enables multitasking without screen takeover, and eliminates spurious "phone is locked" failures when the screen is active.
+
+
+

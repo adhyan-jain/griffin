@@ -32,8 +32,8 @@ class PhoneRunner(
             val task = api.claimPhoneTask() ?: return
             log("phone job started: ${task.id}")
             try {
-                if (task.action == "automated_call") {
-                    handleAutomatedCall(task)
+                if (task.action in listOf("automated_call", "call", "direct_call", "whatsapp_call")) {
+                    handleCall(task)
                 } else {
                     val screen = GriffinAccess.instance
                     if (screen == null) {
@@ -50,6 +50,32 @@ class PhoneRunner(
         } finally {
             busy.set(false)
         }
+    }
+
+    private fun handleCall(task: ApiClient.PhoneTask) {
+        if (task.channel == "whatsapp" || task.action == "whatsapp_call") {
+            val target = task.recipientName.ifEmpty { task.number }
+            val res = Actions(context).callWhatsApp(target)
+            api.completeTask(task.id, res ?: "WhatsApp call opened for $target.")
+            return
+        }
+        if (task.callMode == "direct_talk" || task.action == "direct_call") {
+            var targetNumber = task.number.trim()
+            if (targetNumber.isEmpty() || !targetNumber.any { it.isDigit() }) {
+                val match = Contacts.find(context, task.recipientName.ifEmpty { task.number }).firstOrNull()
+                if (match != null) targetNumber = match.number
+            }
+            if (targetNumber.isNotEmpty()) {
+                val res = Actions(context).call(targetNumber)
+                if (res == null) {
+                    api.completeTask(task.id, "Placed direct call to ${task.recipientName.ifEmpty { task.number }} for owner.")
+                } else {
+                    api.failTask(task.id, res, retryable = false)
+                }
+                return
+            }
+        }
+        handleAutomatedCall(task)
     }
 
     private fun handleAutomatedCall(task: ApiClient.PhoneTask) {

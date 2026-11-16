@@ -257,13 +257,7 @@ func (a *Android) ready(ctx context.Context) error {
 	if err != nil {
 		return notReady("could not read the phone's screen: %v", err)
 	}
-	locked := false
-	s.walk(func(n, _ *uiNode) {
-		if n.Package == "com.android.systemui" && strings.Contains(strings.ToLower(n.ResourceID), "keyguard") {
-			locked = true
-		}
-	})
-	if locked {
+	if a.isLocked(ctx, s) {
 		// Attempt automated keyguard dismissal via Android Window Manager / menu keyevent
 		_, _ = a.cfg.ADB.Run(ctx, "shell", "wm", "dismiss-keyguard")
 		_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "keyevent", "82") // KEYCODE_MENU unlocks non-secure swipe lockscreens
@@ -273,20 +267,49 @@ func (a *Android) ready(ctx context.Context) error {
 		}
 		// Re-evaluate lockscreen state
 		s2, err2 := a.dump(ctx)
-		if err2 == nil {
-			stillLocked := false
-			s2.walk(func(n, _ *uiNode) {
-				if n.Package == "com.android.systemui" && strings.Contains(strings.ToLower(n.ResourceID), "keyguard") {
-					stillLocked = true
-				}
-			})
-			if !stillLocked {
-				return nil
-			}
+		if err2 == nil && !a.isLocked(ctx, s2) {
+			return nil
 		}
 		return notReady("the phone is locked; unlock it or use WhatsApp Web on laptop")
 	}
 	return nil
+}
+
+func (a *Android) isLocked(ctx context.Context, s screen) bool {
+	// 1. Authoritative check via dumpsys trust
+	if out, err := a.cfg.ADB.Run(ctx, "shell", "dumpsys", "trust"); err == nil && out != "" {
+		if strings.Contains(out, "deviceLocked=false") {
+			return false
+		}
+		if strings.Contains(out, "deviceLocked=true") {
+			return true
+		}
+	}
+	// 2. Authoritative check via dumpsys window policy / dumpsys window
+	if out, err := a.cfg.ADB.Run(ctx, "shell", "dumpsys", "window", "policy"); err == nil && out != "" {
+		if strings.Contains(out, "mShowingLockscreen=false") && strings.Contains(out, "isStatusBarKeyguard=false") {
+			return false
+		}
+		if strings.Contains(out, "mShowingLockscreen=true") || strings.Contains(out, "isStatusBarKeyguard=true") {
+			return true
+		}
+	}
+	// 3. Hierarchy inspection: only match active lockscreen bouncers/hosts, never passive status bar stubs
+	locked := false
+	s.walk(func(n, _ *uiNode) {
+		if n.Package == "com.android.systemui" {
+			rid := strings.ToLower(n.ResourceID)
+			if rid == "com.android.systemui:id/keyguard_host" ||
+				rid == "com.android.systemui:id/keyguard_host_view" ||
+				rid == "com.android.systemui:id/keyguard_bouncer_container" ||
+				rid == "com.android.systemui:id/pin_entry" ||
+				rid == "com.android.systemui:id/lock_pattern_view" ||
+				rid == "com.android.systemui:id/keyguard_security_container" {
+				locked = true
+			}
+		}
+	})
+	return locked
 }
 
 // ---- actions ----

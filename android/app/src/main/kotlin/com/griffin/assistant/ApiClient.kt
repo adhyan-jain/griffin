@@ -185,6 +185,8 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         val goal: String,
         val approved: Set<String>,
         val action: String = "",
+        val channel: String = "cellular",
+        val callMode: String = "automated_bg",
         val number: String = "",
         val recipientName: String = "",
         val message: String = "",
@@ -205,17 +207,22 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         val action = phoneObj?.optString("action").orEmpty()
         val goal = phoneObj?.optString("goal").orEmpty().ifEmpty { task.optString("goal").orEmpty() }
         val approved = root.optJSONArray("approved_actions")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-        if (action == "automated_call") {
+        val callActions = setOf("automated_call", "call", "direct_call", "whatsapp_call")
+        if (action in callActions) {
+            val inBackground = phoneObj?.optBoolean("in_background", false) ?: false
+            val channel = phoneObj?.optString("channel").orEmpty().ifEmpty { if (action == "whatsapp_call") "whatsapp" else "cellular" }
+            val callMode = phoneObj?.optString("call_mode").orEmpty().ifEmpty { if (inBackground) "automated_bg" else "supervised_listen" }
             val number = phoneObj?.optString("number").orEmpty()
             val recipientName = phoneObj?.optString("recipient_name").orEmpty()
             val message = phoneObj?.optString("message").orEmpty()
             val callId = phoneObj?.optString("call_id").orEmpty()
-            val inBackground = phoneObj?.optBoolean("in_background", false) ?: false
             return PhoneTask(
                 id = id,
                 goal = "Call $recipientName: $message",
                 approved = approved,
                 action = action,
+                channel = channel,
+                callMode = callMode,
                 number = number,
                 recipientName = recipientName,
                 message = message,

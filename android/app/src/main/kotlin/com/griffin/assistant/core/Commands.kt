@@ -10,8 +10,8 @@ import java.util.Locale
  * conversation ("call it a day", "I might set up a timer later") is never turned into an action.
  */
 sealed class Command {
-    data class Call(val who: String, val inBackground: Boolean = false) : Command()
-    data class AutomatedCall(val who: String, val message: String, val inBackground: Boolean = false) : Command()
+    data class Call(val who: String, val inBackground: Boolean = false, val channel: String = "cellular", val forMe: Boolean = true) : Command()
+    data class AutomatedCall(val who: String, val message: String, val inBackground: Boolean = false, val channel: String = "cellular", val listenOnly: Boolean = false) : Command()
     data class Text(val who: String, val message: String, val inBackground: Boolean = false) : Command()
     /** Read out new messages, from one person or from everyone. */
     data class ReadMessages(val from: String?) : Command()
@@ -96,6 +96,11 @@ object Commands {
 
         // Detect background mode requested by owner
         val inBackground = s.contains("in background") || s.contains("in the background") || s.contains("silently") || s.contains("without opening")
+        val isWhatsAppCall = s.contains("whatsapp call") || s.contains("call on whatsapp") || s.contains("call via whatsapp") || s.contains("call using whatsapp")
+        val forMe = s.contains("for me") || s.contains("let me talk") || s.contains("i'll talk") || s.contains("i will talk") || s.contains("just open it")
+        val listenOnly = s.contains("i can listen") || s.contains("i will listen") || s.contains("i'll listen") || s.contains("let me listen") || s.contains("you talk and i listen") || s.contains("you talk, i listen") || s.contains("you talk and i can listen")
+        val callChannel = if (isWhatsAppCall) "whatsapp" else "cellular"
+
         val sParsed = if (inBackground) {
             s.replace("in the background", "")
                 .replace("in background", "")
@@ -107,17 +112,57 @@ object Commands {
             s
         }
 
-        Regex("^(?:please )?(?:(?:make|place|do|trigger|start) (?:an? )?)?(?:automated |automatic )?call (?:to )?([a-z0-9+ ']+?) (?:and |to )?(?:tell them|tell him|tell her|saying|say|to say|with message|that)\\s*(.+)$").find(sParsed)?.let { m ->
+        val sCleaned = sParsed
+            .replace("for me", "")
+            .replace("and let me talk", "")
+            .replace("let me talk", "")
+            .replace("and i'll talk", "")
+            .replace("i'll talk", "")
+            .replace("and i will talk", "")
+            .replace("i will talk", "")
+            .replace("and you talk and i can listen", "")
+            .replace("and you talk, i'll listen", "")
+            .replace("and you talk, i will listen", "")
+            .replace("and you talk i can listen", "")
+            .replace("and you talk and i listen", "")
+            .replace("and i can listen", "")
+            .replace("and i will listen", "")
+            .replace("and i'll listen", "")
+            .replace("let me listen", "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        // Explicit WhatsApp call: "whatsapp call <who>", "whatsapp call <who> for me", "whatsapp call <who> saying <msg>"
+        Regex("^(?:please )?whatsapp call (?:to )?([a-z0-9+ ']+?)(?: (?:and |to )?(?:tell them|tell him|tell her|saying|say|to say|with message|that)\\s*(.+))?$").find(sCleaned)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").removePrefix("to ").trim()
             val msg = m.groupValues[2].trim()
-            if (who.isNotEmpty() && msg.isNotEmpty() && who !in notAName) {
-                return Command.AutomatedCall(who, msg, inBackground = inBackground)
+            if (who.isNotEmpty() && who !in notAName) {
+                if (forMe || msg.isEmpty()) {
+                    return Command.Call(who, inBackground = false, channel = "whatsapp", forMe = true)
+                } else {
+                    return Command.AutomatedCall(who, msg, inBackground = inBackground, channel = "whatsapp", listenOnly = listenOnly)
+                }
             }
         }
 
-        Regex("^(?:please )?(?:call|phone|ring|dial) (.+)$").find(sParsed)?.let { m ->
+        // Automated call with message (cellular or whatsapp)
+        Regex("^(?:please )?(?:(?:make|place|do|trigger|start) (?:an? )?)?(?:automated |automatic )?call (?:to )?([a-z0-9+ ']+?)(?: on whatsapp)? (?:and |to )?(?:tell them|tell him|tell her|saying|say|to say|with message|that)\\s*(.+)$").find(sCleaned)?.let { m ->
+            val who = m.groupValues[1].removePrefix("my ").removePrefix("to ").trim()
+            val msg = m.groupValues[2].trim()
+            if (who.isNotEmpty() && msg.isNotEmpty() && who !in notAName) {
+                if (forMe) {
+                    return Command.Call(who, inBackground = false, channel = callChannel, forMe = true)
+                }
+                return Command.AutomatedCall(who, msg, inBackground = inBackground, channel = callChannel, listenOnly = listenOnly)
+            }
+        }
+
+        // Direct call / hand-off: "call <who>", "phone <who>", "dial <who>", "call <who> on whatsapp", "call <who> for me"
+        Regex("^(?:please )?(?:call|phone|ring|dial) (.+?)(?: (?:on|via) whatsapp)?$").find(sCleaned)?.let { m ->
             val who = m.groupValues[1].removePrefix("my ").trim()
-            if (who.isNotEmpty() && who !in notAName && who.split(" ").first() !in notAName) return Command.Call(who, inBackground = inBackground)
+            if (who.isNotEmpty() && who !in notAName && who.split(" ").first() !in notAName) {
+                return Command.Call(who, inBackground = inBackground, channel = callChannel, forMe = true)
+            }
         }
 
         // Reading and replying to chats (the apps' own notifications), and messaging in a named app.
