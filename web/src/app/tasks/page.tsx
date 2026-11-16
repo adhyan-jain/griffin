@@ -229,6 +229,7 @@ export default function TasksPage() {
         goal: op.goal,
         manager_domain: op.managerDomain,
         priority: op.priority,
+        input_payload: { tool_mode: "read" },
       });
       toast.success(`${op.name} created! Running via ${op.managerDomain.toLowerCase()} manager.`);
       refresh();

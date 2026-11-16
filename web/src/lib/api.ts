@@ -673,6 +673,7 @@ export const api = {
     manager_domain?: string;
     priority?: TaskPriority;
     parent_id?: string;
+    input_payload?: Record<string, unknown>;
   }) {
     return fetchWithAuth<Task>("/api/v1/tasks", {
       method: "POST",
@@ -682,7 +683,7 @@ export const api = {
         manager_domain: payload.manager_domain ?? "JJ",
         priority: payload.priority ?? "NORMAL_P2",
         parent_id: payload.parent_id,
-        input_payload: {},
+        input_payload: payload.input_payload ?? {},
       }),
     });
   },

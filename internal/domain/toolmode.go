@@ -31,7 +31,7 @@ type toolPayloadView struct {
 // so a malformed payload can only ever make a task less capable, never more.
 func ToolModeFor(task *Task) ToolMode {
 	var v toolPayloadView
-	if len(task.InputPayload) > 0 {
+	if task != nil && len(task.InputPayload) > 0 {
 		_ = json.Unmarshal(task.InputPayload, &v)
 	}
 	if v.Kind == "chat" {
@@ -39,6 +39,12 @@ func ToolModeFor(task *Task) ToolMode {
 	}
 	if v.Mode == ToolRead || v.Mode == ToolAct {
 		return v.Mode
+	}
+	if v.Mode == ToolNone {
+		return ToolNone
+	}
+	if task != nil {
+		return SuggestToolMode(task.Title, task.Goal)
 	}
 	return ToolNone
 }

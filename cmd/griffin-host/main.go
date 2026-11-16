@@ -22,10 +22,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -164,8 +166,15 @@ func run(logger *slog.Logger, check bool) error {
 		}
 		exec = handsExec
 	}
-
-	client := hostagent.NewClient(apiURL, token, nil)
+	insecureTLS := strings.ToLower(os.Getenv("GRIFFIN_INSECURE_TLS")) == "true" || strings.ToLower(os.Getenv("GRIFFIN_ALLOW_INSECURE_TLS")) == "true"
+	var hc *http.Client
+	if insecureTLS {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		hc = &http.Client{Transport: tr, Timeout: 45 * time.Second}
+	}
+	client := hostagent.NewClient(apiURL, token, hc)
 
 	pass, _ := vaultPassphrase(logger)
 	docTracker := vault.NewDocTracker(filepath.Join(stateDir(), "doc_usage.json"), logger)

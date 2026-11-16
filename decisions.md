@@ -1085,3 +1085,22 @@ This document is the canonical ledger of all architectural, product, engineering
      - Added automatic screen wake and `AccessibilityService.GLOBAL_ACTION_DISMISS_KEYGUARD` in `PhoneRunner.tick()` when tasks are claimed.
      - Enhanced ADB lockscreen unlocking with swipe up gesture and animation pauses (250-300ms) to ensure the PIN bouncer on Android 14 / OxygenOS reliably receives `GRIFFIN_PHONE_PIN`.
 - **Why**: Ensures owner receives immediate high-priority alerts on phone even when screen is dark/locked, allows seamless navigation into task reports via phone web UI, and guarantees scheduled background operations run without human intervention.
+
+
+#### ADR-131: Autonomous Pipeline Read-Tool Access, Local Inspection, Notification Error Filtering, and Zero-Emoji Policy
+- **Status**: IMPLEMENTED (`cmd/griffin-host/main.go`, `internal/domain/toolmode.go`, `internal/domain/providerhint.go`, `internal/provider/antigravity/prompt.go`, `internal/service/task_engine.go`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `web/src/lib/api.ts`, `web/src/app/tasks/page.tsx`).
+- **Decision**:
+  1. **Default Read Tools for Autonomous Pipelines**:
+     - `internal/domain/toolmode.go`: In `ToolModeFor(task)`, if `tool_mode` is not explicitly set in `input_payload`, automatically fall back to `SuggestToolMode(task.Title, task.Goal)`. This prevents tasks created without an explicit tool flag from defaulting to `ToolNone`.
+     - `internal/domain/providerhint.go`: Expanded `needsMachine` pattern to detect tasks matching `leetcode|dsa|hackathon|brief|briefing|report|scorecard|audit|lead|target|tracker|tracking`, ensuring they route to host workers with system and tool execution capabilities.
+     - `internal/service/task_engine.go`: In `CreateTask`, ensure `task.InputPayload = domain.WithToolMode(task.InputPayload, task.Title, task.Goal)` before storing.
+  2. **Grounded Local File and Repo Inspection**:
+     - `internal/provider/antigravity/prompt.go`: Updated `readPreamble` to explicitly instruct the agent that it may inspect local files and git repositories referenced in the prompt (e.g. `/home/adhyan` or `~/.griffin-host`). This prevents LLM refusals ("I cannot inspect local files... without access to browsing or file tools") when tasks reference local files or code repositories.
+  3. **Strict Zero-Emoji Policy Across Surface Areas**:
+     - Removed all emojis across system notifications (`AssistantService.kt`), web UI console, commit messages, and prompt preambles.
+  4. **Phone Notification Ungrounded Error Filtering**:
+     - `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`: In `checkAndNotifyCompletedTasks()`, inspects task responses for refusal phrases like "cannot inspect", "cannot access", "couldn't find any information", "I have NO tools", or "do not have tool". Skips posting notifications for ungrounded/aborted runs to eliminate notification noise and alert fatigue on the phone.
+  5. **Insecure TLS Certificate Fallback for System Clock Skew**:
+     - `cmd/griffin-host/main.go`: Added `GRIFFIN_INSECURE_TLS=true` support on host client to bypass legacy expired root certificate verification errors on systems with advanced clock dates.
+- **Why**: Fixes the root cause of "cannot access this or that" failures across the 13 operational pipelines, eliminates erroneous notifications on the owner's phone, and adheres strictly to the owner's request for zero emojis and reliable autonomous execution.
+

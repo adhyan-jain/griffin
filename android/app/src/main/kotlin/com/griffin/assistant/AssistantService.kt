@@ -232,16 +232,26 @@ class AssistantService : Service() {
                 val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 for (task in newlyCompleted) {
                     seen.add(task.id)
+                    val resp = task.response.trim()
+                    if (resp.isEmpty() ||
+                        resp.contains("cannot inspect", ignoreCase = true) ||
+                        resp.contains("cannot access", ignoreCase = true) ||
+                        resp.contains("couldn't find any information", ignoreCase = true) ||
+                        resp.contains("I have NO tools", ignoreCase = true) ||
+                        resp.contains("do not have tool", ignoreCase = true)
+                    ) {
+                        continue
+                    }
                     val title = when {
                         task.title.contains("DSA", ignoreCase = true) || task.title.contains("LeetCode", ignoreCase = true) ->
-                            "⚡ DSA / LeetCode Update"
+                            "DSA / LeetCode Update"
                         task.title.contains("Brief", ignoreCase = true) || task.title.contains("Morning", ignoreCase = true) ->
-                            "🌅 Daily Executive Briefing Ready"
+                            "Daily Executive Briefing Ready"
                         task.title.contains("Post", ignoreCase = true) || task.title.contains("Weekly", ignoreCase = true) ->
-                            "📊 Weekly Report Ready"
-                        else -> "✅ Task Completed: ${task.title.take(50)}"
+                            "Weekly Report Ready"
+                        else -> "Task Completed: ${task.title.take(50)}"
                     }
-                    val body = task.response.ifEmpty { task.goal }.take(250)
+                    val body = resp.take(250)
                     val clickUri = Uri.parse("https://griffin-pwa.vercel.app/tasks/${task.id}")
                     val viewIntent = Intent(Intent.ACTION_VIEW, clickUri).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
