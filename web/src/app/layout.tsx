@@ -3,6 +3,9 @@ import { Geist, Geist_Mono, Syne } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { AppShell } from "@/components/app-shell";
 import { Toaster } from "@/components/ui/sonner";
+import { Cursor } from "@/components/fx/cursor";
+import { Intro } from "@/components/fx/intro";
+import { SmoothScroll } from "@/components/fx/smooth-scroll";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -30,11 +33,14 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} scroll-smooth`}>
-      <body className="min-h-dvh antialiased">
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} ${syne.variable}`}>
+      <body className="min-h-dvh">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <AppShell>{children}</AppShell>
           <Toaster position="top-center" />
+          <SmoothScroll />
+          <Cursor />
+          <Intro />
         </ThemeProvider>
       </body>
     </html>

@@ -88,21 +88,19 @@ func CheckRateLimitError(combinedOutput string) bool {
 
 // ParseOutput extracts and validates CLIOutput from subprocess stdout and stderr.
 func ParseOutput(stdoutBytes, stderrBytes []byte, exitCode int) (*ParsedResult, error) {
-	stdoutStr := string(stdoutBytes)
 	stderrStr := string(stderrBytes)
-	combined := stdoutStr + "\n" + stderrStr
 
-	// 1. Fail fast on authentication issues
-	if CheckAuthError(combined) {
+	// 1. Check stderr for authentication issues or rate limits
+	if CheckAuthError(stderrStr) {
 		return nil, ErrAuthenticationRequired
 	}
-
-	// 2. Check for rate limits / quota issues
-	if CheckRateLimitError(combined) {
+	if CheckRateLimitError(stderrStr) {
 		return nil, ErrRateLimitExceeded
 	}
 
 	trimmedStdout := bytes.TrimSpace(stdoutBytes)
+	stdoutStr := string(trimmedStdout)
+
 	if len(trimmedStdout) == 0 {
 		if exitCode != 0 {
 			return nil, fmt.Errorf("%w: exit code %d: %s", ErrExecutionFailed, exitCode, strings.TrimSpace(stderrStr))
@@ -123,20 +121,33 @@ func ParseOutput(stdoutBytes, stderrBytes []byte, exitCode int) (*ParsedResult, 
 	}
 
 	if err != nil {
+		// Output is unparseable as JSON. Check stdout for auth/rate limits
+		if CheckAuthError(stdoutStr) {
+			return nil, ErrAuthenticationRequired
+		}
+		if CheckRateLimitError(stdoutStr) {
+			return nil, ErrRateLimitExceeded
+		}
 		if exitCode != 0 {
 			return nil, fmt.Errorf("%w: exit code %d (unparseable output: %v): %s", ErrExecutionFailed, exitCode, err, strings.TrimSpace(stderrStr))
 		}
 		return nil, fmt.Errorf("%w: %v (raw stdout: %s)", ErrInvalidOutput, err, string(trimmedStdout))
 	}
 
-	// Handle ERROR status inside valid JSON output
-	if strings.EqualFold(cliOut.Status, "ERROR") {
+	// Handle ERROR status or error message inside valid JSON output
+	if strings.EqualFold(cliOut.Status, "ERROR") || cliOut.Error != "" {
 		msg := cliOut.Error
 		if msg == "" {
 			msg = cliOut.Response
 		}
 		if msg == "" {
 			msg = "unspecified error in CLI output"
+		}
+		if CheckAuthError(msg) {
+			return nil, ErrAuthenticationRequired
+		}
+		if CheckRateLimitError(msg) {
+			return nil, ErrRateLimitExceeded
 		}
 		return nil, fmt.Errorf("%w: %s", ErrExecutionFailed, msg)
 	}

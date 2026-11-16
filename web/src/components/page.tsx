@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Kinetic } from "@/components/fx/kinetic";
 
 export function PageContainer({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -22,9 +23,7 @@ export function PageHeader({
   return (
     <header className="mb-5 flex items-start justify-between gap-3 md:mb-7">
       <div className="min-w-0">
-        <h1 className="font-display text-3xl font-bold tracking-[-0.04em] text-foreground md:text-5xl">
-          {title}
-        </h1>
+        <Kinetic as="h1" text={title} className="font-display text-3xl font-bold tracking-[-0.04em] md:text-5xl" />
         {description && <p className="mt-2 max-w-xl text-sm text-muted-foreground md:text-base">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -233,7 +234,7 @@ func (e *TaskEngine) FailTask(ctx context.Context, taskID uuid.UUID, workerID st
 	}
 
 	// Calculate exponential backoff with jitter
-	backoff := calculateBackoff(task.RetryCount)
+	backoff := calculateBackoff(task.RetryCount, reason)
 
 	err = e.taskRepo.FailTask(ctx, taskID, workerID, reason, retryable, backoff)
 	if err != nil {
@@ -442,8 +443,12 @@ func (e *TaskEngine) cascadeCancelDownstream(ctx context.Context, taskID uuid.UU
 	}
 }
 
-func calculateBackoff(retryCount int) time.Duration {
-	base := 5.0     // 5 seconds
+func calculateBackoff(retryCount int, reason string) time.Duration {
+	base := 5.0 // 5 seconds
+	lower := strings.ToLower(reason)
+	if strings.Contains(lower, "rate limit") || strings.Contains(lower, "quota exceeded") || strings.Contains(lower, "too many requests") {
+		base = 60.0 // rate limits require waiting for the sliding 1-minute window to refresh
+	}
 	maxSec := 600.0 // 10 minutes
 
 	mult := math.Pow(2, float64(retryCount))

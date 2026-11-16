@@ -11,15 +11,20 @@ import {
   LockKeyhole,
   LayoutDashboard,
   Laptop,
+  Lock,
   ListChecks,
   LogOut,
   MessageSquare,
   Moon,
   MoreHorizontal,
+  Notebook,
+  Rocket,
+  Send,
   Settings,
   ShieldCheck,
   Sun,
   Table2,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { api, clearAuthToken, getCurrentUser, resolveAuthToken, type RunnerStatus, type UserProfile } from "@/lib/api";
@@ -29,21 +34,28 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useManagerName } from "@/lib/manager-name";
 import { SystemStatusDot } from "@/components/system-status";
+
+const DeepField = dynamic(() => import("@/components/fx/deep-field"), { ssr: false });
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
 const PRIMARY: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
-  { href: "/trackers", label: "Trackers", icon: Table2 },
-  { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/chat", label: "Ask JJ", icon: MessageSquare },
+  { href: "/tasks", label: "Tasks", icon: ListChecks },
+  { href: "/trackers", label: "Trackers", icon: Table2 },
   { href: "/approvals", label: "Approvals", icon: ShieldCheck },
 ];
 const SECONDARY: NavItem[] = [
-  { href: "/devices", label: "Devices", icon: Laptop },
-  { href: "/vault", label: "Vault", icon: LockKeyhole },
+  { href: "/welcome", label: "Get started", icon: Rocket },
+  { href: "/outreach", label: "Outreach", icon: Send },
+  { href: "/lists", label: "Lists", icon: Notebook },
   { href: "/artifacts", label: "Files", icon: FolderOpen },
+  { href: "/vault", label: "Vault", icon: LockKeyhole },
+  { href: "/devices", label: "Devices", icon: Laptop },
+  { href: "/permissions", label: "Permissions", icon: Lock },
+  { href: "/workforce", label: "Workforce", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -186,7 +198,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (isLogin)
     return (
       <div className="relative isolate min-h-dvh">
-        <div aria-hidden className="pointer-events-none fixed inset-0 z-[-1] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background" />
+        <DeepField />
         {children}
       </div>
     );
@@ -203,7 +215,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="relative isolate min-h-dvh md:flex">
-      <div aria-hidden className="pointer-events-none fixed inset-0 z-[-1] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background" />
+      <DeepField />
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r bg-card/40 p-4 md:flex">
         <div className="mb-6 px-2 pt-1">

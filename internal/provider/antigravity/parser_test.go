@@ -111,3 +111,22 @@ func TestParseOutput_MalformedJSON(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidOutput)
 }
+
+func TestParseOutput_ResponseMentionsRateLimitOrAuth(t *testing.T) {
+	rawStdout := []byte(`{
+		"conversation_id": "conv-legit-response",
+		"status": "SUCCESS",
+		"response": "### 3. Dispatch & Rate Limiting Guardrails\nEnsure authentication required headers are set and adhere to the 10 request rate limit.",
+		"duration_seconds": 1.5,
+		"usage": {
+			"input_tokens": 100,
+			"output_tokens": 50,
+			"total_tokens": 150
+		}
+	}`)
+	res, err := ParseOutput(rawStdout, nil, 0)
+	require.NoError(t, err)
+	assert.Equal(t, "conv-legit-response", res.ConversationID)
+	assert.Equal(t, "SUCCESS", res.Status)
+	assert.Contains(t, res.ResponseText, "Rate Limiting Guardrails")
+}

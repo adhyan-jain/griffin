@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNote, PageContainer, timeAgo } from "@/components/page";
+import { Kinetic } from "@/components/fx/kinetic";
 import { MarkdownText } from "@/components/result-view";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 
@@ -137,9 +138,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
         )
       ) : (
         <>
-          <h1 className="font-display text-3xl font-bold leading-[1.05] tracking-[-0.035em] text-balance md:text-5xl text-foreground">
-            {meta.title}
-          </h1>
+          <Kinetic as="h1" text={meta.title} className="font-display text-3xl font-bold leading-[1.05] tracking-[-0.035em] text-balance md:text-5xl" />
           <p className="mt-2 text-sm text-muted-foreground">Started {timeAgo(meta.created_at)}. Each task you save to it adds a dated section.</p>
 
           <div className="mt-5 flex flex-wrap gap-2">
