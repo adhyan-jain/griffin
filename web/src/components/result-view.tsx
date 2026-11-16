@@ -6,11 +6,12 @@ import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { Input } from "@/components/ui/input";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronDown, ChevronUp, Code2, Copy, Download, FileText, ListPlus, Square, Volume2 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Code2, Copy, Download, FileSpreadsheet, FileText, ListPlus, Square, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { parseResult, slug } from "@/lib/result-text";
+import { extractTablesFromMarkdown, exportToExcel } from "@/lib/excel-export";
 import { currentSpeakingId, speak, stopSpeaking, toSpeakable, useSpeakingId, useSpeechSupported } from "@/lib/speech";
 
 /** Past this many characters the reader view folds, so a long answer never takes over the page. */
@@ -141,6 +142,37 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
     a.click();
     URL.revokeObjectURL(url);
   };
+  const downloadExcel = () => {
+    try {
+      const tables = extractTablesFromMarkdown(body);
+      if (tables.length > 0) {
+        exportToExcel(
+          slug(title),
+          tables.map((t, idx) => ({
+            name: t.title ? t.title.slice(0, 30) : `Table ${idx + 1}`,
+            headers: t.headers,
+            rows: t.rows,
+          })),
+        );
+        toast.success(`Exported ${tables.length} table${tables.length === 1 ? "" : "s"} to Excel`);
+      } else {
+        const rows = body
+          .split("\n")
+          .filter((l) => l.trim())
+          .map((l) => [l.trim()]);
+        exportToExcel(slug(title), [
+          {
+            name: "Result",
+            headers: ["Content"],
+            rows,
+          },
+        ]);
+        toast.success("Exported result to Excel");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to export Excel");
+    }
+  };
 
   if (noInfo) {
     return (
@@ -187,6 +219,9 @@ export function ResultView({ payload, title }: { payload: unknown; title: string
           </Button>
           <Button variant="ghost" size="sm" onClick={download} className="h-8 gap-1.5" aria-label="Download result">
             <Download className="size-4" /> <span className="hidden sm:inline">Download</span>
+          </Button>
+          <Button variant="ghost" size="sm" onClick={downloadExcel} className="h-8 gap-1.5 text-primary hover:bg-primary/10" aria-label="Export to Excel">
+            <FileSpreadsheet className="size-4" /> <span className="hidden sm:inline">Excel</span>
           </Button>
         </div>
       </div>

@@ -23,6 +23,7 @@ import {
   Settings,
   ShieldCheck,
   Sun,
+  Table2,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -43,6 +44,7 @@ const PRIMARY: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/chat", label: "Ask JJ", icon: MessageSquare },
   { href: "/tasks", label: "Tasks", icon: ListChecks },
+  { href: "/trackers", label: "Trackers", icon: Table2 },
   { href: "/approvals", label: "Approvals", icon: ShieldCheck },
 ];
 const SECONDARY: NavItem[] = [
