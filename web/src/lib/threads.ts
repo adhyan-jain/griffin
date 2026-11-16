@@ -17,14 +17,14 @@ export const threadRootId = (t: Task) => str(payloadOf(t)?.thread_id) ?? t.id;
 /** The follow-ups in a thread, oldest first. */
 export function followUpsOf(tasks: Task[], rootId: string): Task[] {
   return tasks
-    .filter((t) => t.id !== rootId && isFollowUp(t) && threadRootId(t) === rootId)
+    .filter((t) => t.id !== rootId && !t.parent_id && isFollowUp(t) && threadRootId(t) === rootId)
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 }
 
 /** How many follow-ups each thread root has, for a "+2 follow-ups" hint on the task list. */
 export function followUpCounts(tasks: Task[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const t of tasks) if (isFollowUp(t)) counts.set(threadRootId(t), (counts.get(threadRootId(t)) ?? 0) + 1);
+  for (const t of tasks) if (!t.parent_id && isFollowUp(t)) counts.set(threadRootId(t), (counts.get(threadRootId(t)) ?? 0) + 1);
   return counts;
 }
 

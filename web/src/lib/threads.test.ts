@@ -19,8 +19,15 @@ describe("threads", () => {
     expect(threadRootId(t)).toBe("a");
   });
 
-  it("collects only this thread's follow-ups, oldest first", () => {
-    const all = [task("a"), fu("c", "a", "2026-11-09T10:09:00Z"), fu("b", "a", "2026-11-09T10:05:00Z"), fu("x", "other", "2026-11-09T10:06:00Z"), task("d")];
+  it("collects only this thread's follow-ups, oldest first, excluding child subtasks", () => {
+    const all = [
+      task("a"),
+      fu("c", "a", "2026-11-09T10:09:00Z"),
+      fu("b", "a", "2026-11-09T10:05:00Z"),
+      task("sub1", { parent_id: "b", created_at: "2026-11-09T10:06:00Z" }, { thread_id: "a", follow_up_of: "a" }),
+      fu("x", "other", "2026-11-09T10:06:00Z"),
+      task("d"),
+    ];
     expect(followUpsOf(all, "a").map((t) => t.id)).toEqual(["b", "c"]);
     expect(followUpsOf(all, "d")).toEqual([]);
   });
