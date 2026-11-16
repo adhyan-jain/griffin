@@ -1062,7 +1062,11 @@ This document is the canonical ledger of all architectural, product, engineering
   3. **Accurate Screen Lock Detection Fix**:
      - Replaced naive substring matching on SystemUI resource IDs with authoritative `dumpsys trust` (`deviceLocked=false`) and `dumpsys window policy` (`mShowingLockscreen=false`) checks.
      - Eliminated false-positive lock detections caused by passive SystemUI carrier/status-bar nodes on unlocked screens.
-- **Why**: Gives the owner complete control over who speaks and what channel is used (cellular vs WhatsApp), enables multitasking without screen takeover, and eliminates spurious "phone is locked" failures when the screen is active.
+  4. **Cellular Call Premature Disconnect & In-Call Audio Routing Fix**:
+     - **Initial Idle Callback Bug**: Android's `TelephonyCallback` immediately invokes `onCallStateChanged(CALL_STATE_IDLE)` upon registration. Previously, `onIdle()` was triggered instantly, marking the task failed as `"no_answer"` in <50ms before `telecom.placeCall()` had even connected, causing the physical call to go through silently with Griffin's logic already terminated.
+     - **Fix**: `CellularCallManager` strictly ignores `CALL_STATE_IDLE` callbacks until `offhookSeen = true`, tracks `offhookTimestamp`, and uses a 25-second connection watchdog.
+     - **In-Call Voice Routing (API 31+)**: Switched from deprecated `isSpeakerphoneOn = true` to `AudioManager.setCommunicationDevice(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)`. Added `Speaker.setInCallMode(true)` which dynamically assigns `AudioAttributes.USAGE_VOICE_COMMUNICATION` so TTS audio routes directly into the cellular communication stream.
+- **Why**: Gives the owner complete control over who speaks and what channel is used (cellular vs WhatsApp), enables multitasking without screen takeover, eliminates spurious "phone is locked" failures when the screen is active, and guarantees synthesized speech is delivered into cellular calls without premature idle termination.
 
 
 

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -150,6 +151,7 @@ class CellularCallManager(
         }
 
         var offhookSeen = false
+        var offhookTimestamp = 0L
         var replyRecorded = ""
         var followupRecorded = ""
         val callCompleted = AtomicBoolean(false)
@@ -160,6 +162,7 @@ class CellularCallManager(
             isOffhook = false
             isBackgroundCall = false
             activeFinishCall = null
+            speaker.setInCallMode(false)
             cleanupCall()
 
             // Post notification to owner
@@ -197,11 +200,14 @@ class CellularCallManager(
                 if (offhookSeen) return@registerCallStateListener
                 offhookSeen = true
                 isOffhook = true
+                offhookTimestamp = System.currentTimeMillis()
 
-                // Wait 1500ms after offhook for cellular call audio line to settle
+                enableSpeakerphone()
+                speaker.setInCallMode(true)
+
+                // Wait 3500ms after offhook for recipient connection & audio line stabilization
                 main.postDelayed({
                     if (callCompleted.get()) return@postDelayed
-                    enableSpeakerphone()
 
                     val greeting = buildGreeting(owner, message)
                     speaker.say(greeting) {
@@ -239,15 +245,19 @@ class CellularCallManager(
                             }
                         )
                     }
-                }, 1500)
+                }, 3500)
             },
             onIdle = {
-                if (offhookSeen) {
-                    // Call ended by other party or ended after completion
-                    finishCall(if (replyRecorded.isNotBlank()) "replied" else "delivered")
-                } else {
-                    // Ended before ever connecting (busy / declined / unanswered)
+                if (!offhookSeen) {
+                    // Initial registration callback while phone is idle before placeCall connects: IGNORE!
+                    return@registerCallStateListener
+                }
+                val duration = System.currentTimeMillis() - offhookTimestamp
+                if (duration < 3500L && replyRecorded.isBlank()) {
+                    // Disconnected within 3.5 seconds of dialing -> rejected / busy / unanswered
                     finishCall("no_answer")
+                } else {
+                    finishCall(if (replyRecorded.isNotBlank()) "replied" else "delivered")
                 }
             }
         )
@@ -256,15 +266,21 @@ class CellularCallManager(
         try {
             val uri = Uri.fromParts("tel", number, null)
             val callExtras = Bundle().apply {
-                if (inBackground) {
-                    putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, true)
-                }
+                putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, true)
             }
             telecom.placeCall(uri, callExtras)
         } catch (e: Exception) {
             finishCall("failed")
             return false
         }
+
+        // Connection watchdog: If call never connects off-hook within 25 seconds, terminate
+        main.postDelayed({
+            if (!callCompleted.get() && !offhookSeen) {
+                endCallSafely()
+                finishCall("no_answer")
+            }
+        }, 25_000)
 
         // Fallback watchdog: If call is still ongoing after 180 seconds, forcibly terminate
         main.postDelayed({
@@ -333,13 +349,26 @@ class CellularCallManager(
             prevAudioMode = audio.mode
             prevSpeakerOn = audio.isSpeakerphoneOn
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
-            audio.isSpeakerphoneOn = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val speakerDevice = audio.availableCommunicationDevices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                }
+                if (speakerDevice != null) {
+                    audio.setCommunicationDevice(speakerDevice)
+                }
+            } else {
+                audio.isSpeakerphoneOn = true
+            }
         } catch (_: Exception) {}
     }
 
     private fun restoreAudio() {
         try {
-            audio.isSpeakerphoneOn = prevSpeakerOn
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audio.clearCommunicationDevice()
+            } else {
+                audio.isSpeakerphoneOn = prevSpeakerOn
+            }
             audio.mode = prevAudioMode
         } catch (_: Exception) {}
     }

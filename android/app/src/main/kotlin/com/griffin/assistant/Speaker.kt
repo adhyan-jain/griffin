@@ -60,6 +60,18 @@ class Speaker(context: Context) {
         if (tts?.speak(text, TextToSpeech.QUEUE_ADD, null, id) != TextToSpeech.SUCCESS) finish(id)
     }
 
+    fun setInCallMode(inCall: Boolean) {
+        val usage = if (inCall) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ASSISTANT
+        try {
+            tts?.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(usage)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+        } catch (_: Exception) {}
+    }
+
     fun say(text: String, done: (() -> Unit)? = null) {
         if (text.isBlank()) { done?.invoke(); return }
         if (ready) speakNow(text, done) else queue.addLast(text to done)
