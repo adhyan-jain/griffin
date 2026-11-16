@@ -252,11 +252,13 @@ class AssistantService : Service() {
                         else -> "Task Completed: ${task.title.take(50)}"
                     }
                     val body = resp.take(250)
-                    val clickUri = Uri.parse("https://griffin-pwa.vercel.app/tasks/${task.id}")
-                    val viewIntent = Intent(Intent.ACTION_VIEW, clickUri).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    val appIntent = Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        putExtra("task_id", task.id)
+                        putExtra("task_title", task.title)
+                        putExtra("task_response", resp)
                     }
-                    val pi = PendingIntent.getActivity(this, task.id.hashCode(), viewIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                    val pi = PendingIntent.getActivity(this, task.id.hashCode(), appIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
                     // Wake up screen if locked/asleep so notification is immediately noticed
                     try {

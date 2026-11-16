@@ -306,7 +306,7 @@ func (r *PostgresTaskRepository) ClaimNextTask(ctx context.Context, workerID str
 			WHERE status IN ('QUEUED', 'RETRYING')
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
 			  AND NOT (` + needsHandsSQL("") + `)
-			ORDER BY priority DESC, created_at ASC
+			ORDER BY priority ASC, created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
@@ -957,7 +957,7 @@ func (r *PostgresTaskRepository) ClaimNextTaskForHost(ctx context.Context, userI
 			  AND status IN ('QUEUED', 'RETRYING')
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
 			  AND ` + hostCanDoSQL("", "$5") + `
-			ORDER BY priority DESC, created_at ASC
+			ORDER BY priority ASC, created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
@@ -993,7 +993,7 @@ func (r *PostgresTaskRepository) ListTasksNeedingHosts(ctx context.Context, user
 			created_at, updated_at
 		FROM tasks
 		WHERE user_id = $1 AND status IN ('QUEUED', 'RETRYING') AND `+needsHandsSQL("")+`
-		ORDER BY priority DESC, created_at ASC
+		ORDER BY priority ASC, created_at ASC
 		LIMIT $2`, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks needing hosts: %w", err)

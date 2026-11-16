@@ -111,13 +111,31 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
     }
 
+    private data class TaskNotice(val id: String, val title: String, val response: String)
+    private var activeTaskNotice: TaskNotice? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Ink.bg
         window.navigationBarColor = Ink.bg
+        checkTaskIntent(intent)
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(28), dp(20), dp(32)) }
         setContentView(ScrollView(this).apply { setBackgroundColor(Ink.bg); addView(root); isFillViewport = true })
         orb = OrbView(this)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        checkTaskIntent(intent)
+        rebuild()
+    }
+
+    private fun checkTaskIntent(intent: Intent?) {
+        val id = intent?.getStringExtra("task_id") ?: return
+        val title = intent.getStringExtra("task_title") ?: "Task Completed"
+        val response = intent.getStringExtra("task_response") ?: ""
+        activeTaskNotice = TaskNotice(id, title, response)
     }
 
     override fun onResume() {
@@ -183,6 +201,26 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(dp(44), dp(44)))
             addView(label("Griffin", 17f, Ink.text, true).apply { setPadding(dp(12), 0, 0, 0) })
         })
+
+        activeTaskNotice?.let { notice ->
+            val dismissBtn = small("Dismiss") {
+                activeTaskNotice = null
+                rebuild()
+            }
+            val titleRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(label(notice.title, 15f, Ink.good, true).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(dismissBtn)
+            }
+            val body = label(notice.response.ifBlank { "Task completed successfully." }, 13f, Ink.text).apply {
+                setPadding(0, dp(8), 0, 0)
+            }
+            root.addView(card(titleRow, body))
+        }
+
         val wake = ListenMode.wakeWord(this)
         root.addView(label(if (wake) "Say \"hey $name\" or \"oye bhosadike\"" else "Tap the ball or the button to talk", 24f, Ink.text, true).apply { setPadding(0, dp(4), 0, 0) })
         root.addView(label(when {

@@ -252,10 +252,6 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 	id := task.ID.String()
 	a.logger.Info("host claimed task", "task_id", id, "title", task.Title)
 
-	// Report with a context that outlives shutdown so a finished result is not lost.
-	report, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancelReport()
-
 	taskCtx, cancelTask := context.WithCancel(ctx)
 	defer cancelTask()
 	a.runMu.Lock()
@@ -291,6 +287,11 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 	execTask := worker.WithDependencyOutputs(task, c.Dependencies)
 	execCtx := worker.WithApprovedActions(worker.WithDependencyContext(taskCtx, c.Dependencies), c.ApprovedActions)
 	res, execErr := a.cfg.Executor.Execute(execCtx, execTask)
+
+	// Report with a context that outlives shutdown so a finished result is not lost.
+	// Created after execution completes so long-running tasks do not exhaust the timeout.
+	report, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	defer cancelReport()
 	if taskCtx.Err() != nil && ctx.Err() == nil && a.draining.Load() {
 		// A local pause asked this task to stop. Hand it back now, as retryable, so it does not sit until
 		// the lease runs out. The reason says why, for the owner and for whoever takes it next.
