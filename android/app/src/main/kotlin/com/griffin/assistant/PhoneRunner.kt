@@ -43,7 +43,7 @@ class PhoneRunner(
                         )
                         wakeLock.acquire(8000L)
                     }
-                    GriffinAccess.instance?.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_DISMISS_KEYGUARD)
+                    GriffinAccess.instance?.performGlobalAction(6 /* GLOBAL_ACTION_DISMISS_KEYGUARD */)
                 } catch (_: Exception) {}
 
                 if (task.action in listOf("automated_call", "call", "direct_call", "whatsapp_call")) {
