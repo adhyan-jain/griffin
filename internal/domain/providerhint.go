@@ -21,7 +21,7 @@ const (
 
 var (
 	// Work that needs the machine or the outside world.
-	needsMachine = regexp.MustCompile(`(?i)\b(browse|browser|website|web|search|scrape|crawl|download|upload|log ?in|sign ?in|apply|submit|fill|form|click|install|run|execute|script|shell|terminal|command|git|repo|repository|clone|commit|deploy|build|test|file|files|folder|directory|spreadsheet|csv|whatsapp|telegram|slack|email|inbox|calendar|screenshot|api|database|linkedin|monitor|poll|watch|schedule|leetcode|dsa|hackathon|brief|briefing|report|scorecard|audit|lead|target|tracker|tracking)\b`)
+	needsMachine = regexp.MustCompile(`(?i)\b(browse|browser|website|web|search|scrape|crawl|download|upload|log ?in|sign ?in|apply|submit|fill|form|click|install|run|execute|script|shell|terminal|command|git|repo|repository|clone|commit|deploy|build|test|file|files|folder|directory|spreadsheet|csv|whatsapp|telegram|slack|email|inbox|calendar|screenshot|api|database|linkedin|monitor|poll|watch|schedule|leetcode|dsa|hackathon|report|scorecard|audit|lead|target|tracker|tracking)\b`)
 	// Work that is purely language: reading what it is given and producing text.
 	pureLanguage = regexp.MustCompile(`(?i)\b(write|draft|summari[sz]e|summary|analy[sz]e|analysis|review|compare|comparison|evaluate|classify|rank|rewrite|edit|proofread|explain|outline|brainstorm|translate|recommend|critique|assess|decide|synthesi[sz]e|polish|tone|tailor|resume|resumes|cv|cvs|cover\s*letters?|curriculum\s*vitae)\b`)
 

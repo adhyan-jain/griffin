@@ -1,5 +1,3 @@
-import * as XLSX from "xlsx";
-
 export interface ParsedTable {
   title: string;
   headers: string[];
@@ -186,11 +184,12 @@ function extractStructuredListAsTable(markdown: string): ParsedTable | null {
 /**
  * Downloads a multi-sheet Excel (.xlsx) file.
  */
-export function exportToExcel(
+export async function exportToExcel(
   filename: string,
   sheets: { name: string; headers: string[]; rows: (string | number)[][] }[],
 ) {
   if (!sheets || sheets.length === 0) return;
+  const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
 
   sheets.forEach((sheet, idx) => {

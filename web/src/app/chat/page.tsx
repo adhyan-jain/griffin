@@ -1,6 +1,5 @@
 "use client";
 
-import { Kinetic } from "@/components/fx/kinetic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, Loader2, Mic, RotateCcw, Sparkles, WifiOff } from "lucide-react";
 import { api, JJEndpointUnavailable, type Task } from "@/lib/api";
@@ -148,7 +147,9 @@ export default function ChatPage() {
               <Sparkles className="size-5" />
             </div>
             <div>
-              <Kinetic as="h1" text={`Ask ${managerName} anything`} className="font-display text-3xl font-bold tracking-[-0.04em] text-balance md:text-4xl" />
+              <h1 className="font-display text-3xl font-bold tracking-[-0.04em] text-balance md:text-4xl text-foreground">
+                Ask {managerName} anything
+              </h1>
               <p className="mt-1 text-sm text-muted-foreground text-pretty">{managerName} answers questions directly and plans bigger goals into steps for your team.</p>
             </div>
             <div className="flex w-full flex-col gap-2">

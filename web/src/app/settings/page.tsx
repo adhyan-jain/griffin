@@ -13,7 +13,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SystemStatusList, useSystemStatus } from "@/components/system-status";
 import { PageContainer, PageHeader } from "@/components/page";
-import { useFxMode, type FxMode } from "@/lib/fx";
 import { RATES, setVoicePrefs, speak, stopSpeaking, useSpeechSupported, useVoicePrefs, useVoices } from "@/lib/speech";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -70,30 +69,6 @@ function ManagerNameField() {
         Longer names are easier to recognize when spoken.
       </p>
     </form>
-  );
-}
-
-const FX_OPTIONS: { value: FxMode; label: string; hint: string }[] = [
-  { value: "full", label: "Full", hint: "Deep field, live core, glass depth." },
-  { value: "lite", label: "Lite", hint: "Fewer particles, 30 fps. Easier on battery." },
-  { value: "off", label: "Off", hint: "No 3D at all. Plain interface." },
-];
-
-function FxPicker() {
-  const [mode, setMode] = useFxMode();
-  return (
-    <div className="space-y-2">
-      <Tabs value={mode} onValueChange={(v) => setMode(v as FxMode)}>
-        <TabsList className="grid h-auto w-full grid-cols-3 group-data-[orientation=horizontal]/tabs:h-auto">
-          {FX_OPTIONS.map((o) => (
-            <TabsTrigger key={o.value} value={o.value} className="h-10">
-              {o.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-      <p className="text-xs text-muted-foreground">{FX_OPTIONS.find((o) => o.value === mode)?.hint} Saved on this device only.</p>
-    </div>
   );
 }
 
@@ -276,10 +251,6 @@ export default function SettingsPage() {
 
         <Section title="Your manager">
           <ManagerNameField />
-        </Section>
-
-        <Section title="Visual effects">
-          <FxPicker />
         </Section>
         <Section title="Voice">
           <VoicePicker />

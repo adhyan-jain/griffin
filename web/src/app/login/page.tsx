@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -10,17 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ErrorNote } from "@/components/page";
-import { Kinetic } from "@/components/fx/kinetic";
 
 // Inlined at build time (NEXT_PUBLIC_*): `false` in production builds, so the dev-login UI below is
 // eliminated from the bundle. Keep this local; an imported constant would not be tree-shaken.
 const DEV_LOGIN_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === "true";
-
-const Hero3D = dynamic(() => import("@/components/hero-3d"), { ssr: false });
-
-const DEMO_NODES = ["RUNNING", "COMPLETED", "QUEUED", "COMPLETED", "AWAITING_APPROVAL", "RUNNING", "COMPLETED", "QUEUED", "COMPLETED", "RUNNING"].map(
-  (status, i) => ({ id: `d${i}`, status }),
-);
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,12 +40,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10">
-      {/* The core sits above the card, fully visible and fading into the page, instead of a dim blur behind the form. */}
-      <Hero3D nodes={DEMO_NODES} className="pointer-events-none absolute inset-x-0 top-0 h-[46%] [mask-image:linear-gradient(to_bottom,#000_72%,transparent)]" />
-
-      <main className="relative w-full max-w-sm rounded-2xl border bg-card/85 p-6 shadow-xl backdrop-blur-md">
-        <Kinetic as="h1" text="Sign in to Griffin" className="font-display text-3xl font-bold leading-[1.05] tracking-[-0.04em]" />
+    <div className="relative flex min-h-dvh items-center justify-center px-4 py-10">
+      <main className="relative w-full max-w-sm rounded-2xl border bg-card p-6 shadow-xl">
+        <h1 className="font-display text-3xl font-bold leading-[1.05] tracking-[-0.04em] text-foreground">
+          Sign in to Griffin
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">Your AI workforce is waiting for instructions.</p>
 
         <div className="mt-6 space-y-4">

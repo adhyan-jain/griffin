@@ -9,7 +9,6 @@ import { api, type Artifact } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorNote, PageContainer, formatBytes, timeAgo } from "@/components/page";
-import { Kinetic } from "@/components/fx/kinetic";
 import { MarkdownText } from "@/components/result-view";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 
@@ -101,7 +100,9 @@ export default function FilePage({ params }: { params: Promise<{ id: string }> }
         )
       ) : (
         <>
-          <Kinetic as="h1" text={file.title} className="font-display text-2xl font-bold leading-[1.05] tracking-[-0.035em] text-balance md:text-4xl" />
+          <h1 className="font-display text-2xl font-bold leading-[1.05] tracking-[-0.035em] text-balance md:text-4xl text-foreground">
+            {file.title}
+          </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {[file.artifact_type.toLowerCase(), formatBytes(file.file_size_bytes), `saved ${timeAgo(file.created_at)}`].filter(Boolean).join(" · ")}
           </p>

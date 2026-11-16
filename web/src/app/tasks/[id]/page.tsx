@@ -13,7 +13,6 @@ import { PriorityBadge, StatusBadge, isDone } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, formatBytes, timeAgo } from "@/components/page";
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { TaskRow } from "@/components/task-row";
-import { Kinetic } from "@/components/fx/kinetic";
 import { ResultView } from "@/components/result-view";
 import { Thread } from "@/components/thread";
 import { isEmptyAnswerFailure } from "@/lib/result-text";
@@ -203,7 +202,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       </Link>
 
       <header className="mb-5 space-y-3">
-        <Kinetic as="h1" text={task.title || task.goal} className="font-display text-2xl font-bold leading-[1.05] tracking-[-0.035em] text-balance md:text-4xl" />
+        <h1 className="font-display text-2xl font-bold leading-[1.05] tracking-[-0.035em] text-balance md:text-4xl text-foreground">
+          {task.title || task.goal}
+        </h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <StatusBadge status={task.status} />
           <PriorityBadge priority={task.priority} />
