@@ -2,10 +2,12 @@ package desktop
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -60,14 +62,14 @@ func detectEnvironment() Environment {
 		if env.Distro == "" {
 			env.Distro = "Linux"
 		}
-		for _, tool := range []string{"playerctl", "dbus-send", "gtk-launch", "xdg-open", "hyprctl", "swaymsg"} {
+		for _, tool := range []string{"playerctl", "dbus-send", "gtk-launch", "xdg-open", "hyprctl", "swaymsg", "grim", "import", "scrot", "adb"} {
 			if _, err := exec.LookPath(tool); err == nil {
 				env.Tools = append(env.Tools, tool)
 			}
 		}
 	} else if env.OS == "darwin" {
 		env.Distro = "macOS"
-		for _, tool := range []string{"osascript", "open"} {
+		for _, tool := range []string{"osascript", "open", "screencapture", "adb"} {
 			if _, err := exec.LookPath(tool); err == nil {
 				env.Tools = append(env.Tools, tool)
 			}
@@ -334,4 +336,134 @@ func (s *Service) LaunchApp(ctx context.Context, appName string) (string, error)
 	default:
 		return "", fmt.Errorf("launching apps unsupported on OS: %s", s.Env.OS)
 	}
+}
+
+// ScreenshotResult holds metadata and data about a captured screen or phone image.
+type ScreenshotResult struct {
+	Target   string `json:"target"` // "screen" or "phone"
+	Path     string `json:"path"`
+	MimeType string `json:"mime_type"`
+	Size     int64  `json:"size"`
+	Data     string `json:"data,omitempty"` // base64-encoded PNG image
+}
+
+// Screenshot captures the desktop or connected phone screen, saving it to disk and returning its metadata.
+func (s *Service) Screenshot(ctx context.Context, target string, customSavePath string) (*ScreenshotResult, error) {
+	savePath := strings.TrimSpace(customSavePath)
+	if savePath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = os.TempDir()
+		}
+		dir := filepath.Join(home, ".griffin-host", "screenshots")
+		savePath = filepath.Join(dir, fmt.Sprintf("screenshot_%d.png", time.Now().UnixNano()))
+	}
+
+	if err := os.MkdirAll(filepath.Dir(savePath), 0o755); err != nil {
+		return nil, fmt.Errorf("could not create screenshot directory: %w", err)
+	}
+
+	normalizedTarget := strings.ToLower(strings.TrimSpace(target))
+	if normalizedTarget == "phone" {
+		adbBin := "adb"
+		if _, err := exec.LookPath(adbBin); err != nil {
+			if home, err := os.UserHomeDir(); err == nil {
+				cand := filepath.Join(home, "Android", "Sdk", "platform-tools", "adb")
+				if _, err := os.Stat(cand); err == nil {
+					adbBin = cand
+				}
+			}
+		}
+		cmd := exec.CommandContext(ctx, adbBin, "exec-out", "screencap", "-p")
+		outFile, err := os.Create(savePath)
+		if err != nil {
+			return nil, fmt.Errorf("could not create screenshot file: %w", err)
+		}
+		cmd.Stdout = outFile
+		var errBuf strings.Builder
+		cmd.Stderr = &errBuf
+		runErr := cmd.Run()
+		outFile.Close()
+		if runErr != nil {
+			_ = os.Remove(savePath)
+			return nil, fmt.Errorf("phone screencap failed: %s (%w)", strings.TrimSpace(errBuf.String()), runErr)
+		}
+	} else {
+		// Desktop screen capture
+		switch s.Env.OS {
+		case "linux":
+			var captureErr error
+			captured := false
+			if _, err := exec.LookPath("grim"); err == nil {
+				out, err := exec.CommandContext(ctx, "grim", savePath).CombinedOutput()
+				if err == nil {
+					captured = true
+				} else {
+					captureErr = fmt.Errorf("grim error: %s (%w)", strings.TrimSpace(string(out)), err)
+				}
+			}
+			if !captured {
+				if _, err := exec.LookPath("import"); err == nil {
+					out, err := exec.CommandContext(ctx, "import", "-window", "root", savePath).CombinedOutput()
+					if err == nil {
+						captured = true
+					} else {
+						captureErr = fmt.Errorf("import error: %s (%w)", strings.TrimSpace(string(out)), err)
+					}
+				}
+			}
+			if !captured {
+				if _, err := exec.LookPath("scrot"); err == nil {
+					out, err := exec.CommandContext(ctx, "scrot", savePath).CombinedOutput()
+					if err == nil {
+						captured = true
+					} else {
+						captureErr = fmt.Errorf("scrot error: %s (%w)", strings.TrimSpace(string(out)), err)
+					}
+				}
+			}
+			if !captured {
+				if captureErr != nil {
+					return nil, captureErr
+				}
+				return nil, fmt.Errorf("no screenshot tool found on Linux (need grim, import, or scrot)")
+			}
+		case "darwin":
+			cmd := exec.CommandContext(ctx, "screencapture", "-x", savePath)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return nil, fmt.Errorf("screencapture error: %s (%w)", strings.TrimSpace(string(out)), err)
+			}
+		case "windows":
+			ps := fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]; $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($b); $g.CopyFromScreen((New-Object System.Drawing.Point(0,0)), (New-Object System.Drawing.Point(0,0)), $b.Size); $b.Save('%s'); $g.Dispose(); $b.Dispose()`, savePath)
+			cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", ps)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return nil, fmt.Errorf("powershell screencap error: %s (%w)", strings.TrimSpace(string(out)), err)
+			}
+		default:
+			return nil, fmt.Errorf("screenshots unsupported on OS: %s", s.Env.OS)
+		}
+	}
+
+	fi, err := os.Stat(savePath)
+	if err != nil || fi.Size() == 0 {
+		return nil, fmt.Errorf("screenshot capture produced an empty file")
+	}
+
+	dataBytes, err := os.ReadFile(savePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading captured screenshot: %w", err)
+	}
+
+	targetName := "screen"
+	if normalizedTarget == "phone" {
+		targetName = "phone"
+	}
+
+	return &ScreenshotResult{
+		Target:   targetName,
+		Path:     savePath,
+		MimeType: "image/png",
+		Size:     fi.Size(),
+		Data:     base64.StdEncoding.EncodeToString(dataBytes),
+	}, nil
 }

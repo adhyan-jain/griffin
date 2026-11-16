@@ -296,9 +296,15 @@ export interface VoiceTurnResult {
   confirm_token?: string;
 }
 
+export interface ImageData {
+  mime_type: string;
+  data: string; // base64
+}
+
 export interface JJHistoryTurn {
   role: "user" | "assistant";
   text: string;
+  images?: ImageData[];
 }
 
 export interface JJMessageRequest {
@@ -311,6 +317,7 @@ export interface JJMessageRequest {
   new_task?: boolean;
   /** Continue that finished task (the owner's choice, overriding the guess). */
   continue_task_id?: string;
+  images?: ImageData[];
 }
 
 /** Set when the message was added to an earlier task's thread instead of becoming a new task. */

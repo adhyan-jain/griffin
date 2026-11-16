@@ -3,7 +3,7 @@
  * output_payload, history truncation, the poll cadence and a tiny safe markdown parser.
  * No React and no network here, so every rule is unit-tested.
  */
-import type { DeviceNote, JJHistoryTurn, JJMessageResult, RunnerWake, SubmitResult, Task } from "@/lib/api";
+import type { DeviceNote, ImageData, JJHistoryTurn, JJMessageResult, RunnerWake, SubmitResult, Task } from "@/lib/api";
 
 export interface Provider {
   name?: string;
@@ -22,6 +22,7 @@ export type Reply =
 export interface Turn {
   id: number;
   text: string;
+  images?: ImageData[];
   reply: Reply;
 }
 
@@ -106,7 +107,7 @@ export function buildHistory(turns: Turn[]): JJHistoryTurn[] {
   const h: JJHistoryTurn[] = [];
   for (const t of turns) {
     if (t.reply.phase !== "done" && t.reply.phase !== "plan") continue; // unanswered turns are not context
-    h.push({ role: "user", text: t.text });
+    h.push({ role: "user", text: t.text, images: t.images });
     if (t.reply.phase === "done") h.push({ role: "assistant", text: t.reply.text });
   }
   return h.slice(-HISTORY_TURNS);

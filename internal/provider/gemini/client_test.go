@@ -114,3 +114,57 @@ func TestErrorsNeverContainTheKey(t *testing.T) {
 		t.Fatalf("error must exist and must not leak the key: %v", err)
 	}
 }
+
+func TestChatWithImages(t *testing.T) {
+	var seen struct{ path, key, body string }
+	srv := standIn(t, 200, okReply, &seen)
+	defer srv.Close()
+	c := &Client{APIKey: "k-vision", Model: "gemini-flash", BaseURL: srv.URL}
+
+	turns := []Turn{
+		{
+			Role: "user",
+			Text: "What is this image?",
+			Images: []Image{
+				{
+					MimeType: "image/png",
+					Data:     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+				},
+			},
+		},
+	}
+	got, err := c.Chat(context.Background(), "You analyze images.", turns)
+	if err != nil {
+		t.Fatalf("Chat with image failed: %v", err)
+	}
+	if got != "Not much, what's up?" {
+		t.Errorf("got %q", got)
+	}
+
+	var sent struct {
+		Contents []struct {
+			Role  string `json:"role"`
+			Parts []struct {
+				Text       string `json:"text,omitempty"`
+				InlineData *struct {
+					MimeType string `json:"mimeType"`
+					Data     string `json:"data"`
+				} `json:"inlineData,omitempty"`
+			} `json:"parts"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal([]byte(seen.body), &sent); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+	if len(sent.Contents) != 1 || len(sent.Contents[0].Parts) != 2 {
+		t.Fatalf("expected 1 turn with 2 parts (text + image), got: %s", seen.body)
+	}
+	p0 := sent.Contents[0].Parts[0]
+	p1 := sent.Contents[0].Parts[1]
+	if p0.Text != "What is this image?" {
+		t.Errorf("part 0 text mismatch: %v", p0.Text)
+	}
+	if p1.InlineData == nil || p1.InlineData.MimeType != "image/png" || p1.InlineData.Data == "" {
+		t.Errorf("part 1 inlineData mismatch: %+v", p1.InlineData)
+	}
+}

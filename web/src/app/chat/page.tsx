@@ -2,8 +2,8 @@
 
 import { Kinetic } from "@/components/fx/kinetic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2, Mic, RotateCcw, Sparkles, WifiOff } from "lucide-react";
-import { api, JJEndpointUnavailable, type Task } from "@/lib/api";
+import { ArrowUp, Image as ImageIcon, Loader2, Mic, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
+import { api, JJEndpointUnavailable, type ImageData, type Task } from "@/lib/api";
 import { useManagerName } from "@/lib/manager-name";
 import { buildHistory, pollIntervalMs, reduceReply, type Provider, type ReplyEvent, type Turn } from "@/lib/jj-chat";
 import { usePolling } from "@/lib/use-polling";
@@ -81,11 +81,32 @@ export default function ChatPage() {
     setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, reply: reduceReply(t.reply, ev) } : t)));
   }, []);
 
-  const deliver = async (id: number, message: string, history: ReturnType<typeof buildHistory>) => {
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<{ mime_type: string; data: string; name: string; size: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageSelect = (file: File) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = reader.result as string;
+      const base64Data = res.split(",")[1];
+      const sizeKB = (file.size / 1024).toFixed(1) + " KB";
+      setAttachedImage({
+        mime_type: file.type,
+        data: base64Data,
+        name: file.name,
+        size: sizeKB,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const deliver = async (id: number, message: string, history: ReturnType<typeof buildHistory>, images?: ImageData[]) => {
     try {
       if (!endpointMissing.current) {
         try {
-          const result = await api.sendJJMessage({ message, conversation_id: conversationId(), history });
+          const result = await api.sendJJMessage({ message, conversation_id: conversationId(), history, images });
           dispatch(id, { type: "accepted", result });
           return;
         } catch (e) {
@@ -99,23 +120,25 @@ export default function ChatPage() {
     }
   };
 
-  const [voiceOpen, setVoiceOpen] = useState(false);
-
-  const send = (raw: string) => {
+  const send = (raw: string, imgOverride?: { mime_type: string; data: string; name: string; size: string } | null) => {
     const message = raw.trim();
-    if (!message || !online) return;
+    const currentImage = imgOverride !== undefined ? imgOverride : attachedImage;
+    if ((!message && !currentImage) || !online) return;
+    const promptText = message || (currentImage ? "Analyze this attached image." : "");
     const id = nextId.current++;
     const history = buildHistory(turnsRef.current);
     setText("");
-    setTurns((ts) => [...ts, { id, text: message, reply: { phase: "sending" } }]);
-    void deliver(id, message, history);
+    setAttachedImage(null);
+    const images: ImageData[] | undefined = currentImage ? [{ mime_type: currentImage.mime_type, data: currentImage.data }] : undefined;
+    setTurns((ts) => [...ts, { id, text: promptText, images, reply: { phase: "sending" } }]);
+    void deliver(id, promptText, history, images);
   };
 
   const retry = (turn: Turn) => {
     if (!online || turn.reply.phase !== "failed") return;
     const history = buildHistory(turnsRef.current.filter((t) => t.id < turn.id));
     dispatch(turn.id, { type: "retry" });
-    void deliver(turn.id, turn.text, history); // a new idempotency key is generated per call
+    void deliver(turn.id, turn.text, history, turn.images);
   };
 
   const wake = async () => {
@@ -170,7 +193,21 @@ export default function ChatPage() {
         {turns.map((t) => (
           <div key={t.id} className="space-y-3" data-testid="chat-turn">
             <div className="flex justify-end">
-              <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">{t.text}</p>
+              <div className="max-w-[85%] space-y-2 rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
+                {t.images && t.images.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {t.images.map((img, i) => (
+                      <img
+                        key={i}
+                        src={`data:${img.mime_type};base64,${img.data}`}
+                        alt="Attached image"
+                        className="max-h-56 max-w-full rounded-xl object-contain border border-primary-foreground/20"
+                      />
+                    ))}
+                  </div>
+                )}
+                <p className="whitespace-pre-wrap break-words">{t.text}</p>
+              </div>
             </div>
 
             {(t.reply.phase === "sending" || t.reply.phase === "waiting") && (
@@ -237,6 +274,29 @@ export default function ChatPage() {
       </div>
 
       {voiceOpen && <VoicePanel onHandoff={(t) => send(t)} />}
+      {attachedImage && (
+        <div className="flex items-center gap-3 rounded-xl border bg-card p-2 text-xs mb-2">
+          <img
+            src={`data:${attachedImage.mime_type};base64,${attachedImage.data}`}
+            alt="Preview"
+            className="size-12 rounded-lg object-cover border"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium truncate">{attachedImage.name}</p>
+            <p className="text-muted-foreground">{attachedImage.size}</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-full"
+            onClick={() => setAttachedImage(null)}
+            aria-label="Remove image"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+      )}
       <form
         className="flex items-end gap-2 border-t bg-background py-3"
         onSubmit={(e) => {
@@ -244,6 +304,28 @@ export default function ChatPage() {
           send(text);
         }}
       >
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleImageSelect(file);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          type="button"
+          size="icon"
+          variant={attachedImage ? "secondary" : "ghost"}
+          className="size-11 shrink-0 rounded-full"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Attach image"
+          title="Attach image"
+        >
+          <ImageIcon className="size-5" />
+        </Button>
         <Button type="button" size="icon" variant={voiceOpen ? "secondary" : "ghost"} className="size-11 shrink-0 rounded-full" onClick={() => setVoiceOpen((v) => !v)} aria-label={voiceOpen ? "Hide voice" : "Talk instead of typing"} aria-pressed={voiceOpen}>
           <Mic />
         </Button>
@@ -258,11 +340,25 @@ export default function ChatPage() {
               send(text);
             }
           }}
-          placeholder={online ? `Message ${managerName}` : "Offline"}
+          onPaste={(e) => {
+            const items = e.clipboardData?.items;
+            if (items) {
+              for (let i = 0; i < items.length; i++) {
+                if (items[i].type.startsWith("image/")) {
+                  const file = items[i].getAsFile();
+                  if (file) {
+                    handleImageSelect(file);
+                    break;
+                  }
+                }
+              }
+            }
+          }}
+          placeholder={online ? (attachedImage ? "Ask about this image, or press send" : `Message ${managerName}`) : "Offline"}
           rows={1}
           className="max-h-32 min-h-11 resize-none"
         />
-        <Button type="submit" size="icon" className="size-11 shrink-0 rounded-full" disabled={!online || !text.trim()} aria-label="Send">
+        <Button type="submit" size="icon" className="size-11 shrink-0 rounded-full" disabled={!online || (!text.trim() && !attachedImage)} aria-label="Send">
           <ArrowUp />
         </Button>
       </form>

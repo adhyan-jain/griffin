@@ -324,6 +324,23 @@ func (e *Executor) runDesktop(ctx context.Context, task *domain.Task, da *domain
 			Output:       raw,
 			TextOutput:   fmt.Sprintf("Host OS: %s, Distro: %s, Desktop: %s", e.Desktop.Env.OS, e.Desktop.Env.Distro, e.Desktop.Env.Desktop),
 		}, nil
+	case domain.DesktopOpScreenshot:
+		target := da.Target
+		if target == "" {
+			target = "screen"
+		}
+		res, err := e.Desktop.Screenshot(ctx, target, da.SavePath)
+		if err != nil {
+			return fail(err, false)
+		}
+		raw, _ := json.Marshal(res)
+		return &worker.ExecutionResult{
+			ExecutionID:  uuid.New(),
+			ProviderName: "hands-desktop",
+			Status:       "SUCCESS",
+			Output:       raw,
+			TextOutput:   fmt.Sprintf("Captured %s screenshot to %s (%d bytes).", res.Target, res.Path, res.Size),
+		}, nil
 	default:
 		return fail(fmt.Errorf("unsupported desktop op: %s", da.Op), false)
 	}

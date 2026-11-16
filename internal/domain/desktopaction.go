@@ -13,17 +13,20 @@ const DesktopKey = "desktop"
 type DesktopOp string
 
 const (
-	DesktopOpMedia  DesktopOp = "media"
-	DesktopOpLaunch DesktopOp = "launch"
-	DesktopOpEnv    DesktopOp = "env"
+	DesktopOpMedia      DesktopOp = "media"
+	DesktopOpLaunch     DesktopOp = "launch"
+	DesktopOpEnv        DesktopOp = "env"
+	DesktopOpScreenshot DesktopOp = "screenshot"
 )
 
 // DesktopAction is one desktop job. A step that carries one requires the "desktop" capability.
 type DesktopAction struct {
-	Op      DesktopOp `json:"op"`
-	MediaOp string    `json:"media_op,omitempty"` // next, previous, play, pause, play-pause, status
-	Player  string    `json:"player,omitempty"`   // spotify, chromium, etc.
-	App     string    `json:"app,omitempty"`      // app name to launch
+	Op       DesktopOp `json:"op"`
+	MediaOp  string    `json:"media_op,omitempty"`  // next, previous, play, pause, play-pause, status
+	Player   string    `json:"player,omitempty"`    // spotify, chromium, etc.
+	App      string    `json:"app,omitempty"`       // app name to launch
+	Target   string    `json:"target,omitempty"`    // screen (default), window, or phone
+	SavePath string    `json:"save_path,omitempty"` // custom output path
 }
 
 // ParseDesktopAction reads and validates the desktop action in a payload; (nil, nil) when there is none.
@@ -63,6 +66,11 @@ func (d *DesktopAction) Validate() error {
 		}
 		return nil
 	case DesktopOpEnv:
+		return nil
+	case DesktopOpScreenshot:
+		if strings.TrimSpace(d.Target) == "" {
+			d.Target = "screen"
+		}
 		return nil
 	default:
 		return fmt.Errorf("%w: unknown desktop op %q", ErrValidation, d.Op)

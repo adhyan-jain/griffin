@@ -59,6 +59,8 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 		managerID, planKey = "personal_ops", "phone"
 	} else if wantsBrowser(req.RequestText) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "browser"
+	} else if wantsScreenshot(text) && (!explicitManager || managerID == "personal_ops") {
+		managerID, planKey = "personal_ops", "screenshot"
 	} else if wantsWeb(req.RequestText) && (!explicitManager || managerID == "research") {
 		managerID, planKey = "research", "web"
 	}
@@ -98,6 +100,9 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 
 	case "phone":
 		childTasks, dependencies = phoneSteps(req)
+
+	case "screenshot":
+		childTasks, dependencies = screenshotSteps(req)
 
 	case "engineering":
 		childTasks = []domain.ChildTaskPlan{
@@ -363,4 +368,37 @@ func singleStep(managerID string, def manager.ManagerDefinition, req *domain.Use
 		})
 	}
 	return steps, approvals
+}
+
+var reScreenshot = regexp.MustCompile(`(?i)\b(?:take|capture|grab|shoot|record|save)\s+(?:a\s+)?screenshot\b|\bscreenshot\s+(?:of\s+)?(?:my\s+|the\s+)?(?:screen|display|desktop|phone|window)\b`)
+
+func wantsScreenshot(text string) bool {
+	return reScreenshot.MatchString(text)
+}
+
+func screenshotSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency) {
+	lower := strings.ToLower(req.RequestText)
+	target := "screen"
+	if strings.Contains(lower, "phone") {
+		target = "phone"
+	}
+	action := domain.DesktopAction{
+		Op:     domain.DesktopOpScreenshot,
+		Target: target,
+	}
+	raw, _ := json.Marshal(map[string]any{
+		domain.DesktopKey: action,
+	})
+	return []domain.ChildTaskPlan{
+		{
+			Key:                  "capture_screenshot",
+			Title:                fmt.Sprintf("Capture %s screenshot", target),
+			Goal:                 req.RequestText,
+			ManagerDomain:        "personal_ops",
+			WorkerKey:            "desktop_controller",
+			InputPayload:         raw,
+			Priority:             req.Priority,
+			CapabilitiesRequired: []string{domain.HostCapDesktop},
+		},
+	}, nil
 }

@@ -142,9 +142,15 @@ func NewJJChatHandler(tasks ChatTaskStore, objectives ObjectiveSubmitter, wakeup
 	return &JJChatHandler{tasks: tasks, objectives: objectives, wakeup: wakeup, scaleToZeroEnabled: scaleToZeroEnabled}
 }
 
+type chatImageData struct {
+	MimeType string `json:"mime_type"`
+	Data     string `json:"data"` // base64
+}
+
 type chatTurn struct {
-	Role string `json:"role"`
-	Text string `json:"text"`
+	Role   string          `json:"role"`
+	Text   string          `json:"text"`
+	Images []chatImageData `json:"images,omitempty"`
 }
 
 // JJMessageRequest is the POST /api/v1/jj/messages body.
@@ -157,7 +163,8 @@ type JJMessageRequest struct {
 	// NewTask forces a fresh task even when the message looks like a continuation.
 	NewTask bool `json:"new_task,omitempty"`
 	// ContinueTaskID continues that finished task, as when the owner taps "continue in ..." on a suggestion.
-	ContinueTaskID string `json:"continue_task_id,omitempty"`
+	ContinueTaskID string          `json:"continue_task_id,omitempty"`
+	Images         []chatImageData `json:"images,omitempty"`
 }
 
 type runnerOutcome struct {
@@ -254,7 +261,11 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 
 	// "Let's discuss it first": stay a conversation, propose a plan and wait for "go ahead".
 	if !req.NewTask && service.DiscussFirst(toClassify) {
-		h.postConversationIn(w, r, userID, conversationID, message+service.DiscussHint, history, req.IdempotencyKey, managerName, nil, "Chat: ", respExtra)
+		var extra map[string]any
+		if len(req.Images) > 0 {
+			extra = map[string]any{"images": req.Images}
+		}
+		h.postConversationIn(w, r, userID, conversationID, message+service.DiscussHint, history, req.IdempotencyKey, managerName, extra, "Chat: ", respExtra)
 		return
 	}
 
@@ -313,7 +324,11 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		h.postObjectiveIn(w, r, userID, conversationID, message, req, history, managerName, nil, respExtra, intent.Tasks...)
 		return
 	}
-	h.postConversationIn(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName, nil, "Chat: ", respExtra)
+	var extra map[string]any
+	if len(req.Images) > 0 {
+		extra = map[string]any{"images": req.Images}
+	}
+	h.postConversationIn(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName, extra, "Chat: ", respExtra)
 }
 
 func normalizeHistory(in []chatTurn) ([]chatTurn, error) {
@@ -323,10 +338,10 @@ func normalizeHistory(in []chatTurn) ([]chatTurn, error) {
 			return nil, chatValidation(`history[%d]: role %q is not valid; use "user" or "assistant"`, i, t.Role)
 		}
 		text := truncateRunes(strings.TrimSpace(t.Text), chatMaxTurnChars)
-		if text == "" {
+		if text == "" && len(t.Images) == 0 {
 			continue
 		}
-		out = append(out, chatTurn{Role: t.Role, Text: text})
+		out = append(out, chatTurn{Role: t.Role, Text: text, Images: t.Images})
 	}
 	if len(out) > chatMaxHistoryTurns {
 		out = out[len(out)-chatMaxHistoryTurns:]
@@ -417,6 +432,9 @@ func (h *JJChatHandler) postObjectiveIn(w http.ResponseWriter, r *http.Request, 
 	if len(history) > 0 {
 		// A conversation that became work (for example a voice chat) carries what was already said.
 		ctxMap["history"] = history
+	}
+	if len(req.Images) > 0 {
+		ctxMap["images"] = req.Images
 	}
 	for k, v := range extra {
 		ctxMap[k] = v

@@ -3,12 +3,14 @@ package antigravity
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -233,10 +235,16 @@ func deniedNames(d []DeniedAction) string {
 	return strings.Join(names, ", ")
 }
 
+type inputImageData struct {
+	MimeType string `json:"mime_type"`
+	Data     string `json:"data"`
+}
+
 type inputEnvelope struct {
-	ConversationID string          `json:"conversation_id"`
-	Model          string          `json:"model"`
-	JSONSchema     json.RawMessage `json:"json_schema"`
+	ConversationID string           `json:"conversation_id"`
+	Model          string           `json:"model"`
+	JSONSchema     json.RawMessage  `json:"json_schema"`
+	Images         []inputImageData `json:"images"`
 }
 
 // Execute claims a concurrency token, provisions an isolated scratchpad, invokes the CLI, and reaps process groups.
@@ -290,6 +298,21 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 			}
 			if len(env.JSONSchema) > 0 && string(env.JSONSchema) != "null" {
 				jsonSchema = env.JSONSchema
+			}
+			for i, img := range env.Images {
+				if img.Data != "" {
+					rawBytes, decErr := base64.StdEncoding.DecodeString(img.Data)
+					if decErr == nil && len(rawBytes) > 0 {
+						ext := ".png"
+						if strings.Contains(img.MimeType, "jpeg") || strings.Contains(img.MimeType, "jpg") {
+							ext = ".jpg"
+						} else if strings.Contains(img.MimeType, "webp") {
+							ext = ".webp"
+						}
+						imgName := fmt.Sprintf("attached_image_%d%s", i+1, ext)
+						_ = os.WriteFile(filepath.Join(wsDir, imgName), rawBytes, 0o644)
+					}
+				}
 			}
 		}
 	}

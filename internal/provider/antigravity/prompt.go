@@ -66,10 +66,16 @@ type chatTurn struct {
 	Text string `json:"text"`
 }
 
+type ImageData struct {
+	MimeType string `json:"mime_type"`
+	Data     string `json:"data"`
+}
+
 type chatEnvelope struct {
-	Kind    string     `json:"kind"`
-	Prompt  string     `json:"prompt"`
-	History []chatTurn `json:"history"`
+	Kind    string      `json:"kind"`
+	Prompt  string      `json:"prompt"`
+	History []chatTurn  `json:"history"`
+	Images  []ImageData `json:"images,omitempty"`
 	// Role is a team role written for this request (see service.DynamicPlanner).
 	Role struct {
 		Name         string `json:"name"`
@@ -112,6 +118,9 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 	if role := roleLine(env.Role.Name, env.Role.Instructions); role != "" {
 		b.WriteString(role)
 		b.WriteString("\n")
+	}
+	if len(env.Images) > 0 {
+		fmt.Fprintf(&b, "Attached images: %d image(s) provided in workspace as attached_image_*.png.\n", len(env.Images))
 	}
 	if attemptNumber > 1 {
 		b.WriteString(retryPreamble)

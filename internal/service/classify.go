@@ -86,6 +86,8 @@ func deviceRequestReason(t string) string {
 		return "whatsapp-request"
 	case wantsInstagram(t):
 		return "instagram-request"
+	case wantsScreenshot(t):
+		return "screenshot-request"
 	case wantsWeb(t):
 		return "web-request"
 	}

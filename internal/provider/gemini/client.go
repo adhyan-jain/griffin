@@ -30,10 +30,17 @@ var (
 	ErrBlocked = errors.New("gemini: the model declined to answer")
 )
 
+// Image holds base64-encoded image data and its MIME type for multimodal inference.
+type Image struct {
+	MimeType string `json:"mime_type"`
+	Data     string `json:"data"` // base64-encoded data
+}
+
 // Turn is one message of a conversation. Role is "user" or "assistant".
 type Turn struct {
-	Role string
-	Text string
+	Role   string  `json:"role"`
+	Text   string  `json:"text"`
+	Images []Image `json:"images,omitempty"`
 }
 
 // Client calls the Gemini API.
@@ -57,8 +64,13 @@ func (c *Client) Chat(ctx context.Context, system string, turns []Turn) (string,
 	if len(turns) == 0 || turns[len(turns)-1].Role != "user" {
 		return "", errors.New("gemini: the conversation must end with a user message")
 	}
+	type inlineData struct {
+		MimeType string `json:"mimeType"`
+		Data     string `json:"data"`
+	}
 	type part struct {
-		Text string `json:"text"`
+		Text       string      `json:"text,omitempty"`
+		InlineData *inlineData `json:"inlineData,omitempty"`
 	}
 	type content struct {
 		Role  string `json:"role,omitempty"`
@@ -82,7 +94,26 @@ func (c *Client) Chat(ctx context.Context, system string, turns []Turn) (string,
 		if t.Role == "assistant" {
 			role = "model"
 		}
-		body.Contents = append(body.Contents, content{Role: role, Parts: []part{{Text: t.Text}}})
+		var parts []part
+		if t.Text != "" {
+			parts = append(parts, part{Text: t.Text})
+		}
+		for _, img := range t.Images {
+			if strings.TrimSpace(img.Data) != "" {
+				mime := img.MimeType
+				if mime == "" {
+					mime = "image/png"
+				}
+				parts = append(parts, part{InlineData: &inlineData{
+					MimeType: mime,
+					Data:     img.Data,
+				}})
+			}
+		}
+		if len(parts) == 0 {
+			parts = append(parts, part{Text: " "})
+		}
+		body.Contents = append(body.Contents, content{Role: role, Parts: parts})
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
