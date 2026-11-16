@@ -294,11 +294,31 @@ func (s *Service) mediaWindows(ctx context.Context, op MediaOp, player string) (
 	}, nil
 }
 
+var paymentKeywords = []string{
+	"paisa", "gpay", "google pay", "phonepe", "paytm", "bhim", "cred",
+	"bank", "sbi", "hdfc", "icici", "axis", "kotak", "upi", "razorpay",
+	"stripe", "paypal", "wallet", "checkout", "netbanking",
+}
+
+// IsPaymentTarget reports whether an app name, package, or URL represents a payment or banking target.
+func IsPaymentTarget(name string) bool {
+	lower := strings.ToLower(name)
+	for _, kw := range paymentKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 // LaunchApp launches a desktop application headlessly in the background.
 func (s *Service) LaunchApp(ctx context.Context, appName string) (string, error) {
 	name := strings.TrimSpace(appName)
 	if name == "" {
 		return "", fmt.Errorf("app name cannot be empty")
+	}
+	if IsPaymentTarget(name) {
+		return "", fmt.Errorf("launching or automating payment/banking application %q is strictly forbidden", name)
 	}
 
 	switch s.Env.OS {
@@ -374,6 +394,18 @@ func (s *Service) Screenshot(ctx context.Context, target string, customSavePath 
 				}
 			}
 		}
+		// Financial Safety Guard: verify that no payment or banking app is in focus on the connected phone
+		if focusOut, err := exec.CommandContext(ctx, adbBin, "shell", "dumpsys", "window").CombinedOutput(); err == nil {
+			focusStr := string(focusOut)
+			for _, line := range strings.Split(focusStr, "\n") {
+				if strings.Contains(line, "mCurrentFocus") || strings.Contains(line, "mFocusedApp") {
+					if IsPaymentTarget(line) {
+						return nil, fmt.Errorf("payment or banking application is currently in focus on phone; automation and screen capture are strictly blocked for financial security")
+					}
+				}
+			}
+		}
+
 		cmd := exec.CommandContext(ctx, adbBin, "exec-out", "screencap", "-p")
 		outFile, err := os.Create(savePath)
 		if err != nil {

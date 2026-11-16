@@ -288,6 +288,9 @@ func (e *Executor) runDesktop(ctx context.Context, task *domain.Task, da *domain
 	if e.Desktop == nil {
 		return fail(errors.New("desktop operations are not supported on this host"), false)
 	}
+	if desktop.IsPaymentTarget(da.App) {
+		return fail(fmt.Errorf("actions targeting payment or banking applications are strictly blocked for security"), false)
+	}
 	switch da.Op {
 	case domain.DesktopOpMedia:
 		res, err := e.Desktop.Media(ctx, desktop.MediaOp(da.MediaOp), da.Player)
