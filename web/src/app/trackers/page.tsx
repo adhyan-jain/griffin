@@ -1,15 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Banknote,
   Calendar,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Download,
   ExternalLink,
   FileSpreadsheet,
-  Filter,
+  Layers,
+  LayoutGrid,
+  MapPin,
   RefreshCw,
   Search,
   Sparkles,
@@ -25,6 +33,8 @@ import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/com
 import { extractTablesFromMarkdown, exportToExcel, exportToCSV, type ParsedTable } from "@/lib/excel-export";
 import { parseResult, slug } from "@/lib/result-text";
 import { cn } from "@/lib/utils";
+
+export type ViewMode = "auto" | "table" | "cards";
 
 type TrackerCategory = "all" | "internships" | "hackathons" | "opensource" | "hygiene" | "dsa" | "reports";
 
@@ -55,26 +65,519 @@ function isTrackerTask(task: Task): boolean {
   );
 }
 
-function getCategoryForTask(task: Task): TrackerCategory {
-  const t = task.title.toLowerCase();
-  if (t.includes("internship")) return "internships";
-  if (t.includes("hackathon")) return "hackathons";
-  if (t.includes("open-source") || t.includes("oss")) return "opensource";
-  if (t.includes("hygiene")) return "hygiene";
-  if (t.includes("dsa")) return "dsa";
-  if (t.includes("brief") || t.includes("report") || t.includes("scorecard") || t.includes("audit") || t.includes("thread")) return "reports";
-  return "all";
+/** Strictly strip any stray emoji symbols from raw data */
+function cleanEmojis(str: string): string {
+  if (!str) return "";
+  return str.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, "").trim();
+}
+
+/** Extracts a clean label and URL from markdown or plaintext cell */
+function extractLinkFromCell(cell: string): { label: string; url: string } | null {
+  if (!cell) return null;
+  const cleaned = cleanEmojis(cell);
+  const urlMatch = cleaned.match(/(https?:\/\/[^\s)]+)/i);
+  if (!urlMatch) {
+    if (/^www\./i.test(cleaned.trim())) {
+      const url = `https://${cleaned.trim()}`;
+      return { label: cleaned.trim(), url };
+    }
+    return null;
+  }
+  const url = urlMatch[1];
+  let label = cleaned.replace(url, "").trim();
+  label = label.replace(/^[:\-\s]+|[:\-\s]+$/g, "");
+  if (!label || label.toLowerCase() === url.toLowerCase()) {
+    try {
+      label = new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      label = "Link";
+    }
+  }
+  return { label, url };
+}
+
+/** Parses arbitrary table rows into structured card entities */
+function parseRowToEntity(headers: string[], row: string[]) {
+  let title = "";
+  let subtitle = "";
+  let tier: { label: string; variant: "a" | "b" | "c" | "neutral" } | null = null;
+  let stipend: string | null = null;
+  let deadline: { text: string; urgent: boolean } | null = null;
+  let location: string | null = null;
+  let duration: string | null = null;
+  let ppo: string | null = null;
+  let eligible: string | null = null;
+  let posted: string | null = null;
+  let applyLink: { label: string; url: string } | null = null;
+  const otherFields: { label: string; value: string; link: { label: string; url: string } | null }[] = [];
+
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i].toLowerCase();
+    const rawVal = row[i] || "";
+    const val = cleanEmojis(rawVal);
+    if (!val) continue;
+
+    if (h.includes("tier")) {
+      const vUpper = val.toUpperCase();
+      const variant = vUpper.includes("TIER A")
+        ? "a"
+        : vUpper.includes("TIER B")
+        ? "b"
+        : vUpper.includes("TIER C")
+        ? "c"
+        : "neutral";
+      tier = { label: val, variant };
+    } else if (h.includes("company") || (h.includes("name") && !title)) {
+      title = val;
+    } else if (h.includes("role") || h.includes("title") || h.includes("theme")) {
+      subtitle = val;
+    } else if (h.includes("stipend") || h.includes("prize") || h.includes("compensation") || h.includes("bounty")) {
+      stipend = val;
+    } else if (h.includes("deadline") || h.includes("due")) {
+      const urgent = rawVal.includes("\u26A0") || /under 72h|< 72h|urgent/i.test(rawVal);
+      deadline = { text: val, urgent };
+    } else if (h.includes("location") || h.includes("mode")) {
+      location = val;
+    } else if (h.includes("duration")) {
+      duration = val;
+    } else if (h === "ppo" || h.includes("ppo")) {
+      ppo = val;
+    } else if (h.includes("eligible") || h.includes("batch")) {
+      eligible = val;
+    } else if (h.includes("posted")) {
+      posted = val;
+    } else if (h.includes("link") || h.includes("apply") || h.includes("url")) {
+      applyLink = extractLinkFromCell(rawVal);
+    } else {
+      otherFields.push({
+        label: headers[i],
+        value: val,
+        link: extractLinkFromCell(rawVal),
+      });
+    }
+  }
+
+  if (!title && headers.length > 0) {
+    title = cleanEmojis(row[0]) || "Untitled Listing";
+  }
+
+  return {
+    title,
+    subtitle,
+    tier,
+    stipend,
+    deadline,
+    location,
+    duration,
+    ppo,
+    eligible,
+    posted,
+    applyLink,
+    otherFields,
+  };
+}
+
+/** Formatted table cell renderer for desktop table view */
+function TableCellContent({ header, rawCell }: { header: string; rawCell: string }) {
+  const h = header.toLowerCase();
+  const cell = cleanEmojis(rawCell);
+  if (!cell) return <span className="text-muted-foreground/30">-</span>;
+
+  // Tier column
+  if (h.includes("tier")) {
+    const upper = cell.toUpperCase();
+    if (upper.includes("TIER A")) {
+      return (
+        <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-semibold text-emerald-700 dark:text-emerald-400">
+          Tier A
+        </span>
+      );
+    }
+    if (upper.includes("TIER B")) {
+      return (
+        <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/15 px-2.5 py-0.5 font-semibold text-blue-700 dark:text-blue-400">
+          Tier B
+        </span>
+      );
+    }
+    if (upper.includes("TIER C")) {
+      return (
+        <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 font-semibold text-amber-700 dark:text-amber-400">
+          Tier C
+        </span>
+      );
+    }
+    return <span className="font-medium text-foreground">{cell}</span>;
+  }
+
+  // Stipend / Prize column
+  if (h.includes("stipend") || h.includes("prize") || h.includes("compensation")) {
+    return <span className="font-mono font-semibold text-foreground tracking-tight">{cell}</span>;
+  }
+
+  // Deadline column
+  if (h.includes("deadline") || h.includes("due")) {
+    const isUrgent = rawCell.includes("\u26A0") || /under 72h|< 72h|urgent/i.test(rawCell);
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 font-mono text-xs font-medium",
+          isUrgent && "rounded-md border border-destructive/30 bg-destructive/15 px-2 py-0.5 font-semibold text-destructive",
+        )}
+      >
+        <Clock className="size-3 text-muted-foreground" />
+        <span>{cell}</span>
+        {isUrgent && <span className="ml-0.5 rounded bg-destructive/20 px-1 py-0.2 text-[9px] uppercase tracking-wider">Urgent</span>}
+      </span>
+    );
+  }
+
+  // PPO / Eligibility column
+  if (h === "ppo" || h.includes("ppo") || h.includes("eligible")) {
+    const isYes = /^yes/i.test(cell.trim());
+    const isNo = /^no/i.test(cell.trim());
+    if (isYes) {
+      return (
+        <span className="inline-flex items-center rounded-md bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-400 text-[11px]">
+          Yes
+        </span>
+      );
+    }
+    if (isNo) {
+      return (
+        <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-medium text-muted-foreground text-[11px]">
+          No
+        </span>
+      );
+    }
+    return <span className="text-foreground">{cell}</span>;
+  }
+
+  // Link / Application column
+  const link = extractLinkFromCell(rawCell);
+  if (link) {
+    return (
+      <a
+        href={link.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+      >
+        <span>{link.label || "Open"}</span>
+        <ExternalLink className="size-3" />
+      </a>
+    );
+  }
+
+  return <span className="text-foreground leading-relaxed">{cell}</span>;
+}
+
+/** Individual record card for mobile and card view modes */
+function RecordCard({ entity }: { entity: ReturnType<typeof parseRowToEntity> }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  return (
+    <div className="flex flex-col justify-between rounded-xl border bg-card p-4 shadow-xs transition-all hover:border-primary/40 hover:shadow-sm">
+      <div className="space-y-3">
+        {/* Top Header: Title & Badges */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h4 className="text-sm font-semibold text-foreground tracking-tight truncate">
+              {entity.title}
+            </h4>
+            {entity.subtitle && (
+              <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                {entity.subtitle}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            {entity.tier && (
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[11px] font-semibold border",
+                  entity.tier.variant === "a" && "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+                  entity.tier.variant === "b" && "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
+                  entity.tier.variant === "c" && "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+                  entity.tier.variant === "neutral" && "bg-muted text-muted-foreground border-border",
+                )}
+              >
+                {entity.tier.label}
+              </span>
+            )}
+            {entity.ppo && /^yes/i.test(entity.ppo) && (
+              <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                PPO
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Highlight Pills / Metrics */}
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          {entity.stipend && (
+            <div className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 font-mono font-semibold text-primary">
+              <Banknote className="size-3.5" />
+              <span>{entity.stipend}</span>
+            </div>
+          )}
+
+          {entity.deadline && (
+            <div
+              className={cn(
+                "inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px]",
+                entity.deadline.urgent
+                  ? "border border-destructive/30 bg-destructive/15 font-semibold text-destructive"
+                  : "bg-muted/50 text-muted-foreground",
+              )}
+            >
+              <Clock className="size-3" />
+              <span>{entity.deadline.text}</span>
+              {entity.deadline.urgent && (
+                <span className="font-sans font-semibold text-[9px] uppercase tracking-wider">Urgent</span>
+              )}
+            </div>
+          )}
+
+          {entity.location && (
+            <div className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1 text-muted-foreground">
+              <MapPin className="size-3" />
+              <span className="truncate max-w-[180px]">{entity.location}</span>
+            </div>
+          )}
+
+          {entity.duration && (
+            <div className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1 text-muted-foreground">
+              <Calendar className="size-3" />
+              <span className="truncate max-w-[180px]">{entity.duration}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Secondary Details Collapsible */}
+        {entity.otherFields.length > 0 && (
+          <div className="border-t pt-2 space-y-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((v) => !v)}
+              className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+            >
+              {detailsOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+              <span>{detailsOpen ? "Hide Details" : "More Details"}</span>
+            </button>
+
+            {detailsOpen && (
+              <div className="space-y-1 pt-1 rounded-lg bg-muted/20 p-2 text-muted-foreground text-[11px] leading-relaxed">
+                {entity.posted && (
+                  <div>
+                    <span className="font-semibold text-foreground">Posted: </span>
+                    <span>{entity.posted}</span>
+                  </div>
+                )}
+                {entity.eligible && (
+                  <div>
+                    <span className="font-semibold text-foreground">Eligibility: </span>
+                    <span>{entity.eligible}</span>
+                  </div>
+                )}
+                {entity.otherFields.map((f, idx) => (
+                  <div key={idx} className="break-words">
+                    <span className="font-semibold text-foreground">{f.label}: </span>
+                    {f.link ? (
+                      <a
+                        href={f.link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-0.5 font-medium"
+                      >
+                        {f.link.label}
+                        <ExternalLink className="size-2.5" />
+                      </a>
+                    ) : (
+                      <span>{f.value}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Action Button */}
+      {entity.applyLink && (
+        <div className="pt-3 mt-1">
+          <Button
+            asChild
+            size="sm"
+            className="w-full h-8.5 rounded-xl gap-1.5 text-xs font-medium shadow-xs"
+          >
+            <a href={entity.applyLink.url} target="_blank" rel="noopener noreferrer">
+              <span>Open Listing</span>
+              <ExternalLink className="size-3" />
+            </a>
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Desktop Table Component with Interactive Column Sorting */
+function TableView({
+  headers,
+  rows,
+  sortCol,
+  sortAsc,
+  onSort,
+  expanded,
+  onToggleExpanded,
+}: {
+  headers: string[];
+  rows: string[][];
+  sortCol: number | null;
+  sortAsc: boolean;
+  onSort: (colIdx: number) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+}) {
+  const displayRows = expanded ? rows : rows.slice(0, 8);
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted/60 border-b font-medium text-muted-foreground select-none">
+            <tr>
+              {headers.map((h, i) => {
+                const isSorted = sortCol === i;
+                return (
+                  <th
+                    key={i}
+                    onClick={() => onSort(i)}
+                    className="px-3.5 py-2.5 font-semibold whitespace-nowrap cursor-pointer hover:bg-muted/80 hover:text-foreground transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>{h}</span>
+                      {isSorted ? (
+                        sortAsc ? (
+                          <ArrowUp className="size-3 text-primary" />
+                        ) : (
+                          <ArrowDown className="size-3 text-primary" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="size-3 text-muted-foreground/40" />
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60">
+            {displayRows.length === 0 ? (
+              <tr>
+                <td colSpan={headers.length} className="px-4 py-8 text-center text-muted-foreground">
+                  No records match your filter.
+                </td>
+              </tr>
+            ) : (
+              displayRows.map((row, rIdx) => (
+                <tr key={rIdx} className="hover:bg-muted/30 transition-colors">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-3.5 py-2.5 align-top leading-relaxed max-w-xs break-words">
+                      <TableCellContent header={headers[cIdx] || ""} rawCell={cell} />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {rows.length > 8 && (
+        <div className="flex justify-center pt-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleExpanded}
+            className="h-8 text-xs font-medium text-primary hover:bg-primary/10"
+          >
+            {expanded ? `Show first 8 rows (of ${rows.length})` : `Show all ${rows.length} rows`}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Mobile Cards View Component */
+function CardsView({
+  headers,
+  rows,
+  expanded,
+  onToggleExpanded,
+}: {
+  headers: string[];
+  rows: string[][];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+}) {
+  const displayRows = expanded ? rows : rows.slice(0, 6);
+
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed py-8 text-center text-xs text-muted-foreground">
+        No records match your filter.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-2">
+        {displayRows.map((row, rIdx) => {
+          const entity = parseRowToEntity(headers, row);
+          return <RecordCard key={rIdx} entity={entity} />;
+        })}
+      </div>
+
+      {rows.length > 6 && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleExpanded}
+            className="h-8 text-xs font-medium text-primary hover:bg-primary/10"
+          >
+            {expanded ? `Show first 6 cards (of ${rows.length})` : `Show all ${rows.length} cards`}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface TrackerCardProps {
   task: Task;
   parsedTables: ParsedTable[];
+  defaultViewMode?: ViewMode;
 }
 
-function TrackerCard({ task, parsedTables }: TrackerCardProps) {
+function TrackerCard({ task, parsedTables, defaultViewMode = "auto" }: TrackerCardProps) {
   const { text } = parseResult(task.output_payload);
   const [tableFilter, setTableFilter] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortAsc, setSortAsc] = useState<boolean>(true);
+
+  // Sync with global view mode changes
+  useEffect(() => {
+    setViewMode(defaultViewMode);
+  }, [defaultViewMode]);
 
   const formattedDate = task.completed_at
     ? new Date(task.completed_at).toLocaleString("en-IN", {
@@ -142,17 +645,51 @@ function TrackerCard({ task, parsedTables }: TrackerCardProps) {
   };
 
   const primaryTable = parsedTables[0];
-  const filteredRows = useMemo(() => {
+
+  const handleSort = (colIdx: number) => {
+    if (sortCol === colIdx) {
+      setSortAsc((v) => !v);
+    } else {
+      setSortCol(colIdx);
+      setSortAsc(true);
+    }
+  };
+
+  const processedRows = useMemo(() => {
     if (!primaryTable) return [];
     const q = tableFilter.trim().toLowerCase();
-    if (!q) return primaryTable.rows;
-    return primaryTable.rows.filter((row) => row.some((cell) => cell.toLowerCase().includes(q)));
-  }, [primaryTable, tableFilter]);
+    let rows = primaryTable.rows;
+    if (q) {
+      rows = rows.filter((row) => row.some((cell) => cell.toLowerCase().includes(q)));
+    }
+    if (sortCol === null || sortCol >= primaryTable.headers.length) {
+      return rows;
+    }
+    return [...rows].sort((a, b) => {
+      const valA = cleanEmojis(a[sortCol] || "");
+      const valB = cleanEmojis(b[sortCol] || "");
 
-  const displayRows = expanded ? filteredRows : filteredRows.slice(0, 8);
+      // Numeric / Currency
+      const numA = parseFloat(valA.replace(/[^0-9.-]/g, ""));
+      const numB = parseFloat(valB.replace(/[^0-9.-]/g, ""));
+      if (!isNaN(numA) && !isNaN(numB) && /[₹$\d]/.test(valA) && /[₹$\d]/.test(valB)) {
+        return sortAsc ? numA - numB : numB - numA;
+      }
+
+      // Date comparison
+      const dateA = Date.parse(valA.slice(0, 10));
+      const dateB = Date.parse(valB.slice(0, 10));
+      if (!isNaN(dateA) && !isNaN(dateB) && valA.length >= 10 && valB.length >= 10) {
+        return sortAsc ? dateA - dateB : dateB - dateA;
+      }
+
+      // String locale compare
+      return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    });
+  }, [primaryTable, tableFilter, sortCol, sortAsc]);
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card shadow-sm transition-colors hover:border-primary/40">
+    <div className="overflow-hidden rounded-2xl border bg-card shadow-xs transition-colors hover:border-primary/40">
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 p-4 sm:px-6">
         <div className="space-y-1">
@@ -181,24 +718,64 @@ function TrackerCard({ task, parsedTables }: TrackerCardProps) {
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Action Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* View Mode Toggle */}
+          <div className="flex items-center rounded-xl border bg-muted/30 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode("auto")}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors",
+                viewMode === "auto" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Responsive: Table on desktop, Cards on phone"
+            >
+              <Layers className="size-3" />
+              <span className="hidden sm:inline">Auto</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors",
+                viewMode === "table" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Force Table view"
+            >
+              <Table2 className="size-3" />
+              <span>Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("cards")}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors",
+                viewMode === "cards" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Force Cards view"
+            >
+              <LayoutGrid className="size-3" />
+              <span>Cards</span>
+            </button>
+          </div>
+
           <Button
             size="sm"
             onClick={exportSingleExcel}
-            className="h-9 gap-1.5 rounded-xl font-medium shadow-sm"
+            className="h-8.5 gap-1.5 rounded-xl font-medium shadow-xs"
           >
-            <FileSpreadsheet className="size-4" />
-            <span>Export Excel (.xlsx)</span>
+            <FileSpreadsheet className="size-3.5" />
+            <span>Excel</span>
           </Button>
 
           <Button
             variant="outline"
             size="sm"
             onClick={exportSingleCSV}
-            className="h-9 gap-1.5 rounded-xl text-xs font-medium"
+            className="h-8.5 gap-1.5 rounded-xl text-xs font-medium"
           >
-            <Download className="size-3.5" />
+            <Download className="size-3" />
             <span>CSV</span>
           </Button>
 
@@ -206,11 +783,11 @@ function TrackerCard({ task, parsedTables }: TrackerCardProps) {
             variant="ghost"
             size="sm"
             asChild
-            className="h-9 gap-1.5 rounded-xl text-xs font-medium"
+            className="h-8.5 gap-1.5 rounded-xl text-xs font-medium"
           >
             <Link href={`/tasks/${task.id}`}>
               <span>Task</span>
-              <ExternalLink className="size-3.5" />
+              <ExternalLink className="size-3" />
             </Link>
           </Button>
         </div>
@@ -243,77 +820,47 @@ function TrackerCard({ task, parsedTables }: TrackerCardProps) {
               )}
             </div>
 
-            {/* Structured Data Table */}
-            <div className="overflow-x-auto rounded-xl border bg-card">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-muted/60 border-b font-medium text-muted-foreground">
-                  <tr>
-                    {primaryTable.headers.map((h, i) => (
-                      <th key={i} className="px-3.5 py-2.5 font-semibold whitespace-nowrap">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {displayRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={primaryTable.headers.length} className="px-4 py-6 text-center text-muted-foreground">
-                        No records match your filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    displayRows.map((row, rIdx) => (
-                      <tr key={rIdx} className="hover:bg-muted/30 transition-colors">
-                        {row.map((cell, cIdx) => {
-                          const isUrl = /^(https?:\/\/|www\.)/i.test(cell.trim());
-                          const urlMatch = cell.match(/(https?:\/\/[^\s]+)/);
-                          return (
-                            <td key={cIdx} className="px-3.5 py-2.5 align-top leading-relaxed max-w-xs break-words">
-                              {urlMatch ? (
-                                <a
-                                  href={urlMatch[1]}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline font-medium inline-flex items-center gap-1"
-                                >
-                                  {cell.replace(urlMatch[1], "").trim() || "Link"}
-                                  <ExternalLink className="size-3" />
-                                </a>
-                              ) : isUrl ? (
-                                <a
-                                  href={cell.startsWith("http") ? cell : `https://${cell}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline font-medium inline-flex items-center gap-1"
-                                >
-                                  Open
-                                  <ExternalLink className="size-3" />
-                                </a>
-                              ) : (
-                                cell || <span className="text-muted-foreground/40">-</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {filteredRows.length > 8 && (
-              <div className="flex justify-center pt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setExpanded((v) => !v)}
-                  className="h-8 text-xs font-medium text-primary hover:bg-primary/10"
-                >
-                  {expanded ? `Show first 8 rows (of ${filteredRows.length})` : `Show all ${filteredRows.length} rows`}
-                </Button>
-              </div>
+            {/* Responsive Render: Table vs Cards */}
+            {viewMode === "table" ? (
+              <TableView
+                headers={primaryTable.headers}
+                rows={processedRows}
+                sortCol={sortCol}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+                expanded={expanded}
+                onToggleExpanded={() => setExpanded((v) => !v)}
+              />
+            ) : viewMode === "cards" ? (
+              <CardsView
+                headers={primaryTable.headers}
+                rows={processedRows}
+                expanded={expanded}
+                onToggleExpanded={() => setExpanded((v) => !v)}
+              />
+            ) : (
+              <>
+                {/* Auto mode: Table on md+, Cards on mobile */}
+                <div className="hidden md:block">
+                  <TableView
+                    headers={primaryTable.headers}
+                    rows={processedRows}
+                    sortCol={sortCol}
+                    sortAsc={sortAsc}
+                    onSort={handleSort}
+                    expanded={expanded}
+                    onToggleExpanded={() => setExpanded((v) => !v)}
+                  />
+                </div>
+                <div className="block md:hidden">
+                  <CardsView
+                    headers={primaryTable.headers}
+                    rows={processedRows}
+                    expanded={expanded}
+                    onToggleExpanded={() => setExpanded((v) => !v)}
+                  />
+                </div>
+              </>
             )}
           </div>
         ) : text ? (
@@ -335,6 +882,7 @@ export default function TrackersPage() {
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<TrackerCategory>("all");
   const [query, setQuery] = useState("");
+  const [globalViewMode, setGlobalViewMode] = useState<ViewMode>("auto");
   const [refreshing, setRefreshing] = useState(false);
 
   const { refresh } = usePolling(
@@ -390,7 +938,6 @@ export default function TrackersPage() {
       const sheets: { name: string; headers: string[]; rows: (string | number)[][] }[] = [];
       const seenTitles = new Set<string>();
 
-      // Pick latest completed task from each tracker category
       trackerTasks
         .filter((t) => t.status === "COMPLETED")
         .forEach((task) => {
@@ -428,7 +975,7 @@ export default function TrackersPage() {
     <PageContainer>
       <PageHeader
         title="Trackers & Spreadsheets"
-        description="Unified hub for all autonomous trackers. View live tables, filter records, and export results directly to Excel sheets."
+        description="Unified hub for all autonomous trackers. View tables on desktop or responsive cards on mobile, filter records, and export results directly to Excel."
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -459,38 +1006,83 @@ export default function TrackersPage() {
       />
 
       <div className="space-y-6">
-        {/* Category Filter Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b pb-3">
-          {CATEGORIES.map((cat) => {
-            const count =
-              cat.id === "all"
-                ? trackerTasks.length
-                : trackerTasks.filter((t) => cat.pattern.test(t.title)).length;
-            const active = category === cat.id;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setCategory(cat.id)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors",
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <span>{cat.label}</span>
-                <span
+        {/* Category Filter Pills & Global View Mode Selector */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {CATEGORIES.map((cat) => {
+              const count =
+                cat.id === "all"
+                  ? trackerTasks.length
+                  : trackerTasks.filter((t) => cat.pattern.test(t.title)).length;
+              const active = category === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategory(cat.id)}
                   className={cn(
-                    "rounded-full px-1.5 py-0.2 font-mono text-[10px]",
-                    active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted-foreground/15 text-muted-foreground",
+                    "flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors",
+                    active
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+                  <span>{cat.label}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.2 font-mono text-[10px]",
+                      active
+                        ? "bg-primary-foreground/20 text-primary-foreground"
+                        : "bg-muted-foreground/15 text-muted-foreground",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Global View Mode Switcher */}
+          <div className="flex items-center rounded-xl border bg-muted/30 p-0.5 text-xs">
+            <span className="px-2 text-muted-foreground font-medium text-[11px] hidden sm:inline">View:</span>
+            <button
+              type="button"
+              onClick={() => setGlobalViewMode("auto")}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                globalViewMode === "auto" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Responsive: Table on desktop, Cards on phone"
+            >
+              <Layers className="size-3.5" />
+              <span>Responsive</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGlobalViewMode("table")}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                globalViewMode === "table" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Table view on all devices"
+            >
+              <Table2 className="size-3.5" />
+              <span>Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGlobalViewMode("cards")}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                globalViewMode === "cards" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Cards view on all devices"
+            >
+              <LayoutGrid className="size-3.5" />
+              <span>Cards</span>
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -532,6 +1124,7 @@ export default function TrackersPage() {
                 key={task.id}
                 task={task}
                 parsedTables={taskTables.get(task.id) || []}
+                defaultViewMode={globalViewMode}
               />
             ))}
           </div>
