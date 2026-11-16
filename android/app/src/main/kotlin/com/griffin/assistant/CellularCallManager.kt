@@ -519,6 +519,7 @@ class CellularCallManager(
                 val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "Outcomes and replies from automated phone calls"
                     enableVibration(true)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 }
                 nm.createNotificationChannel(channel)
             }
@@ -538,12 +539,25 @@ class CellularCallManager(
                 append("Outcome: $outcome")
             }
 
+            // Wake up display if locked/asleep
+            try {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                @Suppress("DEPRECATION")
+                val wakeLock = pm.newWakeLock(
+                    PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                    "griffin:call_outcome_alert"
+                )
+                wakeLock.acquire(4000L)
+            } catch (_: Exception) {}
+
             val notif = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_griffin)
                 .setContentTitle(title)
                 .setContentText(summary)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_EVENT)
                 .setAutoCancel(true)
                 .build()
 

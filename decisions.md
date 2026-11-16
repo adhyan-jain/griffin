@@ -1068,5 +1068,20 @@ This document is the canonical ledger of all architectural, product, engineering
      - **In-Call Voice Routing (API 31+)**: Switched from deprecated `isSpeakerphoneOn = true` to `AudioManager.setCommunicationDevice(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)`. Added `Speaker.setInCallMode(true)` which dynamically assigns `AudioAttributes.USAGE_VOICE_COMMUNICATION` so TTS audio routes directly into the cellular communication stream.
 - **Why**: Gives the owner complete control over who speaks and what channel is used (cellular vs WhatsApp), enables multitasking without screen takeover, eliminates spurious "phone is locked" failures when the screen is active, and guarantees synthesized speech is delivered into cellular calls without premature idle termination.
 
-
-
+#### ADR-130: Deployed Operational Tasks, Lockscreen Notification Wakeup, and PIN Screenlock Automation
+- **Status**: IMPLEMENTED (`android/app/src/main/AndroidManifest.xml`, `android/app/src/main/kotlin/com/griffin/assistant/AssistantService.kt`, `android/app/src/main/kotlin/com/griffin/assistant/CellularCallManager.kt`, `android/app/src/main/kotlin/com/griffin/assistant/PhoneRunner.kt`, `internal/hands/whatsapp/android.go`, `seed_operational_pipelines.sql`).
+- **Decision**:
+  1. **Seeded Operational Tasks & Schedules in Production Database**:
+     - Inserted the 14 operational task records directly into `public.tasks` with proper priorities and goals (Internship Tracker, Application + Resume Tailoring, Alumni LinkedIn Outreach, Startup Cold Email 4A, Eval Service Outreach 4B, Inbox Monitor, Hackathon Tracker, Open-Source Watch, DSA Coach with LeetCode `AdhyanJain`, Morning Brief, Weekly Post Draft, Thread Alerts, Repo Hygiene, Sunday Report).
+     - Defined dependency between Application Tailoring and Internship Tracker in `public.task_dependencies`.
+     - Seeded 13 recurring rows in `public.schedules` with accurate cron expressions and `Asia/Kolkata` timezones.
+  2. **Screen-Off Wakeup and Lockscreen Notification Visibility**:
+     - Configured notification channels (`griffin_task_updates`, `griffin_cellular_calls`) with `lockscreenVisibility = Notification.VISIBILITY_PUBLIC`.
+     - Set notification builders with `setVisibility(NotificationCompat.VISIBILITY_PUBLIC)`, `setPriority(NotificationCompat.PRIORITY_MAX)`, and `setCategory(NotificationCompat.CATEGORY_EVENT)`.
+     - Acquired temporary wake locks (`PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE`) upon task completion and call outcome notifications to ensure the phone screen wakes up and turns on when sleeping.
+     - Declared `android.permission.WAKE_LOCK` and `android.permission.TURN_SCREEN_ON` in `AndroidManifest.xml`.
+     - Re-routed task notification click intents to the web PWA (`https://griffin-pwa.vercel.app/tasks/${task.id}`).
+  3. **Screenlock Bypass & Background Execution Automation**:
+     - Added automatic screen wake and `AccessibilityService.GLOBAL_ACTION_DISMISS_KEYGUARD` in `PhoneRunner.tick()` when tasks are claimed.
+     - Enhanced ADB lockscreen unlocking with swipe up gesture and animation pauses (250-300ms) to ensure the PIN bouncer on Android 14 / OxygenOS reliably receives `GRIFFIN_PHONE_PIN`.
+- **Why**: Ensures owner receives immediate high-priority alerts on phone even when screen is dark/locked, allows seamless navigation into task reports via phone web UI, and guarantees scheduled background operations run without human intervention.

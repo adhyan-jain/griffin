@@ -70,6 +70,7 @@ class AssistantService : Service() {
             description = "Notifications for completed tasks, daily/weekly briefings, and DSA updates"
             enableVibration(true)
             setShowBadge(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         nm.createNotificationChannel(updateChannel)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -241,11 +242,24 @@ class AssistantService : Service() {
                         else -> "✅ Task Completed: ${task.title.take(50)}"
                     }
                     val body = task.response.ifEmpty { task.goal }.take(250)
-                    val clickUri = Uri.parse("https://fq322jvjt4.execute-api.ap-south-1.amazonaws.com/tasks/${task.id}")
+                    val clickUri = Uri.parse("https://griffin-pwa.vercel.app/tasks/${task.id}")
                     val viewIntent = Intent(Intent.ACTION_VIEW, clickUri).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     }
                     val pi = PendingIntent.getActivity(this, task.id.hashCode(), viewIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+                    // Wake up screen if locked/asleep so notification is immediately noticed
+                    try {
+                        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                        @Suppress("DEPRECATION")
+                        val wakeLock = pm.newWakeLock(
+                            PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                            "griffin:task_completion_alert"
+                        )
+                        wakeLock.acquire(4000L)
+                    } catch (e: Exception) {
+                        app.dlog("wake lock acquire failed: ${e.message}")
+                    }
 
                     val notif = NotificationCompat.Builder(this, "griffin_task_updates")
                         .setSmallIcon(R.drawable.ic_stat_griffin)
@@ -254,7 +268,9 @@ class AssistantService : Service() {
                         .setStyle(NotificationCompat.BigTextStyle().bigText(task.response.ifEmpty { task.goal }))
                         .setContentIntent(pi)
                         .setAutoCancel(true)
-                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setPriority(NotificationCompat.PRIORITY_MAX)
+                        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                        .setCategory(NotificationCompat.CATEGORY_EVENT)
                         .setDefaults(Notification.DEFAULT_ALL)
                         .build()
 

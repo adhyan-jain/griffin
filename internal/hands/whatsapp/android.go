@@ -262,8 +262,14 @@ func (a *Android) ready(ctx context.Context) error {
 		_, _ = a.cfg.ADB.Run(ctx, "shell", "wm", "dismiss-keyguard")
 		_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "keyevent", "82") // KEYCODE_MENU unlocks non-secure swipe lockscreens
 		if pin := os.Getenv("GRIFFIN_PHONE_PIN"); pin != "" {
+			time.Sleep(250 * time.Millisecond)
+			// Swipe up to ensure PIN keypad is active on Android 14 / OxygenOS
+			_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "swipe", "540", "1800", "540", "600", "200")
+			time.Sleep(250 * time.Millisecond)
 			_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "text", pin)
+			time.Sleep(100 * time.Millisecond)
 			_, _ = a.cfg.ADB.Run(ctx, "shell", "input", "keyevent", "66") // KEYCODE_ENTER
+			time.Sleep(300 * time.Millisecond)
 		}
 		// Re-evaluate lockscreen state
 		s2, err2 := a.dump(ctx)

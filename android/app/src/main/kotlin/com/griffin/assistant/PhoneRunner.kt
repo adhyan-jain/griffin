@@ -32,6 +32,20 @@ class PhoneRunner(
             val task = api.claimPhoneTask() ?: return
             log("phone job started: ${task.id}")
             try {
+                // Wake display and request keyguard dismissal so UI accessibility and dialer are available
+                try {
+                    val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                    if (!pm.isInteractive) {
+                        @Suppress("DEPRECATION")
+                        val wakeLock = pm.newWakeLock(
+                            android.os.PowerManager.FULL_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or android.os.PowerManager.ON_AFTER_RELEASE,
+                            "griffin:phone_task_wake"
+                        )
+                        wakeLock.acquire(8000L)
+                    }
+                    GriffinAccess.instance?.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_DISMISS_KEYGUARD)
+                } catch (_: Exception) {}
+
                 if (task.action in listOf("automated_call", "call", "direct_call", "whatsapp_call")) {
                     handleCall(task)
                 } else {
