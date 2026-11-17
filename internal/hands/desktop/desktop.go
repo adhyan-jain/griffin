@@ -62,7 +62,7 @@ func detectEnvironment() Environment {
 		if env.Distro == "" {
 			env.Distro = "Linux"
 		}
-		for _, tool := range []string{"playerctl", "dbus-send", "gtk-launch", "xdg-open", "hyprctl", "swaymsg", "grim", "import", "scrot", "adb"} {
+		for _, tool := range []string{"playerctl", "dbus-send", "gtk-launch", "xdg-open", "hyprctl", "swaymsg", "grim", "import", "scrot", "adb", "notify-send"} {
 			if _, err := exec.LookPath(tool); err == nil {
 				env.Tools = append(env.Tools, tool)
 			}
@@ -498,4 +498,33 @@ func (s *Service) Screenshot(ctx context.Context, target string, customSavePath 
 		Size:     fi.Size(),
 		Data:     base64.StdEncoding.EncodeToString(dataBytes),
 	}, nil
+}
+
+// Notify sends a native desktop alert banner using the host's notification daemon (e.g. notify-send on Linux).
+func Notify(ctx context.Context, title, body, urgency string) error {
+	if urgency == "" {
+		urgency = "normal"
+	}
+	switch runtime.GOOS {
+	case "linux":
+		if p, err := exec.LookPath("notify-send"); err == nil {
+			cmd := exec.CommandContext(ctx, p, "-u", urgency, "-a", "Griffin", title, body)
+			return cmd.Run()
+		}
+	case "darwin":
+		if p, err := exec.LookPath("osascript"); err == nil {
+			script := fmt.Sprintf(`display notification %q with title %q`, body, title)
+			return exec.CommandContext(ctx, p, "-e", script).Run()
+		}
+	case "windows":
+		ps := fmt.Sprintf(`[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [System.Windows.Forms.MessageBox]::Show('%s', '%s')`, body, title)
+		cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", ps)
+		return cmd.Run()
+	}
+	return nil
+}
+
+// Notify sends a desktop notification via the service instance.
+func (s *Service) Notify(ctx context.Context, title, body, urgency string) error {
+	return Notify(ctx, title, body, urgency)
 }

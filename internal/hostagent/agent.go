@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/hands/desktop"
 	"github.com/griffin/core/internal/policy"
 	"github.com/griffin/core/internal/worker"
 )
@@ -317,6 +318,11 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 		// Ask the owner. The step pauses in the cloud; when they answer it is requeued and claimed again,
 		// and the claim then lists this action as approved. If asking fails the step is failed, not run:
 		// an action nobody approved must never go ahead.
+		summary := out.NeedsApproval.Summary
+		if summary == "" {
+			summary = "Action requires human approval"
+		}
+		_ = desktop.Notify(context.Background(), "Griffin: Approval Required", fmt.Sprintf("%s\nTask: %s", summary, task.Title), "critical")
 		if err := a.cfg.Client.RequestApproval(report, id, out.NeedsApproval); err != nil {
 			a.logger.Error("could not request approval; failing the step instead of acting", "task_id", id, "error", err)
 			if ferr := a.cfg.Client.Fail(report, id, "could not ask for your approval: "+err.Error(), false); ferr != nil {
