@@ -49,15 +49,23 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 	}
 
 	planKey := managerID
+	// Explicit platform requests (naming phone calls, WhatsApp, or Instagram) route to personal_ops
+	// when no explicit manager context was specified, or if the manager is already personal_ops.
+	// Implicit messaging (without explicit platform name) must never override a specialized domain
+	// (such as career, engineering, finance, learning).
+	isSpecializedDomain := !explicitManager && managerID != "personal_ops" && managerID != "research"
+	isExplicitWhatsApp := whatsAppWord.MatchString(text) || whatsAppLead.MatchString(text)
+	isExplicitInstagram := instaWord.MatchString(text)
+
 	if wantsCall(req.RequestText) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "call"
-	} else if wantsWhatsApp(text) && (!explicitManager || managerID == "personal_ops") {
+	} else if wantsWhatsApp(text) && (!isSpecializedDomain || isExplicitWhatsApp) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "whatsapp"
-	} else if wantsInstagram(text) && (!explicitManager || managerID == "personal_ops") {
+	} else if wantsInstagram(text) && (!isSpecializedDomain || isExplicitInstagram) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "instagram"
-	} else if wantsPhone(req.RequestText) && (!explicitManager || managerID == "personal_ops") {
+	} else if wantsPhone(req.RequestText) && !isSpecializedDomain && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "phone"
-	} else if wantsBrowser(req.RequestText) && (!explicitManager || managerID == "personal_ops") {
+	} else if wantsBrowser(req.RequestText) && !isSpecializedDomain && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "browser"
 	} else if wantsScreenshot(text) && (!explicitManager || managerID == "personal_ops") {
 		managerID, planKey = "personal_ops", "screenshot"

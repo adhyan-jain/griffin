@@ -122,3 +122,51 @@ func TestRuleBasedPlanner_CareerInternship(t *testing.T) {
 		t.Errorf("expected RiskLevel %q, got %q", domain.ApprovalRiskHigh, app.RiskLevel)
 	}
 }
+
+func TestRuleBasedPlanner_CareerApplyDoesNotRouteToWhatsApp(t *testing.T) {
+	reg := manager.NewDefaultRegistry()
+	p := NewRuleBasedPlanner()
+
+	userPrompt := "cool, apply for all these companies asap, show me the edited resumes for it, also when applying tell them what i can do for them in their company not like i'll do what you want but more like i can offer these particular set of skills, for this you already knwo what ik based on all my projects like echotales, computehive, griffin, etc. and make sure you know what they actually want based on the requirements and draft message based on that. Some things for the resume, make sure it covers on full page, keep information under the project which shows what the project is actually about, not like i did 1000 tests and all since those are just written by claude and are very minor checks and all"
+
+	req := &domain.UserRequest{
+		RequestText: userPrompt,
+		Priority:    domain.TaskPriorityNormalP2,
+	}
+
+	plan, err := p.GeneratePlan(context.Background(), req, reg)
+	if err != nil {
+		t.Fatalf("GeneratePlan: %v", err)
+	}
+
+	if plan.ManagerID != "career" {
+		t.Fatalf("expected ManagerID 'career', got %q", plan.ManagerID)
+	}
+
+	if len(plan.ChildTasks) != 2 {
+		t.Fatalf("expected 2 child tasks, got %d", len(plan.ChildTasks))
+	}
+
+	if plan.ChildTasks[0].Key != "career_research" {
+		t.Errorf("expected first child task 'career_research', got %q", plan.ChildTasks[0].Key)
+	}
+	if plan.ChildTasks[1].Key != "career_tailor" {
+		t.Errorf("expected second child task 'career_tailor', got %q", plan.ChildTasks[1].Key)
+	}
+
+	for _, ct := range plan.ChildTasks {
+		if ct.ManagerDomain == "personal_ops" {
+			t.Errorf("child task %s must not belong to personal_ops", ct.Key)
+		}
+		if ct.Key == "wa_compose" || ct.Key == "wa_do" || ct.Key == "call_plan" || ct.Key == "call_do" {
+			t.Errorf("child task %s must not be a whatsapp or call step", ct.Key)
+		}
+	}
+
+	if len(plan.ApprovalRequirements) != 1 {
+		t.Fatalf("expected 1 approval requirement for job application, got %d", len(plan.ApprovalRequirements))
+	}
+	if plan.ApprovalRequirements[0].ActionType != domain.ActionTypeJobApply {
+		t.Errorf("expected ActionType %q, got %q", domain.ActionTypeJobApply, plan.ApprovalRequirements[0].ActionType)
+	}
+}
