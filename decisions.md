@@ -1154,3 +1154,18 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Eliminates tool execution refusals ("I have NO tools", "cannot inspect"), equips Griffin host with live browsing and repository auditing capabilities, and ensures scheduled tracker tasks store genuine expected results in the database.
 
 
+#### ADR-134: Consolidation of Vault and Files into a Unified S3 Library with Approval Gating
+- **Status**: IMPLEMENTED (`web/src/components/app-shell.tsx`, `web/src/app/vault/page.tsx`, `web/src/lib/vault.ts`, `internal/vault/scan.go`, `decisions.md`).
+- **Decision**:
+  1. **Consolidated Library Surface**:
+     - Removed the separate "Files" (`/artifacts`) navigation link from the secondary app shell navigation. Under the hood, both "Vault" documents and "Files" artifacts share the identical S3 bucket storage and `artifacts` table in PostgreSQL.
+     - Renamed `/vault` to "Library" in both the shell navigation and page view (`web/src/app/vault/page.tsx`), creating a centralized library space (similar to ChatGPT Library) for all reference documents (`targets.json`, resumes, context notes, project sheets, credentials).
+  2. **Expanded File Support for JSON and Config Data**:
+     - Added `.json` to `allowedExt` in `internal/vault/scan.go` and to the upload file picker in `web/src/app/vault/page.tsx`.
+     - Added `targets`, `target`, and `config` to scan rules mapping to `VaultOther` ("Targets, config and reference").
+     - Extended document preview in `web/src/app/vault/page.tsx` with `TextDecoder` to render structured in-app text/JSON code views for `.json`, `.md`, and `.txt` files directly in the browser.
+  3. **Approval-Gated Access Invariant**:
+     - Documents placed in the Library are stored securely in tenant-isolated S3 storage. Griffin workers access or modify them on an explicit approval basis (`AWAITING_APPROVAL`).
+- **Why**: Eliminates user-facing duplicity between "Files" and "Vault", removes noisy task execution scratch files from user view, provides a single cohesive Library for all S3 documents including `targets.json`, and enforces strict approval gating before Griffin reads or uses documents.
+
+
