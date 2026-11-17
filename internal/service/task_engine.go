@@ -87,8 +87,7 @@ func (e *TaskEngine) CreateTask(ctx context.Context, task *domain.Task, dependen
 		task.Status = initialStatus
 	}
 
-	// 2. Ensure tool mode tier is assigned based on task requirements
-	task.InputPayload = domain.WithToolMode(task.InputPayload, task.Title, task.Goal)
+	// 2. Persist task (ToolModeFor resolves tool mode dynamically without mutating stored payload)
 
 	// 3. Persist task
 	created, err := e.taskRepo.CreateTask(ctx, task)
