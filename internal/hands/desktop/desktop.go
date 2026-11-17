@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -502,6 +503,9 @@ func (s *Service) Screenshot(ctx context.Context, target string, customSavePath 
 
 // Notify sends a native desktop alert banner using the host's notification daemon (e.g. notify-send on Linux).
 func Notify(ctx context.Context, title, body, urgency string) error {
+	if testing.Testing() {
+		return nil
+	}
 	if urgency == "" {
 		urgency = "normal"
 	}

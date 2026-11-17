@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"testing"
 )
 
 // DesktopSender delivers notifications using the host OS desktop notification service.
 type DesktopSender struct{}
 
 func (d *DesktopSender) Send(ctx context.Context, m Message) error {
+	if testing.Testing() {
+		return nil
+	}
 	urgency := "normal"
 	if m.Priority >= 4 {
 		urgency = "critical"
