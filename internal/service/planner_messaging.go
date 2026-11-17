@@ -13,13 +13,16 @@ import (
 // that is about building something with WhatsApp (a bot, an API integration) is an engineering job and
 // must not send anything, so those words veto the match.
 var (
-	whatsAppWord         = regexp.MustCompile(`\b(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\b`)
-	instaWord            = regexp.MustCompile(`\b(insta|instagram|ig)\b`)
-	dmWord               = regexp.MustCompile(`\b(dm|dms|direct message)\b`)
-	messagingVerb        = regexp.MustCompile(`\b(send|sned|snd|text|txt|message|msg|tell|ping|reply|respond|read|check|show|list|summari[sz]e|unread|chats?|inbox|dm|forward|fwd)\b`)
-	buildingVerb         = regexp.MustCompile(`\b(code|coding|bot|bots|api|apis|webhook\w*|sdk|build|develop\w*|implement\w*|integrat\w*|librar(y|ies)|script|scrape\w*|automation framework)\b`)
-	whatsAppLead         = regexp.MustCompile(`(?i)(?:^|\b(?:can|could|would|will)\s+you\s+(?:please\s+)?|\b(?:please|lets|let's|go ahead and)\s+|\bto\s+)(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\b\s*(.*)$`)
-	contactStop          = map[string]bool{"on": true, "in": true, "via": true, "using": true, "through": true, "that": true, "about": true, "saying": true, "sayin": true, "with": true, "and": true, "a": true, "an": true, "the": true, "whatsapp": true, "instagram": true, "insta": true, "ig": true, "i": true, "i'm": true, "i'll": true, "im": true, "ill": true, "we": true, "to": true, "my": true, "from": true, "if": true, "when": true, "please": true, "message": true, "msg": true, "dm": true, "now": true, "phone": true, "laptop": true, "hello": true, "hellooo": true, "hi": true, "hey": true, "wassup": true, "sup": true, "yo": true, "me": true, "us": true, "myself": true, "yourself": true, "someone": true, "anyone": true, "number": true, "no": true, "num": true}
+	whatsAppWord  = regexp.MustCompile(`\b(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\b`)
+	instaWord     = regexp.MustCompile(`\b(insta|instagram|ig)\b`)
+	dmWord        = regexp.MustCompile(`\b(dm|dms|direct message)\b`)
+	messagingVerb = regexp.MustCompile(`\b(send|sned|snd|text|txt|message|msg|tell|ping|reply|respond|read|check|show|list|summari[sz]e|unread|chats?|inbox|dm|forward|fwd)\b`)
+	buildingVerb  = regexp.MustCompile(`\b(code|coding|bot|bots|api|apis|webhook\w*|sdk|build|built|builder|develop\w*|implement\w*|integrat\w*|librar(y|ies)|script|scrape\w*|automation framework)\b`)
+	whatsAppLead  = regexp.MustCompile(`(?i)(?:^|\b(?:can|could|would|will)\s+you\s+(?:please\s+)?|\b(?:please|lets|let's|go ahead and)\s+|\bto\s+)(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\b\s*(.*)$`)
+	contactStop   = map[string]bool{
+		"on": true, "in": true, "via": true, "using": true, "through": true, "that": true, "about": true, "saying": true, "sayin": true, "with": true, "and": true, "a": true, "an": true, "the": true, "whatsapp": true, "instagram": true, "insta": true, "ig": true, "i": true, "i'm": true, "i'll": true, "im": true, "ill": true, "we": true, "to": true, "my": true, "from": true, "if": true, "when": true, "please": true, "message": true, "msg": true, "dm": true, "now": true, "phone": true, "laptop": true, "hello": true, "hellooo": true, "hi": true, "hey": true, "wassup": true, "sup": true, "yo": true, "me": true, "us": true, "myself": true, "yourself": true, "someone": true, "anyone": true, "number": true, "no": true, "num": true,
+		"post": true, "posts": true, "comment": true, "comments": true, "thread": true, "threads": true, "reply": true, "replies": true, "tweet": true, "tweets": true, "reel": true, "reels": true, "video": true, "videos": true, "channel": true, "channels": true, "link": true, "links": true, "site": true, "sites": true, "website": true, "websites": true, "reddit": true, "hn": true, "forum": true, "forums": true, "up": true, "those": true, "these": true, "them": true, "their": true, "this": true, "all": true, "any": true, "some": true, "more": true, "out": true, "back": true, "here": true, "there": true, "openings": true, "jobs": true, "repos": true, "repo": true, "apps": true, "app": true,
+	}
 	contactAfter         = regexp.MustCompile(`(?i)\b(?:to|tell|text|txt|message|msg|ping|reply to|respond to|dm|send to|sned to|snd to|send|sned|snd)\s+(?:my\s+)?([^\n,.:;!?]+)`)
 	contactAfterWhatsApp = regexp.MustCompile(`(?i)(?:^|\b(?:please|can you(?: please)?|could you(?: please)?|would you(?: please)?|i want you to|i need you to|let's|lets|go ahead and)\s+)(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\s+(?:my\s+)?([^\n,.:;!?]+)`)
 	nonVerbAfterWhatsApp = map[string]bool{
@@ -30,6 +33,8 @@ var (
 	emailWord       = regexp.MustCompile(`\b(?:email|emails|mail|mails|gmail|outlook)\b`)
 	deliverableWord = regexp.MustCompile(`\b(?:reports?|tables?|documents?|proposals?|spreadsheets?|presentations?|slide deck|whitepaper|dossier|essay|article|brief|spec|readme|program|plan|comparison|sources|citations|references|roadmap|checklist)\b`)
 	checkUnreadRe   = regexp.MustCompile(`(?i)\b(?:check|read|show|list)\s+(?:my\s+)?(?:unread\s+)?(?:messages|msgs|texts|chats|inbox)\b`)
+	socialPostWord  = regexp.MustCompile(`(?i)\b(?:posts?|comments?|threads?|discussions?|forums?|reddit|subreddits?|hn|hacker news|tweets?|reels?|openings|jobs|repos?|replies|reply)\b`)
+	draftAskWord    = regexp.MustCompile(`(?i)\b(?:give me|draft|generate|write|compose|create|suggest)\s+(?:a\s+|some\s+)?(?:repl(?:y|ies)|comments?|responses?|answers?|messages?)\b`)
 )
 
 func wantsWhatsApp(text string) bool {
@@ -73,6 +78,9 @@ func wantsWhatsApp(text string) bool {
 
 func isImplicitMessaging(lower string) bool {
 	if buildingVerb.MatchString(lower) || emailWord.MatchString(lower) || deliverableWord.MatchString(lower) {
+		return false
+	}
+	if socialPostWord.MatchString(lower) || draftAskWord.MatchString(lower) {
 		return false
 	}
 	if wantsWeb(lower) {
