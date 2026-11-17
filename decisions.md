@@ -1229,8 +1229,18 @@ This document is the canonical ledger of all architectural, product, engineering
      - Populated all 21 targets in `outreach_targets` with `status = 'drafted'` (visible in `/outreach` under "Needs approval").
      - Created corresponding high-risk approval records in `approvals` with structured draft messages, requiring explicit user authorization.
 - **Why**: Protects LinkedIn account health, guarantees tangible proof of submission, eliminates single-point-of-failure cold outreach by coordinating 3-5 person clusters with shared club/chapter rapport, and ensures Adhyan has complete visibility and control over all outward communications.
-
-
-
-
+#### ADR-138: Append-Only Tracker Ledgers, Age-Conscious Outreach Etiquette, and Exam Freeze Protocols
+- **Status**: IMPLEMENTED (`habit.md`, `cmd/register_referral_campaign/main.go`, `~/Documents/Griffin/outreach/referral_tracker.json`, `~/Documents/Griffin/outreach/job_applications_pitches.md`, `decisions.md`).
+- **Decision**:
+  1. **Strict Append-Only Tracker Ledgers**:
+     - All scheduled trackers (`INTERNSHIP TRACKER`, `FREELANCE & CLIENT DISCOVERY`, `HACKATHON TRACKER`, `THREAD ALERTS`) must preserve historical records.
+     - Mandated deduplication on canonical composite keys (`company`, `role`, `portal_url`) prior to appending. Disallowed overwriting, replacing, or truncating existing dataset files (`open_tracker.json`, `tracker.csv`, `tracker.md`).
+  2. **Age-Conscious, Respectful Outreach Demeanor**:
+     - Tailored all drafted communications to reflect candidate's context (20-year-old 3rd year undergraduate at VIT Vellore) communicating with senior staff, engineering managers, and founders.
+     - Refactored all 21 referral messages to adopt a warm, polite, and respectful tone, eliminating presumptive phrasing and replacing it with courteous guidance/advice inquiries and explicit resume attachments.
+     - Strictly enforced zero emojis across all drafted pitches, communication records, and task payloads.
+  3. **Exam Freeze Window Implementation**:
+     - Synchronized the active database state for `DSA COACH` (`0896a438-b073-47fb-8a45-d60f0fa98729`), holding scheduled execution until `2026-11-29T07:30:00+05:30` with `exam_hold = true` and `failure_reason = 'PAUSED_FOR_EXAMS_UNTIL_2026-11-29'`.
+     - Preserved all pending application and outreach approvals in `PENDING` state with indefinite shelf life so the user can review them after exams conclude without automated dispatch.
+- **Why**: Eliminates tracker data loss, ensures professional and age-appropriate correspondence that senior engineers respect, and guarantees that active exams are protected from unwanted task execution or interruptions.
 
