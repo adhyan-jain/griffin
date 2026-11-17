@@ -1169,3 +1169,21 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Eliminates user-facing duplicity between "Files" and "Vault", removes noisy task execution scratch files from user view, provides a single cohesive Library for all S3 documents including `targets.json`, and enforces strict approval gating before Griffin reads or uses documents.
 
 
+#### ADR-135: Career Domain Protection from Implicit Telephony Routing and Tailored Multi-Company Application Workflow
+- **Status**: IMPLEMENTED (`internal/service/planner.go`, `internal/service/planner_messaging.go`, `internal/service/planner_test.go`, `internal/service/planner_messaging_test.go`, `~/Documents/Griffin/resumes/*.md`, `~/Documents/Griffin/outreach/job_applications_pitches.md`, `decisions.md`).
+- **Decision**:
+  1. **Career Domain Routing Invariant**:
+     - Defined `careerVeto = regexp.MustCompile("(?i)\\b(apply|application|applications|resume|resumes|cv|cover\\s*letters?|job|jobs|internship|internships|hiring|portfolio)\\b")` in `internal/service/planner_messaging.go`.
+     - In `wantsWhatsApp`, `isImplicitMessaging`, and `wantsInstagram`: vetoed implicit matches if `careerVeto.MatchString(lower)` is present without explicit platform names (`whatsAppWord`, `instaWord`).
+     - Added interrogative pronouns and corporate entities to `contactStop` (`what`, `who`, `whom`, `whose`, `which`, `where`, `why`, `how`, `everyone`, `everybody`, `recruiter`, `recruiters`, `company`, `companies`) to prevent expressions like "tell them what I can do" from extracting bogus contacts like "them what".
+     - In `internal/service/planner.go`: Protected specialized domain classifications (`career`, `engineering`, `finance`, `learning`, etc.) from being overridden by implicit messaging unless the user explicitly named the platform.
+  2. **Tailored Resumes & Honest Technical Grounding**:
+     - Authored 6 tailored 1-page resumes for Sarvam AI, Postman, Modal Labs, Inkeep, HyperVerge, and StepSecurity in `/home/adhyan/Documents/Griffin/resumes/`.
+     - Strictly grounded in the genuine architecture, algorithms, and concurrency mechanisms of the candidate's real projects (`EchoTales`, `ComputeHive`, `Griffin`), omitting superficial test count metrics.
+  3. **Gated Application Workflow**:
+     - Formatted customized outreach pitches and screening answers matching the candidate's verified skills to each target company's job requirements in `/home/adhyan/Documents/Griffin/outreach/job_applications_pitches.md`.
+     - Registered 6 application tasks in `tasks` (`AWAITING_APPROVAL`) and 6 corresponding high-risk approval records in `approvals` (`PENDING`) with structured `TailoringInfo` payloads for individual or bulk review in the Griffin UI.
+- **Why**: Completely eliminates orchestration abortion bugs caused by false-positive WhatsApp hijacking on career application workflows, preserves honest technical project depth, and upholds Griffin's strict approval safety policy.
+
+
+

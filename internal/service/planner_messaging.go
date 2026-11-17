@@ -22,6 +22,7 @@ var (
 	contactStop   = map[string]bool{
 		"on": true, "in": true, "via": true, "using": true, "through": true, "that": true, "about": true, "saying": true, "sayin": true, "with": true, "and": true, "a": true, "an": true, "the": true, "whatsapp": true, "instagram": true, "insta": true, "ig": true, "i": true, "i'm": true, "i'll": true, "im": true, "ill": true, "we": true, "to": true, "my": true, "from": true, "if": true, "when": true, "please": true, "message": true, "msg": true, "dm": true, "now": true, "phone": true, "laptop": true, "hello": true, "hellooo": true, "hi": true, "hey": true, "wassup": true, "sup": true, "yo": true, "me": true, "us": true, "myself": true, "yourself": true, "someone": true, "anyone": true, "number": true, "no": true, "num": true,
 		"post": true, "posts": true, "comment": true, "comments": true, "thread": true, "threads": true, "reply": true, "replies": true, "tweet": true, "tweets": true, "reel": true, "reels": true, "video": true, "videos": true, "channel": true, "channels": true, "link": true, "links": true, "site": true, "sites": true, "website": true, "websites": true, "reddit": true, "hn": true, "forum": true, "forums": true, "up": true, "those": true, "these": true, "them": true, "their": true, "this": true, "all": true, "any": true, "some": true, "more": true, "out": true, "back": true, "here": true, "there": true, "openings": true, "jobs": true, "repos": true, "repo": true, "apps": true, "app": true,
+		"what": true, "who": true, "whom": true, "whose": true, "which": true, "where": true, "why": true, "how": true, "everyone": true, "everybody": true, "recruiter": true, "recruiters": true, "company": true, "companies": true,
 	}
 	contactAfter         = regexp.MustCompile(`(?i)\b(?:to|tell|text|txt|message|msg|ping|reply to|respond to|dm|send to|sned to|snd to|send|sned|snd)\s+(?:my\s+)?([^\n,.:;!?]+)`)
 	contactAfterWhatsApp = regexp.MustCompile(`(?i)(?:^|\b(?:please|can you(?: please)?|could you(?: please)?|would you(?: please)?|i want you to|i need you to|let's|lets|go ahead and)\s+)(?:whats\s?app|watsapp|wapp|watsp|whatsap|whatsapp)\s+(?:my\s+)?([^\n,.:;!?]+)`)
@@ -35,6 +36,7 @@ var (
 	checkUnreadRe   = regexp.MustCompile(`(?i)\b(?:check|read|show|list)\s+(?:my\s+)?(?:unread\s+)?(?:messages|msgs|texts|chats|inbox)\b`)
 	socialPostWord  = regexp.MustCompile(`(?i)\b(?:posts?|comments?|threads?|discussions?|forums?|reddit|subreddits?|hn|hacker news|tweets?|reels?|openings|jobs|repos?|replies|reply)\b`)
 	draftAskWord    = regexp.MustCompile(`(?i)\b(?:give me|draft|generate|write|compose|create|suggest)\s+(?:a\s+|some\s+)?(?:repl(?:y|ies)|comments?|responses?|answers?|messages?)\b`)
+	careerVeto      = regexp.MustCompile(`(?i)\b(apply|application|applications|resume|resumes|cv|cover\s*letters?|job|jobs|internship|internships|hiring|portfolio)\b`)
 )
 
 func wantsWhatsApp(text string) bool {
@@ -43,6 +45,9 @@ func wantsWhatsApp(text string) bool {
 	}
 	lower := strings.ToLower(text)
 	if buildingVerb.MatchString(lower) || emailWord.MatchString(lower) {
+		return false
+	}
+	if careerVeto.MatchString(lower) && !whatsAppWord.MatchString(lower) {
 		return false
 	}
 	if wantsInstagram(text) {
@@ -77,6 +82,9 @@ func wantsWhatsApp(text string) bool {
 }
 
 func isImplicitMessaging(lower string) bool {
+	if careerVeto.MatchString(lower) {
+		return false
+	}
 	if buildingVerb.MatchString(lower) || emailWord.MatchString(lower) || deliverableWord.MatchString(lower) {
 		return false
 	}
@@ -98,6 +106,9 @@ func isImplicitMessaging(lower string) bool {
 func wantsInstagram(text string) bool {
 	lower := strings.ToLower(text)
 	if buildingVerb.MatchString(lower) {
+		return false
+	}
+	if careerVeto.MatchString(lower) && !instaWord.MatchString(lower) {
 		return false
 	}
 	if instaWord.MatchString(lower) && (messagingVerb.MatchString(lower) || dmWord.MatchString(lower)) {

@@ -57,6 +57,9 @@ func TestWantsWhatsApp(t *testing.T) {
 		"give me replies i can send on reddit posts",
 		"draft a comment for this thread",
 		"give me comments to post on hacker news",
+		"cool, apply for all these companies asap, show me the edited resumes for it, also when applying tell them what i can do for them in their company not like i'll do what you want but more like i can offer these particular set of skills, for this you already knwo what ik based on all my projects like echotales, computehive, griffin, etc. and make sure you know what they actually want based on the requirements and draft message based on that. Some things for the resume, make sure it covers on full page, keep information under the project which shows what the project is actually about, not like i did 1000 tests and all since those are just written by claude and are very minor checks and all",
+		"apply for all these companies and tell them what I can do",
+		"send my resume to recruiters and apply for open jobs",
 		"",
 	}
 	for _, s := range yes {
