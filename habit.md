@@ -165,12 +165,32 @@ All outward client pitches, cold emails, forum messages, and contractor replies 
 - Adhyan was part of the student team from **ACM VIT Vellore** that contributed to documentation and developer guides for **SGLang** (high-performance LLM serving and structured inference framework).
 - When tailoring applications for LLM evaluation, serving infrastructure, or companies like **Sarvam AI**, prioritize and explicitly highlight this SGLang open-source contribution alongside EchoTales, ComputeHive, and Griffin.
 
-### 10.3 Targeted LinkedIn Referral & Networking Engine
-For every job application, Griffin automatically initiates a targeted employee referral search with strict priority tiering:
-- **Priority Tier 1 (Highest)**: VIT Vellore alumni working in the same domain/team who were members of **ACM, ISTE, MFC, or TAM** student chapters/clubs at VIT (direct junior rapport).
-- **Priority Tier 2**: VIT Vellore alumni working in the same technical domain or department.
-- **Priority Tier 3**: Engineers or engineering managers currently working in the target domain.
-- **Approval Gating**: All referral outreach messages must be staged in `AWAITING_APPROVAL` with `ActionType: "REFERRAL_OUTREACH"` before any message is sent.
+### 10.3 Multi-Contact LinkedIn Referral & Networking Engine
+For every target job opening, Griffin never relies on a single contact. It automatically constructs and coordinates a **Multi-Contact Referral Cluster of 3 to 5 targeted individuals per company** across strict priority tiers:
+- **Priority Tier 1 (Highest Priority - 2 Contacts)**: VIT Vellore alumni working in the same domain/team who were active members of **ACM, ISTE, MFC, or TAM** student chapters/clubs (direct junior/senior rapport and shared club history).
+- **Priority Tier 2 (Technical Domain Alumni & Engineers - 1 to 2 Contacts)**: VIT Vellore alumni working in the same technical subdiscipline (backend, ML/AI, distributed systems) or senior engineers on the target team.
+- **Priority Tier 3 (Engineering Lead or Founder - 1 Contact)**: Engineering manager, tech lead, or founder overseeing the relevant team.
+- **Sequenced & Staggered Dispatch**: Griffin sequences outreach by priority tier (Tier 1 first). It staggers dispatch across 15 to 45 minute intervals (minimum 300s gap + 180s jitter) and limits total outreach to a maximum of 10 to 15 messages per 24 hours to prevent anti-automation detection.
+- **Single-Referral Engagement Rule (Pause on Response)**: As soon as any contact at a company responds positively or offers an internal referral link, Griffin transitions remaining targets for that company to `closed` with the note `Referral already secured via [Contact Name]`, immediately halting further cold outreach.
+- **Approval Gating**: All referral messages are staged in `AWAITING_APPROVAL` with `ActionType: "REFERRAL_OUTREACH"` (and `status = 'drafted'` in `outreach_targets`). No outreach message is dispatched without human approval.
+
+---
+
+### 10.4 Pre-Flight Application Verification & Proof of Submission Receipts
+To eliminate black-box execution failures and ensure 100% reliable submissions:
+- **Pre-Flight Validation**: Prior to form interaction, Griffin verifies all required fields (candidate legal name, contact email, phone, GitHub, LinkedIn, portfolio link, 1-page tailored resume PDF, and grounded technical screening answers). Any unknown screening questions abort submission and escalate to human input.
+- **Staged Dry-Run Mode**: When dry-run or verification mode is active, Griffin navigates to the portal, populates all form inputs, attaches the tailored resume, highlights all filled fields, and pauses execution before the final submission button, allowing the user to review the live browser session.
+- **Timestamped Screenshot Receipts**: For every automated application and staged outreach message, Griffin captures a full-page timestamped visual screenshot saved to `/home/adhyan/Documents/Griffin/reports/receipts/<company>_<action>_<timestamp>.png` and links it in the task audit log as verifiable proof of work.
+- **Audit Ledger Tracking**: Every application is recorded in `/home/adhyan/Documents/Griffin/internships/applied.json` with submission timestamp, applied role, portal URL, resume path, and skills offered, preventing accidental re-applications.
+
+---
+
+### 10.5 Anti-Automation & Platform Safety Invariants
+- **Daily Rate Limiting**: Maximum 15 LinkedIn messages per rolling 24-hour period.
+- **Human Emulation Jitter**: Minimum pause of 300 seconds plus 180 seconds randomized jitter between outgoing communications.
+- **Quiet Hours**: Zero automated messaging between 22:00 and 08:00 local IST time.
+- **Contextual Hook Diversity**: Every message must feature unique technical angles (e.g. ACM VIT SGLang docs, ComputeHive Redis Lua leasing, EchoTales bitemporal resolution); zero identical template broadcasts.
+
 
 
 

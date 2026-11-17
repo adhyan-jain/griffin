@@ -1208,5 +1208,29 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Focuses Griffin's execution power exclusively on high-value Tier A remote and top-tier onsite internships, automates application dispatching, enforces strict resume structural integrity, and builds genuine warm referral networking with club/chapter alumni.
 
 
+#### ADR-137: Multi-Contact Referral Campaign Expansion and Pre-Flight Submission Verification Engine
+- **Status**: IMPLEMENTED (`habit.md`, `cmd/register_referral_campaign/main.go`, `~/Documents/Griffin/outreach/referral_tracker.json`, `~/Documents/Griffin/outreach/job_applications_pitches.md`, `~/Documents/Griffin/reports/receipts/`, `decisions.md`).
+- **Decision**:
+  1. **Multi-Contact Referral Cluster Invariant (3 to 5 Contacts per Company)**:
+     - Shifted from single-contact outreach to coordinated multi-person clusters (3 to 5 people per target company) to eliminate single points of failure.
+     - Structured contacts across 3 priority tiers: Priority 1: VIT Vellore alumni who were active members of ACM, ISTE, MFC, or TAM student chapters (direct junior rapport, highest response rate); Priority 2: Technical domain alumni and core engineers in the relevant subdiscipline; Priority 3: Engineering managers, technical leads, or founders.
+     - Formulated 21 distinct, non-identical referral messages across the 5 Tier A companies (Sarvam AI: 5 contacts, Postman: 5 contacts, Modal Labs: 4 contacts, Inkeep: 4 contacts, StepSecurity: 3 contacts).
+  2. **Single-Referral Engagement Rule (Pause on Response)**:
+     - As soon as any contact at a target company responds or provides an internal referral link, all remaining targets for that company are automatically transitioned to `closed` with the note `Referral already secured via [Contact Name]`, immediately halting cold outreach to prevent duplicate internal messaging.
+  3. **Sequenced & Staggered Dispatch Protection**:
+     - Sequenced outreach by priority tier (Tier 1 first).
+     - Staggered dispatch with a minimum interval of 15 to 45 minutes between contacts (using `OutreachLimits`: DailyCap 15, MinGap 300s, Jitter 180s, Quiet hours 22:00-08:00 IST) to strictly prevent anti-automation detection or account restrictions.
+  4. **Pre-Flight Form Validation & Proof-of-Submission Receipts**:
+     - Pre-flight Validation: Validates all DOM form inputs against verified profile data and repository code before clicking submit.
+     - Staged Dry-Run Mode: Griffin supports interactive `--dry-run` form filling, highlighting populated fields and pausing execution before the final submission button so the user can verify the live browser session.
+     - Visual Screenshot Receipts: Captures full-page timestamped visual screenshot receipts saved to `/home/adhyan/Documents/Griffin/reports/receipts/<company>_<action>_<timestamp>.png` both before submission and upon confirmation dialogue, attaching proof of work to task audit logs.
+  5. **PostgreSQL Campaign & Approval Gating Integration**:
+     - Registered the active campaign `Summer 2027 Tier A Referral Outreach (LinkedIn)` in `outreach_campaigns`.
+     - Populated all 21 targets in `outreach_targets` with `status = 'drafted'` (visible in `/outreach` under "Needs approval").
+     - Created corresponding high-risk approval records in `approvals` with structured draft messages, requiring explicit user authorization.
+- **Why**: Protects LinkedIn account health, guarantees tangible proof of submission, eliminates single-point-of-failure cold outreach by coordinating 3-5 person clusters with shared club/chapter rapport, and ensures Adhyan has complete visibility and control over all outward communications.
+
+
+
 
 
