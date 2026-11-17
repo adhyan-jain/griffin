@@ -33,6 +33,7 @@ import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/com
 import { extractTablesFromMarkdown, exportToExcel, exportToCSV, type ParsedTable } from "@/lib/excel-export";
 import { parseResult, slug } from "@/lib/result-text";
 import { cn } from "@/lib/utils";
+import { MarkdownText } from "@/components/result-view";
 
 export type ViewMode = "auto" | "table" | "cards";
 
@@ -865,8 +866,8 @@ function TrackerCard({ task, parsedTables, defaultViewMode = "auto" }: TrackerCa
           </div>
         ) : text ? (
           <div className="space-y-2">
-            <div className="rounded-xl border bg-muted/20 p-4 font-mono text-xs whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
-              {text}
+            <div className="rounded-xl border bg-card/60 p-5 text-sm leading-relaxed max-h-96 overflow-y-auto">
+              <MarkdownText text={text} />
             </div>
           </div>
         ) : (
