@@ -202,8 +202,9 @@ All Griffin trackers (`INTERNSHIP TRACKER`, `FREELANCE & CLIENT DISCOVERY`, `HAC
 
 ---
 
-### 10.7 Communication Tone, Age Awareness & Outreach Etiquette
-- **Age Awareness**: Adhyan is a 20-year-old 3rd year undergraduate (B.Tech CSE, VIT Vellore). Outreach recipients (staff engineers, engineering managers, directors, founders) are often senior professionals.
+### 10.7 Communication Tone, Outreach Etiquette & Name Introduction
+- **Student Profile**: Adhyan is a 3rd-year undergraduate (B.Tech CSE, VIT Vellore). Never explicitly state age (e.g. "20-year-old") in outreach pitches or messages; use "3rd-year CSE student at VIT Vellore". Introduce as "I am Adhyan Jain,".
+- **Greetings**: Never use "Dear [Name]"; use "Hi [First Name],".
 - **Polite & Humble Demeanor**: All messages must maintain a warm, polite, and respectful tone. Avoid presumptive or demanding phrasing like "what I offer you" or "what I can do for you."
 - **Courteous Inquiries**: Politely inquire if they would be open to reviewing the attached resume or giving brief advice on an internal referral for the summer opening.
 - **Resume Attachment**: Every outreach draft must explicitly reference and attach the tailored resume file/link for immediate review.
@@ -229,7 +230,7 @@ All Griffin trackers (`INTERNSHIP TRACKER`, `FREELANCE & CLIENT DISCOVERY`, `HAC
 - Reliability, failure testing (such as ComputeHive's 1,000-job chaos run), and evaluation harnesses are framed as empirical proof of engineering rigor in building production AI and distributed systems.
 - Do NOT emphasize testing or QA in isolation; never position the candidate as a QA tester or test engineer.
 - Highlight tangible production metrics and real-world scale: 70 students, 600+ concurrent users, 1,100+ applications, bitemporal knowledge graphs, Redis Lua atomic leasing, and SGLang documentation contributions.
-- Mid-sized substantive pitches (100–120 words) with warm, polite, age-conscious demeanor and direct resume attachments.
+- Mid-sized substantive pitches (100–120 words) with warm, polite demeanor and direct resume attachments.
 
 ---
 
@@ -242,6 +243,16 @@ All Griffin trackers (`INTERNSHIP TRACKER`, `FREELANCE & CLIENT DISCOVERY`, `HAC
 
 ### 10.12 Worktree Isolation for Framework & Security Upgrades
 - Framework migrations and security codemods (e.g., Next.js security upgrade) must execute in an isolated Git worktree in the background (`griffin-security-upgrade`), ensuring primary codebase development and application pipelines remain unblocked and stable.
+
+---
+
+### 10.13 Ad-Hoc Job Lead Intake & Canonical Tracker Ledger Routing
+- Whenever the user creates a new task or sends an ad-hoc prompt mentioning a company open for work, a LinkedIn post, a tweet, or a recommendation heard from someone:
+  1. The agent/task must parse and extract the target details: `Company`, `Role`, `Mode & Location`, `Stipend / Comp`, `Duration`, `Deadline`, `Posted Date`, `PPO / Eligibility`, `Hiring Manager / Founder`, and `Source link`.
+  2. The agent/task MUST append the new listing directly to the canonical tracker files (`~/Documents/Griffin/internships/open_tracker.json` and `~/Documents/Griffin/internships/tracker.md`), strictly deduplicating on `(company, role, normalised link)`.
+  3. No separate ad-hoc intake UI or scattered side-lists should be created. The `INTERNSHIP TRACKER` task output and the trackers view directly display this unified canonical ledger.
+  4. Task follow-ups are reserved strictly for editing how routines execute (cadence, filters, search strategies), never for maintaining separate fragmented lead lists.
+
 
 
 

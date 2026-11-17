@@ -1019,10 +1019,10 @@ This document is the canonical ledger of all architectural, product, engineering
      - Persists seen task IDs in local `SharedPreferences` (`griffin_task_notifs`, capped to 100 entries) to guarantee each completed task triggers exactly one notification.
   3. **Semantic Notification Routing & Deep-Linking**:
      - Context-aware title formatting:
-       - DSA / LeetCode tasks: `"⚡ DSA / LeetCode Update"`
-       - Daily briefings: `"🌅 Daily Executive Briefing Ready"`
-       - Weekly summaries: `"📊 Weekly Report Ready"`
-       - General tasks: `"✅ Task Completed: <Title>"`
+       - DSA / LeetCode tasks: `"DSA / LeetCode Update"`
+       - Daily briefings: `"Daily Executive Briefing Ready"`
+       - Weekly summaries: `"Weekly Report Ready"`
+       - General tasks: `"Task Completed: <Title>"`
      - Uses `BigTextStyle` for expanded previews of responses or goals.
      - Tapping the notification deep-links directly to the task detail page (`/tasks/<task_id>`).
   4. **Mobile-First Task Web Console**:
@@ -1266,4 +1266,14 @@ This document is the canonical ledger of all architectural, product, engineering
   5. **Separate Git Worktree for Security Upgrades**:
      - Isolated Next.js security upgrade into a separate dedicated worktree (`/home/adhyan/Desktop/griffin-security-upgrade`) running in the background to ensure main repository development remains unblocked and stable.
 - **Why**: Protects candidate reputation by eliminating deadlink outreach, accurately represents candidate capabilities as an applied systems and AI builder, keeps the user's approval queue pristine and deduplicated, and expands Tier A reach to top-tier enterprise opportunities.
+
+
+#### ADR-140: Agentic Intake for Job Leads & Unified Canonical Tracker Routing
+- **Status**: IMPLEMENTED (`habit.md`, `~/Documents/Griffin/internships/open_tracker.json`, `~/Documents/Griffin/internships/tracker.md`, `decisions.md`).
+- **Decision**:
+  1. **Agentic Intake via Tasks**: The user does not need a dedicated manual intake UI or form to submit job leads. Instead, when the user creates a new task or mentions a LinkedIn post, tweet, company, or referral hint, Griffin/JJ extracts the role parameters and updates the files autonomously.
+  2. **Single Canonical Ledger (`open_tracker.json` & `tracker.md`)**: All discovered leads—whether from the automated feed scroller, scheduled crawler tasks, or user ad-hoc prompts—append to the one canonical living tracker ledger in `~/Documents/Griffin/internships/`.
+  3. **Strict Deduplication & Append-Only Invariants**: Deduplication is enforced on `(company, role, normalised link)`. Existing records are never truncated or overwritten.
+  4. **Task Follow-ups Scoped to Task Configuration**: Task follow-ups in the UI are strictly for modifying task execution behavior (cadence, filters, search scope), keeping lead intake unified in the primary tracker.
+- **Why**: Preserves Griffin's agentic assistant value proposition where inputs come naturally through conversational tasks while keeping tracking data strictly consolidated in one authoritative ledger.
 
