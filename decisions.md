@@ -1104,3 +1104,36 @@ This document is the canonical ledger of all architectural, product, engineering
      - `cmd/griffin-host/main.go`: Added `GRIFFIN_INSECURE_TLS=true` support on host client to bypass legacy expired root certificate verification errors on systems with advanced clock dates.
 - **Why**: Fixes the root cause of "cannot access this or that" failures across the 13 operational pipelines, eliminates erroneous notifications on the owner's phone, and adheres strictly to the owner's request for zero emojis and reliable autonomous execution.
 
+#### ADR-132: Autonomous Freelance Discovery Engine, Client Disqualification Guardrails, and Weekly Cadence Scorecard
+- **Status**: IMPLEMENTED (`habit.md`, `internal/domain/freelance.go`, `internal/domain/freelance_test.go`, `decisions.md`).
+- **Decision**:
+  1. **Multi-Channel Discovery Matrix & Genuine Proof Links**:
+     - Systematically formalizes outreach and acquisition strategies across 9 key channels:
+       1. Hacker News monthly "Who is hiring" / "Seeking freelancer" threads: founders hiring directly -> same-day email with 1 proof link.
+       2. Product Hunt & launch platforms: teams shipping LLM features this week -> identify one real flaw, mail founder with constructive fix.
+       3. Discord & Slack communities: founders stuck on technical hurdles -> answer technical questions in public for 2 weeks prior to pitching.
+       4. X & LinkedIn contractor requests: startups seeking contractors -> reply publicly with technical example, then follow up via DM.
+       5. Wellfound & YC Work at a Startup: contract or part-time roles -> apply through portal, mail founder directly.
+       6. Small AI & automation agencies: agency owners with overflow -> subcontract at fixed rate.
+       7. GitHub OSS repositories: companies with open LLM issues -> resolve 1 open issue via clean PR, then inquire about paid help.
+       8. Upwork & Contra: budget/fast clients -> secondary side channel only.
+       9. Local business / mom's dealer & supplier contacts: local merchants -> schedule introduction and live demo of `AquaDrop` (`https://github.com/AdhyanJain/AquaDrop`).
+     - Proof Link Invariant: Every outward technical pitch must link to genuine repositories (`StoryTrace` for narrative consistency/long-context tracking, `OS-Tutor-RAG` for contextual retrieval, `Proteus` for autonomous agent systems, or `AquaDrop` for local distribution).
+  2. **Automated Walk-Away Red Flags (Strict Disqualification)**:
+     - Griffin automatically inspects opportunity descriptions and proposals, rejecting and flagging any that match 7 toxic lead anti-patterns:
+       1. Deferred funding pay ("We will pay once we raise funding / seed round").
+       2. Unpaid test work exceeding 2 hours.
+       3. Equity or "exposure" in place of monetary compensation.
+       4. Upfront fees for onboarding, training, or equipment purchases.
+       5. Scope creep / absence of written scope or acceptance criteria.
+       6. Credential access requests (passwords or developer logins).
+       7. Pressure to bypass escrow/platform payment systems prior to initial payment release.
+  3. **Green Flag Prioritization**:
+     - Evaluates opportunities for 3 green flags (50% upfront deposit, crisp definition of done, single named decision-maker) to highlight top-tier contract opportunities.
+  4. **Weekly Routine Target (20 / 2 / 1 Scorecard)**:
+     - Implements weekly routine tracking: 20 targeted outward pitches, 2 public community answers/day (14/week), and 1 fixed GitHub issue/week.
+  5. **Human Approval Gate & Zero-Emoji Policy**:
+     - All outward drafts and applications pause in `AWAITING_APPROVAL` (ADR-110). Zero emojis across all prompts, communications, and commits.
+- **Why**: Protects the owner from exploitative unpaid labor and scams, focuses client acquisition on high-leverage founder channels, enforces consistent weekly execution discipline, and grounds technical pitches in real verifiable open-source artifacts.
+
+
