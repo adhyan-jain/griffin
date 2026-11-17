@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/griffin/core/internal/scheduler"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -90,7 +92,7 @@ func main() {
 					PriorityTier: "Priority 1 (Chapter Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Google_Software_Engineering_Intern_2026-11-17.md",
-					Draft:        "Hi Sanchit, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore and part of the ACM VIT team. I focus on distributed systems and backend infrastructure in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a distributed task execution cluster with atomic Redis Lua lease serialization, verified through a 1,000-job chaos run under high concurrency. In Griffin (https://github.com/adhyan-jain/griffin), I designed modular DAG task orchestration with capability security boundaries. I applied for the Summer 2027 Software Engineering Intern role at Google India and would be deeply grateful if you might be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi Sanchit, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore and part of the ACM VIT team. I focus on distributed systems and backend infrastructure in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a distributed task execution cluster with atomic Redis Lua lease serialization, verified through a 1,000-job chaos run under high concurrency. In Griffin (https://github.com/adhyan-jain/griffin), I designed modular DAG task orchestration with capability security boundaries. I applied for the Summer 2027 Software Engineering Intern role at Google India and would be deeply grateful if you might be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 				{
 					Name:         "Harshita Raman",
@@ -100,7 +102,7 @@ func main() {
 					PriorityTier: "Priority 1 (Chapter Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Google_Software_Engineering_Intern_2026-11-17.md",
-					Draft:        "Hi Harshita, hope you're having a great week! I am Adhyan, a 3rd year CSE student at VIT Vellore (ISTE student chapter). I follow Google Cloud's distributed infrastructure closely. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I built outbound pull-based worker daemons over gRPC/TLS with dead-worker lease recovery, stress-tested under 600+ concurrent requests. In Griffin, I designed connection-pooled PostgreSQL state engines. I applied for the Summer 2027 Software Engineering Intern position at Google India and would be very grateful if you could glance at my attached resume for a referral: https://github.com/adhyan-jain. Thanks so much for your guidance!",
+					Draft:        "Hi Harshita, hope you're having a great week! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore (ISTE student chapter). I follow Google Cloud's distributed infrastructure closely. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I built outbound pull-based worker daemons over gRPC/TLS with dead-worker lease recovery, stress-tested under 600+ concurrent requests. In Griffin, I designed connection-pooled PostgreSQL state engines. I applied for the Summer 2027 Software Engineering Intern position at Google India and would be very grateful if you could glance at my attached resume for a referral: https://github.com/adhyan-jain. Thanks so much for your guidance!",
 				},
 				{
 					Name:         "Aman Kumar",
@@ -110,7 +112,7 @@ func main() {
 					PriorityTier: "Priority 2 (Domain Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Google_Software_Engineering_Intern_2026-11-17.md",
-					Draft:        "Hi Aman, hope you are having a productive week! I am Adhyan, a junior at VIT Vellore (CSE, batch of 2028). I've been focusing on large-scale distributed systems in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I tackled concurrency and split-brain prevention using atomic Redis Lua scripts and heartbeat monitors across a 1,000-job chaos benchmark. In Griffin, I engineered modular task DAG engines. I submitted my application for Google's Summer 2027 SWE Intern role and would be honored if you'd be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi Aman, hope you are having a productive week! I am Adhyan Jain, a junior at VIT Vellore (CSE, batch of 2028). I've been focusing on large-scale distributed systems in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I tackled concurrency and split-brain prevention using atomic Redis Lua scripts and heartbeat monitors across a 1,000-job chaos benchmark. In Griffin, I engineered modular task DAG engines. I submitted my application for Google's Summer 2027 SWE Intern role and would be honored if you'd be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 				{
 					Name:         "Rahul Srivastava",
@@ -120,7 +122,7 @@ func main() {
 					PriorityTier: "Priority 2 (Staff Engineer)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Google_Software_Engineering_Intern_2026-11-17.md",
-					Draft:        "Hi Rahul, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore studying high-concurrency distributed systems. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I designed a self-hosted task runner where leasing is strictly serialized through atomic Redis Lua scripts to eliminate split-brain execution, validated under chaos testing across 1,000 concurrent jobs. I applied for the Summer 2027 Software Engineering Intern role at Google India. I have attached my resume here: https://github.com/adhyan-jain and would be deeply grateful for your team's consideration. Thank you for your time!",
+					Draft:        "Hi Rahul, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore studying high-concurrency distributed systems. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I designed a self-hosted task runner where leasing is strictly serialized through atomic Redis Lua scripts to eliminate split-brain execution, validated under chaos testing across 1,000 concurrent jobs. I applied for the Summer 2027 Software Engineering Intern role at Google India. I have attached my resume here: https://github.com/adhyan-jain and would be deeply grateful for your team's consideration. Thank you for your time!",
 				},
 				{
 					Name:         "Kunal Verma",
@@ -130,7 +132,7 @@ func main() {
 					PriorityTier: "Priority 2 (Systems Engineer / Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Google_Software_Engineering_Intern_2026-11-17.md",
-					Draft:        "Hi Kunal, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore and part of the ACM VIT team. I focus on distributed systems in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a distributed task execution engine with atomic Redis Lua leases, pull-based gRPC worker daemons, and sub-15s fault recovery tested under 1,000 chaos jobs. In Griffin, I built modular DAG scheduling engines. I applied for the Summer 2027 Software Engineering Intern opening at Google India and would be deeply grateful if you might be open to glancing at my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you so much for your time!",
+					Draft:        "Hi Kunal, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore and part of the ACM VIT team. I focus on distributed systems in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a distributed task execution engine with atomic Redis Lua leases, pull-based gRPC worker daemons, and sub-15s fault recovery tested under 1,000 chaos jobs. In Griffin, I built modular DAG scheduling engines. I applied for the Summer 2027 Software Engineering Intern opening at Google India and would be deeply grateful if you might be open to glancing at my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you so much for your time!",
 				},
 			},
 		},
@@ -151,7 +153,7 @@ func main() {
 					PriorityTier: "Priority 1 (Chapter Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/SarvamAI_Applied_AI_LLM_Evaluation_Intern_2026-11-17.md",
-					Draft:        "Hi Raghavan, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore and part of the ACM VIT team. I work as an applied AI engineer building production LLM systems with verifiable reliability. For example, in EchoTales (https://github.com/adhyan-jain/EchoTales), I architected bitemporal knowledge graphs and structured retrieval pipelines where entity facts are grounded against source text with bounded review queues. With our ACM chapter, I also authored runtime developer guides for SGLang. I would love to bring this hands-on engineering to Sarvam AI for the Summer 2027 LLM Evaluation Intern role. I've attached my resume here: https://github.com/adhyan-jain. Would you be open to considering me for an internal referral? Thank you so much for your guidance!",
+					Draft:        "Hi Raghavan, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore and part of the ACM VIT team. I work as an applied AI engineer building production LLM systems with verifiable reliability. For example, in EchoTales (https://github.com/adhyan-jain/EchoTales), I architected bitemporal knowledge graphs and structured retrieval pipelines where entity facts are grounded against source text with bounded review queues. With our ACM chapter, I also authored runtime developer guides for SGLang. I would love to bring this hands-on engineering to Sarvam AI for the Summer 2027 LLM Evaluation Intern role. I've attached my resume here: https://github.com/adhyan-jain. Would you be open to considering me for an internal referral? Thank you so much for your guidance!",
 				},
 				{
 					Name:         "Harish Krishnamurthy",
@@ -161,7 +163,7 @@ func main() {
 					PriorityTier: "Priority 1 (Chapter Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/SarvamAI_Applied_AI_LLM_Evaluation_Intern_2026-11-17.md",
-					Draft:        "Hi Harish, hope you're having a great week! I am Adhyan, a 3rd year student at VIT Vellore. I build applied AI pipelines where factual reliability is designed into the system rather than assumed. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered bitemporal coreference evaluation harnesses measuring precision and recall across 21k entity spans with bounded human review queues, alongside SGLang documentation work with ACM VIT. I am really inspired by Sarvam's evaluation benchmarks for Indic models. If you have a few minutes, would you be open to glancing at my attached resume for an internship referral? I would truly appreciate your guidance: https://github.com/adhyan-jain!",
+					Draft:        "Hi Harish, hope you're having a great week! I am Adhyan Jain, a 3rd year student at VIT Vellore. I build applied AI pipelines where factual reliability is designed into the system rather than assumed. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered bitemporal coreference evaluation harnesses measuring precision and recall across 21k entity spans with bounded human review queues, alongside SGLang documentation work with ACM VIT. I am really inspired by Sarvam's evaluation benchmarks for Indic models. If you have a few minutes, would you be open to glancing at my attached resume for an internship referral? I would truly appreciate your guidance: https://github.com/adhyan-jain!",
 				},
 				{
 					Name:         "Siddharth Nair",
@@ -171,7 +173,7 @@ func main() {
 					PriorityTier: "Priority 2 (Domain Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/SarvamAI_Applied_AI_LLM_Evaluation_Intern_2026-11-17.md",
-					Draft:        "Hi Siddharth, hope you are doing well! I am Adhyan, a junior at VIT Vellore (CSE, batch of 2028). I build applied AI systems with deterministic guardrails. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered bitemporal entity resolution harnesses across translated text to verify factuality against authoritative sources. With ACM VIT, I authored developer guides for SGLang. I am applying for the Summer 2027 LLM Evaluation Intern position at Sarvam AI. Would you be comfortable taking a quick look at my attached resume to see if I might be a good fit for an internal referral? Thank you for your time: https://github.com/adhyan-jain!",
+					Draft:        "Hi Siddharth, hope you are doing well! I am Adhyan Jain, a junior at VIT Vellore (CSE, batch of 2028). I build applied AI systems with deterministic guardrails. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered bitemporal entity resolution harnesses across translated text to verify factuality against authoritative sources. With ACM VIT, I authored developer guides for SGLang. I am applying for the Summer 2027 LLM Evaluation Intern position at Sarvam AI. Would you be comfortable taking a quick look at my attached resume to see if I might be a good fit for an internal referral? Thank you for your time: https://github.com/adhyan-jain!",
 				},
 				{
 					Name:         "Vivek Raghavan",
@@ -181,7 +183,7 @@ func main() {
 					PriorityTier: "Priority 3 (Domain Lead / Founder)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/SarvamAI_Applied_AI_LLM_Evaluation_Intern_2026-11-17.md",
-					Draft:        "Hi Vivek, hope you are having a good week! I am Adhyan, a 3rd year CSE student at VIT Vellore. I build LLM systems with verifiable correctness. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered bitemporal knowledge graphs and evaluation harnesses verifying factuality across 21k entity spans, while with ACM VIT I authored developer documentation for SGLang. I applied for the Summer 2027 LLM Evaluation Intern role to help your team benchmark hallucination rates on multi-lingual models. I have attached my resume here: https://github.com/adhyan-jain and would be deeply grateful for your team's consideration. Thank you!",
+					Draft:        "Hi Vivek, hope you are having a good week! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore. I build LLM systems with verifiable correctness. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered bitemporal knowledge graphs and evaluation harnesses verifying factuality across 21k entity spans, while with ACM VIT I authored developer documentation for SGLang. I applied for the Summer 2027 LLM Evaluation Intern role to help your team benchmark hallucination rates on multi-lingual models. I have attached my resume here: https://github.com/adhyan-jain and would be deeply grateful for your team's consideration. Thank you!",
 				},
 				{
 					Name:         "Pratyush Kumar",
@@ -191,7 +193,7 @@ func main() {
 					PriorityTier: "Priority 3 (Founder)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/SarvamAI_Applied_AI_LLM_Evaluation_Intern_2026-11-17.md",
-					Draft:        "Hi Pratyush, hope you are doing well! I am Adhyan, a 3rd year undergraduate at VIT Vellore. I closely follow Sarvam's work on foundational models for India. Having authored runtime guides for SGLang with our ACM VIT team and built bitemporal coreference evaluation harnesses in EchoTales (https://github.com/adhyan-jain/EchoTales), I submitted my application for the Summer 2027 LLM Evaluation Intern opening. I've attached my resume for your review and would love the opportunity to contribute to your evaluation harnesses: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi Pratyush, hope you are doing well! I am Adhyan Jain, a 3rd year undergraduate at VIT Vellore. I closely follow Sarvam's work on foundational models for India. Having authored runtime guides for SGLang with our ACM VIT team and built bitemporal coreference evaluation harnesses in EchoTales (https://github.com/adhyan-jain/EchoTales), I submitted my application for the Summer 2027 LLM Evaluation Intern opening. I've attached my resume for your review and would love the opportunity to contribute to your evaluation harnesses: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 			},
 		},
@@ -212,7 +214,7 @@ func main() {
 					PriorityTier: "Priority 1 (Chapter Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Postman_SDE_Intern_Backend_Distributed_Systems_2026-11-17.md",
-					Draft:        "Hi Ankit, hope you're having a productive week! I am Adhyan, a 3rd year student at VIT Vellore and part of the ACM chapter. I specialize in backend systems in Go, focusing on concurrency control and distributed coordination. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered atomic worker lease serialization via Redis Lua scripts and pull-based worker daemons over gRPC/TLS with sub-15s fault recovery, stress-tested across 1,000 chaos jobs. In Griffin, I optimized PostgreSQL connection pools. I applied for Postman's Summer 2027 Backend SDE Intern opening and would really appreciate your guidance and an internal referral if my profile aligns: https://github.com/adhyan-jain. Attached my resume!",
+					Draft:        "Hi Ankit, hope you're having a productive week! I am Adhyan Jain, a 3rd year student at VIT Vellore and part of the ACM chapter. I specialize in backend systems in Go, focusing on concurrency control and distributed coordination. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered atomic worker lease serialization via Redis Lua scripts and pull-based worker daemons over gRPC/TLS with sub-15s fault recovery, stress-tested across 1,000 chaos jobs. In Griffin, I optimized PostgreSQL connection pools. I applied for Postman's Summer 2027 Backend SDE Intern opening and would really appreciate your guidance and an internal referral if my profile aligns: https://github.com/adhyan-jain. Attached my resume!",
 				},
 				{
 					Name:         "Rohit Sundaram",
@@ -222,7 +224,7 @@ func main() {
 					PriorityTier: "Priority 1 (Chapter Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Postman_SDE_Intern_Backend_Distributed_Systems_2026-11-17.md",
-					Draft:        "Hi Rohit, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore (ISTE chapter). I really admire Postman's distributed cloud infrastructure. In my project ComputeHive (https://github.com/adhyan-jain/ComputeHive), I designed a pull-based worker daemon in Go over gRPC/TLS with dead-worker lease recovery, tested across 600+ concurrent requests. In Griffin, I engineered modular DAG execution. I applied for the Backend SDE Intern role for Summer 2027 and would be deeply grateful if you'd be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thanks so much for your guidance!",
+					Draft:        "Hi Rohit, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore (ISTE chapter). I really admire Postman's distributed cloud infrastructure. In my project ComputeHive (https://github.com/adhyan-jain/ComputeHive), I designed a pull-based worker daemon in Go over gRPC/TLS with dead-worker lease recovery, tested across 600+ concurrent requests. In Griffin, I engineered modular DAG execution. I applied for the Backend SDE Intern role for Summer 2027 and would be deeply grateful if you'd be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thanks so much for your guidance!",
 				},
 				{
 					Name:         "Tanya Mittal",
@@ -232,7 +234,7 @@ func main() {
 					PriorityTier: "Priority 2 (Domain Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Postman_SDE_Intern_Backend_Distributed_Systems_2026-11-17.md",
-					Draft:        "Hi Tanya, hope you're doing well! I'm Adhyan, a 3rd year student from VIT Vellore. I've been focusing heavily on backend engineering in Go, building modular monoliths and capability-gated database layers in Griffin (https://github.com/adhyan-jain/griffin), as well as distributed task scheduling in ComputeHive. I am applying for the Summer 2027 SDE Intern opening at Postman and would love to ask if you'd be open to reviewing my attached resume for a referral: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi Tanya, hope you're doing well! I am Adhyan Jain, a 3rd year student from VIT Vellore. I've been focusing heavily on backend engineering in Go, building modular monoliths and capability-gated database layers in Griffin (https://github.com/adhyan-jain/griffin), as well as distributed task scheduling in ComputeHive. I am applying for the Summer 2027 SDE Intern opening at Postman and would love to ask if you'd be open to reviewing my attached resume for a referral: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 				{
 					Name:         "Rahul Jain",
@@ -242,7 +244,7 @@ func main() {
 					PriorityTier: "Priority 2 (Staff Engineer)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Postman_SDE_Intern_Backend_Distributed_Systems_2026-11-17.md",
-					Draft:        "Hi Rahul, hope you are having a productive week! I am Adhyan, a 3rd year student at VIT Vellore studying distributed systems in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I tackled concurrency and split-brain prevention using atomic Redis Lua scripts and heartbeat monitors across a 1,000-job chaos run. I am applying for Postman's Summer 2027 Backend SDE Intern role. If you have a moment, I would be grateful if you could glance at my attached resume: https://github.com/adhyan-jain. Thank you for your time and consideration!",
+					Draft:        "Hi Rahul, hope you are having a productive week! I am Adhyan Jain, a 3rd year student at VIT Vellore studying distributed systems in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I tackled concurrency and split-brain prevention using atomic Redis Lua scripts and heartbeat monitors across a 1,000-job chaos run. I am applying for Postman's Summer 2027 Backend SDE Intern role. If you have a moment, I would be grateful if you could glance at my attached resume: https://github.com/adhyan-jain. Thank you for your time and consideration!",
 				},
 				{
 					Name:         "Abhinav Asthana",
@@ -252,7 +254,7 @@ func main() {
 					PriorityTier: "Priority 3 (Founder)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Postman_SDE_Intern_Backend_Distributed_Systems_2026-11-17.md",
-					Draft:        "Hi Abhinav, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore. Postman has been a huge inspiration for my journey into distributed systems and backend engineering. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a distributed task runner in Go with atomic Redis Lua leasing and gRPC streaming. I submitted my application for the Summer 2027 Backend SDE Intern role. I have attached my resume and would be thrilled to contribute to Postman's team: https://github.com/adhyan-jain",
+					Draft:        "Hi Abhinav, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore. Postman has been a huge inspiration for my journey into distributed systems and backend engineering. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a distributed task runner in Go with atomic Redis Lua leasing and gRPC streaming. I submitted my application for the Summer 2027 Backend SDE Intern role. I have attached my resume and would be thrilled to contribute to Postman's team: https://github.com/adhyan-jain",
 				},
 			},
 		},
@@ -273,7 +275,7 @@ func main() {
 					PriorityTier: "Priority 1 (Alumni / Systems)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/ModalLabs_Systems_Agent_Infrastructure_Intern_2026-11-17.md",
-					Draft:        "Hi Akshat, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore. I build container runtimes and systems infrastructure in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered an execution runtime where untrusted jobs execute in ephemeral sandboxes with dropped Linux capabilities, read-only root filesystems, and dynamic memory backpressure based on /proc/meminfo hysteresis at 90% saturation. I applied for the Systems & Agent Infrastructure Intern role at Modal Labs for Summer 2027 and would be thrilled to contribute to your scheduling primitives. I have attached my resume here: https://github.com/adhyan-jain. Would appreciate your review for a referral!",
+					Draft:        "Hi Akshat, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore. I build container runtimes and systems infrastructure in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered an execution runtime where untrusted jobs execute in ephemeral sandboxes with dropped Linux capabilities, read-only root filesystems, and dynamic memory backpressure based on /proc/meminfo hysteresis at 90% saturation. I applied for the Systems & Agent Infrastructure Intern role at Modal Labs for Summer 2027 and would be thrilled to contribute to your scheduling primitives. I have attached my resume here: https://github.com/adhyan-jain. Would appreciate your review for a referral!",
 				},
 				{
 					Name:         "Charles Frye",
@@ -283,7 +285,7 @@ func main() {
 					PriorityTier: "Priority 2 (Systems Engineer)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/ModalLabs_Systems_Agent_Infrastructure_Intern_2026-11-17.md",
-					Draft:        "Hi Charles, hope you're having a great week! I am Adhyan, a 3rd year undergraduate at VIT Vellore. I've been studying serverless runtimes and workload isolation. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I implemented host backpressure in Go by tracking /proc/meminfo hysteresis thresholds to prevent container OOMs across a 1,000-job chaos suite. I applied for the Summer 2027 Systems Infrastructure Intern role at Modal Labs and would love to share my attached resume with you: https://github.com/adhyan-jain. Thank you for your time and work on Modal!",
+					Draft:        "Hi Charles, hope you're having a great week! I am Adhyan Jain, a 3rd year undergraduate at VIT Vellore. I've been studying serverless runtimes and workload isolation. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I implemented host backpressure in Go by tracking /proc/meminfo hysteresis thresholds to prevent container OOMs across a 1,000-job chaos suite. I applied for the Summer 2027 Systems Infrastructure Intern role at Modal Labs and would love to share my attached resume with you: https://github.com/adhyan-jain. Thank you for your time and work on Modal!",
 				},
 				{
 					Name:         "Bernardo Pires",
@@ -293,7 +295,7 @@ func main() {
 					PriorityTier: "Priority 2 (Kernel / Isolation Engineer)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/ModalLabs_Systems_Agent_Infrastructure_Intern_2026-11-17.md",
-					Draft:        "Hi Bernardo, hope you are well! I am Adhyan, a 3rd year student studying container runtimes and process isolation. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered sandbox execution in Go with read-only filesystems, dropped capabilities, and lease tokens in Redis to reject stale commits. I have submitted my application for the Systems Intern position for Summer 2027. I would be honored if you could take a look at my attached resume and code: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi Bernardo, hope you are well! I am Adhyan Jain, a 3rd year student studying container runtimes and process isolation. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered sandbox execution in Go with read-only filesystems, dropped capabilities, and lease tokens in Redis to reject stale commits. I have submitted my application for the Systems Intern position for Summer 2027. I would be honored if you could take a look at my attached resume and code: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 				{
 					Name:         "Erik Bernhardsson",
@@ -303,7 +305,7 @@ func main() {
 					PriorityTier: "Priority 3 (Founder)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/ModalLabs_Systems_Agent_Infrastructure_Intern_2026-11-17.md",
-					Draft:        "Hi Erik, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore. Modal's serverless container runtime is one of the most exciting systems projects in tech. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I built container execution runtimes in Go with dropped capabilities, read-only rootfs, and memory saturation backpressure. I applied for the Summer 2027 Systems Intern role and have attached my resume here: https://github.com/adhyan-jain. Thank you for your time and consideration!",
+					Draft:        "Hi Erik, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore. Modal's serverless container runtime is one of the most exciting systems projects in tech. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I built container execution runtimes in Go with dropped capabilities, read-only rootfs, and memory saturation backpressure. I applied for the Summer 2027 Systems Intern role and have attached my resume here: https://github.com/adhyan-jain. Thank you for your time and consideration!",
 				},
 			},
 		},
@@ -324,7 +326,7 @@ func main() {
 					PriorityTier: "Priority 1 (Alumni / Full-Stack)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Inkeep_Agent_Infrastructure_FullStack_Intern_2026-11-17.md",
-					Draft:        "Hi Pranav, hope you are having a great week! I am Adhyan, a 3rd year student at VIT Vellore. I build applied AI and agent infrastructure systems. In Griffin (https://github.com/adhyan-jain/griffin), I architected an autonomous host orchestrator in Go with DAG task dependencies, capability security tokens, and real-time SSE streaming to a Next.js interface. In EchoTales, I engineered bitemporal graph retrieval answering point-in-time state queries across 21k entity spans. I applied for the Summer 2027 Agent Infrastructure Intern opening at Inkeep. I've attached my resume: https://github.com/adhyan-jain. Would be very grateful if you could consider referring me!",
+					Draft:        "Hi Pranav, hope you are having a great week! I am Adhyan Jain, a 3rd year student at VIT Vellore. I build applied AI and agent infrastructure systems. In Griffin (https://github.com/adhyan-jain/griffin), I architected an autonomous host orchestrator in Go with DAG task dependencies, capability security tokens, and real-time SSE streaming to a Next.js interface. In EchoTales, I engineered bitemporal graph retrieval answering point-in-time state queries across 21k entity spans. I applied for the Summer 2027 Agent Infrastructure Intern opening at Inkeep. I've attached my resume: https://github.com/adhyan-jain. Would be very grateful if you could consider referring me!",
 				},
 				{
 					Name:         "Alex Mercer",
@@ -334,7 +336,7 @@ func main() {
 					PriorityTier: "Priority 2 (Lead Engineer)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Inkeep_Agent_Infrastructure_FullStack_Intern_2026-11-17.md",
-					Draft:        "Hi Alex, hope you're having a good week! I am Adhyan, a 3rd year student at VIT Vellore building agent execution engines. In Griffin (https://github.com/adhyan-jain/griffin), I engineered an orchestrator with 11 lifecycle states, capability-gated security boundaries, and live SSE streaming to Next.js. In EchoTales, I built bitemporal state queries. I applied for the Summer 2027 Agent Infrastructure Intern role at Inkeep. I have attached my resume for your review and would love any feedback on my profile: https://github.com/adhyan-jain!",
+					Draft:        "Hi Alex, hope you're having a good week! I am Adhyan Jain, a 3rd year student at VIT Vellore building agent execution engines. In Griffin (https://github.com/adhyan-jain/griffin), I engineered an orchestrator with 11 lifecycle states, capability-gated security boundaries, and live SSE streaming to Next.js. In EchoTales, I built bitemporal state queries. I applied for the Summer 2027 Agent Infrastructure Intern role at Inkeep. I have attached my resume for your review and would love any feedback on my profile: https://github.com/adhyan-jain!",
 				},
 				{
 					Name:         "David Liang",
@@ -344,7 +346,7 @@ func main() {
 					PriorityTier: "Priority 2 (Retrieval Engineer)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Inkeep_Agent_Infrastructure_FullStack_Intern_2026-11-17.md",
-					Draft:        "Hi David, hope you are well! I am Adhyan, a 3rd year undergraduate at VIT Vellore. I've been exploring how temporal entity shifts impact retrieval. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered a bitemporal knowledge graph answering point-in-time state queries across 21k entity spans. I applied for the Summer 2027 Agent Infrastructure Intern opening at Inkeep and would be very grateful if you might be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi David, hope you are well! I am Adhyan Jain, a 3rd year undergraduate at VIT Vellore. I've been exploring how temporal entity shifts impact retrieval. In EchoTales (https://github.com/adhyan-jain/EchoTales), I engineered a bitemporal knowledge graph answering point-in-time state queries across 21k entity spans. I applied for the Summer 2027 Agent Infrastructure Intern opening at Inkeep and would be very grateful if you might be open to reviewing my attached resume for an internal referral: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 				{
 					Name:         "Nick D'Amato",
@@ -354,7 +356,7 @@ func main() {
 					PriorityTier: "Priority 3 (Founder)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/Inkeep_Agent_Infrastructure_FullStack_Intern_2026-11-17.md",
-					Draft:        "Hi Nick, hope you are having a great week! I am Adhyan, a 3rd year CSE student at VIT Vellore. Inkeep's agent search platform has been inspiring to follow. In Griffin (https://github.com/adhyan-jain/griffin), I engineered an autonomous agent runtime in Go with DAG dependencies, capability boundaries, and Next.js SSE streaming. I submitted my application for the Summer 2027 Agent Infrastructure Intern role. Attached my resume for your review: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi Nick, hope you are having a great week! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore. Inkeep's agent search platform has been inspiring to follow. In Griffin (https://github.com/adhyan-jain/griffin), I engineered an autonomous agent runtime in Go with DAG dependencies, capability boundaries, and Next.js SSE streaming. I submitted my application for the Summer 2027 Agent Infrastructure Intern role. Attached my resume for your review: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 			},
 		},
@@ -375,7 +377,7 @@ func main() {
 					PriorityTier: "Priority 1 (Chapter Alumni)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/StepSecurity_Distributed_Systems_Backend_Intern_2026-11-17.md",
-					Draft:        "Hi Varun, hope you are doing well! I am Adhyan, a 3rd year CSE student at VIT Vellore. I focus on container security and systems infrastructure in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered hardened container execution with all Linux capabilities dropped, non-root execution, and immutable SHA-256 audit trails. In Griffin, I designed cryptographic approval gating for host actions. I applied for the Summer 2027 Backend Intern role at StepSecurity and would love to contribute to your runtime security agents. Attached my resume: https://github.com/adhyan-jain. Would value your advice and referral!",
+					Draft:        "Hi Varun, hope you are doing well! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore. I focus on container security and systems infrastructure in Go. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered hardened container execution with all Linux capabilities dropped, non-root execution, and immutable SHA-256 audit trails. In Griffin, I designed cryptographic approval gating for host actions. I applied for the Summer 2027 Backend Intern role at StepSecurity and would love to contribute to your runtime security agents. Attached my resume: https://github.com/adhyan-jain. Would value your advice and referral!",
 				},
 				{
 					Name:         "Karthik Balakrishnan",
@@ -385,7 +387,7 @@ func main() {
 					PriorityTier: "Priority 2 (Security Systems Engineer)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/StepSecurity_Distributed_Systems_Backend_Intern_2026-11-17.md",
-					Draft:        "Hi Karthik, hope you are having a good week! I am Adhyan, a 3rd year CSE student at VIT Vellore. I follow StepSecurity's work on CI/CD runner protection closely. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I implemented hardened container execution with immutable SHA-256 argument logs in Go, and in Griffin I built cryptographic approval gating for host tools. I applied for the Summer 2027 Backend Intern role and would be deeply grateful if you could glance at my attached resume: https://github.com/adhyan-jain. Thank you!",
+					Draft:        "Hi Karthik, hope you are having a good week! I am Adhyan Jain, a 3rd year CSE student at VIT Vellore. I follow StepSecurity's work on CI/CD runner protection closely. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I implemented hardened container execution with immutable SHA-256 argument logs in Go, and in Griffin I built cryptographic approval gating for host tools. I applied for the Summer 2027 Backend Intern role and would be deeply grateful if you could glance at my attached resume: https://github.com/adhyan-jain. Thank you!",
 				},
 				{
 					Name:         "Ashish Kurmi",
@@ -395,7 +397,7 @@ func main() {
 					PriorityTier: "Priority 3 (Founder)",
 					Status:       "drafted",
 					ResumePath:   "/home/adhyan/Documents/Griffin/resumes/sent/StepSecurity_Distributed_Systems_Backend_Intern_2026-11-17.md",
-					Draft:        "Hi Ashish, hope you are doing well! I am Adhyan, a 3rd year student at VIT Vellore. StepSecurity's mission to protect CI/CD pipelines is critical. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a Go container runner with dropped capabilities, non-root execution, and immutable audit logs, while in Griffin I built a 4-tier risk classification engine. I applied for the Summer 2027 Backend Intern role. I have attached my resume for your consideration: https://github.com/adhyan-jain. Thank you for your time!",
+					Draft:        "Hi Ashish, hope you are doing well! I am Adhyan Jain, a 3rd year student at VIT Vellore. StepSecurity's mission to protect CI/CD pipelines is critical. In ComputeHive (https://github.com/adhyan-jain/ComputeHive), I engineered a Go container runner with dropped capabilities, non-root execution, and immutable audit logs, while in Griffin I built a 4-tier risk classification engine. I applied for the Summer 2027 Backend Intern role. I have attached my resume for your consideration: https://github.com/adhyan-jain. Thank you for your time!",
 				},
 			},
 		},
@@ -757,4 +759,63 @@ CRITICAL INVARIANTS:
 		WHERE id = '67e3433d-4348-45c3-bbee-20d039632daf'
 	`, scrollerGoal, string(newTrPayload))
 	fmt.Println("Configured continuous 10-20 minute feed scroller on INTERNSHIP TRACKER.")
+	// 8. CONFIGURE DEDICATED DAILY TASK FOR FEED SCROLLER
+	// User requested: "Also for the feed scroller, make it a daily task"
+	feedCadence := "daily 09:30 IST"
+	nextFeedRun, err := scheduler.NextOccurrence(feedCadence, time.Now().UTC())
+	if err != nil {
+		nextFeedRun = time.Now().UTC().Add(12 * time.Hour)
+	}
+
+	feedScrollerGoal := `Continuous Daily Feed Scroller Routine (15 mins):
+Automated continuous feed scroller designed to capture organic hiring posts, founder callouts, and global remote software/AI intern openings.
+Sources: Twitter/X (#remotejobs, #buildinpublic hiring, intern callouts), LinkedIn public founder feeds & job posts, Hacker News "Who is hiring?", Reddit (r/remotejs, r/cscareerquestions, r/forhire), Wellfound.
+Window: 15 minutes continuous automated scrolling per daily run.
+Target Cohort: Summer 2027 Internships / Remote Global Work.
+Rules:
+1. Strict Append-Only Semantics: Append newly discovered listings to /home/adhyan/Documents/Griffin/outreach/referral_tracker.json and /home/adhyan/Documents/Griffin/trackers/internships.json without overwriting history.
+2. Canonical Deduplication: Deduplicate on (company, role, link).
+3. Tier A Automatic Promotion: Surface remote listings >= Rs 20,000/mo ($250+/mo) or onsite >= Rs 30,000/mo directly to the user's Approvals queue.`
+
+	feedPayload := map[string]any{
+		"cadence":                  feedCadence,
+		"continuous_feed_scroller": true,
+		"scroll_duration_minutes":  15,
+		"scroll_sources": []string{
+			"Twitter/X hiring posts (#remotejobs, #buildinpublic hiring, global remote intern)",
+			"LinkedIn public job posts & founder feeds",
+			"Hacker News 'Who is hiring?' active threads",
+			"Reddit (r/remotejs, r/cscareerquestions, r/forhire)",
+			"Wellfound remote startup listings",
+		},
+		"append_only":      true,
+		"deduplicate_keys": []string{"company", "role", "link"},
+	}
+	feedPayloadJSON, _ := json.Marshal(feedPayload)
+
+	feedTaskTitle := "DAILY FEED SCROLLER - REMOTE & INTERNSHIPS (daily 09:30)"
+	var feedTaskID uuid.UUID
+	err = pool.QueryRow(ctx, `SELECT id FROM tasks WHERE user_id = $1 AND title LIKE 'DAILY FEED SCROLLER%'`, userID).Scan(&feedTaskID)
+	if err == nil {
+		_, _ = pool.Exec(ctx, `
+			UPDATE tasks
+			SET title = $1, goal = $2, input_payload = $3::jsonb,
+			    scheduled_for = $4, status = 'QUEUED', updated_at = NOW()
+			WHERE id = $5
+		`, feedTaskTitle, feedScrollerGoal, string(feedPayloadJSON), nextFeedRun, feedTaskID)
+		fmt.Printf("Updated dedicated daily task: %s (ID: %s, Next Run: %s)\n", feedTaskTitle, feedTaskID, nextFeedRun.Format(time.RFC3339))
+	} else {
+		feedTaskID = uuid.New()
+		_, _ = pool.Exec(ctx, `
+			INSERT INTO tasks (
+				id, user_id, title, goal, status, priority, manager_domain,
+				input_payload, scheduled_for, created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, 'QUEUED', 'HIGH', 'career',
+				$5::jsonb, $6, NOW(), NOW()
+			)
+		`, feedTaskID, userID, feedTaskTitle, feedScrollerGoal, string(feedPayloadJSON), nextFeedRun)
+		fmt.Printf("Created dedicated daily task: %s (ID: %s, Next Run: %s)\n", feedTaskTitle, feedTaskID, nextFeedRun.Format(time.RFC3339))
+	}
+
 }
