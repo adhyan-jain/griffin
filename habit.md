@@ -191,6 +191,32 @@ To eliminate black-box execution failures and ensure 100% reliable submissions:
 - **Quiet Hours**: Zero automated messaging between 22:00 and 08:00 local IST time.
 - **Contextual Hook Diversity**: Every message must feature unique technical angles (e.g. ACM VIT SGLang docs, ComputeHive Redis Lua leasing, EchoTales bitemporal resolution); zero identical template broadcasts.
 
+---
+
+### 10.6 Append-Only Tracker Ledgers & Cumulative History
+All Griffin trackers (`INTERNSHIP TRACKER`, `FREELANCE & CLIENT DISCOVERY`, `HACKATHON TRACKER`, `THREAD ALERTS`, `applied.json`, `referral_tracker.json`) must operate under strict **APPEND-ONLY** semantics:
+- When a tracker runs on its scheduled cadence, it loads the existing dataset from disk.
+- Newly discovered opportunities or posts are deduplicated against existing records using canonical keys (`company`, `role`, `link` / URL).
+- New rows are appended to the cumulative dataset. Existing history, past submission records, deadlines, and founder metadata must **never be truncated, replaced, or erased**.
+- Output files (`open_tracker.json`, `tracker.csv`, `tracker.md`) represent the living, cumulative archive of all discovered listings.
+
+---
+
+### 10.7 Communication Tone, Age Awareness & Outreach Etiquette
+- **Age Awareness**: Adhyan is a 20-year-old 3rd year undergraduate (B.Tech CSE, VIT Vellore). Outreach recipients (staff engineers, engineering managers, directors, founders) are often senior professionals.
+- **Polite & Humble Demeanor**: All messages must maintain a warm, polite, and respectful tone. Avoid presumptive or demanding phrasing like "what I offer you" or "what I can do for you."
+- **Courteous Inquiries**: Politely inquire if they would be open to reviewing the attached resume or giving brief advice on an internal referral for the summer opening.
+- **Resume Attachment**: Every outreach draft must explicitly reference and attach the tailored resume file/link for immediate review.
+- **Zero Emojis**: Maintain strictly zero emojis across all drafted pitches, messages, and correspondence.
+
+---
+
+### 10.8 Exam Freeze Window & Cadence Protection
+- When the user announces an exam period (e.g., active exams through a specified date), Griffin must record the hold in the database (`scheduled_for`, `input_payload.paused_until`, `input_payload.exam_hold = true`).
+- Targeted routines (such as `DSA COACH` paused until November 29 07:30 IST) are frozen in the task queue to prevent unwanted notifications or dispatches during revision and exam hours.
+- Human approval cards stay safely staged in `PENDING` with zero automatic expiry, allowing the user to review and approve them when their exams conclude.
+
+
 
 
 
