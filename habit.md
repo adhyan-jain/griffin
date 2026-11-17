@@ -216,6 +216,34 @@ All Griffin trackers (`INTERNSHIP TRACKER`, `FREELANCE & CLIENT DISCOVERY`, `HAC
 - Targeted routines (such as `DSA COACH` paused until November 29 07:30 IST) are frozen in the task queue to prevent unwanted notifications or dispatches during revision and exam hours.
 - Human approval cards stay safely staged in `PENDING` with zero automatic expiry, allowing the user to review and approve them when their exams conclude.
 
+---
+
+### 10.9 Mandatory Application Portal Deadlink Verification
+- Before Griffin stages or releases LinkedIn referral outreach messages for any target company, it MUST first verify that the company's application portal URL is active (HTTP 200) and that the candidate's application submission package is staged in a ready-to-submit state.
+- If a portal link is dead (404, DNS failure), Griffin must resolve it to an active verified careers page (e.g. Wellfound, Workable, company direct) or halt outreach until the verified portal is confirmed.
+
+---
+
+### 10.10 Professional Identity: Applied AI & Systems Builder (Not a QA Tester)
+- Adhyan's identity is an **Applied AI engineer focused on evaluation and reliability** ("I build LLM systems where you can check whether the output is right").
+- Reliability, failure testing (such as ComputeHive's 1,000-job chaos run), and evaluation harnesses are framed as empirical proof of engineering rigor in building production AI and distributed systems.
+- Do NOT emphasize testing or QA in isolation; never position the candidate as a QA tester or test engineer.
+- Highlight tangible production metrics and real-world scale: 70 students, 600+ concurrent users, 1,100+ applications, bitemporal knowledge graphs, Redis Lua atomic leasing, and SGLang documentation contributions.
+- Mid-sized substantive pitches (100–120 words) with warm, polite, age-conscious demeanor and direct resume attachments.
+
+---
+
+### 10.11 In-Place Approval Deduplication & Stale Card Cleanup
+- When follow-up instructions modify an existing campaign, outreach draft, or application pitch, Griffin must update the existing record in `approvals` and `outreach_targets` in place based on recipient handle and action summary.
+- Griffin must never create duplicate parallel cards in history.
+- Any obsolete or superseded approval requests (e.g., from updated rules or cancelled roles) must be deleted or removed from the database entirely so history does not clutter the user's Approvals screen.
+
+---
+
+### 10.12 Worktree Isolation for Framework & Security Upgrades
+- Framework migrations and security codemods (e.g., Next.js security upgrade) must execute in an isolated Git worktree in the background (`griffin-security-upgrade`), ensuring primary codebase development and application pipelines remain unblocked and stable.
+
+
 
 
 

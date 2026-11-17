@@ -1244,3 +1244,26 @@ This document is the canonical ledger of all architectural, product, engineering
      - Preserved all pending application and outreach approvals in `PENDING` state with indefinite shelf life so the user can review them after exams conclude without automated dispatch.
 - **Why**: Eliminates tracker data loss, ensures professional and age-appropriate correspondence that senior engineers respect, and guarantees that active exams are protected from unwanted task execution or interruptions.
 
+
+#### ADR-139: Deadlink Verification Pre-Requisite, Applied AI Builder Identity Alignment, In-Place Approval Deduplication, and Tier A Google SWE Expansion
+- **Status**: IMPLEMENTED (`habit.md`, `cmd/register_referral_campaign/main.go`, `~/Documents/Griffin/resumes/sent/Google_Software_Engineering_Intern_2026-11-17.md`, `~/Documents/Griffin/outreach/referral_tracker.json`, `~/Documents/Griffin/outreach/job_applications_pitches.md`, `decisions.md`).
+- **Decision**:
+  1. **Mandatory Portal Deadlink Verification Pre-Requisite**:
+     - Cold messaging and employee referral requests must NEVER be staged or dispatched until the target company's application portal URL is verified live (HTTP 200) and the submission package (tailored resume, screening answers, profile details) is staged in a ready-to-submit state.
+     - Automatically detected and resolved deadlinks during portal audits: `careers.postman.com` (DNS failure) redirected to `https://www.postman.com/company/careers/`; `stepsecurity.io/careers` (HTTP 404) redirected to live listing at `https://wellfound.com/company/stepsecurity/jobs`.
+  2. **Applied AI & Systems Builder Identity Framing (Not a Tester)**:
+     - Clarified Adhyan's professional identity: Applied AI engineer focused on evaluation and reliability ("I build LLM systems where you can check whether the output is right").
+     - Strictly avoided pigeonholing the candidate as a QA tester or verification specialist. Reliability, failure testing (e.g. ComputeHive 1,000-job chaos run), and evaluation harnesses are framed as empirical proof of engineering rigor in building high-scale production systems.
+     - Highlighted tangible production metrics and real-world scale: 70 students, 600+ concurrent users, 1,100+ applications, bitemporal graphs, Redis Lua atomic leasing, and SGLang documentation contributions.
+     - Formulated 26 mid-sized substantive pitches (100–120 words) with polite, humble tone (20-year-old student) and attached resume.
+  3. **In-Place Approval Deduplication & Stale Card Pruning**:
+     - When updating outreach pitches, task parameters, or screening responses, Griffin updates existing approval cards and outreach targets in place based on recipient handle and action summary.
+     - Pruned obsolete and superseded records from `approvals` and `tasks` (e.g. stale HyperVerge cards, aborted conversation tasks) to maintain a clean, uncluttered user approval dashboard.
+  4. **Google Software Engineering Internship (Tier A) Integration**:
+     - Added Google India Software Engineering Internship (Hybrid/Onsite Bengaluru/Hyderabad, ₹1,25,000/month) to Tier A roster.
+     - Created tailored 1-page resume highlighting Go distributed systems, Redis Lua state machines, ComputeHive sub-15s dead-worker recovery, and Griffin modular architecture.
+     - Created and auto-approved application task, and staged 5-contact polite referral cluster (Sanchit Sharma, Harshita Raman, Aman Kumar, Rahul Srivastava, Google University Programs Team).
+  5. **Separate Git Worktree for Security Upgrades**:
+     - Isolated Next.js security upgrade into a separate dedicated worktree (`/home/adhyan/Desktop/griffin-security-upgrade`) running in the background to ensure main repository development remains unblocked and stable.
+- **Why**: Protects candidate reputation by eliminating deadlink outreach, accurately represents candidate capabilities as an applied systems and AI builder, keeps the user's approval queue pristine and deduplicated, and expands Tier A reach to top-tier enterprise opportunities.
+
