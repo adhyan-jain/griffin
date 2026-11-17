@@ -14,7 +14,7 @@ export const CATEGORY_LABELS: Record<VaultCategory, string> = {
   finance: "Bank and tax",
   resume: "Resume and career",
   certificate: "Certificates and letters",
-  other: "Other",
+  other: "Targets, config and reference",
 };
 
 export const MAX_BYTES = 5 * 1024 * 1024;
@@ -32,6 +32,7 @@ export function sniffMime(b: Uint8Array): string {
   if (at(0x47, 0x49, 0x46, 0x38)) return "image/gif";
   if (at(0x25, 0x50, 0x44, 0x46)) return "application/pdf";
   if (at(0x52, 0x49, 0x46, 0x46) && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "image/webp";
+  if (b.length > 0 && (b[0] === 0x7b || b[0] === 0x5b)) return "application/json";
   return "application/octet-stream";
 }
 

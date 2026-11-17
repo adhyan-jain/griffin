@@ -29,7 +29,7 @@ type Candidate struct {
 	Size     int64
 }
 
-var allowedExt = map[string]bool{".pdf": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".md": true, ".txt": true, ".doc": true, ".docx": true}
+var allowedExt = map[string]bool{".pdf": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".md": true, ".txt": true, ".doc": true, ".docx": true, ".json": true}
 
 // rules map words in a file name to a category and a label. The first rule that matches wins, and the
 // sensitive ones come first so a file named "pan_card_resume.pdf" is treated as an ID, the careful choice.
@@ -42,6 +42,7 @@ var rules = []struct {
 	{[]string{"bank", "statement", "itr", "form16", "tax", "passbook", "cheque"}, domain.VaultFinance, ""},
 	{[]string{"resume", "cv", "curriculum"}, domain.VaultResume, ""},
 	{[]string{"context"}, domain.VaultResume, ""}, // AJ_resume_context and the like
+	{[]string{"targets", "target", "config"}, domain.VaultOther, ""},
 	{[]string{"marksheet", "certificate", "transcript", "degree", "offer", "internship", "letter"}, domain.VaultCertificate, ""},
 }
 

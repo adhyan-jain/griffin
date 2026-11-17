@@ -65,13 +65,41 @@ interface Shown {
 }
 
 function Viewer({ shown, onClose }: { shown: Shown | null; onClose: () => void }) {
+  const isImage = shown?.doc.mime.startsWith("image/");
+  const isText =
+    shown &&
+    (shown.doc.mime.includes("json") ||
+      shown.doc.mime.startsWith("text/") ||
+      shown.doc.filename.endsWith(".json") ||
+      shown.doc.filename.endsWith(".md") ||
+      shown.doc.filename.endsWith(".txt"));
+  const textContent =
+    isText && shown
+      ? (() => {
+          try {
+            return new TextDecoder().decode(shown.doc.bytes);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+
   return (
-    <ResponsiveDialog open={shown !== null} onOpenChange={(o) => !o && onClose()} title={shown?.doc.filename ?? "Document"} description="Decrypted on this device. Closing this removes it from memory.">
+    <ResponsiveDialog
+      open={shown !== null}
+      onOpenChange={(o) => !o && onClose()}
+      title={shown?.doc.filename ?? "Document"}
+      description="Decrypted on this device. Closing this removes it from memory."
+    >
       {shown && (
         <div className="space-y-3">
-          {shown.doc.mime.startsWith("image/") ? (
+          {isImage ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={shown.url} alt={shown.doc.filename} className="max-h-[60vh] w-full rounded-lg border object-contain" />
+          ) : textContent !== null ? (
+            <pre className="max-h-[50vh] overflow-y-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">
+              {textContent}
+            </pre>
           ) : (
             <p className="text-sm text-muted-foreground">This type of file is opened by saving it to your device.</p>
           )}
@@ -199,8 +227,8 @@ export default function VaultPage() {
   return (
     <PageContainer className="max-w-3xl">
       <PageHeader
-        title="Vault"
-        description="Documents you may need on your phone when your laptop is off."
+        title="Library"
+        description="Your documents, reference context, and targets on S3. Griffin accesses them only with your approval."
         actions={
           <Button className="h-10" onClick={() => startAdd()}>
             <Plus /> Add
@@ -240,7 +268,7 @@ export default function VaultPage() {
             <Skeleton className="h-16 w-full rounded-xl" />
           </div>
         ) : entries.length === 0 ? (
-          <EmptyState icon={<Lock />} title="Your Vault is empty" description="Add the documents you would need if you only had your phone: your resume, ID cards, certificates." />
+          <EmptyState icon={<Lock />} title="Your Library is empty" description="Add reference documents, targets.json, resumes, or context files that Griffin can reference upon your approval." />
         ) : (
           <ul className="divide-y overflow-hidden rounded-xl border bg-card">
             {entries.map((e) => (
@@ -276,11 +304,11 @@ export default function VaultPage() {
 
       <Viewer shown={shown} onClose={closeViewer} />
 
-      <ResponsiveDialog open={addOpen} onOpenChange={setAddOpen} title="Add to your Vault" description="Up to 5 MB. ID and bank documents are encrypted on this device first.">
+      <ResponsiveDialog open={addOpen} onOpenChange={setAddOpen} title="Add to your Library" description="Up to 5 MB. Documents are stored in your S3 Library. Sensitive ID and bank cards can be encrypted first.">
         <form onSubmit={save} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="vault-file">Document</Label>
-            <Input id="vault-file" type="file" accept="image/*,application/pdf,.md,.txt,.doc,.docx" required className="h-11 pt-2" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <Input id="vault-file" type="file" accept="image/*,application/pdf,.md,.txt,.doc,.docx,.json" required className="h-11 pt-2" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             <Button type="button" variant="outline" className="h-11 w-full" asChild>
               <label className="cursor-pointer">
                 <Camera /> Scan with the camera
@@ -291,7 +319,7 @@ export default function VaultPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="vault-label">Name</Label>
-            <Input id="vault-label" required maxLength={80} className="h-11" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="PAN card" />
+            <Input id="vault-label" required maxLength={80} className="h-11" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="targets.json or Resume Context" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="vault-category">Kind</Label>
@@ -317,7 +345,7 @@ export default function VaultPage() {
             </div>
           )}
           <Button type="submit" className="h-11 w-full" disabled={!file || !label.trim() || saving || (isSensitive(category) && !phrase) || (needsConfirm && again !== phrase)}>
-            {saving && <Loader2 className="animate-spin" />} Add to Vault
+            {saving && <Loader2 className="animate-spin" />} Add to Library
           </Button>
         </form>
       </ResponsiveDialog>
@@ -326,7 +354,7 @@ export default function VaultPage() {
         open={toDelete !== null}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Delete this document?"
-        description={toDelete ? `${toDelete.label} will be removed from your Vault. This can't be undone.` : undefined}
+        description={toDelete ? `${toDelete.label} will be removed from your Library. This can't be undone.` : undefined}
       >
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" className="h-11" onClick={() => setToDelete(null)}>
