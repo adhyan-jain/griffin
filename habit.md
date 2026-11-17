@@ -96,4 +96,62 @@ In everyday life, users do **not** leave their phones permanently unlocked or aw
 - **Prohibition of Silent Fallback**: If Claude is unavailable, rate-limited, or throws an error, Griffin **must halt and alert the user immediately**. It is strictly forbidden to fall back to Antigravity CLI or lower-tier models for resume modifications.
 - **Mandatory Pre-Application Approval Gate**: Under no circumstances may Griffin auto-submit an internship application, send a LinkedIn cold message, or dispatch a cold email without explicit prior user approval. Every application package (company, role, stipend, tailored resume variant, cover note, questionnaire responses) must pause in `AWAITING_APPROVAL` (`requires_approval = true`, `draft_only = true`), send an interactive approval prompt to the user's phone, and submit only after the user explicitly reviews and confirms.
 
+---
+
+## 9. Freelance & Client Acquisition Playbook
+
+Griffin enforces a disciplined multi-channel outreach engine, client vetting guardrails, and automated disqualification rules to secure high-quality engineering and LLM consulting contracts while avoiding exploitative leads.
+
+### 9.1 Multi-Channel Outreach Matrix
+
+| Channel | Target Audience | Approach Strategy | Primary Proof Link |
+| :--- | :--- | :--- | :--- |
+| **Hacker News monthly "Who is hiring" / "Seeking freelancer" threads** | Founders hiring directly | Email the address in the post on the same day with exactly one relevant proof link. | `StoryTrace`, `OS-Tutor-RAG`, `Proteus` |
+| **Product Hunt & launch platforms** | Teams shipping LLM features this week | Use the product, identify one real technical/UX flaw, and email the founder with a constructive fix. | `OS-Tutor-RAG`, `StoryTrace` |
+| **Discord & Slack communities (agent frameworks, dev tools)** | Founders stuck on technical hurdles & fellow engineers | Answer technical questions in public for two weeks before initiating any direct pitch. | `Proteus`, `StoryTrace` |
+| **X & LinkedIn contractor requests** | Early-stage startups posting "looking for a contractor" | Reply publicly with a specific technical example or architecture outline, then follow up with a direct message. | `StoryTrace`, `OS-Tutor-RAG` |
+| **Wellfound & YC Work at a Startup** | Early startups listing contract or part-time roles | Submit application through the portal, then email the founder directly with a tailored pitch. | Resume + `StoryTrace` / `Proteus` |
+| **Small AI & Automation Agencies** | Agency owners with more client pipeline than engineering capacity | Offer to subcontract as a specialist at a fixed rate. | `Proteus`, `OS-Tutor-RAG` |
+| **GitHub OSS Repositories** | Engineering teams with open LLM-related issues | Fix one open issue with a clean pull request, then inquire if they need paid contract assistance. | User's merged PRs + `StoryTrace` |
+| **Upwork & Contra** | Budget or quick-turnaround clients | Secondary side channel only; maintain strict minimum rates and never prioritize over direct founder outreach. | Portfolio / GitHub profile |
+| **Local Business / Supplier & Dealer Contacts** | Local business owners and distributor networks | Schedule introduction and present a live demonstration of `AquaDrop`. | `AquaDrop` (`https://github.com/AdhyanJain/AquaDrop`) |
+
+---
+
+### 9.2 Weekly Routine Target (20 / 2 / 1 Scorecard)
+
+To secure consistent paid contracts within 4 to 8 weeks, Griffin tracks and prompts the following weekly discipline:
+- **20 Targeted Outward Pitches / Week**: Personalized messages across HN, founders, and contract posts (average 3-4 per business day).
+- **2 Public Community Answers / Day**: High-value technical responses across developer Discords, Slacks, StackOverflow, or GitHub discussions (14/week).
+- **1 Fixed GitHub Issue / Week**: One substantive merged pull request or issue resolution on a target company's open-source repository.
+
+---
+
+### 9.3 Walk-Away Red Flags (Strict Automated Disqualification)
+
+Griffin's opportunity validator automatically disqualifies leads exhibiting any of the following anti-patterns:
+1. **Deferred Funding Payment**: "We will pay once we raise funding / seed round" (ref. RxGPT experience). Immediate rejection.
+2. **Unpaid Test Work > 2 Hours**: Any assessment, trial task, or uncompensated coding project requiring more than 2 hours of labor without compensation.
+3. **Equity or Exposure in Place of Money**: Offers substituting equity, revenue share promises, or "portfolio exposure" for guaranteed cash compensation.
+4. **Upfront Fees**: Any demand for upfront payment, onboarding fees, training costs, or equipment purchase requirements.
+5. **Absence of Written Scope / Scope Creep**: Ambiguous deliverables without written acceptance criteria or milestone definitions.
+6. **Credential Access Requests**: Any request for personal account credentials, passwords, or direct access to personal developer profiles.
+7. **Platform Escrow Bypass Pressure**: Demands to bypass established platform escrow systems (e.g. Upwork, Contra) prior to the release of initial payment or milestone funding.
+
+---
+
+### 9.4 Green Flags (High-Priority Engagement)
+
+Griffin flags opportunities as high-priority when they meet all three positive indicators:
+1. **50% Upfront Deposit**: Client agrees to a 50% deposit before work commences (or funded platform escrow milestone).
+2. **Crisp Definition of "Done"**: Scope of work contains clear, unambiguous, testable completion criteria.
+3. **Single Named Decision-Maker**: Exactly one person has final authority to sign off on deliverables and authorize payment release.
+
+---
+
+### 9.5 Outward Outreach Approval Gate
+
+All outward client pitches, cold emails, forum messages, and contractor replies generated by Griffin must follow the human approval gate (ADR-110). Griffin prepares the draft with genuine proof links and stages it in `AWAITING_APPROVAL`. No outreach is dispatched autonomously without explicit user confirmation.
+
+
 
