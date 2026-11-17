@@ -1186,4 +1186,27 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Completely eliminates orchestration abortion bugs caused by false-positive WhatsApp hijacking on career application workflows, preserves honest technical project depth, and upholds Griffin's strict approval safety policy.
 
 
+#### ADR-136: Tier A Internship Pipeline Optimization, Auto-Apply Protocol, and Project Selection Rules
+- **Status**: IMPLEMENTED (`cmd/update_tier_a_pipeline/main.go`, `web/src/app/trackers/page.tsx`, `habit.md`, `~/Downloads/AJ_Resume_Context.md`, `~/Documents/Griffin/internships/targets.json`, `~/Documents/Griffin/internships/open_tracker.json`, `~/Documents/Griffin/internships/applied.json`, `decisions.md`).
+- **Decision**:
+  1. **Rich Markdown Rendering on Trackers**:
+     - `web/src/app/trackers/page.tsx`: Fixed unstyled monospace pre-wrap output fallback by rendering `MarkdownText` with GFM support for text-only task outputs (e.g. Morning Brief), restoring proper typography, headings, and lists.
+  2. **Tier A Thresholds & US/Foreign Remote Prioritization**:
+     - Reclassified Tier A: Remote roles with stipend >= Rs 20,000/month (or foreign equivalent $250+/month) are shifted to Tier A. Onsite/Hybrid roles require stipend >= Rs 30,000/month.
+     - Added high-priority US-based and foreign remote targets to `targets.json` and `open_tracker.json` (Modal Labs, Inkeep, Qdrant, Anyscale, Supabase, StepSecurity).
+     - Shifted StepSecurity to Tier A (Remote >= Rs 20k). Relegated HyperVerge to Tier B (Onsite Rs 25k < Rs 30k threshold).
+     - Griffin's active application pipeline strictly targets Tier A; other tiers are ignored unless specifically requested.
+  3. **Auto-Apply Protocol for Tier A**:
+     - Activated auto-dispatch for Tier A: automatically prepares submission packages, writes sent resumes to `resumes/sent/`, updates `applied.json`, and records applications.
+     - Approved and dispatched the 5 qualified Tier A roles (Sarvam AI, Postman, Modal Labs, Inkeep, StepSecurity).
+  4. **Resume Project Selection Invariants**:
+     - Enforced project count rule: Exactly 3 projects (minimum 3, maximum 5).
+     - Enforced mutual exclusion: Never include both `LabTutor` and `OS_RAG` on the same resume.
+     - SGLang Highlight: Highlighted Adhyan's SGLang documentation contributions with the ACM VIT student team for Sarvam AI and LLM evaluation roles.
+  5. **Targeted LinkedIn Referral Outreach**:
+     - Established automated priority tiering for employee referrals: Priority 1: VIT alumni who were members of ACM, ISTE, MFC, or TAM chapters (direct junior rapport); Priority 2: VIT alumni in the same domain; Priority 3: Senior domain engineers.
+- **Why**: Focuses Griffin's execution power exclusively on high-value Tier A remote and top-tier onsite internships, automates application dispatching, enforces strict resume structural integrity, and builds genuine warm referral networking with club/chapter alumni.
+
+
+
 
