@@ -163,19 +163,22 @@ func main() {
 	engine := service.NewTaskEngine(taskRepo, approvalRepo, logger)
 	mgrReg := manager.NewDefaultRegistry()
 	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, logger)
+	var senders []notify.Sender
+	senders = append(senders, &notify.DesktopSender{})
 	if topic := cfg.NtfyTopic; topic != "" {
-		engine.SetNotifier(&service.TaskNotifier{
-			Sender: &notify.Ntfy{Server: cfg.NtfyServer, Topic: topic, Token: cfg.NtfyToken},
-			Summ:   &service.Summarizer{Brain: summaryBrainFor(cfg)},
-			AppURL: cfg.AppURL,
-			ManagerName: func(ctx context.Context, userID uuid.UUID) string {
-				name, _ := profileRepo.ManagerName(ctx, userID)
-				return name
-			},
-			Logger: logger,
-		})
+		senders = append(senders, &notify.Ntfy{Server: cfg.NtfyServer, Topic: topic, Token: cfg.NtfyToken})
 		logger.Info("finish notifications are on", "server", cfg.NtfyServer)
 	}
+	engine.SetNotifier(&service.TaskNotifier{
+		Sender: notify.MultiSender(senders),
+		Summ:   &service.Summarizer{Brain: summaryBrainFor(cfg)},
+		AppURL: cfg.AppURL,
+		ManagerName: func(ctx context.Context, userID uuid.UUID) string {
+			name, _ := profileRepo.ManagerName(ctx, userID)
+			return name
+		},
+		Logger: logger,
+	})
 	jjOrchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, newPlanner(cfg, logger), logger)
 
 	// 7. Initialize Wakeup Controller for scale-to-zero

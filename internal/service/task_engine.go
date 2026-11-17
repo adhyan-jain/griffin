@@ -15,6 +15,7 @@ import (
 
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/scheduler"
 )
 
 // orchestratorWorkerID is the synthetic lease holder the JJ orchestrator uses for root tasks.
@@ -218,6 +219,34 @@ func (e *TaskEngine) CompleteTask(ctx context.Context, taskID uuid.UUID, workerI
 					Message:   "Dependencies fulfilled; task transitioned to QUEUED",
 					Metadata:  json.RawMessage("{}"),
 				})
+			}
+		}
+	}
+
+	// Schedule recurrence if the task defines a cadence
+	if t, err := e.taskRepo.GetTaskByID(ctx, taskID); err == nil && t != nil && len(t.InputPayload) > 0 {
+		var payload struct {
+			Cadence string `json:"cadence"`
+		}
+		if err := json.Unmarshal(t.InputPayload, &payload); err == nil && payload.Cadence != "" {
+			if nextRun, err := scheduler.NextOccurrence(payload.Cadence, time.Now().UTC()); err == nil {
+				nextTask := &domain.Task{
+					UserID:        t.UserID,
+					WorkspaceID:   t.WorkspaceID,
+					ManagerDomain: t.ManagerDomain,
+					Title:         t.Title,
+					Goal:          t.Goal,
+					InputPayload:  t.InputPayload,
+					Priority:      t.Priority,
+					Status:        domain.TaskStatusQueued,
+					ScheduledFor:  &nextRun,
+				}
+				if created, err := e.taskRepo.CreateTask(ctx, nextTask); err == nil {
+					e.logger.Info("Scheduled next recurring task run",
+						"task_id", created.ID, "parent_task_id", taskID, "title", t.Title, "scheduled_for", nextRun)
+				} else {
+					e.logger.Warn("Failed to schedule next recurring task run", "task_id", taskID, "error", err)
+				}
 			}
 		}
 	}
