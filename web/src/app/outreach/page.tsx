@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Download, Sparkles, MessageSquareReply, Pause, Pencil, Play, Plus, Send, UserPlus, X } from "lucide-react";
+import { Check, Download, ExternalLink, Sparkles, MessageSquareReply, Pause, Pencil, Play, Plus, Send, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type OutreachCampaign, type OutreachStatus, type OutreachTarget } from "@/lib/api";
 import { usePolling } from "@/lib/use-polling";
@@ -197,9 +197,29 @@ export default function OutreachPage() {
                 <TableBody>
                   {rows.map((t) => (
                     <TableRow key={t.id}>
-                      <TableCell>
-                        <div className="font-medium">{t.name || t.handle}</div>
-                        <div className="text-xs text-muted-foreground">{t.name ? t.handle : ""}</div>
+                      <TableCell className="max-w-xs">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <span>{t.name || t.handle}</span>
+                          {t.handle && t.handle.startsWith("http") && (
+                            <a
+                              href={t.handle}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-muted-foreground hover:text-primary"
+                              title="Open profile"
+                            >
+                              <ExternalLink className="size-3" />
+                            </a>
+                          )}
+                        </div>
+                        {t.name && !t.handle.startsWith("http") && (
+                          <div className="text-xs text-muted-foreground">{t.handle}</div>
+                        )}
+                        {t.info && (
+                          <div className="mt-1 text-xs text-muted-foreground leading-snug line-clamp-2">
+                            {t.info}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={t.status === "replied" ? "default" : "secondary"}>{LABEL[t.status]}</Badge>
@@ -241,7 +261,12 @@ export default function OutreachPage() {
         </>
       )}
 
-      <ResponsiveDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} title={`Message to ${editing?.name || editing?.handle || ""}`} description="Changing an approved message sends it back for your approval.">
+      <ResponsiveDialog
+        open={!!editing}
+        onOpenChange={(o) => !o && setEditing(null)}
+        title={`Message to ${editing?.name || editing?.handle || ""}`}
+        description={editing?.info ? `${editing.info} · Changing an approved message sends it back for your approval.` : "Changing an approved message sends it back for your approval."}
+      >
         <Textarea aria-label="Message" rows={8} value={draft} onChange={(e) => setDraft(e.target.value)} />
         <div className="mt-3 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>

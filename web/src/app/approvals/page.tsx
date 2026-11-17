@@ -14,12 +14,38 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RiskBadge, StatusBadge } from "@/components/StatusBadge";
 import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/components/page";
 
+interface ReferralDraftInfo {
+  contact: string;
+  text: string;
+  handle?: string;
+  company?: string;
+  role?: string;
+  priority?: string;
+  affiliation?: string;
+  description?: string;
+  resume_path?: string;
+  portal_url?: string;
+}
+
 /** The message a send approval is about, when it has one (other approvals carry no draft). */
-function draftOf(a: Approval): { contact: string; text: string } | null {
+function draftOf(a: Approval): ReferralDraftInfo | null {
   const p = a.action_payload;
   if (!p || typeof p !== "object") return null;
-  const { text, contact } = p as { text?: unknown; contact?: unknown };
-  return typeof text === "string" && text !== "" ? { text, contact: typeof contact === "string" ? contact : "" } : null;
+  const raw = p as Record<string, unknown>;
+  const text = typeof raw.text === "string" ? raw.text : "";
+  if (!text) return null;
+  return {
+    text,
+    contact: typeof raw.contact === "string" ? raw.contact : "",
+    handle: typeof raw.handle === "string" ? raw.handle : undefined,
+    company: typeof raw.company === "string" ? raw.company : undefined,
+    role: typeof raw.role === "string" ? raw.role : undefined,
+    priority: typeof raw.priority === "string" ? raw.priority : undefined,
+    affiliation: typeof raw.affiliation === "string" ? raw.affiliation : undefined,
+    description: typeof raw.description === "string" ? raw.description : undefined,
+    resume_path: typeof raw.resume_path === "string" ? raw.resume_path : undefined,
+    portal_url: typeof raw.portal_url === "string" ? raw.portal_url : undefined,
+  };
 }
 
 interface TailoringInfo {
@@ -32,6 +58,8 @@ interface TailoringInfo {
   bullet_diff: string;
   cover_note: string;
   screening_answers: Record<string, string>;
+  location?: string;
+  stipend?: string;
 }
 
 function tailoringOf(a: Approval): TailoringInfo | null {
@@ -40,7 +68,7 @@ function tailoringOf(a: Approval): TailoringInfo | null {
   const payload = (p as { payload?: unknown }).payload || p;
   if (!payload || typeof payload !== "object") return null;
   const t = payload as Record<string, unknown>;
-  if (typeof t.company === "string" && (typeof t.bullet_diff === "string" || typeof t.cover_note === "string")) {
+  if (typeof t.company === "string" && (typeof t.bullet_diff === "string" || typeof t.cover_note === "string" || typeof t.job_link === "string")) {
     return {
       company: String(t.company),
       role: typeof t.role === "string" ? t.role : "",
@@ -54,6 +82,8 @@ function tailoringOf(a: Approval): TailoringInfo | null {
         t.screening_answers && typeof t.screening_answers === "object"
           ? (t.screening_answers as Record<string, string>)
           : {},
+      location: typeof t.location === "string" ? t.location : undefined,
+      stipend: typeof t.stipend === "string" ? t.stipend : undefined,
     };
   }
   return null;
@@ -214,21 +244,34 @@ export default function ApprovalsPage() {
             </div>
           )}
 
-          <ul className="space-y-3">
-          {items.map((a) => {
+          <ul className="space-y-4">
+          {[...items].sort((a, b) => {
+            // Show Phase 1 (JOB_APPLY) first so user can apply to the portal before messaging
+            const aIsJob = a.action_type === "JOB_APPLY" ? 0 : 1;
+            const bIsJob = b.action_type === "JOB_APPLY" ? 0 : 1;
+            if (aIsJob !== bIsJob) return aIsJob - bIsJob;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          }).map((a) => {
             const pending = a.status === "PENDING";
+            const isJobApply = a.action_type === "JOB_APPLY";
             return (
-              <li key={a.id} className="space-y-3 rounded-xl border bg-card p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <RiskBadge risk={a.risk_level} />
-                  {!pending && <StatusBadge status={a.status} />}
+              <li key={a.id} className="space-y-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <RiskBadge risk={a.risk_level} />
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isJobApply ? "bg-primary/20 text-primary border border-primary/30" : "bg-muted text-muted-foreground"}`}>
+                      {isJobApply ? "Phase 1: Apply to Portal First" : "Phase 2: Referral Follow-Up"}
+                    </span>
+                    {!pending && <StatusBadge status={a.status} />}
+                  </div>
+                  <span className="text-xs text-muted-foreground">{timeAgo(a.created_at)}</span>
                 </div>
                 <div>
-                  <p className="text-sm font-medium leading-snug">{a.summary}</p>
+                  <p className="text-base font-semibold leading-snug text-foreground">{a.summary}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {a.action_type.replaceAll("_", " ").toLowerCase()} · {timeAgo(a.created_at)} ·{" "}
+                    {a.action_type.replaceAll("_", " ").toLowerCase()} ·{" "}
                     <Link href={`/tasks/${a.task_id}`} className="text-primary underline-offset-2 hover:underline">
-                      View task
+                      View task details
                     </Link>
                   </p>
                   {a.decision_reason && <p className="mt-1 text-xs text-muted-foreground">Note: {a.decision_reason}</p>}
@@ -237,59 +280,60 @@ export default function ApprovalsPage() {
                   const tail = tailoringOf(a);
                   if (!tail) return null;
                   return (
-                    <div className="space-y-3 rounded-xl border border-primary/20 bg-muted/30 p-4">
+                    <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
                         <div className="flex items-center gap-2">
                           <span className="flex size-6 items-center justify-center rounded-full bg-primary/20 text-primary">
                             <Sparkles className="size-3.5" />
                           </span>
                           <span className="text-xs font-semibold uppercase tracking-wider text-primary">
-                            Tailored Application Card
+                            Phase 1 Job Application Package
                           </span>
                         </div>
-                        {tail.tier && (
-                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                            {tail.tier}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {tail.tier && (
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                              {tail.tier}
+                            </span>
+                          )}
+                          {tail.stipend && (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-mono font-medium text-foreground">
+                              {tail.stipend}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Role & Company & Links */}
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      {/* Direct Apply Button & Resume Link */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {(tail.job_link || tail.source_url) && (
+                          <a
+                            href={tail.job_link || tail.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+                          >
+                            <ExternalLink className="size-3.5" />
+                            Open Application Portal (Apply Here First)
+                          </a>
+                        )}
                         {tail.base_resume && (
-                          <span className="inline-flex items-center gap-1 font-mono text-foreground">
+                          <span className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1 text-xs font-mono text-foreground">
                             <FileText className="size-3.5 text-muted-foreground" />
-                            {tail.base_resume}
+                            {tail.base_resume.split("/").pop()}
                           </span>
                         )}
-                        {tail.source_url && (
-                          <a
-                            href={tail.source_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-primary hover:underline"
-                          >
-                            <ExternalLink className="size-3.5" />
-                            Source Reference
-                          </a>
-                        )}
-                        {tail.job_link && (
-                          <a
-                            href={tail.job_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-primary hover:underline"
-                          >
-                            <ExternalLink className="size-3.5" />
-                            Job Listing
-                          </a>
+                        {tail.location && (
+                          <span className="text-xs text-muted-foreground">
+                            Location: {tail.location}
+                          </span>
                         )}
                       </div>
 
                       {/* Bullet Diff */}
                       {tail.bullet_diff && (
                         <div className="space-y-1">
-                          <p className="text-xs font-semibold text-muted-foreground">Resume Bullet Diff (Claude CLI)</p>
+                          <p className="text-xs font-semibold text-muted-foreground">Resume Bullet Highlights</p>
                           <div className="rounded-lg border bg-background/80 p-3 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap">
                             {tail.bullet_diff}
                           </div>
@@ -300,7 +344,7 @@ export default function ApprovalsPage() {
                       {tail.cover_note && (
                         <div className="space-y-1">
                           <p className="text-xs font-semibold text-muted-foreground">
-                            Cover Note (Max 90 words with grounded source citation)
+                            Cover Pitch
                           </p>
                           <div className="rounded-lg border bg-background/80 p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap">
                             {tail.cover_note}
@@ -330,15 +374,65 @@ export default function ApprovalsPage() {
                   if (!draft) return null;
                   const isEditing = a.id in editing;
                   return (
-                    <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {draft.contact ? `Message to ${draft.contact}` : "Message"}
-                      </p>
+                    <div className="space-y-3 rounded-lg border bg-muted/40 p-3.5">
+                      {/* Recipient Profile & Description Header */}
+                      <div className="space-y-1.5 border-b border-border/50 pb-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-foreground">
+                              {draft.contact || "Outreach Recipient"}
+                            </span>
+                            {draft.priority && (
+                              <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
+                                {draft.priority}
+                              </span>
+                            )}
+                          </div>
+                          {draft.handle && (
+                            <a
+                              href={draft.handle}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                            >
+                              <ExternalLink className="size-3" />
+                              View LinkedIn Profile
+                            </a>
+                          )}
+                        </div>
+
+                        {/* Recipient Background & Why Chosen */}
+                        {(draft.description || draft.affiliation) && (
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            <span className="font-medium text-foreground/80">Background: </span>
+                            {draft.description || draft.affiliation}
+                          </p>
+                        )}
+
+                        {/* Company, Target Role, and Workflow Guidance */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                          {draft.company && draft.role && (
+                            <span>Target: <strong className="text-foreground">{draft.company}</strong> ({draft.role})</span>
+                          )}
+                          {draft.resume_path && (
+                            <span className="inline-flex items-center gap-1 font-mono">
+                              <FileText className="size-3" />
+                              Attached: {draft.resume_path.split("/").pop()}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="rounded-md bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-700 dark:text-amber-300">
+                          <strong>Step 2 Notice:</strong> Apply to the job on the company portal first. Send this referral message after applying.
+                        </div>
+                      </div>
+
+                      {/* Draft Body and Editor */}
                       {isEditing ? (
                         <>
                           <Textarea
                             aria-label="Edit the message"
-                            rows={4}
+                            rows={5}
                             value={editing[a.id]}
                             onChange={(e) => setEditing((m) => ({ ...m, [a.id]: e.target.value }))}
                           />
@@ -357,10 +451,10 @@ export default function ApprovalsPage() {
                         </>
                       ) : (
                         <>
-                          <p className="whitespace-pre-wrap text-sm">{draft.text}</p>
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{draft.text}</p>
                           {pending && (
-                            <Button size="sm" variant="outline" onClick={() => setEditing((m) => ({ ...m, [a.id]: draft.text }))}>
-                              <Pencil /> Edit
+                            <Button size="sm" variant="outline" className="h-8" onClick={() => setEditing((m) => ({ ...m, [a.id]: draft.text }))}>
+                              <Pencil className="size-3.5" /> Edit Message
                             </Button>
                           )}
                         </>
@@ -382,7 +476,7 @@ export default function ApprovalsPage() {
                         <X /> Reject
                       </Button>
                       <Button className="h-11" disabled={busyId === a.id} onClick={() => respond(a, true)}>
-                        {busyId === a.id ? <Loader2 className="animate-spin" /> : <Check />} Approve
+                        {busyId === a.id ? <Loader2 className="animate-spin" /> : <Check />} {isJobApply ? "Approve & Mark Applied" : "Approve"}
                       </Button>
                     </div>
                   </>
