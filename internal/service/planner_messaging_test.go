@@ -53,6 +53,10 @@ func TestWantsWhatsApp(t *testing.T) {
 		"whatsapp status update",
 		"send me the weekly report",
 		"write a script to scrape data",
+		"from now on give me replies i can send on those posts, like comment like i've built one thing xyz which does this and that and is relevant to the convo in what way...",
+		"give me replies i can send on reddit posts",
+		"draft a comment for this thread",
+		"give me comments to post on hacker news",
 		"",
 	}
 	for _, s := range yes {
