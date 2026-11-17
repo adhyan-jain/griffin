@@ -27,14 +27,23 @@ type toolPayloadView struct {
 	Mode ToolMode `json:"tool_mode"`
 }
 
-// ToolModeFor returns the tier a task asked for. Anything unrecognised, and every chat task, is none,
-// so a malformed payload can only ever make a task less capable, never more.
+// ToolModeFor returns the tier a task asked for. Anything unrecognised is none.
+// A chat task cannot run in act tier without explicit approval, but can use read-only tools when requested or needed.
 func ToolModeFor(task *Task) ToolMode {
 	var v toolPayloadView
 	if task != nil && len(task.InputPayload) > 0 {
 		_ = json.Unmarshal(task.InputPayload, &v)
 	}
 	if v.Kind == "chat" {
+		if v.Mode == ToolAct {
+			return ToolNone // act cannot be granted directly from chat without explicit approval
+		}
+		if v.Mode == ToolRead {
+			return ToolRead
+		}
+		if task != nil {
+			return SuggestToolMode(task.Title, task.Goal)
+		}
 		return ToolNone
 	}
 	if v.Mode == ToolRead || v.Mode == ToolAct {

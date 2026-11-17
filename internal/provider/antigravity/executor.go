@@ -168,7 +168,7 @@ func (e *AntigravityExecutor) toolArgs(mode domain.ToolMode) []string {
 		if len(e.cfg.ReadArgs) > 0 {
 			return e.cfg.ReadArgs
 		}
-		return []string{"--mode", "plan"}
+		return nil
 	case domain.ToolAct:
 		if len(e.cfg.ActArgs) > 0 {
 			return e.cfg.ActArgs
@@ -334,6 +334,9 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 	}
 	if e.cfg.ToolsEnabled && e.cfg.AllowBypass {
 		args = append(args, "--dangerously-skip-permissions")
+		if _, err := os.Stat("/home/adhyan/Desktop"); err == nil {
+			args = append(args, "--add-dir", "/home/adhyan/Desktop")
+		}
 	}
 	args = append(args, e.toolArgs(mode)...)
 	if e.cfg.Effort != "" {

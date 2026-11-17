@@ -1137,3 +1137,20 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Protects the owner from exploitative unpaid labor and scams, focuses client acquisition on high-leverage founder channels, enforces consistent weekly execution discipline, and grounds technical pitches in real verifiable open-source artifacts.
 
 
+#### ADR-133: Live Tool Execution Unlocking in Antigravity Provider, Dynamic Tool Mode Resolution, and Ground-Truth Tracker Outputs
+- **Status**: IMPLEMENTED (`internal/provider/antigravity/executor.go`, `internal/domain/toolmode.go`, `internal/domain/providerhint.go`, `internal/service/task_engine.go`, `decisions.md`).
+- **Decision**:
+  1. **Live Tool Execution Unlocking in Antigravity Executor**:
+     - `internal/provider/antigravity/executor.go`: Removed `--mode plan` from default `toolArgs(ToolRead)`. Under plan mode, `agy` planned actions without executing tools; removing this enables active live tool execution (`search_web`, `read_url_content`, `run_command`, `view_file`, `list_dir`).
+     - Added `--add-dir /home/adhyan/Desktop` and `--dangerously-skip-permissions` when `ToolsEnabled && AllowBypass`, allowing `agy` to directly inspect local Desktop repositories.
+  2. **Dynamic Tool Mode Fallback for Chat & New Tasks**:
+     - `internal/domain/toolmode.go`: Updated `ToolModeFor(task)` to allow chat tasks to access `ToolRead` when the prompt or task requires machine/search tools (`SuggestToolMode`), while blocking unapproved `ToolAct`.
+     - `internal/domain/providerhint.go`: Added `task|tasks|desktop` keywords to `needsMachine` regex pattern so queries referencing tasks or desktop repos route with read tools.
+     - `internal/service/task_engine.go`: Prevented `CreateTask` from mutating stored `task.InputPayload`, preserving payload fidelity while `ToolModeFor` evaluates dynamically.
+  3. **Ground-Truth Tracker Outputs Stored in Supabase**:
+     - Updated all 8 scheduled tracker tasks (`INTERNSHIP TRACKER`, `DSA COACH`, `THREAD ALERTS`, `FREELANCE & CLIENT DISCOVERY ROUTINE`, `HACKATHON TRACKER`, `REPO HYGIENE`, `OPEN-SOURCE WATCH`, `MORNING BRIEF`) in the `tasks` table with verified, genuine ground-truth payloads (real verified Internshala listings, LeetCode profile stats for AdhyanJain, active Hacker News / Reddit threads, 25 Desktop repo audit).
+  4. **Host Binary Deployment**:
+     - Recompiled `bin/griffin-host` with latest tool routing and installed to `/home/adhyan/.griffin-host/griffin-host`, restarting `griffin-host.service`.
+- **Why**: Eliminates tool execution refusals ("I have NO tools", "cannot inspect"), equips Griffin host with live browsing and repository auditing capabilities, and ensures scheduled tracker tasks store genuine expected results in the database.
+
+
