@@ -128,6 +128,7 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         checkTaskIntent(intent)
+        ensureAssistantRunning()
         rebuild()
     }
 
@@ -142,8 +143,19 @@ class MainActivity : Activity() {
         super.onResume()
         app.addModeListener(modeListener)
         app.onLog = { rebuild() }
+        ensureAssistantRunning()
         rebuild()
         modeListener()
+    }
+
+    private fun ensureAssistantRunning() {
+        if (app.api.signedIn && !app.assistantRunning && granted(Manifest.permission.RECORD_AUDIO)) {
+            try {
+                ContextCompat.startForegroundService(this, Intent(this, AssistantService::class.java))
+            } catch (e: Exception) {
+                app.log("start assistant error: ${e.message}")
+            }
+        }
     }
 
     override fun onPause() {

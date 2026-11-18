@@ -131,16 +131,17 @@ object AssistantMachine {
         var s = s0
 
         // 1. A text or reply waiting for a yes. Anything else cancels the wait and is then treated as ordinary input.
-        if (s.phase == Phase.Confirming && s.pending != null) {
+        val isConfirmingPhase = s.phase == Phase.Confirming || (s.phase == Phase.Speaking && s.resume == Phase.Confirming)
+        if (isConfirmingPhase && s.pending != null) {
             val p = s.pending!!
             val txt = e.text.lowercase().trim(' ', '.', '!', '?')
             when {
-                txt in yes -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null), listOf(Effect.Confirmed(p)))
-                txt in no -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null), listOf(Effect.Declined(p)))
+                txt in yes -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null, resume = Phase.Idle), listOf(Effect.Confirmed(p)))
+                txt in no -> return Step(s.copy(phase = Phase.Thinking, until = 0, pending = null, resume = Phase.Idle), listOf(Effect.Declined(p)))
                 txt in readDraft || isReadDraft(txt) -> return Step(s.copy(phase = Phase.Confirming, until = e.now + CONFIRM_MS), listOf(Effect.ReadDraft(p)))
-                txt in hold || isHold(txt) -> return Step(s.copy(phase = Phase.Idle, until = 0, pending = null), listOf(Effect.Hold(p)))
+                txt in hold || isHold(txt) -> return Step(s.copy(phase = Phase.Idle, until = 0, pending = null, resume = Phase.Idle), listOf(Effect.Hold(p)))
             }
-            s = s.copy(phase = Phase.Idle, until = 0, pending = null)
+            s = s.copy(phase = Phase.Idle, until = 0, pending = null, resume = Phase.Idle)
         }
 
         // 2. A call that is ringing: "answer" and "reject" mean the call, with no wake phrase.

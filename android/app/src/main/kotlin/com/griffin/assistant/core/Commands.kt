@@ -99,7 +99,7 @@ object Commands {
             s.contains("in the bg") || s.contains("in bg") ||
             s.contains("silently") || s.contains("without opening it") || s.contains("without opening") ||
             s.contains("dont open it") || s.contains("don't open it") || s.contains("behind the scenes")
-        val isWhatsAppCall = s.contains("whatsapp call") || s.contains("call on whatsapp") || s.contains("call via whatsapp") || s.contains("call using whatsapp")
+        val isWhatsAppCall = s.contains("whatsapp")
         val forMe = s.contains("for me") || s.contains("let me talk") || s.contains("i'll talk") || s.contains("i will talk") || s.contains("just open it")
         val listenOnly = s.contains("i can listen") || s.contains("i will listen") || s.contains("i'll listen") || s.contains("let me listen") || s.contains("you talk and i listen") || s.contains("you talk, i listen") || s.contains("you talk and i can listen")
         val callChannel = if (isWhatsAppCall) "whatsapp" else "cellular"
@@ -122,6 +122,15 @@ object Commands {
         }
 
         val sCleaned = sParsed
+            .replace("like in that you just open it and i'll talk", "")
+            .replace("like in that you just open it and i will talk", "")
+            .replace("like in that you just open it", "")
+            .replace("you just open it and i'll talk", "")
+            .replace("you just open it and i will talk", "")
+            .replace("you just open it", "")
+            .replace("just open it and i'll talk", "")
+            .replace("just open it and i will talk", "")
+            .replace("just open it", "")
             .replace("for me", "")
             .replace("and let me talk", "")
             .replace("let me talk", "")

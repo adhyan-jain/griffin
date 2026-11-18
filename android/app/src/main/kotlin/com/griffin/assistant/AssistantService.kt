@@ -174,8 +174,8 @@ class AssistantService : Service() {
             Effect.Ignore -> {}
             Effect.Beep -> { app.log("woke"); beep() }
             is Effect.Handle -> handle(effect.request)
-            is Effect.Confirmed -> carryOut(effect.action)
-            is Effect.Declined -> say(if (effect.action.kind == PendingAction.Kind.Server) "Okay, I will leave it." else "Okay, not sending it.")
+            is Effect.Confirmed -> { app.speaker.stop(); carryOut(effect.action) }
+            is Effect.Declined -> { app.speaker.stop(); say(if (effect.action.kind == PendingAction.Kind.Server) "Okay, I will leave it." else "Okay, not sending it.") }
             is Effect.ReadDraft -> {
                 val draft = effect.action.text.ifBlank { effect.action.who.ifBlank { "No draft text attached." } }
                 say("The draft says: $draft. Say approve to confirm, or say leave it.")
@@ -316,12 +316,21 @@ class AssistantService : Service() {
 
     /** Debug builds only: lets a test feed a sentence in as if it had been heard (adb shell am broadcast). */
     private fun registerDebugReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(ACTION_DEBUG_UTTERANCE)
+            addAction(ACTION_TICK)
+            addAction(ACTION_HEARTBEAT)
+        }
         debugReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                intent.getStringExtra("text")?.let { dispatch(AEvent.Heard(it, System.currentTimeMillis(), name)) }
+                when (intent.action) {
+                    ACTION_DEBUG_UTTERANCE -> intent.getStringExtra("text")?.let { dispatch(AEvent.Heard(it, System.currentTimeMillis(), name)) }
+                    ACTION_TICK -> app.jobs.execute { try { phoneRunner.tick() } catch (e: Exception) { app.dlog("phone job: ${e.message}") } }
+                    ACTION_HEARTBEAT -> app.beat.execute { try { app.api.phoneHeartbeat(withPhoneUi = GriffinAccess.ready) } catch (e: Exception) { app.log("device heartbeat failed: ${e.message}") } }
+                }
             }
         }
-        ContextCompat.registerReceiver(this, debugReceiver, IntentFilter(ACTION_DEBUG_UTTERANCE), ContextCompat.RECEIVER_EXPORTED)
+        ContextCompat.registerReceiver(this, debugReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
     private fun say(text: String) {
@@ -637,5 +646,7 @@ class AssistantService : Service() {
         const val ACTION_STOP = "com.griffin.assistant.STOP"
         const val ACTION_LISTEN = "com.griffin.assistant.LISTEN"
         const val ACTION_DEBUG_UTTERANCE = "com.griffin.assistant.DEBUG_UTTERANCE"
+        const val ACTION_TICK = "com.griffin.assistant.TICK"
+        const val ACTION_HEARTBEAT = "com.griffin.assistant.HEARTBEAT"
     }
 }
