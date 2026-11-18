@@ -1,14 +1,18 @@
 # Roadmap and honest status
 
-## Built in Epoch 12, and how well it is checked
+## Built in Epoch 12 & 13, and how well it is checked
 | Piece | Checked with | Not yet checked |
 | :--- | :--- | :--- |
 | Listener state machine, no volume changes | 66 Android unit tests incl. a 3,000-sequence fuzz test | On the phone: that the ringer no longer flips |
 | Phone registers as a device | Builds; server API already tested | On the phone: that it shows live in Devices |
-| Editable approvals + approval push | Unit tests, SQL run on a scratch Postgres | RLS variant of the edit test (needs a superuser database URL); a real push |
+| Editable approvals + approval push | Unit tests, RLS suite (`TestEditPendingApprovalRebindsTheDigest` passing) | A real device APNs/FCM push |
 | Discuss first, then go ahead | Unit tests | A real conversation |
 | Outreach engine | Unit tests; lifecycle and a concurrent-senders test on a real Postgres | Under RLS in production; with a real sender |
 | Browser hand | Unit tests; a real headless Chromium against a local form (stage, replay, mismatch refusal) | Gmail, LinkedIn or any real signed-in site |
+| Strict Android contact disambiguation | Android unit tests with Gradle 8.9 / JDK 17 (`Contacts.resolve`) | Live phone SIM dialer execution |
+| Dual execution routing (Claude CLI + Antigravity) | Go unit tests across router, domain, and worker packages | Production AWS EC2 scale-to-zero runner invocation |
+| Dynamic planner observability & degraded indicators | DynamicPlanner Go test suite with brain fallback assertions | End-to-end multi-turn web chat orchestration session |
+| In-flight task steering prompt injection | Antigravity and Claude prompt builder unit tests | Live streaming runner task steering |
 
 ## Not built yet
 - **Phone-side device use** (Android accessibility service executing UI steps, claiming `phone_ui` tasks). Until then the phone does WhatsApp/Instagram replies through notifications and the laptop does the rest.

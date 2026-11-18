@@ -7,6 +7,30 @@ import android.provider.ContactsContract
 object Contacts {
     data class Match(val name: String, val number: String)
 
+    sealed class Resolution {
+        data class Resolved(val match: Match) : Resolution()
+        data class Ambiguous(val query: String, val candidates: List<Match>) : Resolution()
+        data class NotFound(val query: String) : Resolution()
+    }
+
+    /**
+     * Resolves a contact query strictly without guessing.
+     * Returns Resolved if exactly one match exists (or exact full-name match),
+     * Ambiguous if multiple candidates exist without a single exact match,
+     * or NotFound if zero matches exist.
+     */
+    fun resolve(context: Context, query: String): Resolution {
+        val q = query.trim()
+        if (q.isEmpty()) return Resolution.NotFound(query)
+        val matches = find(context, q)
+        if (matches.isEmpty()) return Resolution.NotFound(q)
+        val exact = matches.filter { it.name.equals(q, ignoreCase = true) }
+        if (exact.size == 1) return Resolution.Resolved(exact[0])
+        if (exact.size > 1) return Resolution.Ambiguous(q, exact)
+        if (matches.size == 1) return Resolution.Resolved(matches[0])
+        return Resolution.Ambiguous(q, matches)
+    }
+
     /** Who a phone number belongs to, or null when it is not in the contacts. */
     fun nameForNumber(context: Context, number: String): String? = try {
         val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))

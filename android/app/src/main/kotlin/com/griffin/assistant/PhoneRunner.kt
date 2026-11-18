@@ -76,8 +76,19 @@ class PhoneRunner(
         if (task.callMode == "direct_talk" || task.action == "direct_call") {
             var targetNumber = task.number.trim()
             if (targetNumber.isEmpty() || !targetNumber.any { it.isDigit() }) {
-                val match = Contacts.find(context, task.recipientName.ifEmpty { task.number }).firstOrNull()
-                if (match != null) targetNumber = match.number
+                val query = task.recipientName.ifEmpty { task.number }
+                when (val res = Contacts.resolve(context, query)) {
+                    is Contacts.Resolution.Resolved -> targetNumber = res.match.number
+                    is Contacts.Resolution.Ambiguous -> {
+                        val candidates = res.candidates.take(5).joinToString(", ") { "${it.name} (${it.number.takeLast(4).padStart(it.number.length, '*')})" }
+                        api.failTask(task.id, "Ambiguous contact name '$query'. Multiple matches found: $candidates. Please clarify which person you mean.", retryable = false)
+                        return
+                    }
+                    is Contacts.Resolution.NotFound -> {
+                        api.failTask(task.id, "Contact not found for: $query", retryable = false)
+                        return
+                    }
+                }
             }
             if (targetNumber.isNotEmpty()) {
                 val res = Actions(context).call(targetNumber)
@@ -102,13 +113,20 @@ class PhoneRunner(
         var targetName = task.recipientName.trim()
         if (targetNumber.isEmpty() || !targetNumber.any { it.isDigit() }) {
             val query = targetName.ifEmpty { targetNumber }
-            val match = Contacts.find(context, query).firstOrNull()
-            if (match != null) {
-                targetNumber = match.number
-                if (targetName.isEmpty()) targetName = match.name
-            } else {
-                api.failTask(task.id, "Contact not found for: $query", retryable = false)
-                return
+            when (val res = Contacts.resolve(context, query)) {
+                is Contacts.Resolution.Resolved -> {
+                    targetNumber = res.match.number
+                    if (targetName.isEmpty()) targetName = res.match.name
+                }
+                is Contacts.Resolution.Ambiguous -> {
+                    val candidates = res.candidates.take(5).joinToString(", ") { "${it.name} (${it.number.takeLast(4).padStart(it.number.length, '*')})" }
+                    api.failTask(task.id, "Ambiguous contact name '$query'. Multiple matches found: $candidates. Please clarify which person you mean.", retryable = false)
+                    return
+                }
+                is Contacts.Resolution.NotFound -> {
+                    api.failTask(task.id, "Contact not found for: $query", retryable = false)
+                    return
+                }
             }
         }
 

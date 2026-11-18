@@ -68,7 +68,9 @@ func setupRLS(t *testing.T, userMaxConns int32, userQuery string) *rlsEnv {
 	if _, err := env.DB.Pool.Exec(ctx, `DO $$ DECLARE r text; BEGIN
 		FOREACH r IN ARRAY ARRAY['griffin_app','griffin_system'] LOOP
 			IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-				EXECUTE format('DROP OWNED BY %I', r); EXECUTE format('DROP ROLE %I', r);
+				EXECUTE format('GRANT %I TO current_user', r);
+				EXECUTE format('DROP OWNED BY %I', r);
+				EXECUTE format('DROP ROLE %I', r);
 			END IF;
 		END LOOP; END $$;`); err != nil {
 		t.Fatalf("role cleanup: %v", err)

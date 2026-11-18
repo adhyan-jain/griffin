@@ -22,6 +22,8 @@ type ApprovalRepository interface {
 	// EditPendingApproval replaces the text of a message awaiting approval. The approval is bound to a digest of
 	// the exact message, so the task's action, the approval's type, summary and payload all change together.
 	EditPendingApproval(ctx context.Context, id uuid.UUID, userID uuid.UUID, text string) (*domain.Approval, error)
+	// UpdateApprovalPayload updates the action payload and summary of a pending approval (e.g. following AI revision).
+	UpdateApprovalPayload(ctx context.Context, id uuid.UUID, userID uuid.UUID, newPayload json.RawMessage, newSummary string) (*domain.Approval, error)
 }
 
 // PostgresApprovalRepository implements ApprovalRepository.
@@ -207,6 +209,45 @@ func (r *PostgresApprovalRepository) EditPendingApproval(ctx context.Context, id
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
+	a.UpdatedAt = now
+	return &a, nil
+}
+
+func (r *PostgresApprovalRepository) UpdateApprovalPayload(ctx context.Context, id uuid.UUID, userID uuid.UUID, newPayload json.RawMessage, newSummary string) (*domain.Approval, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var a domain.Approval
+	err = tx.QueryRow(ctx, `
+		SELECT id, user_id, task_id, action_type, risk_level, summary, action_payload,
+		       status, decided_by, decision_reason, decided_at, expires_at, created_at, updated_at
+		FROM approvals WHERE id = $1 AND user_id = $2 AND status = 'PENDING' FOR UPDATE`, id, userID).Scan(
+		&a.ID, &a.UserID, &a.TaskID, &a.ActionType, &a.RiskLevel, &a.Summary, &a.ActionPayload,
+		&a.Status, &a.DecidedBy, &a.DecisionReason, &a.DecidedAt, &a.ExpiresAt, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrApprovalNotPending
+		}
+		return nil, fmt.Errorf("lock approval: %w", err)
+	}
+
+	now := time.Now().UTC()
+	summary := a.Summary
+	if newSummary != "" {
+		summary = newSummary
+	}
+	if _, err := tx.Exec(ctx, `UPDATE approvals SET summary = $1, action_payload = $2, updated_at = $3 WHERE id = $4`,
+		summary, newPayload, now, id); err != nil {
+		return nil, fmt.Errorf("update approval payload: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	a.Summary = summary
+	a.ActionPayload = newPayload
 	a.UpdatedAt = now
 	return &a, nil
 }

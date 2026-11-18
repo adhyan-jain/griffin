@@ -55,17 +55,28 @@ func (p *DynamicPlanner) GeneratePlan(ctx context.Context, req *domain.UserReque
 		return base, err
 	}
 	if p.ClaudeLead != nil && p.ClaudeLead() {
-		return claudeLeadPlan(base, req), nil
+		plan := claudeLeadPlan(base, req)
+		plan.PlannerMode = "claude_lead"
+		return plan, nil
 	}
 	if p.Brain == nil || !p.Brain.Enabled() {
-		return base, nil
+		plan := *base
+		plan.PlannerMode = "rule_based"
+		plan.Degraded = true
+		plan.FallbackReason = "brain_disabled_or_unavailable"
+		return &plan, nil
 	}
 	steps, deps, err := p.teamFor(ctx, base, req)
 	if err != nil {
 		p.log().Warn("dynamic planning failed; using the standard plan", "error", err)
-		return base, nil
+		plan := *base
+		plan.PlannerMode = "rule_based"
+		plan.Degraded = true
+		plan.FallbackReason = fmt.Sprintf("dynamic_planning_error: %v", err)
+		return &plan, nil
 	}
 	plan := *base
+	plan.PlannerMode = "dynamic_team"
 	plan.ChildTasks, plan.Dependencies = steps, deps
 	return &plan, nil
 }

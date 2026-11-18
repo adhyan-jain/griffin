@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
-import { Check, CheckCheck, Copy, ExternalLink, FileText, Loader2, Pencil, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Check, CheckCheck, Copy, ExternalLink, FileText, Loader2, MessageSquareDiff, Pencil, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Approval } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -100,6 +100,9 @@ export default function ApprovalsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [editing, setEditing] = useState<Record<string, string>>({});
+  const [revising, setRevising] = useState<Record<string, string>>({});
+  const [reviseOpen, setReviseOpen] = useState<Record<string, boolean>>({});
+  const [revisingBusyId, setRevisingBusyId] = useState<string | null>(null);
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -132,6 +135,23 @@ export default function ApprovalsPage() {
       toast.error(e instanceof Error ? e.message : "Could not record your decision.");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const askJJRevise = async (a: Approval) => {
+    const instruction = revising[a.id]?.trim();
+    if (!instruction) return;
+    setRevisingBusyId(a.id);
+    try {
+      await api.chatReviseApproval(a.id, instruction);
+      setRevising((m) => ({ ...m, [a.id]: "" }));
+      setReviseOpen((m) => ({ ...m, [a.id]: false }));
+      toast.success("JJ revised the content! Review the updated pitch below.");
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not revise with JJ.");
+    } finally {
+      setRevisingBusyId(null);
     }
   };
 
@@ -484,6 +504,58 @@ export default function ApprovalsPage() {
                 })()}
                 {pending && (
                   <>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1.5 border-primary/40 bg-primary/5 text-primary hover:bg-primary/10"
+                        onClick={() => setReviseOpen((m) => ({ ...m, [a.id]: !m[a.id] }))}
+                      >
+                        <Sparkles className="size-3.5 text-primary" />
+                        {reviseOpen[a.id] ? "Close Revision Chat" : "Revise with JJ"}
+                      </Button>
+                    </div>
+
+                    {reviseOpen[a.id] && (
+                      <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3.5 shadow-xs">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="size-4 text-primary" />
+                          <span className="text-xs font-semibold uppercase tracking-wider text-primary">
+                            Chat with JJ to Improve Pitch & Content
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tell JJ what to change (e.g., &quot;make it more concise&quot;, &quot;emphasize ComputeHive over LabTutor&quot;, &quot;highlight SGLang documentation work&quot;).
+                        </p>
+                        <Textarea
+                          placeholder="Ask JJ to revise or tweak this pitch..."
+                          rows={2}
+                          value={revising[a.id] ?? ""}
+                          onChange={(e) => setRevising((m) => ({ ...m, [a.id]: e.target.value }))}
+                          className="text-xs bg-background/90"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs"
+                            onClick={() => setReviseOpen((m) => ({ ...m, [a.id]: false }))}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            disabled={revisingBusyId === a.id || !revising[a.id]?.trim()}
+                            onClick={() => askJJRevise(a)}
+                          >
+                            {revisingBusyId === a.id ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                            Revise Draft
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     <Input
                       aria-label="Note for this decision"
                       placeholder="Add a note (optional)"
@@ -496,7 +568,7 @@ export default function ApprovalsPage() {
                         <X /> Reject
                       </Button>
                       <Button className="h-11" disabled={busyId === a.id} onClick={() => respond(a, true)}>
-                        {busyId === a.id ? <Loader2 className="animate-spin" /> : <Check />} {isJobApply ? "Approve & Mark Applied" : "Approve"}
+                        {busyId === a.id ? <Loader2 className="animate-spin" /> : <Check />} {isJobApply ? "Approve & Auto-Apply" : "Approve & Send"}
                       </Button>
                     </div>
                   </>

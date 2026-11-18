@@ -99,6 +99,9 @@ type PlanPayload struct {
 	ExpectedOutputs      []string              `json:"expected_outputs"`
 	VerificationCriteria []string              `json:"verification_criteria"`
 	ApprovalRequirements []ApprovalRequirement `json:"approval_requirements"`
+	PlannerMode          string                `json:"planner_mode,omitempty"`
+	Degraded             bool                  `json:"degraded,omitempty"`
+	FallbackReason       string                `json:"fallback_reason,omitempty"`
 }
 
 // OrchestrationPlan represents the persistent database record of an execution plan.

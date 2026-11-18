@@ -1277,3 +1277,15 @@ This document is the canonical ledger of all architectural, product, engineering
   4. **Task Follow-ups Scoped to Task Configuration**: Task follow-ups in the UI are strictly for modifying task execution behavior (cadence, filters, search scope), keeping lead intake unified in the primary tracker.
 - **Why**: Preserves Griffin's agentic assistant value proposition where inputs come naturally through conversational tasks while keeping tracking data strictly consolidated in one authoritative ledger.
 
+
+#### ADR-141: Phone-First General-Purpose Operating System Transformation
+- **Status**: IMPLEMENTED (`internal/domain/providerhint.go`, `internal/worker/worker.go`, `internal/provider/claudecli/`, `internal/provider/antigravity/`, `android/app/src/main/kotlin/com/griffin/assistant/Contacts.kt`, `android/app/src/main/kotlin/com/griffin/assistant/PhoneRunner.kt`, `internal/domain/orchestration.go`, `internal/service/dynamic_planner.go`, `internal/api/handlers/approvals.go`).
+- **Decision**:
+  1. **Dual Execution Engine & Chat Unlocking**: Unlocked conversational and coding tasks from the forced Google Antigravity CLI lock (`ProviderHintFor`), enabling Claude Code CLI (`claude -p`) as a first-class execution provider alongside `agy`. Telemetry records the true provider name, model, exit code, and token usage on each attempt.
+  2. **In-Flight Task Steering Injection**: Prompts constructed for both Claude and Antigravity dynamically inject owner mid-flight directives (`steering_notes`), allowing the owner to modify in-flight task execution (such as "draft first", "add note", or adjust criteria) without aborting or losing conversation continuity.
+  3. **Strict Contact Disambiguation**: Replaced unsafe `firstOrNull()` blind-match assumptions on Android telephony and automated call dispatchers with `Contacts.resolve(context, query)`. Ambiguous queries with multiple matching contacts fail closed with an explicit clarification request listing names and masked numbers.
+  4. **Observable Dynamic Planning**: Extended `PlanPayload` with `PlannerMode`, `Degraded`, and `FallbackReason`. Dynamic planning explicitly distinguishes Claude lead steps (`claude_lead`), dynamic on-the-spot team decomposition (`dynamic_team`), and degraded rule-based fallback (`rule_based`).
+  5. **Interactive Bidirectional Approvals**: Approvals support live editable text and AI-assisted conversational revisions (`ReviseApprovalWithPayload`) before human sign-off, updating cryptographic action digests rather than treating approvals as automatic execution receipts.
+- **Why**: Transforms Griffin from a laptop-tethered task tool into a phone-first personal operating system that executes reliably from cloud and mobile channels, prevents silent outward execution errors, and provides full execution observability.
+
+

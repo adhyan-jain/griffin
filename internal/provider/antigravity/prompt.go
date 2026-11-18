@@ -132,6 +132,14 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 		appendCareerContext(&b, task)
 	}
 
+	if notes := task.SteeringNotes(); len(notes) > 0 {
+		b.WriteString("\nOwner Mid-Flight Steering Directives:\n")
+		for _, n := range notes {
+			fmt.Fprintf(&b, "- %s\n", n)
+		}
+		b.WriteString("You must follow these directives strictly.\n")
+	}
+
 	if env.Kind != "chat" {
 		// A step that continues a conversation (for example a voice chat that became work) must see it.
 		if hist := historyBlock(env.History); hist != "" {

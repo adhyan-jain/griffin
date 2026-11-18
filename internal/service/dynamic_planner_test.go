@@ -91,6 +91,9 @@ func TestDynamicTeamIsBuiltOnTheSpotWithParallelWorkersAndAJoin(t *testing.T) {
 	for _, d := range plan.Dependencies {
 		got[d.TaskKey+"<-"+d.DependsOnKey] = true
 	}
+	if plan.PlannerMode != "dynamic_team" || plan.Degraded {
+		t.Errorf("expected PlannerMode dynamic_team and not degraded, got %s (degraded=%v)", plan.PlannerMode, plan.Degraded)
+	}
 	if !got["s3<-s1"] || !got["s3<-s2"] || len(got) != 2 {
 		t.Errorf("s1 and s2 run in parallel and s3 joins them: %v", got)
 	}

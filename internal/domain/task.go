@@ -299,3 +299,25 @@ func (t *Task) AppendSteeringNote(note string) {
 	t.InputPayload, _ = json.Marshal(p)
 	t.UpdatedAt = time.Now().UTC()
 }
+
+// SteeringNotes returns any mid-flight steering directives from the task's input payload.
+func (t *Task) SteeringNotes() []string {
+	if t == nil || len(t.InputPayload) == 0 {
+		return nil
+	}
+	var p map[string]any
+	if err := json.Unmarshal(t.InputPayload, &p); err != nil {
+		return nil
+	}
+	raw, ok := p["steering_notes"].([]any)
+	if !ok {
+		return nil
+	}
+	var notes []string
+	for _, item := range raw {
+		if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+			notes = append(notes, strings.TrimSpace(s))
+		}
+	}
+	return notes
+}

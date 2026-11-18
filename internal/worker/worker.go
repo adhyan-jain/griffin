@@ -341,7 +341,11 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		if rp, ok := w.executor.(RuntimeFactsProvider); ok {
 			facts = rp.RuntimeFacts()
 		}
-		output = buildChatOutput(chatText, w.executor.Name(), facts)
+		pName := w.executor.Name()
+		if res.ProviderName != "" {
+			pName = res.ProviderName
+		}
+		output = buildChatOutput(chatText, pName, facts)
 	}
 	if err := w.engine.CompleteTask(ctx, task.ID, w.ID, output); err != nil {
 		w.logger.Error("engine.CompleteTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)

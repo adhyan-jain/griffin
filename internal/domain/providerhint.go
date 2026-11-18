@@ -94,18 +94,23 @@ type providerPayloadView struct {
 	Hint ProviderHint `json:"provider_hint"`
 }
 
-// ProviderHintFor returns the provider a task is planned for. Chat always uses agy (its prompt states
-// the runtime facts of that provider). An explicit hint wins; otherwise the step is classified.
+// ProviderHintFor returns the provider a task is planned for. An explicit hint wins;
+// otherwise the step is classified based on title and goal. For chat tasks without an explicit hint,
+// reasoning/writing/architecture tasks route to Claude while tool/machine tasks route to agy.
 func ProviderHintFor(task *Task) ProviderHint {
 	var v providerPayloadView
 	if len(task.InputPayload) > 0 {
 		_ = json.Unmarshal(task.InputPayload, &v)
 	}
-	if v.Kind == "chat" {
-		return ProviderAgy
-	}
 	if v.Hint == ProviderAgy || v.Hint == ProviderClaude {
 		return v.Hint
+	}
+	if v.Kind == "chat" {
+		classified := ClassifyProvider(task.Title, task.Goal)
+		if classified == ProviderClaude {
+			return ProviderClaude
+		}
+		return ProviderAgy
 	}
 	return ClassifyProvider(task.Title, task.Goal)
 }

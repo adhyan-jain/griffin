@@ -769,6 +769,9 @@ export const api = {
   /** Changes the text of a message waiting for approval; the approval then covers the edited text. */
   editApproval: (id: string, text: string) =>
     fetchWithAuth<Approval>(`/api/v1/approvals/${id}`, { method: "PATCH", body: JSON.stringify({ text }) }),
+  /** Converse with JJ to iterate on and revise the draft or application package */
+  chatReviseApproval: (id: string, instruction: string) =>
+    fetchWithAuth<Approval>(`/api/v1/approvals/${id}/chat`, { method: "POST", body: JSON.stringify({ instruction }) }),
   batchRespondApprovals: (approve: boolean, ids?: string[], reason?: string) =>
     fetchWithAuth<{ approved: number; rejected: number; failed: number; total: number }>(`/api/v1/approvals/batch`, {
       method: "POST",

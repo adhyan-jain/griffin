@@ -60,10 +60,15 @@ func TestWithHint(t *testing.T) {
 	}
 }
 
-func TestHintFor_ChatAlwaysAgy(t *testing.T) {
-	task := &domain.Task{Title: "Draft", InputPayload: json.RawMessage(`{"kind":"chat","provider_hint":"claude"}`)}
-	if domain.ProviderHintFor(task) != domain.ProviderAgy {
-		t.Fatal("chat must stay on agy")
+func TestHintFor_ChatRouting(t *testing.T) {
+	claudeTask := &domain.Task{Title: "Draft", InputPayload: json.RawMessage(`{"kind":"chat","provider_hint":"claude"}`)}
+	if domain.ProviderHintFor(claudeTask) != domain.ProviderClaude {
+		t.Fatal("chat with explicit claude hint must route to claude")
+	}
+
+	agyTask := &domain.Task{Title: "Search web", Goal: "Search the web for news", InputPayload: json.RawMessage(`{"kind":"chat"}`)}
+	if domain.ProviderHintFor(agyTask) != domain.ProviderAgy {
+		t.Fatal("chat task with machine/tools need must route to agy")
 	}
 }
 

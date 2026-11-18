@@ -1,6 +1,6 @@
 # Griffin PRD
 
-**Owner:** Adhyan Jain · **Status:** living document · **Last updated:** 2026-11-07
+**Owner:** Adhyan Jain · **Status:** living document · **Last updated:** 2026-11-18
 The only maintained docs are this PRD, `decisions.md` (why each decision was made) and `evolution.md` (how the project changed). `README.md` (the repo's front page) and `agents.md` (instructions for coding agents) stay as repo conventions. Everything else that used to live in `docs/` is folded in here or recoverable from git history.
 
 ---
@@ -114,6 +114,22 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 - `web/scripts/ui-tasks.mjs`: 30 UI checks against a mocked API.
 - `web/scripts/e2e-real.mjs`: 21 checks driving the real app against the real server, database and worker loop.
 - `web/scripts/measure-polling.mjs`: request-rate scenarios.
+
+### 4.6 Built in Epoch 12 & Live Pipeline Upgrades (Nov 07 - Nov 18)
+- **Cellular Calling Hands & Voice Barge-In (ADR-112 to 117):** Real-time cellular calls with answer detection, speech extraction from goals, and audio delivered through device loudspeaker. Voice approval gate with barge-in voice confirmation ("yes"/"no"), background phrase classification, and explicit double-checking of Indian contact names.
+- **Outreach Engine & Multi-Contact Referral Clusters (ADR-137, 138):** Coordinated outreach across priority tiers (Tier 1: ACM/ISTE/MFC/TAM alumni, Tier 2: Domain alumni, Tier 3: Tech leads/founders). Strict anti-automation rate limits (DailyCap 15, MinGap 300s, Jitter 180s, Quiet hours 22:00-08:00 IST), single-referral engagement pause on response, and timestamped screenshot receipts.
+- **Canonical Append-Only Trackers & Unified Ledger (ADR-138, 140):** All trackers (`INTERNSHIP TRACKER`, `FREELANCE & CLIENT DISCOVERY`, `HACKATHON TRACKER`, `THREAD ALERTS`) operate under strict append-only semantics. Deduplication is enforced on `(company, role, normalised link)` into one canonical archive (`~/Documents/Griffin/internships/open_tracker.json`, `tracker.md`, `tracker.csv`).
+- **Single Master Pipeline Architecture:** Consolidates fragmented scraping subtasks into a single scheduled routine per domain (`INTERNSHIP TRACKER (daily 08:00 IST)`). Automatically parses leads from all sources (Wellfound, LinkedIn public, Unstop, HN, target company careers), streams new listings directly into JJ chat, and generates Claude Tier A tailored resume packages.
+- **Interactive Approval Revision Chat:** In-place conversational drawer on approval cards allowing the owner to instruct JJ to revise pitches, resume highlights, or answers (e.g. "make it more concise", "highlight SGLang documentation work"), updating drafts in place without creating duplicate tasks.
+- **End-to-End Autonomous Execution:** Direct execution on approval—headless browser form filling and submission for application portals with receipt screenshots, headless mail delivery for outreach emails, and rate-limited LinkedIn connection pitch dispatches.
+- **Deadlink Verification & Applied AI Builder Identity (ADR-139):** Mandatory pre-flight verification of active portal URLs before staging outreach. Professional framing strictly anchored on applied AI engineering, systems reliability, and high-scale metrics (bitemporal graphs, Redis Lua leasing, SGLang contributions).
+
+### 4.7 Built in Epoch 13: Phone-First Operating System Transformation (Nov 18 - Nov 19)
+- **Dual Execution Engine & Chat Unlocking (ADR-141):** Chat tasks evaluate intent complexity or explicit provider hints, unlocking Claude Code CLI (`claude -p`) as a primary reasoning engine alongside Google Antigravity CLI (`agy`). Full telemetry tracks provider names, model types, process exit codes, and token metrics.
+- **In-Flight Task Steering Injection:** Mid-flight owner directives (`steering_notes`) are dynamically parsed and injected into runner execution prompts for both Antigravity and Claude providers, allowing real-time task course correction (e.g., "draft first", "add note") without restarting runs.
+- **Strict Android Telephony Disambiguation:** Upgraded mobile runner to fail closed on multi-contact name matches with an explicit clarification request, preventing unintended calls or SMS dispatch on ambiguous recipient queries.
+- **Unified Recurring Automation Architecture:** Automation runs link to a stable thread root (`thread_id`), consolidating recurring schedules into persistent cards across task lists and tracker dashboards rather than polluting the top-level queue.
+- **Observable Dynamic Planning:** `PlanPayload` carries `PlannerMode`, `Degraded`, and `FallbackReason`, providing immediate visibility into whether execution was planned by Claude lead, a dynamically decomposed multi-worker team, or a rule-based fallback.
 
 ---
 

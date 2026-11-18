@@ -10,9 +10,12 @@ import (
 
 	"github.com/google/uuid"
 
+	"fmt"
+
 	"github.com/griffin/core/internal/api/httputil"
 	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/provider/gemini"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
 )
@@ -21,6 +24,7 @@ type ApprovalHandler struct {
 	engine       *service.TaskEngine
 	approvalRepo repository.ApprovalRepository
 	wakeup       RunnerWakeup
+	brain        VoiceBrain
 }
 
 func NewApprovalHandler(engine *service.TaskEngine, approvalRepo repository.ApprovalRepository, wakeup RunnerWakeup) *ApprovalHandler {
@@ -29,6 +33,11 @@ func NewApprovalHandler(engine *service.TaskEngine, approvalRepo repository.Appr
 		approvalRepo: approvalRepo,
 		wakeup:       wakeup,
 	}
+}
+
+func (h *ApprovalHandler) WithBrain(brain VoiceBrain) *ApprovalHandler {
+	h.brain = brain
+	return h
 }
 
 func (h *ApprovalHandler) ListApprovals(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +141,89 @@ func (h *ApprovalHandler) EditApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.JSON(w, http.StatusOK, app)
+}
+
+type ReviseApprovalRequest struct {
+	Instruction string `json:"instruction"`
+}
+
+// ReviseApproval enables interactive AI chat to improve and revise approval text/pitches in place.
+func (h *ApprovalHandler) ReviseApproval(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+	approvalID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("invalid approval id format")))
+		return
+	}
+	var req ReviseApprovalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Instruction) == "" {
+		httputil.ErrorJSON(w, errors.Join(domain.ErrValidation, errors.New("instruction is required")))
+		return
+	}
+
+	app, err := h.approvalRepo.GetApprovalByID(r.Context(), approvalID)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if app.Status != domain.ApprovalStatusPending {
+		httputil.ErrorJSON(w, domain.ErrApprovalNotPending)
+		return
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(app.ActionPayload, &payload); err != nil || payload == nil {
+		payload = make(map[string]any)
+	}
+
+	currentText := ""
+	textField := "cover_note"
+	if cn, ok := payload["cover_note"].(string); ok && cn != "" {
+		currentText = cn
+		textField = "cover_note"
+	} else if dr, ok := payload["draft"].(string); ok && dr != "" {
+		currentText = dr
+		textField = "draft"
+	} else if tx, ok := payload["text"].(string); ok && tx != "" {
+		currentText = tx
+		textField = "text"
+	}
+
+	revisedText := currentText
+	if h.brain != nil && h.brain.Enabled() && currentText != "" {
+		sysPrompt := "You are JJ, Adhyan Jain's AI career and outreach assistant. Adhyan is a 3rd-year CSE student at VIT Vellore. His core systems and applied AI projects are ComputeHive (Go distributed task runner, Redis Lua atomic leasing, sub-15s dead worker recovery), EchoTales (bitemporal narrative knowledge graph), Griffin (personal AI assistant), and SGLang documentation contributions. Rewrite the provided draft or cover note based strictly on the user's instructions. Maintain a warm, polite, humble tone, strictly zero emojis, and authentic engineering claims. Return ONLY the revised draft with no preamble."
+		turns := []gemini.Turn{
+			{Role: "user", Text: fmt.Sprintf("Current draft:\n%s\n\nRevision request:\n%s", currentText, req.Instruction)},
+		}
+		if out, err := h.brain.Chat(r.Context(), sysPrompt, turns); err == nil && strings.TrimSpace(out) != "" {
+			revisedText = strings.TrimSpace(out)
+		}
+	} else {
+		// Clean fallback revision
+		revisedText = fmt.Sprintf("%s\n\n[Revised: %s]", currentText, req.Instruction)
+	}
+
+	payload[textField] = revisedText
+	if textField == "draft" || textField == "cover_note" {
+		payload["text"] = revisedText
+	}
+	newPayload, err := json.Marshal(payload)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+
+	updatedApp, err := h.engine.ReviseApprovalWithPayload(r.Context(), approvalID, userID, newPayload, app.Summary, req.Instruction)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+
+	httputil.JSON(w, http.StatusOK, updatedApp)
 }
 
 type BatchRespondApprovalRequest struct {

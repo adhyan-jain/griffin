@@ -224,27 +224,32 @@ func (e *TaskEngine) CompleteTask(ctx context.Context, taskID uuid.UUID, workerI
 
 	// Schedule recurrence if the task defines a cadence
 	if t, err := e.taskRepo.GetTaskByID(ctx, taskID); err == nil && t != nil && len(t.InputPayload) > 0 {
-		var payload struct {
-			Cadence string `json:"cadence"`
-		}
-		if err := json.Unmarshal(t.InputPayload, &payload); err == nil && payload.Cadence != "" {
-			if nextRun, err := scheduler.NextOccurrence(payload.Cadence, time.Now().UTC()); err == nil {
-				nextTask := &domain.Task{
-					UserID:        t.UserID,
-					WorkspaceID:   t.WorkspaceID,
-					ManagerDomain: t.ManagerDomain,
-					Title:         t.Title,
-					Goal:          t.Goal,
-					InputPayload:  t.InputPayload,
-					Priority:      t.Priority,
-					Status:        domain.TaskStatusQueued,
-					ScheduledFor:  &nextRun,
-				}
-				if created, err := e.taskRepo.CreateTask(ctx, nextTask); err == nil {
-					e.logger.Info("Scheduled next recurring task run",
-						"task_id", created.ID, "parent_task_id", taskID, "title", t.Title, "scheduled_for", nextRun)
-				} else {
-					e.logger.Warn("Failed to schedule next recurring task run", "task_id", taskID, "error", err)
+		var payload map[string]any
+		if err := json.Unmarshal(t.InputPayload, &payload); err == nil && payload != nil {
+			if cad, ok := payload["cadence"].(string); ok && cad != "" {
+				if nextRun, err := scheduler.NextOccurrence(cad, time.Now().UTC()); err == nil {
+					rootID, _ := domain.ThreadOf(t)
+					payload[domain.ThreadIDKey] = rootID.String()
+					payload[domain.FollowUpOfKey] = t.ID.String()
+					nextPayload, _ := json.Marshal(payload)
+
+					nextTask := &domain.Task{
+						UserID:        t.UserID,
+						WorkspaceID:   t.WorkspaceID,
+						ManagerDomain: t.ManagerDomain,
+						Title:         t.Title,
+						Goal:          t.Goal,
+						InputPayload:  nextPayload,
+						Priority:      t.Priority,
+						Status:        domain.TaskStatusQueued,
+						ScheduledFor:  &nextRun,
+					}
+					if created, err := e.taskRepo.CreateTask(ctx, nextTask); err == nil {
+						e.logger.Info("Scheduled next recurring task run",
+							"task_id", created.ID, "parent_task_id", taskID, "thread_id", rootID, "title", t.Title, "scheduled_for", nextRun)
+					} else {
+						e.logger.Warn("Failed to schedule next recurring task run", "task_id", taskID, "error", err)
+					}
 				}
 			}
 		}
@@ -437,6 +442,18 @@ func (e *TaskEngine) EditApproval(ctx context.Context, approvalID, userID uuid.U
 	}
 	_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
 		TaskID: app.TaskID, EventType: "STATUS_CHANGE", Message: "Owner edited the draft before approving", Metadata: json.RawMessage("{}"),
+	})
+	return app, nil
+}
+
+// ReviseApprovalWithPayload updates the action payload and summary of a pending approval based on interactive chat revision.
+func (e *TaskEngine) ReviseApprovalWithPayload(ctx context.Context, approvalID, userID uuid.UUID, newPayload json.RawMessage, newSummary, instruction string) (*domain.Approval, error) {
+	app, err := e.approvalRepo.UpdateApprovalPayload(ctx, approvalID, userID, newPayload, newSummary)
+	if err != nil {
+		return nil, fmt.Errorf("task_engine: revise approval payload: %w", err)
+	}
+	_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+		TaskID: app.TaskID, EventType: "STATUS_CHANGE", Message: fmt.Sprintf("Owner revised draft with JJ: %s", instruction), Metadata: json.RawMessage("{}"),
 	})
 	return app, nil
 }

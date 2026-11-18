@@ -50,16 +50,10 @@ func main() {
 	}
 
 	for _, tr := range trackers {
-		nextRun, err := scheduler.NextOccurrence(tr.cadence, now)
-		if err != nil {
-			fmt.Printf("Error parsing cadence for %s: %v\n", tr.id, err)
-			continue
-		}
-
-		// Read existing input_payload
+		// Read existing input_payload to check for exam hold or paused status
 		var rawPayload []byte
-		var title string
-		err = pool.QueryRow(ctx, "SELECT title, input_payload FROM tasks WHERE id = $1", tr.id).Scan(&title, &rawPayload)
+		var title, status string
+		err = pool.QueryRow(ctx, "SELECT title, status, input_payload FROM tasks WHERE id = $1", tr.id).Scan(&title, &status, &rawPayload)
 		if err != nil {
 			fmt.Printf("Error fetching %s: %v\n", tr.id, err)
 			continue
@@ -70,6 +64,22 @@ func main() {
 			_ = json.Unmarshal(rawPayload, &payloadMap)
 		} else {
 			payloadMap = make(map[string]any)
+		}
+
+		// Respect exam hold
+		if isHold, ok := payloadMap["exam_hold"].(bool); ok && isHold {
+			fmt.Printf("Task %s (%s) is on EXAM HOLD. Skipping automatic cadence reset.\n", tr.id, title)
+			continue
+		}
+		if status == "CANCELLED" {
+			fmt.Printf("Task %s (%s) is CANCELLED. Skipping.\n", tr.id, title)
+			continue
+		}
+
+		nextRun, err := scheduler.NextOccurrence(tr.cadence, now)
+		if err != nil {
+			fmt.Printf("Error parsing cadence for %s: %v\n", tr.id, err)
+			continue
 		}
 		payloadMap["cadence"] = tr.cadence
 		newPayload, _ := json.Marshal(payloadMap)

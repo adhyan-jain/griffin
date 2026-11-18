@@ -149,6 +149,16 @@ func buildPrompt(task *domain.Task) string {
 	if len(task.InputPayload) > 0 && json.Unmarshal(task.InputPayload, &p) == nil && p.Prompt != "" {
 		body = p.Prompt
 	}
+	if notes := task.SteeringNotes(); len(notes) > 0 {
+		var sb strings.Builder
+		sb.WriteString(body)
+		sb.WriteString("\n\nOwner Mid-Flight Steering Directives:\n")
+		for _, n := range notes {
+			fmt.Fprintf(&sb, "- %s\n", n)
+		}
+		sb.WriteString("You must follow these directives strictly.")
+		body = sb.String()
+	}
 	return preamble + "\n\n" + body
 }
 

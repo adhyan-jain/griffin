@@ -289,3 +289,19 @@ func TestBuildPrompt_CareerCandidateContext(t *testing.T) {
 	assert.Contains(t, got, "Added ComputeHive atomic Redis Lua leases")
 	assert.Contains(t, got, "Graduation Date: May 2028")
 }
+
+func TestBuildPrompt_SteeringNotes(t *testing.T) {
+	task := &domain.Task{
+		Title: "Distributed Research",
+		Goal:  "Research Paxos vs Raft consensus algorithms.",
+	}
+	task.AppendSteeringNote("Focus strictly on leader election failover under network partitions.")
+	task.AppendSteeringNote("Include concrete timeout formulas.")
+
+	got := buildPromptWith(preamble, task, 1, RuntimeFacts{})
+
+	assert.Contains(t, got, "Owner Mid-Flight Steering Directives:")
+	assert.Contains(t, got, "Focus strictly on leader election failover under network partitions.")
+	assert.Contains(t, got, "Include concrete timeout formulas.")
+	assert.Contains(t, got, "You must follow these directives strictly.")
+}
