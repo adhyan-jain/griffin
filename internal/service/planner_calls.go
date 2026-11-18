@@ -78,14 +78,16 @@ func extractCallDetails(text string) (target string, message string, channel Cal
 		strings.Contains(lower, "you talk and i can listen") ||
 		strings.Contains(lower, "you talk, i listen")
 
+	isAutomated := inBackground || strings.Contains(lower, "automated") || strings.Contains(lower, "auto call") || strings.Contains(lower, "message like") || strings.Contains(lower, "saying") || strings.Contains(lower, "speak")
+
 	if forMe {
 		mode = CallModeDirectTalk
-	} else if inBackground {
+	} else if isAutomated || inBackground {
 		mode = CallModeAutomatedBg
 	} else if listenOnly {
 		mode = CallModeSupervisedListen
 	} else {
-		mode = CallModeSupervisedListen
+		mode = CallModeAutomatedBg
 	}
 
 	if m := callLead.FindStringSubmatch(text); len(m) > 1 {
@@ -98,7 +100,8 @@ func extractCallDetails(text string) (target string, message string, channel Cal
 	msgPatterns := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\b(?:tell|telling)\s+(?:him|her|them|[A-Za-z0-9+]+)\s+(?:that\s+)?(.*)$`),
 		regexp.MustCompile(`(?i)\b(?:saying|say)\s+(?:that\s+)?(.*)$`),
-		regexp.MustCompile(`(?i)\b(?:with\s+message|message)\s+(?:that\s+)?(.*)$`),
+		regexp.MustCompile(`(?i)\b(?:with\s+message|message)\s+(?:like\s+|that\s+)?(.*)$`),
+		regexp.MustCompile(`(?i)\b(?:with\s+text|text)\s+(?:like\s+|that\s+)?(.*)$`),
 	}
 	for _, p := range msgPatterns {
 		if sub := p.FindStringSubmatch(text); len(sub) > 1 {
