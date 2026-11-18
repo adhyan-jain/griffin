@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/griffin/core/internal/hands"
 	"github.com/griffin/core/internal/hands/browser"
@@ -64,26 +66,85 @@ func newBrowserService(logger *slog.Logger) *hands.BrowserService {
 	}
 }
 
-// browserLogin opens a visible browser on the same profile Griffin uses, so the owner can sign in to Gmail,
-// LinkedIn and anything else once. The sign-ins stay in the profile; Griffin never sees the passwords.
+// browserLogin opens a visible, normal browser window on Griffin's profile (free of automation flags)
+// so the owner can sign in to Gmail, LinkedIn, and other services without Google/LinkedIn blocking the session.
 func browserLogin(ctx context.Context, logger *slog.Logger) error {
-	if _, err := whatsapp.FindBrowser(os.Getenv("WHATSAPP_BROWSER")); err != nil {
+	path, err := whatsapp.FindBrowser(os.Getenv("WHATSAPP_BROWSER"))
+	if err != nil {
 		return errors.New("no Chrome, Chromium or Brave found (set WHATSAPP_BROWSER)")
 	}
-	fmt.Println("Opening a browser window with Griffin's own profile.")
-	fmt.Println("Sign in to the sites you want Griffin to use (Gmail, LinkedIn, ...), then come back here and press Enter.")
-	fmt.Println("Stop griffin-host first if it is running: the profile can only be open once.")
-	c, err := browser.NewChrome(ctx, browserConfig(true))
-	if err != nil {
-		return err
+
+	profileDir := browserProfileDir()
+	if err := os.MkdirAll(profileDir, 0o700); err != nil {
+		return fmt.Errorf("cannot create the browser profile folder: %w", err)
 	}
-	defer c.Close()
+
+	// Auto-pause griffin-host background service if active so profile lock is released
+	wasServiceRunning := false
+	if err := exec.Command("systemctl", "--user", "is-active", "--quiet", "griffin-host").Run(); err == nil {
+		wasServiceRunning = true
+		fmt.Println("Temporarily pausing griffin-host background service to release profile lock...")
+		_ = exec.Command("systemctl", "--user", "stop", "griffin-host").Run()
+		time.Sleep(1 * time.Second)
+	}
+
+	fmt.Println("Opening Chrome with Griffin's profile (clean mode, no automation flags).")
+	fmt.Println("Login tabs for Google Accounts and LinkedIn are opening.")
+	fmt.Println("Sign in, then close the browser window or press Enter here when finished.")
+
+	args := []string{
+		"--user-data-dir=" + profileDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-blink-features=AutomationControlled",
+		"https://accounts.google.com",
+		"https://www.linkedin.com/login",
+	}
+
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		if wasServiceRunning {
+			_ = exec.Command("systemctl", "--user", "start", "griffin-host").Run()
+		}
+		return fmt.Errorf("could not start browser: %w", err)
+	}
+
 	done := make(chan struct{})
-	go func() { _, _ = bufio.NewReader(os.Stdin).ReadString('\n'); close(done) }()
+	go func() {
+		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+		close(done)
+	}()
+
+	cmdDone := make(chan error, 1)
+	go func() {
+		cmdDone <- cmd.Wait()
+	}()
+
 	select {
 	case <-done:
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	case err := <-cmdDone:
+		if err != nil {
+			logger.Debug("browser process exited", "err", err)
+		}
 	case <-ctx.Done():
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
 	}
-	fmt.Println("Saved. Set HOST_BROWSER=on and restart griffin-host to let Griffin use it.")
+
+	fmt.Println("Profile saved cleanly.")
+	if wasServiceRunning {
+		fmt.Println("Resuming griffin-host background service...")
+		_ = exec.Command("systemctl", "--user", "start", "griffin-host").Run()
+		fmt.Println("griffin-host is running.")
+	} else {
+		fmt.Println("Set HOST_BROWSER=on and restart griffin-host to let Griffin use it.")
+	}
 	return nil
 }

@@ -51,6 +51,8 @@ func NewChrome(ctx context.Context, cfg ChromeConfig) (*Chrome, error) {
 		chromedp.UserDataDir(cfg.ProfileDir),
 		chromedp.Flag("headless", !cfg.Visible),
 		chromedp.Flag("mute-audio", true),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("excludeSwitches", "enable-automation"),
 		chromedp.WindowSize(1280, 900),
 	)
 	if cfg.NoSandbox {

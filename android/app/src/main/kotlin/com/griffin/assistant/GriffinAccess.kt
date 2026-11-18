@@ -53,6 +53,19 @@ class GriffinAccess : AccessibilityService(), PScreenDriver {
         if (event == null) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
+            if (isDialerPackage(pkg)) {
+                try {
+                    val root = rootInActiveWindow
+                    if (root != null) {
+                        val nodes = root.findAccessibilityNodeInfosByText("Speaker")
+                        for (node in nodes) {
+                            if (node.isClickable && !node.isChecked && !node.isSelected) {
+                                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
             if (suppressDialer && isDialerPackage(pkg)) {
                 // Background call is active: immediately dismiss dialer window back to game/work!
                 performGlobalAction(GLOBAL_ACTION_BACK)

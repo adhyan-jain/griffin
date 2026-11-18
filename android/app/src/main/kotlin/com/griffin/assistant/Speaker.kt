@@ -6,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import java.util.UUID
@@ -57,11 +58,15 @@ class Speaker(context: Context) {
     private fun speakNow(text: String, done: (() -> Unit)?) {
         val id = UUID.randomUUID().toString()
         if (done != null) callbacks[id] = done
-        if (tts?.speak(text, TextToSpeech.QUEUE_ADD, null, id) != TextToSpeech.SUCCESS) finish(id)
+        val params = Bundle().apply {
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
+        }
+        if (tts?.speak(text, TextToSpeech.QUEUE_ADD, params, id) != TextToSpeech.SUCCESS) finish(id)
     }
 
     fun setInCallMode(inCall: Boolean) {
-        val usage = if (inCall) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ASSISTANT
+        val usage = if (inCall) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_ASSISTANT
         try {
             tts?.setAudioAttributes(
                 AudioAttributes.Builder()

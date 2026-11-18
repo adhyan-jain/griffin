@@ -207,16 +207,19 @@ class CellularCallManager(
                 enableSpeakerphone()
                 speaker.setInCallMode(true)
 
-                // Wait 3500ms after offhook for recipient connection & audio line stabilization
-                main.postDelayed({
-                    if (callCompleted.get()) return@postDelayed
+                // Wait for recipient to pick up and say hello, or speak after 8.5s ring duration
+                var greetingDelivered = false
+                fun deliverGreeting() {
+                    if (greetingDelivered || callCompleted.get()) return
+                    greetingDelivered = true
 
+                    enableSpeakerphone()
                     val greeting = buildGreeting(owner, message)
                     speaker.say(greeting) {
                         if (callCompleted.get()) return@say
                         // Prompt finished speaking; listen for recipient's reply
                         listenForSpeech(
-                            timeoutMs = 7000L,
+                            timeoutMs = 9000L,
                             onResult = { reply ->
                                 replyRecorded = reply
                                 if (isQuestionOrUnknownContext(reply)) {
@@ -224,7 +227,7 @@ class CellularCallManager(
                                     speaker.say(fallback) {
                                         if (callCompleted.get()) return@say
                                         listenForSpeech(
-                                            timeoutMs = 6000L,
+                                            timeoutMs = 7000L,
                                             onResult = { extra ->
                                                 followupRecorded = extra
                                                 speaker.say(buildClosing(owner)) {
@@ -247,7 +250,19 @@ class CellularCallManager(
                             }
                         )
                     }
-                }, 3500)
+                }
+
+                // If recipient answers and says "hello", trigger greeting immediately
+                listenForSpeech(timeoutMs = 8500L) { initialSpeech ->
+                    if (initialSpeech.isNotBlank() && !greetingDelivered) {
+                        deliverGreeting()
+                    }
+                }
+
+                // Or fallback to delivering greeting after 8.5s of ringing
+                main.postDelayed({
+                    deliverGreeting()
+                }, 8500L)
             },
             onIdle = {
                 if (!offhookSeen) {
@@ -350,7 +365,11 @@ class CellularCallManager(
         try {
             prevAudioMode = audio.mode
             prevSpeakerOn = audio.isSpeakerphoneOn
-            audio.mode = AudioManager.MODE_IN_COMMUNICATION
+            audio.mode = AudioManager.MODE_IN_CALL
+            val maxVoice = audio.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+            audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVoice, 0)
+            val maxMusic = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, maxMusic, 0)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val speakerDevice = audio.availableCommunicationDevices.firstOrNull {
                     it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
