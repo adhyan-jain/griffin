@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,5 +100,20 @@ func TestCallStepsDecomposition(t *testing.T) {
 		assert.Contains(t, task.Title, "WhatsApp")
 		assert.Contains(t, string(task.InputPayload), `"channel":"whatsapp"`)
 		assert.Contains(t, string(task.InputPayload), `"action":"whatsapp_call"`)
+	})
+
+	t.Run("automated_call_with_speech_message", func(t *testing.T) {
+		req := &domain.UserRequest{
+			RequestText: "call anish at 8:30am and say wake up bitch",
+			Priority:    domain.TaskPriorityNormalP2,
+		}
+		plan, err := planner.GeneratePlan(context.Background(), req, reg)
+		require.NoError(t, err)
+		require.Len(t, plan.ChildTasks, 1)
+
+		task := plan.ChildTasks[0]
+		assert.Contains(t, strings.ToLower(task.Title), "anish")
+		assert.Contains(t, string(task.InputPayload), `"message":"wake up bitch"`)
+		assert.Contains(t, string(task.InputPayload), `"requires":["calls"]`)
 	})
 }

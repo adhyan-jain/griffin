@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -127,6 +128,10 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 		b.WriteString("\n")
 	}
 
+	if isCareerTask(task) {
+		appendCareerContext(&b, task)
+	}
+
 	if env.Kind != "chat" {
 		// A step that continues a conversation (for example a voice chat that became work) must see it.
 		if hist := historyBlock(env.History); hist != "" {
@@ -226,4 +231,121 @@ func detectVersion(binary string, timeout time.Duration) string {
 		return "unknown"
 	}
 	return truncateRunes(line, 100)
+}
+
+const candidateProfileContext = `Candidate Background (Ground Truth):
+- Full Name: Adhyan Jain
+- Academic Profile: 3rd-year B.Tech in Computer Science and Engineering at Vellore Institute of Technology (VIT), Vellore (Batch of 2028, CGPA: 9.38 / 10.0).
+- Location: Vellore, Tamil Nadu, India / Bengaluru, India.
+- Relevant Coursework: Data Structures & Algorithms, Operating Systems, Database Management Systems, Distributed Systems, Object-Oriented Programming, Computer Networks.
+- Key Engineering Projects:
+  1. ComputeHive (https://github.com/adhyan-jain/ComputeHive): Self-hosted distributed task runner in Go & Redis. Task leasing serialized through atomic Redis Lua scripts to eliminate double-leases and split-brain execution under heavy concurrency. Validated through a 1,000-job chaos run with zero task loss or duplicate execution across node crashes. Ephemeral Docker sandboxes with dropped Linux capabilities, non-root UID enforcement, and read-only root filesystems. Outbound pull-based worker daemon over gRPC/TLS with sub-15s dead-worker recovery.
+  2. Griffin (https://github.com/adhyan-jain/griffin): Autonomous host orchestration and runtime engine in Go. Capability-gated security engine using cryptographic approval tokens and host policy boundaries, eliminating unauthorized executions with automated false-completion tests. PostgreSQL connection-pooled state machines with SSE streaming.
+  3. EchoTales (https://github.com/adhyan-jain/EchoTales): Applied AI pipeline combining bitemporal knowledge graph querying with multi-speaker voice synthesis and character visual consistency. Deterministic state guardrails with bounded human escalation queues. Evaluated coreference precision and recall across 21,000 entity spans using MUC, B-cubed, and CEAF metrics against gold ground-truth datasets.
+  4. Open Source / SGLang: Contributed to official developer guides, runtime APIs, and structured generation documentation for SGLang (high-performance LLM serving framework) as part of ACM VIT team.
+- Strict Constraints:
+  - Strictly ZERO emojis in all code, text, commits, and summaries.
+  - Never state age "20-year-old".
+  - Always address recipients as "Hi [Name]," (never "Dear [Name]").
+  - Ground all technical statements in verified engineering metrics and projects above; never invent generic placeholders or fictional frameworks.`
+
+type jobPayloadView struct {
+	Company          string            `json:"company"`
+	Role             string            `json:"role"`
+	Tier             string            `json:"tier"`
+	JobLink          string            `json:"job_link"`
+	PortalURL        string            `json:"portal_url"`
+	BaseResume       string            `json:"base_resume"`
+	ResumeSent       string            `json:"resume_sent"`
+	BulletDiff       string            `json:"bullet_diff"`
+	CoverNote        string            `json:"cover_note"`
+	ScreeningAnswers map[string]string `json:"screening_answers"`
+	Location         string            `json:"location"`
+	Stipend          string            `json:"stipend"`
+}
+
+func isCareerTask(task *domain.Task) bool {
+	if task == nil {
+		return false
+	}
+	if strings.EqualFold(task.ManagerDomain, "career") {
+		return true
+	}
+	combined := strings.ToLower(task.Title + " " + task.Goal)
+	return strings.Contains(combined, "resume") || strings.Contains(combined, "apply") || strings.Contains(combined, "internship") || strings.Contains(combined, "job application")
+}
+
+func appendCareerContext(b *strings.Builder, task *domain.Task) {
+	if !isCareerTask(task) {
+		return
+	}
+	b.WriteString("\n")
+	b.WriteString(candidateProfileContext)
+	b.WriteString("\n")
+
+	if len(task.InputPayload) == 0 {
+		return
+	}
+
+	var job jobPayloadView
+	if err := json.Unmarshal(task.InputPayload, &job); err != nil {
+		return
+	}
+
+	portal := job.PortalURL
+	if portal == "" {
+		portal = job.JobLink
+	}
+	resumePath := job.ResumeSent
+	if resumePath == "" {
+		resumePath = job.BaseResume
+	}
+
+	hasJobDetails := job.Company != "" || job.Role != "" || portal != "" || resumePath != "" || job.BulletDiff != "" || job.CoverNote != "" || len(job.ScreeningAnswers) > 0
+	if !hasJobDetails {
+		return
+	}
+
+	b.WriteString("\nApplication Package Details:\n")
+	if job.Company != "" {
+		fmt.Fprintf(b, "- Target Company: %s\n", job.Company)
+	}
+	if job.Role != "" {
+		fmt.Fprintf(b, "- Target Role: %s\n", job.Role)
+	}
+	if job.Tier != "" {
+		fmt.Fprintf(b, "- Tier: %s\n", job.Tier)
+	}
+	if portal != "" {
+		fmt.Fprintf(b, "- Official Portal URL: %s\n", portal)
+	}
+	if job.Location != "" {
+		fmt.Fprintf(b, "- Location: %s\n", job.Location)
+	}
+	if job.Stipend != "" {
+		fmt.Fprintf(b, "- Stipend: %s\n", job.Stipend)
+	}
+	if resumePath != "" {
+		fmt.Fprintf(b, "- Tailored Resume Path: %s\n", resumePath)
+	}
+	if job.BulletDiff != "" {
+		fmt.Fprintf(b, "- Bullet Highlights:\n%s\n", job.BulletDiff)
+	}
+	if job.CoverNote != "" {
+		fmt.Fprintf(b, "- Cover Pitch Note:\n%s\n", job.CoverNote)
+	}
+	if len(job.ScreeningAnswers) > 0 {
+		b.WriteString("- Screening Answers:\n")
+		for q, a := range job.ScreeningAnswers {
+			fmt.Fprintf(b, "  * %s: %s\n", q, a)
+		}
+	}
+
+	if resumePath != "" {
+		if data, err := os.ReadFile(resumePath); err == nil && len(data) > 0 {
+			b.WriteString("\nAttached Tailored Resume Document:\n```markdown\n")
+			b.Write(data)
+			b.WriteString("\n```\n")
+		}
+	}
 }

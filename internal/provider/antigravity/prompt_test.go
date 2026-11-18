@@ -254,3 +254,38 @@ func TestWorkersKnowTheirRoleOnTheTeam(t *testing.T) {
 		t.Error("no role, no role line")
 	}
 }
+
+func TestBuildPrompt_CareerCandidateContext(t *testing.T) {
+	task := &domain.Task{
+		Title:         "Apply to Google: Software Engineering Intern",
+		Goal:          "Submit tailored application to Google for Software Engineering Intern (Tier A).",
+		ManagerDomain: "career",
+		InputPayload: json.RawMessage(`{
+			"company": "Google",
+			"role": "Software Engineering Intern",
+			"tier": "Tier A",
+			"portal_url": "https://careers.google.com/jobs/results/",
+			"resume_sent": "/home/adhyan/Documents/Griffin/resumes/sent/Google_Software_Engineering_Intern_2026-11-17.md",
+			"bullet_diff": "Added ComputeHive atomic Redis Lua leases and sub-15s fault recovery.",
+			"screening_answers": {
+				"Graduation Date": "May 2028 (B.Tech Computer Science and Engineering, VIT Vellore)"
+			}
+		}`),
+	}
+
+	got := buildPromptWith(preamble, task, 1, RuntimeFacts{})
+
+	assert.Contains(t, got, "Candidate Background (Ground Truth):")
+	assert.Contains(t, got, "Adhyan Jain")
+	assert.Contains(t, got, "Vellore Institute of Technology")
+	assert.Contains(t, got, "ComputeHive")
+	assert.Contains(t, got, "Griffin")
+	assert.Contains(t, got, "EchoTales")
+	assert.Contains(t, got, "SGLang")
+	assert.Contains(t, got, "Strictly ZERO emojis")
+	assert.Contains(t, got, "Target Company: Google")
+	assert.Contains(t, got, "Target Role: Software Engineering Intern")
+	assert.Contains(t, got, "Official Portal URL: https://careers.google.com/jobs/results/")
+	assert.Contains(t, got, "Added ComputeHive atomic Redis Lua leases")
+	assert.Contains(t, got, "Graduation Date: May 2028")
+}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
-import { Check, CheckCheck, ExternalLink, FileText, Loader2, Pencil, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Check, CheckCheck, Copy, ExternalLink, FileText, Loader2, Pencil, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Approval } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -68,16 +68,19 @@ function tailoringOf(a: Approval): TailoringInfo | null {
   const payload = (p as { payload?: unknown }).payload || p;
   if (!payload || typeof payload !== "object") return null;
   const t = payload as Record<string, unknown>;
-  if (typeof t.company === "string" && (typeof t.bullet_diff === "string" || typeof t.cover_note === "string" || typeof t.job_link === "string")) {
+  const company = typeof t.company === "string" ? t.company : "";
+  const portalUrl = typeof t.portal_url === "string" ? t.portal_url : (typeof t.job_link === "string" ? t.job_link : (typeof t.source_url === "string" ? t.source_url : ""));
+  const resume = typeof t.resume_sent === "string" ? t.resume_sent : (typeof t.base_resume === "string" ? t.base_resume : (typeof t.resume_path === "string" ? t.resume_path : ""));
+  if (company && (portalUrl || resume || typeof t.bullet_diff === "string" || typeof t.cover_note === "string" || typeof t.text === "string")) {
     return {
-      company: String(t.company),
+      company,
       role: typeof t.role === "string" ? t.role : "",
       tier: typeof t.tier === "string" ? t.tier : "",
-      job_link: typeof t.job_link === "string" ? t.job_link : "",
-      source_url: typeof t.source_url === "string" ? t.source_url : "",
-      base_resume: typeof t.base_resume === "string" ? t.base_resume : "",
+      job_link: portalUrl,
+      source_url: typeof t.source_url === "string" ? t.source_url : portalUrl,
+      base_resume: resume,
       bullet_diff: typeof t.bullet_diff === "string" ? t.bullet_diff : "",
-      cover_note: typeof t.cover_note === "string" ? t.cover_note : "",
+      cover_note: typeof t.cover_note === "string" ? t.cover_note : (typeof t.text === "string" ? t.text : ""),
       screening_answers:
         t.screening_answers && typeof t.screening_answers === "object"
           ? (t.screening_answers as Record<string, string>)
@@ -318,10 +321,22 @@ export default function ApprovalsPage() {
                           </a>
                         )}
                         {tail.base_resume && (
-                          <span className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1 text-xs font-mono text-foreground">
+                          <div className="flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-1 text-xs font-mono text-foreground">
                             <FileText className="size-3.5 text-muted-foreground" />
-                            {tail.base_resume.split("/").pop()}
-                          </span>
+                            <span className="font-semibold">{tail.base_resume.split("/").pop()}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(tail.base_resume);
+                                toast.success("Copied resume path to clipboard");
+                              }}
+                              className="ml-1 inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                              title={tail.base_resume}
+                            >
+                              <Copy className="size-3" />
+                              Copy Path
+                            </button>
+                          </div>
                         )}
                         {tail.location && (
                           <span className="text-xs text-muted-foreground">
@@ -329,6 +344,11 @@ export default function ApprovalsPage() {
                           </span>
                         )}
                       </div>
+                      {tail.base_resume && (
+                        <p className="text-[11px] text-muted-foreground font-mono truncate" title={tail.base_resume}>
+                          Resume location: {tail.base_resume}
+                        </p>
+                      )}
 
                       {/* Bullet Diff */}
                       {tail.bullet_diff && (

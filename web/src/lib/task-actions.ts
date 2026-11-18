@@ -19,7 +19,13 @@ export async function runAgain(t: Task): Promise<Task | null> {
     await api.submitOrchestratorRequest(t.goal, t.priority);
     return null;
   }
-  return api.createTask({ goal: t.goal, title: t.title, manager_domain: t.manager_domain, priority: t.priority });
+  return api.createTask({
+    goal: t.goal,
+    title: t.title,
+    manager_domain: t.manager_domain,
+    priority: t.priority,
+    input_payload: t.input_payload as Record<string, unknown>,
+  });
 }
 
 export type Outcome = { ok: number; failed: number; skipped: number; firstError?: string };
