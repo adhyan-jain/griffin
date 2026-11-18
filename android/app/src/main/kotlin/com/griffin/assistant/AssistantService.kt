@@ -420,7 +420,11 @@ class AssistantService : Service() {
         val found = Contacts.find(this, who)
         return when {
             found.isEmpty() -> { say("I could not find $who in your contacts."); null }
-            found.size > 1 && !found[0].name.equals(who, true) -> { say("I found ${found.take(3).joinToString(", ") { it.name }}. Say the full name."); null }
+            found.size > 1 && !found[0].name.equals(who, true) -> {
+                val names = found.take(3).joinToString(", ") { it.name }
+                say("I found multiple contacts: $names. Please say the full name.")
+                null
+            }
             else -> found[0]
         }
     }
@@ -429,7 +433,7 @@ class AssistantService : Service() {
         val m = pickContact(who) ?: return
         confirm(
             PendingAction(PendingAction.Kind.Call, m.name, m.number, "", if (inBackground) "background" else "direct"),
-            "Call ${m.name}? Say yes to confirm."
+            "I found ${m.name}. Call ${m.name}? Say yes to confirm, or say no."
         )
     }
 
@@ -447,7 +451,7 @@ class AssistantService : Service() {
         }
         confirm(
             PendingAction(PendingAction.Kind.AutomatedCall, displayName, number, message, if (inBackground) "background" else "supervised"),
-            "Automated call to $displayName to say: $message. Say yes to confirm."
+            "I found $displayName. Automated call to $displayName to say: \"$message\"? Say yes to confirm, or say no."
         )
     }
 

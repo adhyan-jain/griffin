@@ -94,8 +94,11 @@ object Commands {
             return Command.CancelCall(who)
         }
 
-        // Detect background mode requested by owner
-        val inBackground = s.contains("in background") || s.contains("in the background") || s.contains("silently") || s.contains("without opening")
+        // Detect background mode requested by owner (only when explicitly commanded; default is visible/interactive)
+        val inBackground = s.contains("in background") || s.contains("in the background") ||
+            s.contains("in the bg") || s.contains("in bg") ||
+            s.contains("silently") || s.contains("without opening it") || s.contains("without opening") ||
+            s.contains("dont open it") || s.contains("don't open it") || s.contains("behind the scenes")
         val isWhatsAppCall = s.contains("whatsapp call") || s.contains("call on whatsapp") || s.contains("call via whatsapp") || s.contains("call using whatsapp")
         val forMe = s.contains("for me") || s.contains("let me talk") || s.contains("i'll talk") || s.contains("i will talk") || s.contains("just open it")
         val listenOnly = s.contains("i can listen") || s.contains("i will listen") || s.contains("i'll listen") || s.contains("let me listen") || s.contains("you talk and i listen") || s.contains("you talk, i listen") || s.contains("you talk and i can listen")
@@ -104,8 +107,14 @@ object Commands {
         val sParsed = if (inBackground) {
             s.replace("in the background", "")
                 .replace("in background", "")
-                .replace("silently", "")
+                .replace("in the bg", "")
+                .replace("in bg", "")
+                .replace("behind the scenes", "")
+                .replace("without opening it", "")
                 .replace("without opening", "")
+                .replace("dont open it", "")
+                .replace("don't open it", "")
+                .replace("silently", "")
                 .replace(Regex("\\s+"), " ")
                 .trim()
         } else {

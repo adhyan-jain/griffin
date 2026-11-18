@@ -15,49 +15,75 @@ object Contacts {
         null
     }
 
-    /** Contacts whose name matches what was said, exact matches first. */
+    /** Contacts whose name matches what was said, exact matches first. Supports multi-part Indian names. */
     fun find(context: Context, query: String): List<Match> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
         val out = LinkedHashMap<String, Match>()
-        try {
-            context.contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?", arrayOf("%$q%"), null,
-            )?.use {
-                while (it.moveToNext()) {
-                    val m = Match(it.getString(0) ?: continue, it.getString(1) ?: continue)
-                    out.putIfAbsent(m.number.filter { c -> c.isDigit() }.takeLast(10), m)
+
+        fun queryDb(pattern: String) {
+            try {
+                context.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+                    "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?", arrayOf("%$pattern%"), null,
+                )?.use {
+                    while (it.moveToNext()) {
+                        val m = Match(it.getString(0) ?: continue, it.getString(1) ?: continue)
+                        out.putIfAbsent(m.number.filter { c -> c.isDigit() }.takeLast(10), m)
+                    }
                 }
-            }
-        } catch (_: SecurityException) {
-            return emptyList()
+            } catch (_: SecurityException) {}
         }
+
+        queryDb(q)
+        if (out.isEmpty() && q.contains(" ")) {
+            for (token in q.split(Regex("\\s+"))) {
+                val t = token.trim()
+                if (t.length >= 3) queryDb(t)
+            }
+        }
+
         val exact = out.values.filter { it.name.equals(q, ignoreCase = true) }
         return exact.ifEmpty { out.values.sortedBy { it.name.length } }
     }
 
-    /** Finds the WhatsApp voice call Data ID for a contact name, or returns null. */
+    /** Finds the WhatsApp voice call Data ID for a contact name, or returns null. Supports multi-part names. */
     fun findWhatsAppCallDataId(context: Context, query: String): Long? {
         val q = query.trim()
         if (q.isEmpty()) return null
-        try {
-            val projection = arrayOf(ContactsContract.Data._ID, ContactsContract.Data.DISPLAY_NAME)
-            val selection = "${ContactsContract.Data.MIMETYPE} = ? AND ${ContactsContract.Data.DISPLAY_NAME} LIKE ?"
-            val selectionArgs = arrayOf("vnd.android.cursor.item/vnd.com.whatsapp.voip.call", "%$q%")
-            context.contentResolver.query(
-                ContactsContract.Data.CONTENT_URI,
-                projection,
-                selection,
-                selectionArgs,
-                null
-            )?.use {
-                if (it.moveToFirst()) {
-                    return it.getLong(0)
+
+        fun queryData(pattern: String): Long? {
+            try {
+                val projection = arrayOf(ContactsContract.Data._ID, ContactsContract.Data.DISPLAY_NAME)
+                val selection = "${ContactsContract.Data.MIMETYPE} = ? AND ${ContactsContract.Data.DISPLAY_NAME} LIKE ?"
+                val selectionArgs = arrayOf("vnd.android.cursor.item/vnd.com.whatsapp.voip.call", "%$pattern%")
+                context.contentResolver.query(
+                    ContactsContract.Data.CONTENT_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                )?.use {
+                    if (it.moveToFirst()) {
+                        return it.getLong(0)
+                    }
+                }
+            } catch (_: Exception) {}
+            return null
+        }
+
+        val direct = queryData(q)
+        if (direct != null) return direct
+        if (q.contains(" ")) {
+            for (token in q.split(Regex("\\s+"))) {
+                val t = token.trim()
+                if (t.length >= 3) {
+                    val res = queryData(t)
+                    if (res != null) return res
                 }
             }
-        } catch (_: Exception) {}
+        }
         return null
     }
 }
