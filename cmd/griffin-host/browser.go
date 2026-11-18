@@ -46,7 +46,7 @@ func newBrowserService(logger *slog.Logger) *hands.BrowserService {
 		logger.Warn("the browser hand is unavailable: no Chrome, Chromium or Brave", "reason", err.Error())
 		return nil
 	}
-	model := &gemini.Client{APIKey: os.Getenv("GEMINI_API_KEY"), Model: envOr("BROWSER_MODEL", "gemini-flash-latest"), MaxOutputTokens: 700}
+	model := &gemini.Client{APIKey: os.Getenv("GEMINI_API_KEY"), Model: envOr("BROWSER_MODEL", gemini.DefaultModel), MaxOutputTokens: 700}
 	if !model.Enabled() {
 		logger.Warn("the browser hand is unavailable: set GEMINI_API_KEY so it can choose steps")
 		return nil
