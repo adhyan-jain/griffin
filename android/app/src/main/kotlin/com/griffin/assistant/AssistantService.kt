@@ -190,6 +190,13 @@ class AssistantService : Service() {
         when (a.kind) {
             PendingAction.Kind.Sms -> say(actions.sendSms(a.target, a.text) ?: "Sent to ${a.who}.")
             PendingAction.Kind.Reply -> say(Inbox.reply(this, a.target, a.text) ?: "Replied to ${a.who} on ${a.via}.")
+            PendingAction.Kind.Call -> {
+                say("Calling ${a.who}.")
+                actions.call(a.target)?.let { say(it) }
+            }
+            PendingAction.Kind.AutomatedCall -> {
+                executeAutomatedCall(a.target, a.who, a.text, inBackground = a.via == "background", listenOnly = false)
+            }
             PendingAction.Kind.Server -> app.net.execute {
                 try {
                     val r = app.api.voiceConfirm(a.target, true, unlocked())
@@ -420,13 +427,10 @@ class AssistantService : Service() {
 
     private fun placeCall(who: String, inBackground: Boolean = false) {
         val m = pickContact(who) ?: return
-        if (inBackground) {
-            GriffinAccess.suppressDialer = true
-            say("Calling ${m.name} in background.")
-        } else {
-            say("Calling ${m.name}.")
-        }
-        actions.call(m.number)?.let { say(it) }
+        confirm(
+            PendingAction(PendingAction.Kind.Call, m.name, m.number, "", if (inBackground) "background" else "direct"),
+            "Call ${m.name}? Say yes to confirm."
+        )
     }
 
     private fun makeAutomatedCall(who: String, message: String, inBackground: Boolean = false, listenOnly: Boolean = false) {
@@ -441,12 +445,19 @@ class AssistantService : Service() {
             number = m.number
             displayName = m.name
         }
+        confirm(
+            PendingAction(PendingAction.Kind.AutomatedCall, displayName, number, message, if (inBackground) "background" else "supervised"),
+            "Automated call to $displayName to say: $message. Say yes to confirm."
+        )
+    }
+
+    private fun executeAutomatedCall(number: String, displayName: String, message: String, inBackground: Boolean, listenOnly: Boolean) {
         if (inBackground) {
-            say("Placing an automated call to $displayName in background to tell them: $message.")
+            say("Placing automated call to $displayName in background.")
         } else if (listenOnly) {
-            say("Calling $displayName on speaker. I will speak and you can listen.")
+            say("Calling $displayName on speaker.")
         } else {
-            say("Placing an automated call to $displayName to tell them: $message.")
+            say("Placing automated call to $displayName.")
         }
         if (::listener.isInitialized) listener.pause()
         app.jobs.execute {

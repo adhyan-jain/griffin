@@ -18,10 +18,9 @@ package com.griffin.assistant.core
  */
 enum class Phase { Idle, Awake, Thinking, Speaking, Confirming }
 
-/** Something the assistant asked the owner to confirm before doing it. */
 data class PendingAction(val kind: Kind, val who: String, val target: String, val text: String, val via: String) {
-    /** Sms and Reply are done on the phone; Server is a change Griffin asked the owner to confirm (the token is in [target]). */
-    enum class Kind { Sms, Reply, Server }
+    /** Sms and Reply are done on the phone; Server is a change Griffin asked the owner to confirm (the token is in [target]); Call and AutomatedCall require explicit voice approval before dialing. */
+    enum class Kind { Sms, Reply, Server, Call, AutomatedCall }
 }
 
 data class AState(

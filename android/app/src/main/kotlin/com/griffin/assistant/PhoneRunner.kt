@@ -112,6 +112,23 @@ class PhoneRunner(
             }
         }
 
+        // Strictly verify that the owner has explicitly approved placing this call to targetName
+        val approvalKey = "host_action:call:${targetName.lowercase()}"
+        if (approvalKey !in task.approved && "host_action:call:*" !in task.approved) {
+            val payload = JSONObject()
+                .put("action", "automated_call")
+                .put("target_name", targetName)
+                .put("target_number", targetNumber)
+                .put("message", task.message)
+            api.requestApproval(
+                task.id,
+                approvalKey,
+                "Call $targetName ($targetNumber) with message: \"${task.message}\"",
+                payload
+            )
+            return
+        }
+
         val latch = java.util.concurrent.CountDownLatch(1)
         var callOutcome = "failed"
         var callReply = ""
