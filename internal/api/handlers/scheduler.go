@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,23 @@ type SchedulerHandler struct {
 	scheduleRepo repository.ScheduleRepository
 	wakeup       RunnerWakeup
 	logger       *slog.Logger
+	proactive    []ProactiveOp
+}
+
+// ProactiveOp is a durable, idempotent operation (brief, sync, sweep...) the tick runs in API mode,
+// so proactive work happens from the external cadence even while the worker host is stopped.
+// Each op owns its own idempotency (see repository.OperationRepository); the tick only invokes it.
+type ProactiveOp struct {
+	Name    string
+	Timeout time.Duration // zero means 20s
+	Run     func(ctx context.Context) error
+}
+
+// WithProactive returns a copy of the handler that runs ops on every tick.
+func (h *SchedulerHandler) WithProactive(ops ...ProactiveOp) *SchedulerHandler {
+	cp := *h
+	cp.proactive = append(append([]ProactiveOp(nil), h.proactive...), ops...)
+	return &cp
 }
 
 // NewSchedulerHandler creates a SchedulerHandler.
@@ -57,6 +75,9 @@ type TickResponse struct {
 	RunnableTasks    int       `json:"runnable_tasks"`
 	MaterializedJobs int       `json:"materialized_jobs"`
 	WakeupTriggered  bool      `json:"wakeup_triggered"`
+	// Operations maps each proactive operation to "ok" or its error, so a failing sync is visible
+	// to the external scheduler's logs without failing the whole tick.
+	Operations map[string]string `json:"operations,omitempty"`
 }
 
 // Tick evaluates due recurring schedules, materializes tasks, and triggers wake-up if work is ready.
@@ -152,6 +173,34 @@ func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 1b. Run durable proactive operations. A failure in one never blocks the others or the wake-up.
+	var opResults map[string]string
+	if len(h.proactive) > 0 {
+		opResults = make(map[string]string, len(h.proactive))
+		for _, op := range h.proactive {
+			timeout := op.Timeout
+			if timeout <= 0 {
+				timeout = 20 * time.Second
+			}
+			opCtx, cancel := context.WithTimeout(ctx, timeout)
+			err := func() (err error) {
+				defer func() {
+					if rec := recover(); rec != nil {
+						err = fmt.Errorf("panic: %v", rec)
+					}
+				}()
+				return op.Run(opCtx)
+			}()
+			cancel()
+			if err != nil {
+				h.logger.Error("Proactive operation failed", "op", op.Name, "error", err)
+				opResults[op.Name] = err.Error()
+			} else {
+				opResults[op.Name] = "ok"
+			}
+		}
+	}
+
 	// 2. Inspect runnable tasks in the queue
 	count, err := h.taskRepo.CountRunnableTasks(ctx)
 	if err != nil {
@@ -175,5 +224,6 @@ func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 		RunnableTasks:    int(count),
 		MaterializedJobs: materializedCount,
 		WakeupTriggered:  wakeupTriggered,
+		Operations:       opResults,
 	})
 }

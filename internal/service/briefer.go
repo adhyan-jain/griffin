@@ -11,6 +11,7 @@ import (
 
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/notify"
+	"github.com/griffin/core/internal/repository"
 )
 
 // BriefSources reads what the brief needs from the database.
@@ -35,9 +36,12 @@ type Briefer struct {
 	Logger      *slog.Logger
 	Now         func() time.Time
 
-	mu              sync.Mutex
-	lastSent        map[uuid.UUID]time.Time // local day of the last morning push
-	lastDebriefSent map[uuid.UUID]time.Time // local day of the last evening push
+	// Ops is the durable ledger that makes each send once-per-local-day across restarts and
+	// concurrent ticks. When nil, an in-memory map is used (tests/dev only).
+	Ops *repository.OperationRepository
+
+	mu   sync.Mutex
+	sent map[string]string // fallback dedup: user:kind -> local day
 }
 
 func (b *Briefer) now() time.Time {
@@ -110,52 +114,72 @@ func (b *Briefer) Tick(ctx context.Context) {
 		}
 		loc := b.Coach.location(s)
 		local := b.now().In(loc)
-		day := domain.Day(local, loc)
 
 		// 1. Morning Brief dispatch
 		if local.Hour() >= mHour && local.Hour() < eHour {
-			b.mu.Lock()
-			if b.lastSent == nil {
-				b.lastSent = map[uuid.UUID]time.Time{}
-			}
-			done := b.lastSent[u].Equal(day)
-			b.mu.Unlock()
-			if !done {
+			b.dispatchOnce(ctx, u, "brief_morning", local, func() error {
 				br, err := b.BuildPhase(ctx, u, domain.BriefPhaseMorning)
 				if err != nil {
-					b.log().Warn("brief: morning build failed", "error", err)
-				} else if err := b.Sender.Send(ctx, notify.Message{Title: "Morning brief", Body: br.Text, ClickURL: strings.TrimRight(b.AppURL, "/") + "/brief?phase=morning", Tags: []string{"sunrise"}}); err != nil {
-					b.log().Warn("brief: morning push failed", "error", err)
-				} else {
-					b.mu.Lock()
-					b.lastSent[u] = day
-					b.mu.Unlock()
+					return err
 				}
-			}
+				return b.Sender.Send(ctx, notify.Message{Title: "Morning brief", Body: br.Text, ClickURL: strings.TrimRight(b.AppURL, "/") + "/brief?phase=morning", Tags: []string{"sunrise"}})
+			})
 		}
 
 		// 2. Evening Debrief dispatch
 		if local.Hour() >= eHour {
-			b.mu.Lock()
-			if b.lastDebriefSent == nil {
-				b.lastDebriefSent = map[uuid.UUID]time.Time{}
-			}
-			done := b.lastDebriefSent[u].Equal(day)
-			b.mu.Unlock()
-			if !done {
+			b.dispatchOnce(ctx, u, "brief_evening", local, func() error {
 				br, err := b.BuildPhase(ctx, u, domain.BriefPhaseEvening)
 				if err != nil {
-					b.log().Warn("brief: evening build failed", "error", err)
-				} else if err := b.Sender.Send(ctx, notify.Message{Title: "Evening debrief", Body: br.Text, ClickURL: strings.TrimRight(b.AppURL, "/") + "/brief?phase=evening", Tags: []string{"sunset"}}); err != nil {
-					b.log().Warn("brief: evening push failed", "error", err)
-				} else {
-					b.mu.Lock()
-					b.lastDebriefSent[u] = day
-					b.mu.Unlock()
+					return err
 				}
-			}
+				return b.Sender.Send(ctx, notify.Message{Title: "Evening debrief", Body: br.Text, ClickURL: strings.TrimRight(b.AppURL, "/") + "/brief?phase=evening", Tags: []string{"sunset"}})
+			})
 		}
 	}
+}
+
+// dispatchOnce runs send at most once per (user, kind, local day). With a durable ledger the claim
+// survives restarts and concurrent ticks, and failures are retried with backoff. Without one
+// (tests/dev) it falls back to in-memory dedup.
+func (b *Briefer) dispatchOnce(ctx context.Context, u uuid.UUID, kind string, local time.Time, send func() error) {
+	day := local.Format("2006-01-02")
+	if b.Ops != nil {
+		op, err := b.Ops.Claim(ctx, u, kind, day, 2*time.Minute, 5)
+		if err != nil {
+			b.log().Warn("brief: claim failed", "kind", kind, "error", err)
+			return
+		}
+		if op == nil {
+			return // already sent, in flight elsewhere, or backing off
+		}
+		if err := send(); err != nil {
+			b.log().Warn("brief: dispatch failed", "kind", kind, "error", err)
+			_ = b.Ops.Fail(ctx, u, kind, op, 5, err, 10*time.Minute)
+			return
+		}
+		if err := b.Ops.Complete(ctx, u, kind, op); err != nil {
+			b.log().Warn("brief: recording success failed", "kind", kind, "error", err)
+		}
+		return
+	}
+	key := u.String() + ":" + kind
+	b.mu.Lock()
+	if b.sent == nil {
+		b.sent = map[string]string{}
+	}
+	done := b.sent[key] == day
+	b.mu.Unlock()
+	if done {
+		return
+	}
+	if err := send(); err != nil {
+		b.log().Warn("brief: dispatch failed", "kind", kind, "error", err)
+		return
+	}
+	b.mu.Lock()
+	b.sent[key] = day
+	b.mu.Unlock()
 }
 
 func (b *Briefer) log() *slog.Logger {

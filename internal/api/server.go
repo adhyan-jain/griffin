@@ -87,6 +87,8 @@ type ServerDependencies struct {
 	DiscoveryRepo *repository.DiscoveryRepository
 	// JobDiscovery runs independent sweeps across authorized ATS endpoints.
 	JobDiscovery *service.JobDiscoveryService
+	// ProactiveOps run on every scheduler tick (briefs, watchdog, sync, discovery) in API mode.
+	ProactiveOps []handlers.ProactiveOp
 	// UserTx opens RLS-enforced per-request transactions. Required in production; when nil outside
 	// production, repositories use whatever connection they were built with (tests/dev).
 	UserTx *database.UserTxManager
@@ -357,7 +359,7 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("POST /api/v1/workers/{task_id}/complete", workerAuth(http.HandlerFunc(workerHandler.CompleteTask)))
 	mux.Handle("POST /api/v1/workers/{task_id}/fail", workerAuth(http.HandlerFunc(workerHandler.FailTask)))
 
-	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.ScheduleRepo, deps.Wakeup, deps.Logger)
+	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.ScheduleRepo, deps.Wakeup, deps.Logger).WithProactive(deps.ProactiveOps...)
 	mux.Handle("POST /api/v1/scheduler/tick", workerAuth(http.HandlerFunc(schedulerHandler.Tick)))
 
 	// Execution hosts (laptop, phone). Owner routes use the user JWT; host routes use a per-host token and

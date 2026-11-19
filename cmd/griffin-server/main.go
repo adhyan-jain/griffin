@@ -380,6 +380,8 @@ func main() {
 		Client:        &http.Client{Timeout: 20 * time.Second},
 		Logger:        logger,
 	}
+	opsRepo := repository.NewOperationRepository(repoDB)
+	briefer.Ops = opsRepo
 	briefer.Watchdog = &service.OutreachWatchdog{Outreach: outreachRepo, Drafter: outreachDrafter(cfg), Sender: dsaCoach.Sender, Logger: logger}
 	ttsService := service.NewTTSService("")
 
@@ -478,11 +480,15 @@ func main() {
 			DiscoveryRepo:    discoveryRepo,
 			JobDiscovery:     jobDiscovery,
 			TTS:              ttsService,
-			OutreachDrafter:  outreachDrafter(cfg),
-			DeviceDecider:    deviceDecider(cfg),
-			VoiceBrain:       voiceBrain(cfg),
-			InstanceMgr:      instanceMgr,
-			UserTx:           userTx,
+			ProactiveOps: []handlers.ProactiveOp{
+				// Briefs (once per local day, persisted) and the outreach follow-up watchdog.
+				{Name: "briefs_and_watchdog", Run: func(c context.Context) error { briefer.Tick(c); return nil }},
+			},
+			OutreachDrafter: outreachDrafter(cfg),
+			DeviceDecider:   deviceDecider(cfg),
+			VoiceBrain:      voiceBrain(cfg),
+			InstanceMgr:     instanceMgr,
+			UserTx:          userTx,
 		})
 
 		go func() {
