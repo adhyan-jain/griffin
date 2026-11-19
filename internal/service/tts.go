@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -119,8 +118,8 @@ func (s *TTSService) Synthesize(ctx context.Context, text, voiceAlias string) ([
 	// 3. Fetch from provider neural endpoint (Edge Neural Voice protocol)
 	audio, err := s.fetchNeuralAudio(ctx, text, voice)
 	if err != nil {
-		// Generate an intelligible local tone/fallback byte stream if offline
-		audio = s.generateFallbackAudio(text)
+		// Never fabricate audio: surface the failure so callers can fall back to on-device speech.
+		return nil, fmt.Errorf("tts synthesis failed: %w", err)
 	}
 
 	// Save to disk and memory cache
@@ -173,18 +172,6 @@ func (s *TTSService) fetchNeuralAudio(ctx context.Context, text, voice string) (
 	}
 
 	return data, nil
-}
-
-// generateFallbackAudio creates a valid, compact MP3 header frame for testing and offline resilience.
-func (s *TTSService) generateFallbackAudio(text string) []byte {
-	// Standard MPEG-1 Layer 3 sync word and minimal frame header (silence/tone placeholder)
-	buf := new(bytes.Buffer)
-	buf.WriteString("ID3\x03\x00\x00\x00\x00\x00\x00") // ID3 header
-	// Write dummy audio frame with comment
-	frame := []byte{0xFF, 0xFB, 0x90, 0x64}
-	buf.Write(frame)
-	buf.WriteString(fmt.Sprintf("[JARVIS-TTS:%s]", text))
-	return buf.Bytes()
 }
 
 func xmlEscape(s string) string {

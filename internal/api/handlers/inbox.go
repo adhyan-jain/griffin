@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/griffin/core/internal/api/httputil"
+	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
@@ -34,9 +34,8 @@ func (h *InboxHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userIDVal := r.Context().Value("user_id")
-	userID, ok := userIDVal.(uuid.UUID)
-	if !ok || userID == uuid.Nil {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -64,9 +63,8 @@ func (h *InboxHandler) Assessments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userIDVal := r.Context().Value("user_id")
-	userID, ok := userIDVal.(uuid.UUID)
-	if !ok || userID == uuid.Nil {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

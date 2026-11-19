@@ -463,6 +463,19 @@ func NewServer(deps ServerDependencies) *Server {
 	systemHandler := handlers.NewSystemHandler(statusDB, statusStore, statusStorage, statusBucket, deps.InstanceMgr, scaleToZero)
 	mux.Handle("GET /api/v1/system/status", userAuth(http.HandlerFunc(systemHandler.GetStatus)))
 
+	// Capability readiness: which proactive integrations are wired in this process. Booleans only,
+	// no configuration values, so a missing integration is reported instead of looking live.
+	mux.Handle("GET /api/v1/system/capabilities", userAuth(handlers.CapabilitiesHandler(map[string]bool{
+		"inbox":           deps.GmailSyncer != nil && deps.InboxRepo != nil,
+		"inbound_events":  deps.InboundTriage != nil && deps.InboundEventRepo != nil,
+		"job_discovery":   deps.JobDiscovery != nil && deps.DiscoveryRepo != nil,
+		"neural_voice":    deps.TTS != nil,
+		"briefing":        deps.Briefer != nil,
+		"calls":           deps.Calls != nil,
+		"hosts":           deps.HostRepo != nil,
+		"push_configured": deps.Config != nil && deps.Config.NtfyTopic != "",
+	})))
+
 	// Stopping the shared runner affects every tenant, so it is operator-only: worker key (constant-time
 	// compare in AuthenticateWorker), never a user JWT. The browser must not hold this key.
 	mux.Handle("POST /api/v1/runner/sleep", workerAuth(http.HandlerFunc(runnerHandler.SleepRunner)))

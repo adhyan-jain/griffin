@@ -367,6 +367,22 @@ func main() {
 		dsaCoach.Sender = &notify.Ntfy{Server: cfg.NtfyServer, Topic: cfg.NtfyTopic, Token: cfg.NtfyToken}
 	}
 	briefer := &service.Briefer{Sources: repository.NewReportRepository(repoDB), Coach: dsaCoach, Sender: dsaCoach.Sender, AppURL: cfg.AppURL, Logger: logger}
+	// Proactive services. They are built in every mode so the API (including the short-lived function)
+	// and the worker share one wiring; durable scheduling of them comes from the scheduler tick.
+	inboundRepo := repository.NewInboundEventRepository(repoDB)
+	inboxRepo := repository.NewInboxRepository(repoDB)
+	discoveryRepo := repository.NewDiscoveryRepository(repoDB)
+	triage := &service.InboundTriageService{Events: inboundRepo, Outreach: outreachRepo, Sender: dsaCoach.Sender}
+	gmailSyncer := &service.GmailSyncer{InboxRepo: inboxRepo, Events: inboundRepo, Triage: triage, Tasks: taskRepo, Logger: logger}
+	jobDiscovery := &service.JobDiscoveryService{
+		DiscoveryRepo: discoveryRepo,
+		Pipeline:      &service.OpportunityPipeline{Tasks: taskRepo, Logger: logger},
+		Client:        &http.Client{Timeout: 20 * time.Second},
+		Logger:        logger,
+	}
+	briefer.Watchdog = &service.OutreachWatchdog{Outreach: outreachRepo, Drafter: outreachDrafter(cfg), Sender: dsaCoach.Sender, Logger: logger}
+	ttsService := service.NewTTSService("")
+
 	if runWorkers { // a long-lived process; the API alone may be a short-lived function
 		// Steps that need a laptop or phone and found none online fail with a plain reason instead of waiting forever.
 		go func() {
@@ -430,36 +446,43 @@ func main() {
 	if runAPI {
 		// 10. HTTP API Server
 		server = api.NewServer(api.ServerDependencies{
-			Config:          cfg,
-			Logger:          logger,
-			DB:              db,
-			Engine:          engine,
-			TaskRepo:        taskRepo,
-			ApprovalRepo:    approvalRepo,
-			AgentRepo:       agentRepo,
-			ScheduleRepo:    repository.NewPostgresScheduleRepository(repoDB),
-			ArtifactRepo:    artifactRepo,
-			StorageService:  storageService,
-			WorkerDefRepo:   workerDefRepo,
-			OrchRepo:        orchRepo,
-			Orchestrator:    jjOrchestrator,
-			Factory:         agentFactory,
-			ManagerRegistry: mgrReg,
-			Wakeup:          wakeupCtrl,
-			HostRepo:        hostRepo,
-			PolicyRepo:      policyRepo,
-			ProfileRepo:     profileRepo,
-			AliasRepo:       aliasRepo,
-			OutreachRepo:    outreachRepo,
-			ReportRepo:      repository.NewReportRepository(repoDB),
-			Dsa:             dsaCoach,
-			Calls:           callsHandler,
-			Briefer:         briefer,
-			OutreachDrafter: outreachDrafter(cfg),
-			DeviceDecider:   deviceDecider(cfg),
-			VoiceBrain:      voiceBrain(cfg),
-			InstanceMgr:     instanceMgr,
-			UserTx:          userTx,
+			Config:           cfg,
+			Logger:           logger,
+			DB:               db,
+			Engine:           engine,
+			TaskRepo:         taskRepo,
+			ApprovalRepo:     approvalRepo,
+			AgentRepo:        agentRepo,
+			ScheduleRepo:     repository.NewPostgresScheduleRepository(repoDB),
+			ArtifactRepo:     artifactRepo,
+			StorageService:   storageService,
+			WorkerDefRepo:    workerDefRepo,
+			OrchRepo:         orchRepo,
+			Orchestrator:     jjOrchestrator,
+			Factory:          agentFactory,
+			ManagerRegistry:  mgrReg,
+			Wakeup:           wakeupCtrl,
+			HostRepo:         hostRepo,
+			PolicyRepo:       policyRepo,
+			ProfileRepo:      profileRepo,
+			AliasRepo:        aliasRepo,
+			OutreachRepo:     outreachRepo,
+			ReportRepo:       repository.NewReportRepository(repoDB),
+			Dsa:              dsaCoach,
+			Calls:            callsHandler,
+			Briefer:          briefer,
+			InboundEventRepo: inboundRepo,
+			InboundTriage:    triage,
+			InboxRepo:        inboxRepo,
+			GmailSyncer:      gmailSyncer,
+			DiscoveryRepo:    discoveryRepo,
+			JobDiscovery:     jobDiscovery,
+			TTS:              ttsService,
+			OutreachDrafter:  outreachDrafter(cfg),
+			DeviceDecider:    deviceDecider(cfg),
+			VoiceBrain:       voiceBrain(cfg),
+			InstanceMgr:      instanceMgr,
+			UserTx:           userTx,
 		})
 
 		go func() {
