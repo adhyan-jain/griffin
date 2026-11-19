@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { isFollowUp, threadRootId } from "@/lib/threads";
+import { groupTrackerTasks } from "@/lib/trackers";
 import {
   ArrowDown,
   ArrowUp,
@@ -899,25 +899,7 @@ export default function TrackersPage() {
   // Filter tasks to only trackers, grouping recurring runs under a single card showing the latest run
   const trackerTasks = useMemo(() => {
     if (!tasks) return [];
-    const rawTrackers = tasks.filter((t) => isTrackerTask(t));
-    
-    // Group recurring instances by thread root or canonical title
-    const grouped = new Map<string, Task>();
-    for (const t of rawTrackers) {
-      const rootKey = isFollowUp(t) ? threadRootId(t) : (t.title.trim() || t.id);
-      const existing = grouped.get(rootKey);
-      if (!existing) {
-        grouped.set(rootKey, t);
-      } else {
-        // Keep the latest run
-        const existingTime = Date.parse(existing.completed_at || existing.updated_at || existing.created_at);
-        const tTime = Date.parse(t.completed_at || t.updated_at || t.created_at);
-        if (tTime >= existingTime) {
-          grouped.set(rootKey, t);
-        }
-      }
-    }
-    return Array.from(grouped.values());
+    return groupTrackerTasks(tasks, isTrackerTask);
   }, [tasks]);
 
   // Group by category and search
