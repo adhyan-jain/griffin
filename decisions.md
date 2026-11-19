@@ -1289,3 +1289,15 @@ This document is the canonical ledger of all architectural, product, engineering
 - **Why**: Transforms Griffin from a laptop-tethered task tool into a phone-first personal operating system that executes reliably from cloud and mobile channels, prevents silent outward execution errors, and provides full execution observability.
 
 
+#### ADR-142: Autonomous Proactive Operator Architecture (Inbound Triage, Dual-Phase Briefing, Opportunity Staging, Follow-up Watchdog)
+- **Status**: IMPLEMENTED (`migrations/000013_inbound_events`, `domain/inbound_event.go`, `domain/brief.go`, `service/inbound_triage.go`, `service/outreach_watchdog.go`, `service/opportunity_pipeline.go`, `service/briefer.go`, `handlers/inbound_events.go`, `handlers/report.go`, `android/.../NotificationReader.kt`, `android/.../ApiClient.kt`).
+- **Decision**:
+  1. **From Passive Assistant to Proactive Operator**: Elevate Griffin from an assistant that idly waits for prompts into an autonomous personal operator that proactively monitors environments, triages inbound notifications, orchestrates morning & evening executive reviews, stages applications for high-match opportunities, and tracks follow-up obligations without requiring prompt initiation.
+  2. **Inbound Notification Ingestion & Triage Bridge**: Upgraded Android `NotificationReader` and backend `POST /api/v1/events/inbound` to capture notifications across messaging, email (Gmail), professional networks (LinkedIn), and calendars. Heuristic evaluation extracts assessment links (Codility, HackerRank, CodeSignal), application deadlines, and recruiter reaches while strictly observing Rule 39 (outside text is untrusted and cannot execute outward actions without human confirmation).
+  3. **Dual-Phase Daily Operator Loop**: Expanded `Briefer` and `domain.BuildBrief` to support both Morning Briefing (08:00 IST) and Evening Debrief (21:00 IST). Morning brief sets the daily agenda, pending approvals, and today's DSA/LeetCode targets; Evening debrief audits unclosed loops, overdue follow-ups, and daily accomplishments.
+  4. **Autonomous Opportunity Staging Pipeline**: Scrapers discovering high-match Tier A opportunities autonomously trigger tailored application synthesis (matching `AJ_resume_context.md`) and stage `APPLY_JOB` approval items with pre-filled pitches, enabling 1-tap review and dispatch.
+  5. **Adaptive Outreach Follow-Up Watchdog**: Background sweep on `outreach_targets` sweeps targets where `status = 'sent' AND next_followup_at <= NOW()`, auto-drafts polite follow-up messages, and transitions targets through `followup_due -> drafted` for owner approval.
+- **Why**: Eliminates manual cognitive overhead. Rather than requiring the owner to remember to check trackers, calculate follow-up dates, or format custom cover pitches, Griffin proactively prepares and stages execution packages for 1-tap review.
+
+
+

@@ -56,6 +56,10 @@ type ServerDependencies struct {
 	ReportRepo *repository.ReportRepository
 	// Calls enables the inbound call webhooks (signed by the phone provider, not by the owner); nil leaves them off.
 	Calls *handlers.CallsHandler
+	// InboundEventRepo persists and reads triaged inbound events.
+	InboundEventRepo *repository.InboundEventRepository
+	// InboundTriage classifies incoming notifications and alerts.
+	InboundTriage *service.InboundTriageService
 	// Briefer enables GET /api/v1/brief; nil leaves it off.
 	Briefer handlers.BriefBuilder
 	// Dsa enables the DSA coach routes; nil leaves them off.
@@ -192,6 +196,11 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	if deps.Briefer != nil {
 		mux.Handle("GET /api/v1/brief", userAuth(handlers.BriefHandler(deps.Briefer)))
+	}
+	if deps.InboundEventRepo != nil || deps.InboundTriage != nil {
+		inboundHandler := handlers.NewInboundEventHandler(deps.InboundTriage, deps.InboundEventRepo)
+		mux.Handle("POST /api/v1/events/inbound", userAuth(http.HandlerFunc(inboundHandler.Ingest)))
+		mux.Handle("GET /api/v1/events/inbound", userAuth(http.HandlerFunc(inboundHandler.List)))
 	}
 	if deps.Dsa != nil {
 		dh := handlers.NewDsaHandler(deps.Dsa)
@@ -366,6 +375,10 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/approval", hostAuth(http.HandlerFunc(hostHandler.RequestApproval)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/complete", hostAuth(http.HandlerFunc(hostHandler.CompleteTask)))
 		mux.Handle("POST /api/v1/host/tasks/{task_id}/fail", hostAuth(http.HandlerFunc(hostHandler.FailTask)))
+		if deps.InboundEventRepo != nil || deps.InboundTriage != nil {
+			inboundHandler := handlers.NewInboundEventHandler(deps.InboundTriage, deps.InboundEventRepo)
+			mux.Handle("POST /api/v1/host/events/inbound", hostAuth(http.HandlerFunc(inboundHandler.Ingest)))
+		}
 	}
 
 	// Outreach: campaigns and the people in them. Owner routes use the sign-in; a host's routes (below, inside the

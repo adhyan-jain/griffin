@@ -263,3 +263,31 @@ Phase 4 grounded Griffin's document and artifact storage in enterprise cloud obj
   - **To**: a general browser hand, a database-backed outreach engine with limits and reply tracking, editable approvals, and a discuss-then-go-ahead conversation.
 - **What surfaced while building it**: (1) the phone never registered as a device, so "Devices shows only my laptop" was a missing feature, not a bug; (2) the ringer flipping was our own volume muting on every listen restart; (3) the approval page never showed the draft; (4) a model deciding what is "irreversible" is not enough against a hostile page, so the code decides too; (5) an approval must bind to the whole recorded script and the page must still match at replay.
 - **Honest status**: the phone-side device-use hand and the Gmail/LinkedIn behaviour are unverified; see `docs/ROADMAP.md`.
+
+---
+
+### Epoch 13: Phone-First Operating System Transformation (Nov 18 - Nov 19)
+
+- **Trigger**: Transitioning from a laptop-reliant assistant to a full phone-first personal operating system with observable multi-model reasoning and safe telephony.
+- **Shift**:
+  - **From**: Hardcoded `agy` provider lock, blind `firstOrNull()` contact matching on Android, fragmented recurring automation cards, and unguided in-flight runs.
+  - **To**: Dual-engine routing (`claude -p` alongside `agy`), observable dynamic planning (`PlanPayload.PlannerMode`), strict telephony contact disambiguation with fail-closed clarification requests, in-flight directive steering (`steering_notes`), and persistent recurring threads (`thread_id`).
+- **Key Implementation Details**:
+  - Added migration `000012_task_attempt_telemetry` tracking `planned_provider`, `actual_provider`, `model`, `exit_code`, `termination_reason`, and `usage`.
+  - Upgraded Android telephony in `Contacts.kt` and `PhoneRunner.kt` to fail closed when multi-contact matches occur.
+  - Implemented interactive approval revision drawers allowing in-place pitch editing with AI refinement.
+
+---
+
+### Epoch 14: Autonomous Proactive Operator Architecture (Nov 19)
+
+- **Trigger**: Evolving Griffin from a passive, request-reply assistant into an autonomous, self-steering personal operator that anticipates needs, surfaces actionable opportunities, and closes operational loops.
+- **Shift**:
+  - **From**: Waiting for user-initiated prompts in JJ chat, static scrapers that merely dump text to files, and follow-up timestamps that only print passive lines in morning logs.
+  - **To**: Autonomous vigilance. Real-time Android notification ingestion, dual-phase daily operator cadence (Morning Briefing at 08:00 IST + Evening Debrief at 21:00 IST), auto-staging opportunity pipeline with tailored resume collateral, and an adaptive follow-up watchdog that auto-drafts nudges.
+- **Key Implementation Details**:
+  - **Inbound Event Triage Ledger (`inbound_events` & migration 000013)**: Ingests notification payloads from Android (`NotificationReader`) and hosts, evaluating assessment platforms (Codility, HackerRank) and deadlines while strictly enforcing Rule 39 (outside text is untrusted and cannot execute outward actions without owner confirmation).
+  - **Dual-Phase Operator Cadence (`service.Briefer` & `domain.BuildBrief`)**: Pushes morning agenda briefings and evening loop closures at local configured hours, aggregating overnight scraper discoveries, pending approvals, and overdue follow-ups.
+  - **Autonomous Opportunity Staging (`service.OpportunityPipeline`)**: Automatically scores scraped job postings; matches Tier A leads against `AJ_resume_context.md`, crafts tailored highlights, and stages `APPLY_JOB` approvals for 1-tap dispatch.
+  - **Adaptive Outreach Follow-Up Watchdog (`service.OutreachWatchdog`)**: Sweeps due outreach targets (`status = 'sent' AND next_followup_at <= NOW()`), generates personalized follow-up notes, and stages them in `drafted` for 1-tap review.
+

@@ -20,22 +20,34 @@ type BriefReply struct {
 	Deadlines   []string  `json:"deadlines,omitempty"`   // sentences that name a deadline
 }
 
+// BriefPhase is either morning briefing or evening debrief.
+type BriefPhase string
+
+const (
+	BriefPhaseMorning BriefPhase = "morning"
+	BriefPhaseEvening BriefPhase = "evening"
+)
+
 // BriefSource is everything the brief is built from. The caller fills it from the database.
 type BriefSource struct {
 	Now              time.Time
+	Phase            BriefPhase
 	PendingApprovals []string // one line each
 	Replies          []BriefReply
 	FollowUpsDue     []string
 	FailedTasks      []string
 	DsaToday         []*DsaItem
+	CompletedToday   []string // completed tasks today (for evening debrief)
+	NewOpportunities []string // newly staged opportunities or scraper yields
 }
 
-// Brief is the morning summary.
+// Brief is the operator summary (morning agenda or evening debrief).
 type Brief struct {
-	Date  string   `json:"date"`
-	Plan  []string `json:"plan"`
-	Text  string   `json:"text"`
-	Empty bool     `json:"empty"`
+	Date  string     `json:"date"`
+	Phase BriefPhase `json:"phase,omitempty"`
+	Plan  []string   `json:"plan"`
+	Text  string     `json:"text"`
+	Empty bool       `json:"empty"`
 }
 
 var (
@@ -107,7 +119,41 @@ func clipRunes(s string, n int) string {
 // BuildBrief orders what needs the owner today. Replies with an assessment or a deadline come first, then
 // approvals (nothing moves until they are decided), then follow-ups, then DSA, then failures to look at.
 func BuildBrief(src BriefSource) Brief {
-	b := Brief{Date: src.Now.Format("Mon 2 Jan 2006")}
+	b := Brief{Date: src.Now.Format("Mon 2 Jan 2006"), Phase: src.Phase}
+	if b.Phase == "" {
+		b.Phase = BriefPhaseMorning
+	}
+
+	if src.Phase == BriefPhaseEvening {
+		for _, c := range src.CompletedToday {
+			b.Plan = append(b.Plan, "Completed today: "+c)
+		}
+		for _, a := range src.PendingApprovals {
+			b.Plan = append(b.Plan, "Still awaiting approval: "+a)
+		}
+		for _, f := range src.FollowUpsDue {
+			b.Plan = append(b.Plan, "Follow-up due: "+f)
+		}
+		for _, o := range src.NewOpportunities {
+			b.Plan = append(b.Plan, "Opportunity staged: "+o)
+		}
+		for _, f := range src.FailedTasks {
+			b.Plan = append(b.Plan, "Failed today: "+f)
+		}
+		b.Empty = len(b.Plan) == 0
+		if b.Empty {
+			b.Text = "Good evening. All loops are closed for today."
+			return b
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Good evening. %s: %d item(s) in today's debrief.\n", b.Date, len(b.Plan))
+		for i, p := range b.Plan {
+			fmt.Fprintf(&sb, "%d. %s\n", i+1, p)
+		}
+		b.Text = strings.TrimRight(sb.String(), "\n")
+		return b
+	}
+
 	replies := append([]BriefReply(nil), src.Replies...)
 	urgency := func(r BriefReply) int {
 		switch {
@@ -132,6 +178,9 @@ func BuildBrief(src BriefSource) Brief {
 			line += "\n   deadline: " + d
 		}
 		b.Plan = append(b.Plan, line)
+	}
+	for _, o := range src.NewOpportunities {
+		b.Plan = append(b.Plan, "New opportunity: "+o)
 	}
 	for _, a := range src.PendingApprovals {
 		b.Plan = append(b.Plan, "Approve or refuse: "+a)

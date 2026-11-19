@@ -28,8 +28,10 @@ class NotificationReader : NotificationListenerService() {
     private fun ingest(sbn: StatusBarNotification) {
         val n = sbn.notification ?: return
         if (sbn.packageName == packageName || (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
-        val known = sbn.packageName in MESSAGING_APPS
-        if (n.category != Notification.CATEGORY_MESSAGE && !known) return
+        val isChat = sbn.packageName in MESSAGING_APPS || n.category == Notification.CATEGORY_MESSAGE
+        val isActionable = isChat || sbn.packageName in ACTIONABLE_APPS ||
+            n.category in setOf(Notification.CATEGORY_EMAIL, Notification.CATEGORY_EVENT, Notification.CATEGORY_REMINDER)
+        if (!isActionable) return
         val extras = n.extras ?: return
 
         val title = (extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE) ?: extras.getCharSequence(Notification.EXTRA_TITLE))?.toString()?.trim().orEmpty()
@@ -41,13 +43,23 @@ class NotificationReader : NotificationListenerService() {
         }
         if (title.isEmpty() || lines.isEmpty()) return
 
+        val fullText = lines.last().text
         val reply = n.actions?.firstOrNull { a -> a.remoteInputs?.isNotEmpty() == true && (a.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY || a.semanticAction == Notification.Action.SEMANTIC_ACTION_NONE) }
         Inbox.remember(sbn.key, reply)
         if (!group && app.replyWatch.matches(title)) {
-            val text = lines.last().text
-            app.net.execute { try { app.api.reportReply(title, text) } catch (_: Exception) {} }
+            app.net.execute { try { app.api.reportReply(title, fullText) } catch (_: Exception) {} }
         }
-        Inbox.book.put(Chat(sbn.key, sbn.packageName, appLabel(sbn.packageName), title, group, lines, reply != null), System.currentTimeMillis())
+
+        // Proactive Inbound Triage Forwarding
+        app.net.execute {
+            try {
+                app.api.postInboundEvent("android_notification", sbn.packageName, title, fullText)
+            } catch (_: Exception) {}
+        }
+
+        if (isChat) {
+            Inbox.book.put(Chat(sbn.key, sbn.packageName, appLabel(sbn.packageName), title, group, lines, reply != null), System.currentTimeMillis())
+        }
     }
 
     /** The lines of a messaging-style notification, oldest first. */
@@ -71,6 +83,11 @@ class NotificationReader : NotificationListenerService() {
             "com.whatsapp" to "WhatsApp", "com.whatsapp.w4b" to "WhatsApp Business", "com.instagram.android" to "Instagram", "com.facebook.orca" to "Messenger",
             "org.telegram.messenger" to "Telegram", "org.thoughtcrime.securesms" to "Signal", "com.google.android.apps.messaging" to "Messages",
             "com.samsung.android.messaging" to "Messages", "com.oneplus.mms" to "Messages", "com.android.mms" to "Messages", "com.snapchat.android" to "Snapchat", "com.discord" to "Discord",
+        )
+
+        /** Non-chat apps whose notifications are triaged for career opportunities, calendar alerts, and critical updates. */
+        val ACTIONABLE_APPS = setOf(
+            "com.google.android.gm", "com.linkedin.android", "com.google.android.calendar", "com.microsoft.office.outlook"
         )
     }
 }

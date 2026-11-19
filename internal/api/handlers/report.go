@@ -80,7 +80,12 @@ type BriefBuilder interface {
 	Build(ctx context.Context, userID uuid.UUID) (domain.Brief, error)
 }
 
-// Brief returns today's brief. ?format=text returns just the words.
+// PhaseBriefBuilder builds a phase-specific brief (morning or evening).
+type PhaseBriefBuilder interface {
+	BuildPhase(ctx context.Context, userID uuid.UUID, phase domain.BriefPhase) (domain.Brief, error)
+}
+
+// Brief returns today's brief or debrief. ?phase=evening returns the evening debrief. ?format=text returns just the words.
 func BriefHandler(b BriefBuilder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, err := middleware.GetUserID(r.Context())
@@ -88,7 +93,16 @@ func BriefHandler(b BriefBuilder) http.HandlerFunc {
 			httputil.ErrorJSON(w, err)
 			return
 		}
-		br, err := b.Build(r.Context(), userID)
+		phase := domain.BriefPhaseMorning
+		if r.URL.Query().Get("phase") == "evening" {
+			phase = domain.BriefPhaseEvening
+		}
+		var br domain.Brief
+		if pb, ok := b.(PhaseBriefBuilder); ok {
+			br, err = pb.BuildPhase(r.Context(), userID, phase)
+		} else {
+			br, err = b.Build(r.Context(), userID)
+		}
 		if err != nil {
 			httputil.ErrorJSON(w, err)
 			return

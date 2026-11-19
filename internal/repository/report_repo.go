@@ -115,7 +115,11 @@ func (r *ReportRepository) Audit(ctx context.Context, userID, taskID uuid.UUID) 
 
 // BriefSource gathers what the morning brief is built from, except the DSA problems (the coach owns those).
 func (r *ReportRepository) BriefSource(ctx context.Context, userID uuid.UUID, now time.Time) (domain.BriefSource, error) {
-	src := domain.BriefSource{Now: now}
+	return r.BriefSourcePhase(ctx, userID, now, domain.BriefPhaseMorning)
+}
+
+// BriefSourcePhase gathers what the morning brief or evening debrief is built from.
+func (r *ReportRepository) BriefSourcePhase(ctx context.Context, userID uuid.UUID, now time.Time, phase domain.BriefPhase) (domain.BriefSource, error) {
 	lines := func(query string, args []any, scan func(pgx.Rows) (string, error)) ([]string, error) {
 		rows, err := r.pool.Query(ctx, query, args...)
 		if err != nil {
@@ -132,6 +136,35 @@ func (r *ReportRepository) BriefSource(ctx context.Context, userID uuid.UUID, no
 		}
 		return out, rows.Err()
 	}
+
+	if phase == domain.BriefPhaseEvening {
+		src := domain.BriefSource{Now: now, Phase: domain.BriefPhaseEvening}
+		dayStart := now.Add(-16 * time.Hour)
+		var err error
+		if src.CompletedToday, err = lines(`SELECT title FROM tasks WHERE user_id = $1 AND status = 'COMPLETED' AND COALESCE(completed_at, updated_at) >= $2 AND COALESCE(input_payload->>'kind','') <> 'chat' ORDER BY completed_at DESC LIMIT 15`, []any{userID, dayStart},
+			func(rs pgx.Rows) (string, error) { var s string; return s, rs.Scan(&s) }); err != nil {
+			return src, fmt.Errorf("debrief completed tasks: %w", err)
+		}
+		if src.PendingApprovals, err = lines(`SELECT action_type, summary FROM approvals WHERE user_id = $1 AND status = 'PENDING' ORDER BY created_at LIMIT 20`, []any{userID},
+			func(rs pgx.Rows) (string, error) {
+				var kind, sum string
+				err := rs.Scan(&kind, &sum)
+				return kind + " - " + sum, err
+			}); err != nil {
+			return src, fmt.Errorf("debrief approvals: %w", err)
+		}
+		if src.FollowUpsDue, err = lines(`SELECT COALESCE(NULLIF(name,''), handle) FROM outreach_targets WHERE user_id = $1 AND status IN ('sent','followup_due') AND next_followup_at <= $2 ORDER BY next_followup_at LIMIT 20`, []any{userID, now},
+			func(rs pgx.Rows) (string, error) { var s string; return s, rs.Scan(&s) }); err != nil {
+			return src, fmt.Errorf("debrief follow-ups: %w", err)
+		}
+		if src.FailedTasks, err = lines(`SELECT title FROM tasks WHERE user_id = $1 AND status = 'FAILED' AND COALESCE(completed_at, updated_at) >= $2 AND COALESCE(input_payload->>'kind','') <> 'chat' ORDER BY completed_at DESC LIMIT 10`, []any{userID, dayStart},
+			func(rs pgx.Rows) (string, error) { var s string; return s, rs.Scan(&s) }); err != nil {
+			return src, fmt.Errorf("debrief failed tasks: %w", err)
+		}
+		return src, nil
+	}
+
+	src := domain.BriefSource{Now: now, Phase: domain.BriefPhaseMorning}
 	var err error
 	if src.PendingApprovals, err = lines(`SELECT action_type, summary FROM approvals WHERE user_id = $1 AND status = 'PENDING' ORDER BY created_at LIMIT 20`, []any{userID},
 		func(rs pgx.Rows) (string, error) {

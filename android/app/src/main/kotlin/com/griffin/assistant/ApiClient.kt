@@ -170,6 +170,28 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         api("POST", "/api/v1/outreach/replies", JSONObject().put("name", name).put("text", text.take(2000)))
     }
 
+    /** Forwards an inbound notification or event to Griffin for autonomous triaging. */
+    fun postInboundEvent(source: String, packageName: String, title: String, text: String, payload: JSONObject = JSONObject()) {
+        val body = JSONObject().apply {
+            put("source", source)
+            put("package_name", packageName)
+            put("title", title.take(500))
+            put("text", text.take(4000))
+            put("payload", payload)
+        }
+        val hostToken = store.get("host_token")
+        if (hostToken != null) {
+            try {
+                host("POST", "/api/v1/host/events/inbound", body)
+                return
+            } catch (_: Exception) {}
+        }
+        if (signedIn) {
+            api("POST", "/api/v1/events/inbound", body)
+        }
+    }
+
+
     // ---- the host protocol, as this phone (the host token, not the owner's sign-in) -----------------------------
 
     private fun host(method: String, path: String, body: JSONObject? = null): Pair<Int, String> {

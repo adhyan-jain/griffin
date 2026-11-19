@@ -18,18 +18,26 @@ type BriefSources interface {
 	BriefSource(ctx context.Context, userID uuid.UUID, now time.Time) (domain.BriefSource, error)
 }
 
-// Briefer builds the morning brief and pushes it once a day at BriefHour in each enrolled owner's time zone.
-type Briefer struct {
-	Sources   BriefSources
-	Coach     *DsaCoach // today's DSA problems and the owner's time zone
-	Sender    notify.Sender
-	AppURL    string
-	BriefHour int // local hour, default 8
-	Logger    *slog.Logger
-	Now       func() time.Time
+// BriefPhaseSources allows fetching phase-specific brief sources (e.g. evening debrief).
+type BriefPhaseSources interface {
+	BriefSourcePhase(ctx context.Context, userID uuid.UUID, now time.Time, phase domain.BriefPhase) (domain.BriefSource, error)
+}
 
-	mu       sync.Mutex
-	lastSent map[uuid.UUID]time.Time // local day of the last push
+// Briefer builds the morning brief and evening debrief and pushes them in each enrolled owner's time zone.
+type Briefer struct {
+	Sources     BriefSources
+	Coach       *DsaCoach // today's DSA problems and the owner's time zone
+	Sender      notify.Sender
+	Watchdog    *OutreachWatchdog
+	AppURL      string
+	BriefHour   int // local hour, default 8
+	DebriefHour int // local hour, default 21 (9 PM)
+	Logger      *slog.Logger
+	Now         func() time.Time
+
+	mu              sync.Mutex
+	lastSent        map[uuid.UUID]time.Time // local day of the last morning push
+	lastDebriefSent map[uuid.UUID]time.Time // local day of the last evening push
 }
 
 func (b *Briefer) now() time.Time {
@@ -39,13 +47,25 @@ func (b *Briefer) now() time.Time {
 	return time.Now()
 }
 
-// Build returns the brief for the owner as of now.
+// Build returns the morning brief for the owner as of now.
 func (b *Briefer) Build(ctx context.Context, userID uuid.UUID) (domain.Brief, error) {
-	src, err := b.Sources.BriefSource(ctx, userID, b.now())
+	return b.BuildPhase(ctx, userID, domain.BriefPhaseMorning)
+}
+
+// BuildPhase returns the brief for a specific phase (Morning or Evening).
+func (b *Briefer) BuildPhase(ctx context.Context, userID uuid.UUID, phase domain.BriefPhase) (domain.Brief, error) {
+	var src domain.BriefSource
+	var err error
+	if ps, ok := b.Sources.(BriefPhaseSources); ok {
+		src, err = ps.BriefSourcePhase(ctx, userID, b.now(), phase)
+	} else {
+		src, err = b.Sources.BriefSource(ctx, userID, b.now())
+		src.Phase = phase
+	}
 	if err != nil {
 		return domain.Brief{}, err
 	}
-	if b.Coach != nil {
+	if phase == domain.BriefPhaseMorning && b.Coach != nil {
 		if src.DsaToday, err = b.Coach.Today(ctx, userID); err != nil {
 			return domain.Brief{}, err
 		}
@@ -53,52 +73,88 @@ func (b *Briefer) Build(ctx context.Context, userID uuid.UUID) (domain.Brief, er
 	return domain.BuildBrief(src), nil
 }
 
-// Tick pushes the brief to each enrolled owner once per local day, from BriefHour on.
+// Tick pushes the morning brief and evening debrief to each enrolled owner once per local day.
 func (b *Briefer) Tick(ctx context.Context) {
-	if b.Sender == nil || b.Coach == nil {
+	if b.Coach == nil {
 		return
 	}
-	hour := b.BriefHour
-	if hour == 0 {
-		hour = 8
+	mHour := b.BriefHour
+	if mHour == 0 {
+		mHour = 8
 	}
+	eHour := b.DebriefHour
+	if eHour == 0 {
+		eHour = 21
+	}
+
 	users, err := b.Coach.Store.Users(ctx)
 	if err != nil {
 		b.log().Warn("brief: listing users failed", "error", err)
 		return
 	}
 	for _, u := range users {
+		// Sweep due follow-ups for this user if watchdog is configured
+		if b.Watchdog != nil {
+			if _, err := b.Watchdog.SweepDueFollowups(ctx, u); err != nil {
+				b.log().Warn("brief: watchdog sweep failed", "user_id", u, "error", err)
+			}
+		}
+
+		if b.Sender == nil {
+			continue
+		}
+
 		s, err := b.Coach.Store.Settings(ctx, u)
 		if err != nil {
 			continue
 		}
 		loc := b.Coach.location(s)
 		local := b.now().In(loc)
-		if local.Hour() < hour {
-			continue
-		}
 		day := domain.Day(local, loc)
-		b.mu.Lock()
-		if b.lastSent == nil {
-			b.lastSent = map[uuid.UUID]time.Time{}
+
+		// 1. Morning Brief dispatch
+		if local.Hour() >= mHour && local.Hour() < eHour {
+			b.mu.Lock()
+			if b.lastSent == nil {
+				b.lastSent = map[uuid.UUID]time.Time{}
+			}
+			done := b.lastSent[u].Equal(day)
+			b.mu.Unlock()
+			if !done {
+				br, err := b.BuildPhase(ctx, u, domain.BriefPhaseMorning)
+				if err != nil {
+					b.log().Warn("brief: morning build failed", "error", err)
+				} else if err := b.Sender.Send(ctx, notify.Message{Title: "Morning brief", Body: br.Text, ClickURL: strings.TrimRight(b.AppURL, "/") + "/brief?phase=morning", Tags: []string{"sunrise"}}); err != nil {
+					b.log().Warn("brief: morning push failed", "error", err)
+				} else {
+					b.mu.Lock()
+					b.lastSent[u] = day
+					b.mu.Unlock()
+				}
+			}
 		}
-		done := b.lastSent[u].Equal(day)
-		b.mu.Unlock()
-		if done {
-			continue
+
+		// 2. Evening Debrief dispatch
+		if local.Hour() >= eHour {
+			b.mu.Lock()
+			if b.lastDebriefSent == nil {
+				b.lastDebriefSent = map[uuid.UUID]time.Time{}
+			}
+			done := b.lastDebriefSent[u].Equal(day)
+			b.mu.Unlock()
+			if !done {
+				br, err := b.BuildPhase(ctx, u, domain.BriefPhaseEvening)
+				if err != nil {
+					b.log().Warn("brief: evening build failed", "error", err)
+				} else if err := b.Sender.Send(ctx, notify.Message{Title: "Evening debrief", Body: br.Text, ClickURL: strings.TrimRight(b.AppURL, "/") + "/brief?phase=evening", Tags: []string{"sunset"}}); err != nil {
+					b.log().Warn("brief: evening push failed", "error", err)
+				} else {
+					b.mu.Lock()
+					b.lastDebriefSent[u] = day
+					b.mu.Unlock()
+				}
+			}
 		}
-		br, err := b.Build(ctx, u)
-		if err != nil {
-			b.log().Warn("brief: build failed", "error", err)
-			continue
-		}
-		if err := b.Sender.Send(ctx, notify.Message{Title: "Morning brief", Body: br.Text, ClickURL: strings.TrimRight(b.AppURL, "/") + "/brief", Tags: []string{"sunrise"}}); err != nil {
-			b.log().Warn("brief: push failed", "error", err) // not marked sent: the next tick retries
-			continue
-		}
-		b.mu.Lock()
-		b.lastSent[u] = day
-		b.mu.Unlock()
 	}
 }
 

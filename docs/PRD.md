@@ -7,9 +7,9 @@ The only maintained docs are this PRD, `decisions.md` (why each decision was mad
 
 ## 1. Product
 
-**Griffin is one person's AI workforce, run from a phone.** You tell JJ (the orchestrator) what you want in plain language. JJ answers directly when it can, or splits the work into steps, gives each step to the right specialist and engine, asks you before anything irreversible, and returns a readable result, a file you keep, or a list that keeps growing.
+**Griffin is one person's AI workforce, run from a phone.** Unlike passive assistants that sit idle waiting for commands, Griffin functions as an **autonomous personal operator**—proactively triaging incoming communications, orchestrating daily agendas, discovering and staging high-value opportunities, and tracking long-term commitments across personal operations, career outreach, and engineering. You tell JJ (the orchestrator) what you want in plain language. JJ answers directly when it can, or splits the work into steps, gives each step to the right specialist and engine, asks you before anything irreversible, and returns a readable result, a file you keep, or a list that keeps growing.
 
-**The bar:** ask once from your phone and it gets done, fast, including work that needs a browser, your accounts and your mobile apps, with you in control of anything that acts in your name.
+**The bar:** ask once from your phone and it gets done, fast, including work that needs a browser, your accounts and your mobile apps, with you in control of anything that acts in your name. Between asks, Griffin stays vigilant: watching for critical incoming messages, tracking due follow-ups, and staging opportunities for 1-tap review.
 
 **Goals**
 1. **Fast:** acknowledgement under 1 s, a simple answer under 15 s, visible progress for anything longer.
@@ -20,6 +20,7 @@ The only maintained docs are this PRD, `decisions.md` (why each decision was mad
 6. **Cheap:** scale to zero when idle; no paid-API fallback.
 7. **Listens:** it does what the owner says. It advises only when it matters and never refuses the owner's own words or wishes.
 8. **Scales itself:** every task uses as many sub-agents and tools as it needs, in parallel.
+9. **Proactive Operator:** Operates continuously and anticipates needs. Triages incoming Android notifications into structured events, runs morning agenda briefings (08:00 IST) and evening debriefs (21:00 IST), autonomously stages opportunity applications with pre-drafted collateral, and maintains follow-up watchdogs without requiring prompt initiation.
 
 **Non-goals for now:** multiple users or teams, a public product, phone calls on your behalf, payments above a set limit, anything that risks your accounts under a platform's terms without your explicit opt-in.
 
@@ -130,6 +131,13 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 - **Strict Android Telephony Disambiguation:** Upgraded mobile runner to fail closed on multi-contact name matches with an explicit clarification request, preventing unintended calls or SMS dispatch on ambiguous recipient queries.
 - **Unified Recurring Automation Architecture:** Automation runs link to a stable thread root (`thread_id`), consolidating recurring schedules into persistent cards across task lists and tracker dashboards rather than polluting the top-level queue.
 - **Observable Dynamic Planning:** `PlanPayload` carries `PlannerMode`, `Degraded`, and `FallbackReason`, providing immediate visibility into whether execution was planned by Claude lead, a dynamically decomposed multi-worker team, or a rule-based fallback.
+
+### 4.8 Built in Epoch 14: Autonomous Proactive Operator Architecture (Nov 19)
+- **Event-Driven Inbound Triaging:** Native Android `NotificationReader` and API endpoint `POST /api/v1/events/inbound` triage actionable communications (recruiter reachouts, assessment links, interview invites, scheduling requests) into structured opportunities while strictly upholding Rule 39 (outside data is untrusted and cannot execute irreversible actions without approval).
+- **Dual-Phase Daily Operator Loop:** Morning Brief (08:00 IST) delivers overnight crawler yields, pending high-priority approvals, calendar commitments, and DSA problem sets; Evening Debrief (21:00 IST) audits unclosed loops, unreached outreach candidates, and tomorrow's preparation.
+- **Autonomous Opportunity Staging Pipeline:** Scrapers and recurring trackers automatically trigger follow-on drafting: high-match opportunities (Tier A) generate tailored pitches and resume highlights directly into pending approvals, enabling 1-tap submission.
+- **Adaptive Outreach Follow-Up Watchdog:** Background sweep on `outreach_targets` monitors `status = 'sent' AND next_followup_at <= NOW()`, automatically preparing personalized follow-up drafts and staging approval prompts before silence turns cold.
+- **Context-Aware Nudge Delivery:** Integrates device battery levels, quiet hours (22:00-08:00 IST), and earphone/audio focus state to route alerts appropriately (silent ambient queue vs. high-priority spoken nudge).
 
 ---
 
@@ -520,6 +528,42 @@ Chat apps are used through **their own notifications**: Android lets a notificat
 ### 7.23 Talking a job through first (2026-11-13, BUILT)
 Say "let's discuss the internship filter first" and Griffin proposes a plan and waits; refine it over several messages; say "go ahead" and everything you said in that discussion is submitted as one job.
 
+### 7.24 Autonomous Proactive Operator Engine (2026-11-19)
+Griffin transitions from a reactive prompt-and-wait assistant to an **autonomous personal operator** that continuously monitors environments, triages inbound signals, orchestrates daily execution cadences, stages high-value career actions, and maintains watchdogs over open loops.
+
+#### 7.24.1 Real-Time Inbound Notification Ingestion & Heuristic Action Triaging
+- **Android Ingestion Bridge:** Upgrades `NotificationReader` to selectively capture actionable alerts across messaging (WhatsApp, Telegram, Signal), email (Gmail), professional networks (LinkedIn), and calendars.
+- **Triage Classification:** Incoming signals are classified into four distinct operational streams:
+  1. `OPPORTUNITY`: Recruiter inbound, coding assessment link (HackerRank/Codility), or interview invitation. Automatically enqueues a triage task, parses assessment links and deadlines into the operator brief, and stages an approved reply draft.
+  2. `CALENDAR_ALERT`: Impending interview, deadline, or conflict. Dynamically merges into the day's active agenda.
+  3. `URGENT_ALERT`: Time-sensitive operational alerts. Routed directly to high-priority push or earphone whisper.
+  4. `INFORMATIONAL`: Background updates, newsletters, or routine notices; silently indexed into memory/context without interrupting the owner.
+- **Strict Untrusted Data Invariant (Rule 39):** Incoming notification content is untrusted data. It can synthesize briefings, draft proposed replies, or populate approval drawers, but **can never trigger an autonomous outward action (send, submit, delete) without explicit owner confirmation**.
+
+#### 7.24.2 Proactive Operator Agenda Loop: Morning Briefing & Evening Debrief
+- **Dual-Phase Cadence (`internal/service/briefer.go`):**
+  - **Morning Brief (08:00 IST):** Proactive briefing covering overnight worker runs, newly discovered internships/clients, high-priority pending approvals, today's DSA problem set, and scheduled commitments.
+  - **Evening Debrief (21:00 IST):** Audits unclosed loops, overdue follow-ups awaiting owner action, tasks completed today, and stages the initial priority stack for tomorrow morning.
+- **Multi-Modal Delivery:** Briefings are available via `GET /api/v1/brief?phase=morning|evening`, delivered via ntfy push (`sunrise`/`sunset` tags), and spoken seamlessly on voice turn ("JJ, what's my evening debrief?").
+
+#### 7.24.3 Autonomous Opportunity Staging & Tailored Collateral Pipeline
+- **Auto-Staging from Scrapers:** When scheduled scrapers (`INTERNSHIP TRACKER`, `CLIENT DISCOVERY`) detect Tier-A job postings or client leads, the pipeline does not stop at appending a row to markdown.
+- **Automated Collateral Synthesis:** Automatically runs a follow-on worker task that:
+  1. Pulls the latest career identity context (`AJ_resume_context.md`) from Vault/S3.
+  2. Generates tailored impact highlights and customized cover pitch matching the job description.
+  3. Stages an `application_submission` approval item with pre-filled application URL, tailored pitch, and target metadata.
+- **1-Tap Dispatch:** The owner reviews and submits with a single tap in the app, eliminating manual resume formatting and boilerplate drafting.
+
+#### 7.24.4 Adaptive Outreach & Candidate Follow-Up Watchdog
+- **Durable Follow-Up Engine:** Background sweep runs periodically (`Scheduler` tick or briefer loop) checking `outreach_targets` where `status = 'sent' AND next_followup_at <= NOW()`.
+- **Contextual Draft Generation:** For targets where the silence window has elapsed without reply, Griffin synthesizes a concise, professional follow-up note referencing the previous interaction.
+- **Staged Approval:** The follow-up is staged in `approvals` as `outreach_followup`. If the candidate replies before approval, the watchdog immediately transitions the target to `replied` and cancels the follow-up draft.
+
+#### 7.24.5 Context-Aware Ambient Proactivity & Safety Boundaries
+- **Quiet Hours Enforcement:** Non-critical background alerts and spoken nudges are strictly suppressed between 22:00 and 08:00 IST.
+- **Power & Resource Awareness:** Resource-intensive batch jobs (e.g., deep scraping, Claude lead synthesis) defer when the mobile device reports low battery (< 20%) or high thermal load, resuming when plugged in.
+- **Earphone / Audio Focus Interruption:** Spoken notifications only barge in when headphones/earphones are connected or active hands-free car mode is detected, preventing awkward audio leakage in public or meetings.
+
 ## 8. Operations
 
 ### 8.1 Ship
@@ -582,6 +626,7 @@ Milestones in order; each ends in a demo. "You" marks what only the owner can do
 | **M4 Internships** (3-5 d) | The headline journey | Search, shortlist into the tracker list, drafts from your documents, each submission approved in chat, screenshot + tracker row | Dry run on 3 postings, then one real approved application |
 | **M5 The phone as a host** (2-3 w) | Phone apps and SMS, laptop on or off | **Android phone host app** (accessibility service, outbound-only Host API, per-app enablement, before/after screenshots) so phone mode works with the laptop off; while the laptop is on, Mobilerun/DroidRun over ADB and KDE Connect are the faster path (adopt, don't build); skill replay so common flows need no model call (confirm delivery by reading the sent state, not the exit code) | With your phone: list notifications, read a WhatsApp message, one approved SMS to your own number. **Stop if** apps block automation |
 | **M6 Calls like companies do** (optional) | Calls without SIM cards | Telephony provider (rented number or SIP trunk) + audio stream + speech pipeline (LiveKit Agents or Pipecat): (1) speak-a-message calls, many recipients in parallel after you approve the list; (2) two-way voice agent; (3) caller ID: rented or your own verified number, never a number you do not own | Needs your approval of a paid provider; India rules (DLT, DND, consent, hours, AI disclosure) checked first. **Skip** if click-to-call is enough |
+| **M7 Proactive Autonomous Operator** (1-2 w) | Autonomous vigilance and staged execution | **Inbound notification event bridge + classifier, dual-phase daily agenda loop (Morning Brief at 08:00 IST + Evening Debrief at 21:00 IST), auto-staging opportunity pipeline with tailored resume/cover notes, adaptive outreach watchdog auto-drafting follow-ups, context-aware nudge dispatch** | Inbound test notification triaged to brief; scraper yield auto-generates 1-tap approval; due follow-up triggers auto-drafted nudge card |
 
 **Deferred decision (summaries):** the final answer is still stitched in code because every multi-step plan already ends in a worker-written synthesis step; a separate worker summarize step would add about 13 s for little gain. Revisit once live Terminals show whether it matters.
 

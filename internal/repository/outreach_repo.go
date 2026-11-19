@@ -259,6 +259,29 @@ func (r *OutreachRepository) AwaitingReply(ctx context.Context, userID uuid.UUID
 	return out, rows.Err()
 }
 
+// ListDueFollowups returns up to limit targets whose next_followup_at <= now and status = 'sent'.
+func (r *OutreachRepository) ListDueFollowups(ctx context.Context, userID uuid.UUID, now time.Time, limit int) ([]*domain.OutreachTarget, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+targetCols+` FROM outreach_targets
+		WHERE user_id = $1 AND status = 'sent' AND next_followup_at <= $2
+		ORDER BY next_followup_at ASC LIMIT $3`, userID, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*domain.OutreachTarget
+	for rows.Next() {
+		t, err := scanTarget(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // RecordReplyByName is RecordReplyByHandle for a chat notification, which shows a contact's name and not their
 // address. It only matches when exactly one awaited person has that name, so it never guesses between two.
 func (r *OutreachRepository) RecordReplyByName(ctx context.Context, userID uuid.UUID, name, text string) (*domain.OutreachTarget, error) {
