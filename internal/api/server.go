@@ -77,6 +77,16 @@ type ServerDependencies struct {
 	ManagerRegistry *manager.Registry
 	Wakeup          handlers.RunnerWakeup
 	InstanceMgr     runner.InstanceManager
+	// TTS provides high-fidelity provider-based neural voice synthesis.
+	TTS *service.TTSService
+	// InboxRepo persists synchronized email threads and assessments.
+	InboxRepo *repository.InboxRepository
+	// GmailSyncer handles incremental synchronization and assessment triage.
+	GmailSyncer *service.GmailSyncer
+	// DiscoveryRepo persists discovered jobs and submission receipts.
+	DiscoveryRepo *repository.DiscoveryRepository
+	// JobDiscovery runs independent sweeps across authorized ATS endpoints.
+	JobDiscovery *service.JobDiscoveryService
 	// UserTx opens RLS-enforced per-request transactions. Required in production; when nil outside
 	// production, repositories use whatever connection they were built with (tests/dev).
 	UserTx *database.UserTxManager
@@ -303,6 +313,27 @@ func NewServer(deps ServerDependencies) *Server {
 		voiceHandler.WithCommands(voiceCmds)
 	}
 	mux.Handle("POST /api/v1/voice/turn", userAuth(http.HandlerFunc(voiceHandler.PostTurn)))
+
+	// Neural Voice Synthesis & Auditioning (JARVIS voice layer)
+	if deps.TTS != nil {
+		ttsHandler := handlers.NewTTSHandler(deps.TTS)
+		mux.Handle("GET /api/v1/voice/synthesize", userAuth(http.HandlerFunc(ttsHandler.Synthesize)))
+		mux.Handle("GET /api/v1/voice/voices", userAuth(http.HandlerFunc(ttsHandler.Voices)))
+	}
+
+	// Inbox Intelligence & Recruiter Assessment Sync
+	if deps.GmailSyncer != nil || deps.InboxRepo != nil {
+		inboxHandler := handlers.NewInboxHandler(deps.GmailSyncer, deps.InboxRepo)
+		mux.Handle("POST /api/v1/inbox/sync", userAuth(http.HandlerFunc(inboxHandler.Sync)))
+		mux.Handle("GET /api/v1/inbox/assessments", userAuth(http.HandlerFunc(inboxHandler.Assessments)))
+	}
+
+	// Independent Job Discovery & Opportunity Staging
+	if deps.JobDiscovery != nil || deps.DiscoveryRepo != nil {
+		discHandler := handlers.NewDiscoveryHandler(deps.JobDiscovery, deps.DiscoveryRepo)
+		mux.Handle("POST /api/v1/discovery/run", userAuth(http.HandlerFunc(discHandler.Run)))
+		mux.Handle("GET /api/v1/discovery/jobs", userAuth(http.HandlerFunc(discHandler.Jobs)))
+	}
 
 	// Worker Definition / Agent Factory routes
 	if deps.Factory != nil {

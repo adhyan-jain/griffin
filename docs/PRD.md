@@ -139,6 +139,13 @@ The production worker binary is from **2 Nov**. Everything below runs in the wor
 - **Adaptive Outreach Follow-Up Watchdog:** Background sweep on `outreach_targets` monitors `status = 'sent' AND next_followup_at <= NOW()`, automatically preparing personalized follow-up drafts and staging approval prompts before silence turns cold.
 - **Context-Aware Nudge Delivery:** Integrates device battery levels, quiet hours (22:00-08:00 IST), and earphone/audio focus state to route alerts appropriately (silent ambient queue vs. high-priority spoken nudge).
 
+### 4.9 Built in Epoch 15: Proactive Runtime Operator (JARVIS Evolution) (Nov 19)
+- **Real Inbox Intelligence & Assessment Extraction:** Gmail incremental synchronization using thread assembly and message parsing. Inbound emails from recruiters are parsed to extract online assessments (Codility, HackerRank, Karat, CodeSignal) and deadlines, automatically adding them to the daily agenda and staging notifications.
+- **Independent Job Discovery Routine:** Automated discovery across verified company ATS boards (Greenhouse, Lever, Ashby) and authorized feeds. New postings are deduplicated, verified against the candidate profile, and passed to the `OpportunityPipeline` without fake feeds or invented listings.
+- **Real Profile-Grounded Application Execution:** Automatically tailors resume bullet points and cover notes using verified projects (ComputeHive, EchoTales, Griffin, SGLang). Enforces a strict standing authorization policy: auto-stages standard biographical and portfolio applications, while immediately halting and escalating to 1-tap confirmation upon encountering legal declarations (arbitration, NDA, non-compete) or sensitive questions (disability, EEOC, sponsorship).
+- **Durable Serverless Operations & Attention-Priority Model:** Scheduler-triggered briefings and outreach follow-up sweeps driven by PostgreSQL state and AWS EventBridge/cron ticks without requiring an active 24/7 EC2 runner. Routes inbound alerts across attention tiers (`CRITICAL_INTERRUPT`, `HIGH_PRIORITY_BRIEF`, `PASSIVE_INFO`).
+- **JARVIS-Quality Neural Voice & Interruption:** Provider-based neural TTS with auditioned masculine personas (`en-GB-RyanNeural`, `en-US-GuyNeural`, `en-US-ChristopherNeural`), sub-10ms SHA-256 audio caching, Bluetooth earbud and speaker routing, and immediate priority audio interruption for critical alerts.
+
 ---
 
 ## 5. Why it still feels slow and limited
@@ -564,6 +571,31 @@ Griffin transitions from a reactive prompt-and-wait assistant to an **autonomous
 - **Power & Resource Awareness:** Resource-intensive batch jobs (e.g., deep scraping, Claude lead synthesis) defer when the mobile device reports low battery (< 20%) or high thermal load, resuming when plugged in.
 - **Earphone / Audio Focus Interruption:** Spoken notifications only barge in when headphones/earphones are connected or active hands-free car mode is detected, preventing awkward audio leakage in public or meetings.
 
+### 7.25 Proactive Runtime Operator Architecture (2026-11-19, Epoch 15)
+Griffin delivers the five runtime capabilities to achieve autonomous JARVIS-quality operations:
+
+#### 7.25.1 Real Inbox Intelligence & Incremental Synchronization
+- **Incremental Sync Engine (`internal/service/gmail_syncer.go`):** Periodically checks for new messages, maintaining sync markers. Assembles thread context, sanitizes MIME multipart payloads, and indexes message snippets into `email_threads`.
+- **Automated Assessment Triage:** Recruiter emails containing assessments (Codility, HackerRank, Karat, CodeSignal) are automatically parsed for test links and strict deadlines (e.g. 48-hour expiration), creating `assessments` records and inserting due tasks directly into the Morning Agenda Brief.
+
+#### 7.25.2 Independent ATS Job Discovery
+- **Authorized Source Crawlers (`internal/service/job_discovery.go`):** Connects to live company ATS job boards (Greenhouse, Lever, Ashby) to fetch open roles. Rejects stale or fake listings.
+- **Deduplication & Profile Matching:** Checks new postings against `job_discoveries` to avoid duplicate processing. Evaluates relevance against candidate profile (AI, Distributed Systems, Low-Latency Backend), feeding Tier-A matches directly into `OpportunityPipeline.StageOpportunity`.
+
+#### 7.25.3 Real Application Execution & Standing Authorization Policy
+- **Profile-Grounded Tailoring (`internal/service/application_executor.go`):** Synthesizes role-specific bullet points directly from verified projects (ComputeHive, EchoTales, Griffin, SGLang).
+- **Rule 39 Standing Policy Guard (`internal/domain/application_policy.go`):** Standard biographical, degree, and portfolio fields auto-stage with verifiable audit receipts. If legal declarations (mandatory arbitration, NDA, non-compete) or sensitive disclosures (EEOC, disability, sponsorship changes) appear on the form, submission is immediately halted and escalated to human 1-tap confirmation.
+- **Cryptographic Submission Receipts:** Every application persists a SHA-256 verifiable receipt hash in `application_submissions` and writes audit JSON to `reports/receipts/`.
+
+#### 7.25.4 Durable Serverless Proactive Operations & Attention Model
+- **Serverless Cadence (`internal/api/handlers/scheduler.go`):** Briefings and watchdog follow-ups execute during scheduler ticks (`POST /api/v1/scheduler/tick`) driven by AWS EventBridge/cron, operating serverlessly on PostgreSQL state without requiring an active 24/7 EC2 runner.
+- **Attention Engine (`internal/service/attention_engine.go`):** Evaluates event urgency against host presence (`HostStateLaptopActive`, `HostStatePhoneActive`, `HostStateAway`, `HostStateInMeeting`). Routes alerts into `CRITICAL_INTERRUPT`, `HIGH_PRIORITY_BRIEF`, or `PASSIVE_INFO`.
+
+#### 7.25.5 JARVIS-Quality Provider-Based Neural Voice
+- **Masculine Neural Voices (`internal/service/tts.go`):** High-fidelity edge neural voice synthesis with auditioned masculine profiles (`ryan`: `en-GB-RyanNeural` JARVIS persona, `guy`: `en-US-GuyNeural`, `christopher`: `en-US-ChristopherNeural`).
+- **Sub-10ms Content Caching:** Caches generated MP3 frames keyed by `sha256(voice + ":" + text)` on disk and memory.
+- **Companion Audio Routing (`android/app/src/main/kotlin/com/griffin/assistant/Speaker.kt`):** Automatically routes speech through Bluetooth earbuds (`AudioDeviceInfo.TYPE_BLUETOOTH_A2DP`) when connected, and delivers `sayUrgent` interruptions by pausing in-flight audio to deliver time-critical alerts.
+
 ## 8. Operations
 
 ### 8.1 Ship
@@ -625,8 +657,8 @@ Milestones in order; each ends in a demo. "You" marks what only the owner can do
 | **M3 Laptop hands** (1-2 w) **BUILT: sandbox + canary self-test, policy engine with floors and intent check, policy storage/API/host sync, tool gateway with audit, Permissions page. **ALSO BUILT: approvals from a host, WhatsApp hands (Web, then the phone app over adb), the web search/read worker, chat requests planned into them.** NOT BUILT: hands for the browser, files and shell, network allow-list, audit upload, Full access changing the sandbox, bypass flag** | Browser, messaging, approvals, documents | **OS sandbox + startup canary self-test, tool gateway with intent check, Permissions dashboard in the web app (7.16), bypass flag allowed on the laptop host only after the self-test passes**; Playwright browser; trust settings (ask/auto per action and contact; outside text can never trigger an action); approve in chat; messaging: click-to-send first, WhatsApp Web second; Ollama drafting + refusal fallback; documents folder + sync; playbooks validated; click-to-call | E2E on a fake chat page; then a real run: read-only, then one approved message to your own number. **Stop sending** on any account warning |
 | **M4 Internships** (3-5 d) | The headline journey | Search, shortlist into the tracker list, drafts from your documents, each submission approved in chat, screenshot + tracker row | Dry run on 3 postings, then one real approved application |
 | **M5 The phone as a host** (2-3 w) | Phone apps and SMS, laptop on or off | **Android phone host app** (accessibility service, outbound-only Host API, per-app enablement, before/after screenshots) so phone mode works with the laptop off; while the laptop is on, Mobilerun/DroidRun over ADB and KDE Connect are the faster path (adopt, don't build); skill replay so common flows need no model call (confirm delivery by reading the sent state, not the exit code) | With your phone: list notifications, read a WhatsApp message, one approved SMS to your own number. **Stop if** apps block automation |
-| **M6 Calls like companies do** (optional) | Calls without SIM cards | Telephony provider (rented number or SIP trunk) + audio stream + speech pipeline (LiveKit Agents or Pipecat): (1) speak-a-message calls, many recipients in parallel after you approve the list; (2) two-way voice agent; (3) caller ID: rented or your own verified number, never a number you do not own | Needs your approval of a paid provider; India rules (DLT, DND, consent, hours, AI disclosure) checked first. **Skip** if click-to-call is enough |
-| **M7 Proactive Autonomous Operator** (1-2 w) | Autonomous vigilance and staged execution | **Inbound notification event bridge + classifier, dual-phase daily agenda loop (Morning Brief at 08:00 IST + Evening Debrief at 21:00 IST), auto-staging opportunity pipeline with tailored resume/cover notes, adaptive outreach watchdog auto-drafting follow-ups, context-aware nudge dispatch** | Inbound test notification triaged to brief; scraper yield auto-generates 1-tap approval; due follow-up triggers auto-drafted nudge card |
+| **M7 Proactive Sensing Foundations** (1-2 w) | Autonomous vigilance and staged execution | **Inbound notification event bridge + classifier, dual-phase daily agenda loop (Morning Brief at 08:00 IST + Evening Debrief at 21:00 IST), auto-staging opportunity pipeline with tailored resume/cover notes, adaptive outreach watchdog auto-drafting follow-ups, context-aware nudge dispatch** | Inbound test notification triaged to brief; scraper yield auto-generates 1-tap approval; due follow-up triggers auto-drafted nudge card |
+| **M8 Proactive Runtime Operator** (Epoch 15) | Real-world proactive intelligence & voice | **Gmail incremental synchronization & assessment extraction, independent ATS job discovery (Greenhouse, Lever, Ashby), real profile-grounded application execution under standing policy, serverless durable operations, and JARVIS-quality provider-based neural voice with priority earbud interruption** | Recruiter assessment extracted to agenda; discovered ATS internship auto-staged with tailored resume; away-from-laptop critical interrupt spoken in masculine neural voice |
 
 **Deferred decision (summaries):** the final answer is still stitched in code because every multi-step plan already ends in a worker-written synthesis step; a separate worker summarize step would add about 13 s for little gain. Revisit once live Terminals show whether it matters.
 

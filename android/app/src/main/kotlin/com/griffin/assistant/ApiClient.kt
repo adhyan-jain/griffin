@@ -369,4 +369,24 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         } catch (_: Exception) {}
         return out
     }
+
+    /** Streams neural audio MP3 bytes for the given text. Returns null if unreachable. */
+    fun fetchNeuralAudio(text: String, voice: String = "ryan"): ByteArray? {
+        return try {
+            val encoded = java.net.URLEncoder.encode(text, "UTF-8")
+            val tok = runCatching { token() }.getOrNull()
+            val u = "$apiUrl/api/v1/voice/synthesize?text=$encoded&voice=$voice"
+            val conn = (URL(u).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 5000
+                readTimeout = 15000
+                if (tok != null) setRequestProperty("Authorization", "Bearer $tok")
+            }
+            if (conn.responseCode == 200) {
+                conn.inputStream.use { it.readBytes() }
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

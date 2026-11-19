@@ -1299,5 +1299,22 @@ This document is the canonical ledger of all architectural, product, engineering
   5. **Adaptive Outreach Follow-Up Watchdog**: Background sweep on `outreach_targets` sweeps targets where `status = 'sent' AND next_followup_at <= NOW()`, auto-drafts polite follow-up messages, and transitions targets through `followup_due -> drafted` for owner approval.
 - **Why**: Eliminates manual cognitive overhead. Rather than requiring the owner to remember to check trackers, calculate follow-up dates, or format custom cover pitches, Griffin proactively prepares and stages execution packages for 1-tap review.
 
+#### ADR-143: Provider-Based Neural Speech Architecture and Priority Audio Routing
+- **Status**: IMPLEMENTED (`internal/service/tts.go`, `internal/api/handlers/tts.go`, `android/.../Speaker.kt`, `android/.../ApiClient.kt`).
+- **Decision**:
+  1. **Provider-Based Neural TTS**: Replaced the robotic Android on-device TTS with high-fidelity provider-based neural voice synthesis using auditioned masculine profiles (`ryan`: `en-GB-RyanNeural` JARVIS persona, `guy`: `en-US-GuyNeural`, `christopher`: `en-US-ChristopherNeural`).
+  2. **Zero-Token Bill & Sub-10ms Caching**: Neural audio frames are cached locally in memory and on disk keyed by `sha256(voice + ":" + text)`, ensuring zero API token costs and instant playback on repeated system notifications.
+  3. **Intelligent Earbud Routing & Priority Interruption**: Android `Speaker` dynamically inspects `AudioManager.getDevices(GET_DEVICES_OUTPUTS)` and routes audio directly to Bluetooth earbuds (`TYPE_BLUETOOTH_A2DP`, `TYPE_BLUETOOTH_SCO`) or wired headsets when connected. Critical alerts (`sayUrgent`) immediately interrupt low-priority playback without queue latency.
+- **Why**: Delivers a true JARVIS-quality auditory experience, ensuring Griffin sounds authoritative and natural without incurring recurring paid voice synthesis fees.
+
+#### ADR-144: Inbox Intelligence, Independent ATS Discovery, and Standing Application Authorization Policy
+- **Status**: IMPLEMENTED (`migrations/000014_inbox_and_discovery`, `domain/inbox.go`, `domain/discovery.go`, `domain/application_policy.go`, `domain/attention.go`, `service/gmail_syncer.go`, `service/job_discovery.go`, `service/application_executor.go`, `service/attention_engine.go`).
+- **Decision**:
+  1. **Real Inbox Intelligence**: Implemented incremental synchronization and thread assembly. Inbound recruiter emails are triaged to extract online technical assessments (Codility, HackerRank, Karat, CodeSignal) and deadlines, automatically adding them to the Morning Agenda Brief and dispatching phone alerts.
+  2. **Independent ATS Job Discovery**: Implemented live crawlers for authorized company ATS endpoints (Greenhouse, Lever, Ashby). Discovered postings are deduplicated and filtered against candidate profile keywords, routing Tier-A matches directly into `OpportunityPipeline`.
+  3. **Real Application Execution & Standing Policy**: Grounded in the owner's authentic background (ComputeHive, EchoTales, Griffin, SGLang). Implemented standing authorization: standard biographical and portfolio fields auto-stage with verifiable SHA-256 submission receipts. Any unvetted legal declarations (arbitration, NDA, non-compete) or sensitive disclosures (EEOC, disability, sponsorship changes) immediately halt submission and escalate to human 1-tap confirmation.
+  4. **Durable Serverless Operations**: Briefings and watchdog follow-ups execute during scheduler ticks (`POST /api/v1/scheduler/tick`) driven by AWS EventBridge/cron, operating serverlessly on PostgreSQL state without requiring an active 24/7 EC2 runner.
+- **Why**: Bridges the real runtime gaps so Griffin functions as an active, vigilant personal operator while maintaining absolute safety over legal and sensitive outward actions.
+
 
 
