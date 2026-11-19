@@ -43,7 +43,7 @@ func TestSchedulerSafety_ConcurrentTicksStartRunnerOnce(t *testing.T) {
 
 	mgr := runner.NewMockInstanceManager(runner.RunnerStateStopped)
 	wake := runner.NewWakeupController(mgr, runner.WakeupConfig{CooldownWindow: time.Minute}, nil)
-	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, wake)
+	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, nil, wake, nil)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
@@ -66,7 +66,7 @@ func TestSchedulerSafety_EmptyQueueNoWake(t *testing.T) {
 	defer env.Teardown()
 	mgr := runner.NewMockInstanceManager(runner.RunnerStateStopped)
 	wake := runner.NewWakeupController(mgr, runner.WakeupConfig{}, nil)
-	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, wake)
+	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, nil, wake, nil)
 	code, resp := doTick(t, h)
 	assert.Equal(t, http.StatusOK, code)
 	assert.Equal(t, 0, resp.RunnableTasks)
@@ -85,7 +85,7 @@ func TestSchedulerSafety_WakeupFailureSurfaced(t *testing.T) {
 
 	mgr := runner.NewMockInstanceManager(runner.RunnerStateStopped)
 	mgr.FailOnStart = true
-	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, runner.NewWakeupController(mgr, runner.WakeupConfig{}, nil))
+	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, nil, runner.NewWakeupController(mgr, runner.WakeupConfig{}, nil), nil)
 	code, _ := doTick(t, h)
 	assert.GreaterOrEqual(t, code, 500)
 }
@@ -107,7 +107,7 @@ func TestSchedulerSafety_ScheduledTaskSurvivesRestart(t *testing.T) {
 	repo2 := repository.NewPostgresTaskRepository(env.DB.Pool)
 	engine2 := service.NewTaskEngine(repo2, env.ApprovalRepo, nil)
 	mgr := runner.NewMockInstanceManager(runner.RunnerStateStopped)
-	h := handlers.NewSchedulerHandler(engine2, repo2, runner.NewWakeupController(mgr, runner.WakeupConfig{CooldownWindow: time.Millisecond}, nil))
+	h := handlers.NewSchedulerHandler(engine2, repo2, nil, runner.NewWakeupController(mgr, runner.WakeupConfig{CooldownWindow: time.Millisecond}, nil), nil)
 
 	_, resp := doTick(t, h)
 	assert.Equal(t, 0, resp.RunnableTasks, "future-scheduled task must not count as runnable (would block scale-to-zero)")
@@ -139,7 +139,7 @@ func TestSchedulerSafety_MidLeaseShutdownReclaimedOnce(t *testing.T) {
 	created, err := env.Engine.CreateTask(ctx, &domain.Task{UserID: userID, Title: "t", Goal: "g", MaxRetries: 3}, nil)
 	require.NoError(t, err)
 
-	first, err := env.Engine.ClaimTask(ctx, "worker-dead", 200*time.Millisecond)
+	first, err := env.Engine.ClaimTask(ctx, "worker-dead", 1000*time.Millisecond)
 	require.NoError(t, err)
 	require.NotNil(t, first)
 
@@ -153,8 +153,8 @@ func TestSchedulerSafety_MidLeaseShutdownReclaimedOnce(t *testing.T) {
 
 	// Runner dies: no heartbeats. A tick sees in-flight work and wakes the runner.
 	mgr := runner.NewMockInstanceManager(runner.RunnerStateStopped)
-	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, runner.NewWakeupController(mgr, runner.WakeupConfig{}, nil))
-	time.Sleep(400 * time.Millisecond)
+	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, nil, runner.NewWakeupController(mgr, runner.WakeupConfig{}, nil), nil)
+	time.Sleep(1200 * time.Millisecond)
 	_, resp := doTick(t, h)
 	assert.True(t, resp.WakeupTriggered, "expired-lease RUNNING task must wake the runner")
 

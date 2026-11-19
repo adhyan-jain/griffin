@@ -170,6 +170,10 @@ func (h *ApprovalHandler) ReviseApproval(w http.ResponseWriter, r *http.Request)
 		httputil.ErrorJSON(w, err)
 		return
 	}
+	if app.UserID != userID {
+		httputil.ErrorJSON(w, domain.ErrNotFound)
+		return
+	}
 	if app.Status != domain.ApprovalStatusPending {
 		httputil.ErrorJSON(w, domain.ErrApprovalNotPending)
 		return
@@ -193,19 +197,21 @@ func (h *ApprovalHandler) ReviseApproval(w http.ResponseWriter, r *http.Request)
 		textField = "text"
 	}
 
-	revisedText := currentText
-	if h.brain != nil && h.brain.Enabled() && currentText != "" {
-		sysPrompt := "You are JJ, Adhyan Jain's AI career and outreach assistant. Adhyan is a 3rd-year CSE student at VIT Vellore. His core systems and applied AI projects are ComputeHive (Go distributed task runner, Redis Lua atomic leasing, sub-15s dead worker recovery), EchoTales (bitemporal narrative knowledge graph), Griffin (personal AI assistant), and SGLang documentation contributions. Rewrite the provided draft or cover note based strictly on the user's instructions. Maintain a warm, polite, humble tone, strictly zero emojis, and authentic engineering claims. Return ONLY the revised draft with no preamble."
-		turns := []gemini.Turn{
-			{Role: "user", Text: fmt.Sprintf("Current draft:\n%s\n\nRevision request:\n%s", currentText, req.Instruction)},
-		}
-		if out, err := h.brain.Chat(r.Context(), sysPrompt, turns); err == nil && strings.TrimSpace(out) != "" {
-			revisedText = strings.TrimSpace(out)
-		}
-	} else {
-		// Clean fallback revision
-		revisedText = fmt.Sprintf("%s\n\n[Revised: %s]", currentText, req.Instruction)
+	if h.brain == nil || !h.brain.Enabled() || currentText == "" {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: revision model is unavailable or disabled", domain.ErrValidation))
+		return
 	}
+
+	sysPrompt := "You are JJ, Adhyan Jain's AI career and outreach assistant. Adhyan is a 3rd-year CSE student at VIT Vellore. His core systems and applied AI projects are ComputeHive (Go distributed task runner, Redis Lua atomic leasing, sub-15s dead worker recovery), EchoTales (bitemporal narrative knowledge graph), Griffin (personal AI assistant), and SGLang documentation contributions. Rewrite the provided draft or cover note based strictly on the user's instructions. Maintain a warm, polite, humble tone, strictly zero emojis, and authentic engineering claims. Return ONLY the revised draft with no preamble."
+	turns := []gemini.Turn{
+		{Role: "user", Text: fmt.Sprintf("Current draft:\n%s\n\nRevision request:\n%s", currentText, req.Instruction)},
+	}
+	out, err := h.brain.Chat(r.Context(), sysPrompt, turns)
+	if err != nil || strings.TrimSpace(out) == "" {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: revision model failed to generate response", domain.ErrValidation))
+		return
+	}
+	revisedText := strings.TrimSpace(out)
 
 	payload[textField] = revisedText
 	if textField == "draft" || textField == "cover_note" {

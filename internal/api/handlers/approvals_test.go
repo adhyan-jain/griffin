@@ -147,3 +147,78 @@ func TestReviseApproval_WithBrain(t *testing.T) {
 		t.Errorf("expected cover_note %q, got %q", brain.revised, payload["cover_note"])
 	}
 }
+
+func TestReviseApproval_ForeignUserBlocked(t *testing.T) {
+	appID := uuid.New()
+	ownerID := uuid.New()
+	foreignUserID := uuid.New()
+	taskID := uuid.New()
+
+	repo := &fakeApprovalRepo{
+		approvals: map[uuid.UUID]*domain.Approval{
+			appID: {
+				ID:            appID,
+				UserID:        ownerID,
+				TaskID:        taskID,
+				ActionType:    "JOB_APPLY",
+				Summary:       "Submit application",
+				ActionPayload: json.RawMessage(`{"cover_note":"Original note"}`),
+				Status:        domain.ApprovalStatusPending,
+			},
+		},
+	}
+	engine := service.NewTaskEngine(&fakeTaskRepoForApprovals{}, repo, nil)
+	handler := NewApprovalHandler(engine, repo, nil).WithBrain(&mockBrain{revised: "hacked"})
+
+	body, _ := json.Marshal(map[string]string{"instruction": "hack it"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/approvals/"+appID.String()+"/chat", bytes.NewReader(body))
+	req.SetPathValue("id", appID.String())
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, foreignUserID))
+
+	rec := httptest.NewRecorder()
+	handler.ReviseApproval(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for foreign user, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestReviseApproval_BrainUnavailableReturnsError(t *testing.T) {
+	appID := uuid.New()
+	userID := uuid.New()
+	taskID := uuid.New()
+
+	repo := &fakeApprovalRepo{
+		approvals: map[uuid.UUID]*domain.Approval{
+			appID: {
+				ID:            appID,
+				UserID:        userID,
+				TaskID:        taskID,
+				ActionType:    "JOB_APPLY",
+				Summary:       "Submit application",
+				ActionPayload: json.RawMessage(`{"cover_note":"Original note"}`),
+				Status:        domain.ApprovalStatusPending,
+			},
+		},
+	}
+	engine := service.NewTaskEngine(&fakeTaskRepoForApprovals{}, repo, nil)
+	// No brain configured
+	handler := NewApprovalHandler(engine, repo, nil)
+
+	body, _ := json.Marshal(map[string]string{"instruction": "make it better"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/approvals/"+appID.String()+"/chat", bytes.NewReader(body))
+	req.SetPathValue("id", appID.String())
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, userID))
+
+	rec := httptest.NewRecorder()
+	handler.ReviseApproval(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("expected error when brain is unavailable, got 200: %s", rec.Body.String())
+	}
+	// Verify draft was not mutated or faked
+	assert := repo.approvals[appID]
+	if string(assert.ActionPayload) != `{"cover_note":"Original note"}` {
+		t.Fatalf("payload should remain untouched when brain is unavailable, got: %s", string(assert.ActionPayload))
+	}
+}

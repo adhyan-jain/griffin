@@ -62,19 +62,29 @@ func (r *Router) Execute(ctx context.Context, task *domain.Task) (*worker.Execut
 	if domain.ProviderHintFor(task) != domain.ProviderClaude {
 		return r.agy.Execute(ctx, task)
 	}
+
+	fallbackWith := func(reason, stage string) (*worker.ExecutionResult, error) {
+		res, err := r.agy.Execute(ctx, task)
+		if res != nil {
+			res.FallbackReason = &reason
+			res.FallbackStage = &stage
+		}
+		return res, err
+	}
+
 	if r.claude == nil {
 		r.logger.Debug("Step planned for claude; claude is not enabled, running on agy", "task_id", task.ID)
-		return r.agy.Execute(ctx, task)
+		return fallbackWith("claude not enabled", "pre_execution")
 	}
 	if ok, _ := r.claude.IsHealthy(ctx); !ok {
 		r.logger.Warn("Claude is unavailable; running the step on agy", "task_id", task.ID)
-		return r.agy.Execute(ctx, task)
+		return fallbackWith("claude unhealthy", "pre_execution")
 	}
 
 	res, err := r.claude.Execute(ctx, task)
 	if errors.Is(err, domain.ErrAuthenticationRequired) || (res != nil && errors.Is(res.Error, domain.ErrAuthenticationRequired)) {
 		r.logger.Warn("Claude is not signed in; running the step on agy. Sign in on the worker to enable it.", "task_id", task.ID)
-		return r.agy.Execute(ctx, task)
+		return fallbackWith("claude authentication required (not signed in)", "post_failure")
 	}
 	return res, err
 }

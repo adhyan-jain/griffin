@@ -2,15 +2,17 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/griffin/core/internal/database"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/griffin/core/internal/database"
 	"github.com/griffin/core/internal/domain"
 )
 
@@ -239,13 +241,37 @@ func (r *PostgresApprovalRepository) UpdateApprovalPayload(ctx context.Context, 
 	if newSummary != "" {
 		summary = newSummary
 	}
-	if _, err := tx.Exec(ctx, `UPDATE approvals SET summary = $1, action_payload = $2, updated_at = $3 WHERE id = $4`,
-		summary, newPayload, now, id); err != nil {
+	actionType := a.ActionType
+	if strings.HasPrefix(a.ActionType, domain.HostActionApprovalPrefix) {
+		h := sha256.Sum256(newPayload)
+		actionType = fmt.Sprintf("%s%x", domain.HostActionApprovalPrefix, h[:16])
+	}
+
+	// Synchronize revised payload fields into task's input_payload
+	var taskInput json.RawMessage
+	if err := tx.QueryRow(ctx, `SELECT input_payload FROM tasks WHERE id = $1`, a.TaskID).Scan(&taskInput); err == nil && len(taskInput) > 0 {
+		var taskObj map[string]any
+		if err := json.Unmarshal(taskInput, &taskObj); err == nil && taskObj != nil {
+			var payloadObj map[string]any
+			if err := json.Unmarshal(newPayload, &payloadObj); err == nil && payloadObj != nil {
+				for k, v := range payloadObj {
+					taskObj[k] = v
+				}
+				if updatedTaskInput, err := json.Marshal(taskObj); err == nil {
+					_, _ = tx.Exec(ctx, `UPDATE tasks SET input_payload = $1, updated_at = $2 WHERE id = $3`, updatedTaskInput, now, a.TaskID)
+				}
+			}
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE approvals SET action_type = $1, summary = $2, action_payload = $3, updated_at = $4 WHERE id = $5`,
+		actionType, summary, newPayload, now, id); err != nil {
 		return nil, fmt.Errorf("update approval payload: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
+	a.ActionType = actionType
 	a.Summary = summary
 	a.ActionPayload = newPayload
 	a.UpdatedAt = now

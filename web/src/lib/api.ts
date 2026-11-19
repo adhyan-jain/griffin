@@ -74,6 +74,14 @@ export interface TaskAttempt {
   worker_id: string;
   attempt_number: number;
   status: string;
+  planned_provider?: string | null;
+  actual_provider?: string | null;
+  model?: string | null;
+  exit_code?: number | null;
+  termination_reason?: string | null;
+  fallback_reason?: string | null;
+  fallback_stage?: string | null;
+  usage?: unknown;
   prompt_tokens: number;
   completion_tokens: number;
   duration_ms: number;

@@ -159,20 +159,27 @@ func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, us
 				"draft":           draft,
 				"steered":         true,
 				"steered_task_id": active.ID.String(),
+				"status":          "draft_ready",
 			})
 			return true
 		}
 
 		active.AppendSteeringNote("User requested draft first: prepare draft only and hold outward send for approval.")
 		active.SetDraftOnly()
-		_ = h.threads.UpdateTask(r.Context(), active)
+		if err := h.threads.UpdateTask(r.Context(), active); err != nil {
+			httputil.ErrorJSON(w, fmt.Errorf("steer task failed: %w", err))
+			return true
+		}
 
 		// Also find downstream children if this is an orchestration plan root
 		children, _ := h.threads.ListTasks(r.Context(), repository.TaskFilter{UserID: &userID, ParentID: &g.Root.ID})
 		for _, child := range children {
-			if strings.Contains(strings.ToLower(child.Title), "send") || strings.Contains(string(child.InputPayload), domain.HostCapMessaging) {
-				child.Title = "[Draft Only] " + child.Title
-				child.SetDraftOnly()
+			if !child.IsTerminal() && child.ID != active.ID {
+				child.AppendSteeringNote("User requested draft first: prepare draft only and hold outward send for approval.")
+				if strings.Contains(strings.ToLower(child.Title), "send") || strings.Contains(string(child.InputPayload), domain.HostCapMessaging) {
+					child.Title = "[Draft Only] " + child.Title
+					child.SetDraftOnly()
+				}
 				_ = h.threads.UpdateTask(r.Context(), child)
 			}
 		}
@@ -184,15 +191,29 @@ func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, us
 			"response":        "Understood. I have updated the ongoing task to draft it first and hold the send. I will show you the draft before anything is sent.",
 			"steered":         true,
 			"steered_task_id": active.ID.String(),
+			"status":          "applied_for_next_checkpoint",
 		})
 		return true
 	}
 
 	active.AppendSteeringNote(note)
-	_ = h.threads.UpdateTask(r.Context(), active)
+	if err := h.threads.UpdateTask(r.Context(), active); err != nil {
+		httputil.ErrorJSON(w, fmt.Errorf("steer task failed: %w", err))
+		return true
+	}
+
 	if g.Root.ID != active.ID {
 		g.Root.AppendSteeringNote(note)
 		_ = h.threads.UpdateTask(r.Context(), g.Root)
+	}
+
+	// Propagate directive to all active/queued children in the same DAG
+	children, _ := h.threads.ListTasks(r.Context(), repository.TaskFilter{UserID: &userID, ParentID: &g.Root.ID})
+	for _, child := range children {
+		if !child.IsTerminal() && child.ID != active.ID {
+			child.AppendSteeringNote(note)
+			_ = h.threads.UpdateTask(r.Context(), child)
+		}
 	}
 
 	httputil.JSON(w, http.StatusOK, map[string]any{
@@ -202,6 +223,7 @@ func (h *JJChatHandler) steerTaskWith(w http.ResponseWriter, r *http.Request, us
 		"response":        fmt.Sprintf("Got it. I've updated the ongoing task with: %q.", note),
 		"steered":         true,
 		"steered_task_id": active.ID.String(),
+		"status":          "applied_for_next_checkpoint",
 	})
 	return true
 }
@@ -292,12 +314,37 @@ func (h *JJChatHandler) tryContinue(w http.ResponseWriter, r *http.Request, user
 
 	// 2.5 Mid-flight steering of an active task even when conversation ID is omitted:
 	if res := h.isSteering(r.Context(), message); res.Matched {
+		type inFlightTarget struct {
+			group *threadGroup
+			task  *domain.Task
+		}
+		var targets []inFlightTarget
 		for _, g := range groups {
 			if active := g.inFlight(); active != nil {
-				if h.steerTaskWith(w, r, userID, g, active, res.Note, res.IsDraft, "") {
-					return true, nil
-				}
+				targets = append(targets, inFlightTarget{group: g, task: active})
 			}
+		}
+
+		if len(targets) == 1 {
+			if h.steerTaskWith(w, r, userID, targets[0].group, targets[0].task, res.Note, res.IsDraft, "") {
+				return true, nil
+			}
+		} else if len(targets) > 1 {
+			// Multiple in-flight tasks active: refuse non-deterministic selection and ask user
+			taskDescriptions := make([]string, 0, len(targets))
+			taskIDs := make([]string, 0, len(targets))
+			for _, t := range targets {
+				taskDescriptions = append(taskDescriptions, fmt.Sprintf("%q (ID: %s)", t.task.Title, t.task.ID.String()[:8]))
+				taskIDs = append(taskIDs, t.task.ID.String())
+			}
+			httputil.JSON(w, http.StatusOK, map[string]any{
+				"kind":            string(service.MessageKindConversation),
+				"conversation_id": req.ConversationID,
+				"response":        fmt.Sprintf("Multiple tasks are currently running: %s. Which task would you like to steer? Please specify using the task ID or open the corresponding conversation thread.", strings.Join(taskDescriptions, ", ")),
+				"ambiguous_tasks": true,
+				"active_task_ids": taskIDs,
+			})
+			return true, nil
 		}
 	}
 

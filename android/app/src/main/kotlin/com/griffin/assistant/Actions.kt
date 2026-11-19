@@ -15,17 +15,32 @@ import java.util.Calendar
 class Actions(private val context: Context) {
     private val telecom get() = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
 
-    fun call(number: String): String? = try {
-        telecom.placeCall(Uri.fromParts("tel", number, null), Bundle())
-        null
-    } catch (e: SecurityException) {
-        "I need the permission to make phone calls."
-    } catch (e: Exception) {
-        "I could not place the call."
+    sealed class ActionResult {
+        data class Started(val message: String, val target: String) : ActionResult()
+        data class Completed(val message: String, val receipt: String) : ActionResult()
+        data class Failed(val error: String, val retryable: Boolean = false) : ActionResult()
+        data class Unknown(val reason: String) : ActionResult()
+
+        val isSuccess: Boolean get() = this is Started || this is Completed
     }
 
-    fun callWhatsApp(who: String): String? {
-        val dataId = Contacts.findWhatsAppCallDataId(context, who)
+    fun callWithResult(number: String): ActionResult = try {
+        telecom.placeCall(Uri.fromParts("tel", number, null), Bundle())
+        ActionResult.Started("Placing phone call to $number", number)
+    } catch (e: SecurityException) {
+        ActionResult.Failed("Permission to make phone calls is required.", retryable = false)
+    } catch (e: Exception) {
+        ActionResult.Failed("Could not place the call: ${e.message}", retryable = false)
+    }
+
+    fun call(number: String): String? = when (val res = callWithResult(number)) {
+        is ActionResult.Started, is ActionResult.Completed -> null
+        is ActionResult.Failed -> res.error
+        is ActionResult.Unknown -> res.reason
+    }
+
+    fun callWhatsAppWithResult(match: Contacts.Match): ActionResult {
+        val dataId = match.whatsAppDataId
         if (dataId != null) {
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -37,12 +52,11 @@ class Actions(private val context: Context) {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(intent)
-                return "Calling $who on WhatsApp."
+                return ActionResult.Started("Calling ${match.name} on WhatsApp.", match.name)
             } catch (_: Exception) {}
         }
-        val match = Contacts.find(context, who).firstOrNull()
-        if (match != null) {
-            val digits = match.number.filter { it.isDigit() }
+        val digits = match.number.filter { it.isDigit() }
+        if (digits.isNotEmpty()) {
             val formatted = if (digits.length == 10) "91$digits" else digits
             try {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$formatted")).apply {
@@ -50,23 +64,47 @@ class Actions(private val context: Context) {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(intent)
-                return "Opening WhatsApp with ${match.name} to call."
-            } catch (_: Exception) {
-                return "Could not open WhatsApp for ${match.name}."
+                return ActionResult.Started("Opening WhatsApp with ${match.name} to call.", match.name)
+            } catch (e: Exception) {
+                return ActionResult.Failed("Could not open WhatsApp for ${match.name}: ${e.message}", retryable = false)
             }
         }
-        return "I could not find $who in your WhatsApp contacts."
+        return ActionResult.Failed("Could not find a valid number or WhatsApp data ID for ${match.name}.", retryable = false)
     }
 
-    fun sendSms(number: String, message: String): String? = try {
+    fun callWhatsApp(who: String): String? {
+        val resolution = Contacts.resolveWhatsApp(context, who)
+        return when (resolution) {
+            is Contacts.Resolution.Resolved -> when (val res = callWhatsAppWithResult(resolution.match)) {
+                is ActionResult.Started -> res.message
+                is ActionResult.Completed -> res.message
+                is ActionResult.Failed -> res.error
+                is ActionResult.Unknown -> res.reason
+            }
+            is Contacts.Resolution.Ambiguous -> {
+                val candidates = resolution.candidates.take(5).joinToString(", ") { it.name }
+                "Ambiguous contact name '$who'. Found multiple matches: $candidates. Please clarify."
+            }
+            is Contacts.Resolution.NotFound -> "I could not find $who in your WhatsApp contacts."
+            is Contacts.Resolution.PermissionDenied -> "I need the permission to access your contacts."
+        }
+    }
+
+    fun sendSmsWithResult(number: String, message: String): ActionResult = try {
         val sms = context.getSystemService(SmsManager::class.java)
         val parts = sms.divideMessage(message)
         if (parts.size > 1) sms.sendMultipartTextMessage(number, null, parts, null, null) else sms.sendTextMessage(number, null, message, null, null)
-        null
+        ActionResult.Completed("SMS sent to $number.", "sms_sent:$number")
     } catch (e: SecurityException) {
-        "I need the permission to send text messages."
+        ActionResult.Failed("Permission to send text messages is required.", retryable = false)
     } catch (e: Exception) {
-        "I could not send the message."
+        ActionResult.Failed("Could not send SMS: ${e.message}", retryable = false)
+    }
+
+    fun sendSms(number: String, message: String): String? = when (val res = sendSmsWithResult(number, message)) {
+        is ActionResult.Started, is ActionResult.Completed -> null
+        is ActionResult.Failed -> res.error
+        is ActionResult.Unknown -> res.reason
     }
 
     fun answer(): String? = try {

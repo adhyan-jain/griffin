@@ -38,6 +38,8 @@ type ServerDependencies struct {
 	TaskRepo     repository.TaskRepository
 	ApprovalRepo repository.ApprovalRepository
 	AgentRepo    repository.AgentRepository
+	// ScheduleRepo enables recurring schedule materialization during scheduler ticks.
+	ScheduleRepo repository.ScheduleRepository
 	// HostRepo enables the host API (laptop/phone hosts) when set.
 	HostRepo repository.HostRepository
 	// PolicyRepo stores the owner's permission policy; used with HostRepo.
@@ -315,7 +317,7 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("POST /api/v1/workers/{task_id}/complete", workerAuth(http.HandlerFunc(workerHandler.CompleteTask)))
 	mux.Handle("POST /api/v1/workers/{task_id}/fail", workerAuth(http.HandlerFunc(workerHandler.FailTask)))
 
-	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.Wakeup)
+	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.ScheduleRepo, deps.Wakeup, deps.Logger)
 	mux.Handle("POST /api/v1/scheduler/tick", workerAuth(http.HandlerFunc(schedulerHandler.Tick)))
 
 	// Execution hosts (laptop, phone). Owner routes use the user JWT; host routes use a per-host token and

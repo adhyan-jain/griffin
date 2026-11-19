@@ -376,6 +376,21 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                   <p className="text-xs text-muted-foreground">
                     {(a.duration_ms / 1000).toFixed(1)}s · {(a.prompt_tokens + a.completion_tokens).toLocaleString()} tokens · {displayWorker(a.worker_id)}
                   </p>
+                  {(a.planned_provider || a.actual_provider || a.model) && (
+                    <p className="text-xs text-muted-foreground">
+                      Provider: <span className="font-medium text-foreground">{a.actual_provider || a.planned_provider || "unknown"}</span>
+                      {a.planned_provider && a.actual_provider && a.planned_provider !== a.actual_provider && (
+                        <span> (planned: {a.planned_provider})</span>
+                      )}
+                      {a.model && <span> · Model: <span className="font-medium text-foreground">{a.model}</span></span>}
+                      {a.exit_code !== undefined && a.exit_code !== null && <span> · Exit: {a.exit_code}</span>}
+                    </p>
+                  )}
+                  {a.fallback_reason && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Fallback ({a.fallback_stage || "stage"}): {a.fallback_reason}
+                    </p>
+                  )}
                   {a.error_message && <p className="text-xs text-destructive">{a.error_message}</p>}
                 </li>
               ))}

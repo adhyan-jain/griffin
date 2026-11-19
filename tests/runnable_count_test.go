@@ -105,7 +105,7 @@ func TestSchedulerTick_OnlyFinishedRootDoesNotWakeRunner(t *testing.T) {
 	createJJRoot(t, env, userID)
 
 	mgr := runner.NewMockInstanceManager(runner.RunnerStateStopped)
-	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, runner.NewWakeupController(mgr, runner.WakeupConfig{}, nil))
+	h := handlers.NewSchedulerHandler(env.Engine, env.TaskRepo, nil, runner.NewWakeupController(mgr, runner.WakeupConfig{}, nil), nil)
 	code, resp := doTick(t, h)
 	assert.Equal(t, 200, code)
 	assert.Equal(t, 0, resp.RunnableTasks)

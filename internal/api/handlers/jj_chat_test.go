@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -102,6 +103,8 @@ type chatEnvelope struct {
 		Kind           string          `json:"kind"`
 		ConversationID string          `json:"conversation_id"`
 		TaskID         string          `json:"task_id"`
+		Response       string          `json:"response"`
+		AmbiguousTasks bool            `json:"ambiguous_tasks"`
 		Orchestration  json.RawMessage `json:"orchestration"`
 		Plan           json.RawMessage `json:"plan"`
 		Runner         struct {
@@ -419,4 +422,47 @@ func TestJJChat_SingleTaskCreationCreatesRealTask(t *testing.T) {
 	assert.Equal(t, "personal_ops", task.ManagerDomain)
 	assert.Equal(t, domain.TaskStatusQueued, task.Status)
 	assert.Equal(t, 1, wake.calls)
+}
+
+func TestJJChat_DraftRegexDoesNotHijackOrdinaryRequest(t *testing.T) {
+	// A request starting with "Draft..." should NOT match DraftFirstRegex
+	assert.False(t, domain.DraftFirstRegex.MatchString("Draft an email to Bob about the contract"))
+	assert.False(t, domain.DraftFirstRegex.MatchString("Can you draft a proposal for the client?"))
+
+	// Explicit draft-first expressions SHOULD match
+	assert.True(t, domain.DraftFirstRegex.MatchString("draft first and let me review"))
+	assert.True(t, domain.DraftFirstRegex.MatchString("show me the draft"))
+	assert.True(t, domain.DraftFirstRegex.MatchString("don't send yet"))
+	assert.True(t, domain.DraftFirstRegex.MatchString("pehle mujhe draft dikhao"))
+}
+
+func TestJJChat_SteeringMultipleActiveTasks_AsksClarification(t *testing.T) {
+	s := &fakeChatStore{}
+	user := uuid.New()
+	task1 := &domain.Task{
+		ID:        uuid.New(),
+		UserID:    user,
+		Title:     "Research LLM Agents",
+		Goal:      "Research LLM agent architectures",
+		Status:    domain.TaskStatusRunning,
+		CreatedAt: time.Now().UTC(),
+	}
+	task2 := &domain.Task{
+		ID:        uuid.New(),
+		UserID:    user,
+		Title:     "Write weekly newsletter",
+		Goal:      "Draft weekly newsletter",
+		Status:    domain.TaskStatusRunning,
+		CreatedAt: time.Now().UTC(),
+	}
+	s.tasks = []*domain.Task{task1, task2}
+
+	h := NewJJChatHandler(s, nil, &chatWake{}, false).WithThreads(&fakeThreads{tasks: []*domain.Task{task1, task2}})
+
+	// Send a steering directive with no task_id or conversation_id specified
+	code, env := sendChat(t, h, user, `{"message":"also mention the release deadline is Friday"}`, nil)
+	require.Equal(t, http.StatusOK, code)
+	assert.Contains(t, env.Data.Response, "Multiple tasks are currently running")
+	assert.Contains(t, env.Data.Response, "Research LLM Agents")
+	assert.Contains(t, env.Data.Response, "Write weekly newsletter")
 }

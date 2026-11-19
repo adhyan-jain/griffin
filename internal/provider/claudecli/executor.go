@@ -329,6 +329,7 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 	} else {
 		out, _ = json.Marshal(map[string]string{"response": text})
 	}
+	zeroExit := 0
 	r := &worker.ExecutionResult{
 		ExecutionID:      execID,
 		ProviderName:     "claude",
@@ -338,6 +339,13 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 		Duration:         time.Since(start),
 		PromptTokens:     res.Usage.InputTokens,
 		CompletionTokens: res.Usage.OutputTokens,
+		ExitCode:         &zeroExit,
+		Model:            model,
+		Usage: &worker.UsageMetadata{
+			InputTokens:  res.Usage.InputTokens,
+			OutputTokens: res.Usage.OutputTokens,
+			TotalTokens:  res.Usage.InputTokens + res.Usage.OutputTokens,
+		},
 	}
 	if res.SessionID != "" {
 		conv := res.SessionID

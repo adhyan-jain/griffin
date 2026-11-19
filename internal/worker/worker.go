@@ -216,13 +216,19 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	}()
 
 	start := time.Now().UTC()
+	planned := string(domain.ProviderHintFor(task))
+	if planned == "" {
+		planned = "antigravity"
+	}
+
 	attempt := &domain.TaskAttempt{
-		ID:            uuid.New(),
-		TaskID:        task.ID,
-		WorkerID:      w.ID,
-		AttemptNumber: task.RetryCount + 1,
-		Status:        "RUNNING",
-		StartedAt:     start,
+		ID:              uuid.New(),
+		TaskID:          task.ID,
+		WorkerID:        w.ID,
+		AttemptNumber:   task.RetryCount + 1,
+		Status:          "RUNNING",
+		PlannedProvider: planned,
+		StartedAt:       start,
 	}
 	if w.taskRepo != nil {
 		w.recordAttempt(ctx, attempt)
@@ -320,6 +326,29 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		attempt.Status = "FAILED"
 		attempt.DurationMs = durationMs
 		attempt.ErrorMessage = &errMsg
+		if res != nil {
+			if res.ProviderName != "" {
+				attempt.ActualProvider = res.ProviderName
+			}
+			attempt.Model = res.Model
+			attempt.ExitCode = res.ExitCode
+			attempt.FallbackReason = res.FallbackReason
+			attempt.FallbackStage = res.FallbackStage
+			if res.TerminationReason != nil {
+				attempt.TerminationReason = res.TerminationReason
+			} else {
+				termReason := "error"
+				if isAuthErr {
+					termReason = "auth_required"
+				}
+				attempt.TerminationReason = &termReason
+			}
+			if res.Usage != nil {
+				if usageBytes, uErr := json.Marshal(res.Usage); uErr == nil {
+					attempt.Usage = usageBytes
+				}
+			}
+		}
 		now := time.Now().UTC()
 		attempt.CompletedAt = &now
 		if w.taskRepo != nil {
@@ -361,6 +390,21 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	attempt.DurationMs = durationMs
 	attempt.PromptTokens = res.PromptTokens
 	attempt.CompletionTokens = res.CompletionTokens
+	attempt.ActualProvider = res.ProviderName
+	if attempt.ActualProvider == "" {
+		attempt.ActualProvider = w.executor.Name()
+	}
+	attempt.Model = res.Model
+	attempt.ExitCode = res.ExitCode
+	attempt.FallbackReason = res.FallbackReason
+	attempt.FallbackStage = res.FallbackStage
+	termSuccess := "completed"
+	attempt.TerminationReason = &termSuccess
+	if res.Usage != nil {
+		if usageBytes, uErr := json.Marshal(res.Usage); uErr == nil {
+			attempt.Usage = usageBytes
+		}
+	}
 	now := time.Now().UTC()
 	attempt.CompletedAt = &now
 	if w.taskRepo != nil {

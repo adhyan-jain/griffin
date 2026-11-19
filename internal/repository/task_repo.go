@@ -717,21 +717,34 @@ func (r *PostgresTaskRepository) RecordAttempt(ctx context.Context, a *domain.Ta
 		INSERT INTO task_attempts (
 			id, task_id, agent_id, worker_id, attempt_number, status,
 			prompt_tokens, completion_tokens, duration_ms, error_message,
-			started_at, completed_at, created_at
+			started_at, completed_at, created_at,
+			planned_provider, actual_provider, model, exit_code,
+			termination_reason, fallback_reason, fallback_stage, usage
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+			$14, $15, $16, $17, $18, $19, $20, $21
 		) ON CONFLICT (id) DO UPDATE SET
 			status = EXCLUDED.status,
 			prompt_tokens = EXCLUDED.prompt_tokens,
 			completion_tokens = EXCLUDED.completion_tokens,
 			duration_ms = EXCLUDED.duration_ms,
 			error_message = EXCLUDED.error_message,
-			completed_at = EXCLUDED.completed_at
+			completed_at = EXCLUDED.completed_at,
+			planned_provider = EXCLUDED.planned_provider,
+			actual_provider = EXCLUDED.actual_provider,
+			model = EXCLUDED.model,
+			exit_code = EXCLUDED.exit_code,
+			termination_reason = EXCLUDED.termination_reason,
+			fallback_reason = EXCLUDED.fallback_reason,
+			fallback_stage = EXCLUDED.fallback_stage,
+			usage = EXCLUDED.usage
 	`
 	_, err := r.pool.Exec(ctx, query,
 		a.ID, a.TaskID, a.AgentID, a.WorkerID, a.AttemptNumber, a.Status,
 		a.PromptTokens, a.CompletionTokens, a.DurationMs, a.ErrorMessage,
 		a.StartedAt, a.CompletedAt, a.CreatedAt,
+		a.PlannedProvider, a.ActualProvider, a.Model, a.ExitCode,
+		a.TerminationReason, a.FallbackReason, a.FallbackStage, a.Usage,
 	)
 	if err != nil {
 		return fmt.Errorf("record attempt: %w", err)
@@ -744,7 +757,9 @@ func (r *PostgresTaskRepository) GetAttempts(ctx context.Context, taskID uuid.UU
 		SELECT 
 			id, task_id, agent_id, worker_id, attempt_number, status,
 			prompt_tokens, completion_tokens, duration_ms, error_message,
-			started_at, completed_at, created_at
+			started_at, completed_at, created_at,
+			planned_provider, actual_provider, model, exit_code,
+			termination_reason, fallback_reason, fallback_stage, usage
 		FROM task_attempts
 		WHERE task_id = $1
 		ORDER BY attempt_number ASC
@@ -762,6 +777,8 @@ func (r *PostgresTaskRepository) GetAttempts(ctx context.Context, taskID uuid.UU
 			&a.ID, &a.TaskID, &a.AgentID, &a.WorkerID, &a.AttemptNumber, &a.Status,
 			&a.PromptTokens, &a.CompletionTokens, &a.DurationMs, &a.ErrorMessage,
 			&a.StartedAt, &a.CompletedAt, &a.CreatedAt,
+			&a.PlannedProvider, &a.ActualProvider, &a.Model, &a.ExitCode,
+			&a.TerminationReason, &a.FallbackReason, &a.FallbackStage, &a.Usage,
 		); err != nil {
 			return nil, err
 		}

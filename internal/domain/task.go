@@ -228,19 +228,27 @@ type TaskDependency struct {
 
 // TaskAttempt records a single execution run attempt of a task by a worker.
 type TaskAttempt struct {
-	ID               uuid.UUID  `json:"id"`
-	TaskID           uuid.UUID  `json:"task_id"`
-	AgentID          *uuid.UUID `json:"agent_id,omitempty"`
-	WorkerID         string     `json:"worker_id"`
-	AttemptNumber    int        `json:"attempt_number"`
-	Status           string     `json:"status"` // 'RUNNING', 'COMPLETED', 'FAILED', 'TIMED_OUT'
-	PromptTokens     int        `json:"prompt_tokens"`
-	CompletionTokens int        `json:"completion_tokens"`
-	DurationMs       int        `json:"duration_ms"`
-	ErrorMessage     *string    `json:"error_message,omitempty"`
-	StartedAt        time.Time  `json:"started_at"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID                uuid.UUID       `json:"id"`
+	TaskID            uuid.UUID       `json:"task_id"`
+	AgentID           *uuid.UUID      `json:"agent_id,omitempty"`
+	WorkerID          string          `json:"worker_id"`
+	AttemptNumber     int             `json:"attempt_number"`
+	Status            string          `json:"status"` // 'RUNNING', 'COMPLETED', 'FAILED', 'TIMED_OUT', 'AWAITING_APPROVAL'
+	PlannedProvider   string          `json:"planned_provider,omitempty"`
+	ActualProvider    string          `json:"actual_provider,omitempty"`
+	Model             string          `json:"model,omitempty"`
+	ExitCode          *int            `json:"exit_code,omitempty"`
+	TerminationReason *string         `json:"termination_reason,omitempty"`
+	FallbackReason    *string         `json:"fallback_reason,omitempty"`
+	FallbackStage     *string         `json:"fallback_stage,omitempty"`
+	Usage             json.RawMessage `json:"usage,omitempty"`
+	PromptTokens      int             `json:"prompt_tokens"`
+	CompletionTokens  int             `json:"completion_tokens"`
+	DurationMs        int             `json:"duration_ms"`
+	ErrorMessage      *string         `json:"error_message,omitempty"`
+	StartedAt         time.Time       `json:"started_at"`
+	CompletedAt       *time.Time      `json:"completed_at,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
 }
 
 // TaskEvent represents an immutable append-only event in a task's audit ledger.
@@ -255,7 +263,7 @@ type TaskEvent struct {
 
 var (
 	// DraftFirstRegex matches user expressions requesting draft inspection or holding transmission.
-	DraftFirstRegex = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see|read(?: out)?|tell me|check)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b|\b(?:pehle|pahle)\s+(?:mujhe\s+)?draft\b|\bdraft\s+(?:dikha|dikhana|padh|batao|dekhna)\b|\b(?:abhi\s+)?(?:mat\s+bhejo|mat\s+bhejna|ruk\s+jao|rok\s+lo)\b|\bdraft\b`)
+	DraftFirstRegex = regexp.MustCompile(`(?i)\b(?:give me|show me|send me|let me see|can i see|read(?: out)?|tell me|check)\s+(?:the\s+)?draft\b|\b(?:draft\s+first|draft\s+only|prepare\s+(?:a\s+)?draft\s+first|just\s+(?:a\s+)?draft|don'?t\s+send\s+yet|do\s+not\s+send\s+yet|wait\s+before\s+sending|hold\s+on\s+before\s+sending|let\s+me\s+review\s+first|check\s+(?:the\s+)?draft\s+first|stop\s+before\s+sending)\b|\b(?:pehle|pahle)\s+(?:mujhe\s+)?draft\b|\bdraft\s+(?:dikha|dikhana|padh|batao|dekhna)\b|\b(?:abhi\s+)?(?:mat\s+bhejo|mat\s+bhejna|ruk\s+jao|rok\s+lo)\b`)
 	// SteeringAddRegex matches mid-flight addition and modification requests.
 	SteeringAddRegex = regexp.MustCompile(`(?i)\b(?:also\s+(?:add|mention|tell|include|say|state)|make\s+sure\s+to|don'?t\s+forget\s+to|change\s+(?:the\s+)?(?:message|email|text|it)\s+to|instead\s+of\b|add\s+that\b|aur\s+(?:ye\s+)?(?:bhi\s+)?(?:bolna|kehna|likhna|bhejna))`)
 )
@@ -274,7 +282,7 @@ func (t *Task) SetDraftOnly() {
 	t.UpdatedAt = time.Now().UTC()
 }
 
-// AppendSteeringNote appends a mid-flight steering directive to the task's input payload.
+// AppendSteeringNote appends a mid-flight steering directive to the task's input payload and increments steering version.
 func (t *Task) AppendSteeringNote(note string) {
 	clean := strings.TrimSpace(note)
 	if clean == "" {
@@ -296,8 +304,31 @@ func (t *Task) AppendSteeringNote(note string) {
 	}
 	notes = append(notes, clean)
 	p["steering_notes"] = notes
+
+	// Increment steering version for cooperative live updates
+	v := 1
+	if cur, ok := p["steering_version"].(float64); ok {
+		v = int(cur) + 1
+	}
+	p["steering_version"] = v
+
 	t.InputPayload, _ = json.Marshal(p)
 	t.UpdatedAt = time.Now().UTC()
+}
+
+// SteeringVersion returns the current mid-flight steering version of the task.
+func (t *Task) SteeringVersion() int {
+	if t == nil || len(t.InputPayload) == 0 {
+		return 0
+	}
+	var p map[string]any
+	if err := json.Unmarshal(t.InputPayload, &p); err != nil {
+		return 0
+	}
+	if v, ok := p["steering_version"].(float64); ok {
+		return int(v)
+	}
+	return 0
 }
 
 // SteeringNotes returns any mid-flight steering directives from the task's input payload.

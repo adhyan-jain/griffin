@@ -79,3 +79,61 @@ func TestNewWorkerWarnsWhenTaskRepoNil(t *testing.T) {
 	worker.NewWorker(worker.Config{ID: "w-nil", Logger: slog.New(slog.NewTextHandler(logs, nil))})
 	assert.Contains(t, logs.String(), "no TaskRepo")
 }
+
+func TestWorker_RecordsRichAttemptTelemetry(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+	ctx := context.Background()
+	userID := CreateTestUser(t, env.DB, "attempt_telemetry@example.com")
+
+	zeroExit := 0
+	termSuccess := "completed"
+	w := worker.NewWorker(worker.Config{
+		ID:       "w-telemetry",
+		Engine:   env.Engine,
+		TaskRepo: env.TaskRepo,
+		Executor: &fakeExecutor{
+			name:   "antigravity",
+			output: json.RawMessage(`{"response":"telemetry ok"}`),
+			result: &worker.ExecutionResult{
+				ProviderName:      "antigravity",
+				Model:             "gemini-2.5-pro",
+				ExitCode:          &zeroExit,
+				TerminationReason: &termSuccess,
+				Usage: &worker.UsageMetadata{
+					InputTokens:  120,
+					OutputTokens: 45,
+					TotalTokens:  165,
+				},
+			},
+		},
+		LeaseDuration:     10 * time.Second,
+		HeartbeatInterval: time.Second,
+	})
+
+	task, err := env.Engine.CreateTask(ctx, &domain.Task{
+		UserID:       userID,
+		Title:        "Tailor resume",
+		Goal:         "Tailor resume for role",
+		InputPayload: json.RawMessage(`{"provider_hint":"claude"}`),
+	}, nil)
+	require.NoError(t, err)
+
+	processed, err := w.ProcessNext(ctx)
+	require.NoError(t, err)
+	require.True(t, processed)
+
+	attempts, err := env.TaskRepo.GetAttempts(ctx, task.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, attempts)
+	latest := attempts[len(attempts)-1]
+
+	assert.Equal(t, "claude", latest.PlannedProvider)
+	assert.Equal(t, "antigravity", latest.ActualProvider)
+	assert.Equal(t, "gemini-2.5-pro", latest.Model)
+	require.NotNil(t, latest.ExitCode)
+	assert.Equal(t, 0, *latest.ExitCode)
+	require.NotNil(t, latest.TerminationReason)
+	assert.Equal(t, "completed", *latest.TerminationReason)
+	assert.NotEmpty(t, latest.Usage)
+}

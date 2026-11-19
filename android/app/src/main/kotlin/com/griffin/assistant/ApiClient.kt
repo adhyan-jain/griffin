@@ -130,7 +130,8 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         if (hostToken == null) {
             fun register(caps: List<String>) = api("POST", "/api/v1/hosts", JSONObject()
                 .put("name", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim()).put("kind", "phone").put("capabilities", JSONArray(caps)))
-            val registered = try { register(PHONE_CAPABILITIES + PHONE_UI) } catch (e: ApiException) {
+            val initialCaps = if (withPhoneUi) PHONE_CAPABILITIES + PHONE_UI else PHONE_CAPABILITIES
+            val registered = try { register(initialCaps) } catch (e: ApiException) {
                 if (e.message?.contains("unknown host capability") == true) register(PHONE_CAPABILITIES) else throw e // an older server
             }
             val reply = JSONObject(registered).let { it.optJSONObject("data") ?: it }

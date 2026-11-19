@@ -37,6 +37,13 @@ type ExecutionResult struct {
 	// Token counters for attempt tracking compatibility
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
+
+	// Rich attempt telemetry
+	ExitCode          *int    `json:"exit_code,omitempty"`
+	Model             string  `json:"model,omitempty"`
+	TerminationReason *string `json:"termination_reason,omitempty"`
+	FallbackReason    *string `json:"fallback_reason,omitempty"`
+	FallbackStage     *string `json:"fallback_stage,omitempty"`
 }
 
 // TaskExecutor defines the contract for task execution providers (e.g. Mock, Antigravity, Claude Cowork).

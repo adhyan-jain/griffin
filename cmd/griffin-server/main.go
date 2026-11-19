@@ -437,6 +437,7 @@ func main() {
 			TaskRepo:        taskRepo,
 			ApprovalRepo:    approvalRepo,
 			AgentRepo:       agentRepo,
+			ScheduleRepo:    repository.NewPostgresScheduleRepository(repoDB),
 			ArtifactRepo:    artifactRepo,
 			StorageService:  storageService,
 			WorkerDefRepo:   workerDefRepo,
@@ -505,19 +506,47 @@ func newPlanner(cfg *config.Config, logger *slog.Logger) service.Planner {
 	base := service.NewRuleBasedPlanner()
 	brain := voiceBrain(cfg)
 	useBrain := cfg.DynamicPlanner && brain != nil && brain.Enabled()
-	if !cfg.ClaudeLead && !useBrain {
+
+	claudeLeadActive := false
+	if cfg.ClaudeLead {
+		if !cfg.ClaudeEnabled {
+			logger.Warn("CLAUDE_LEAD is true but CLAUDE_ENABLED is false; Claude lead planning disabled")
+		} else {
+			ce, cerr := claudecli.New(claudecli.Config{
+				BinaryPath:    cfg.ClaudeBinary,
+				MaxConcurrent: cfg.MaxConcurrentClaude,
+				Timeout:       time.Duration(cfg.ExecutionTimeoutSeconds) * time.Second,
+				WorkspaceRoot: cfg.WorkspaceRoot,
+				LeadModel:     cfg.ClaudeLeadModel,
+				Effort:        cfg.ClaudeEffort,
+				LeadBudgetUSD: cfg.ClaudeLeadBudgetUSD,
+				BudgetCapUSD:  cfg.ClaudeBudgetCapUSD,
+				Logger:        logger,
+			})
+			if cerr != nil {
+				logger.Warn("CLAUDE_LEAD is true but claude CLI is unavailable; Claude lead planning disabled", "error", cerr)
+			} else if healthy, herr := ce.IsHealthy(context.Background()); !healthy || herr != nil {
+				logger.Warn("CLAUDE_LEAD is true but claude CLI health check failed; Claude lead planning disabled", "error", herr)
+			} else {
+				claudeLeadActive = true
+			}
+		}
+	}
+
+	if !claudeLeadActive && !useBrain {
 		return base
 	}
 	dp := &service.DynamicPlanner{Base: base, Logger: logger}
 	if useBrain {
 		dp.Brain = brain
+		logger.Info("dynamic planning is on: a team of workers is written for each request, with the standard plan as fallback")
 	}
-	if cfg.ClaudeLead {
+	if claudeLeadActive {
 		dp.ClaudeLead = func() bool { return true }
 		logger.Info("Claude lead planning is on: whole jobs go to one Claude lead with its own sub-agents")
-	}
-	if useBrain {
-		logger.Info("dynamic planning is on: a team of workers is written for each request, with the standard plan as fallback")
+	} else if cfg.ClaudeLead {
+		dp.ClaudeLead = func() bool { return false }
+		logger.Warn("Claude lead planning requested but degraded to standard rule-based planner (Claude unavailable/unhealthy)")
 	}
 	return dp
 }

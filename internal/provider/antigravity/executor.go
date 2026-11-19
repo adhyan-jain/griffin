@@ -613,6 +613,8 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		Duration:         duration,
 		PromptTokens:     inputTokens,
 		CompletionTokens: outputTokens,
+		ExitCode:         &exitCode,
+		Model:            e.facts.Model,
 		Usage: &worker.UsageMetadata{
 			InputTokens:  inputTokens,
 			OutputTokens: outputTokens,

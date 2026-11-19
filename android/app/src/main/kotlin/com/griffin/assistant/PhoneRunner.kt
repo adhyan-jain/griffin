@@ -46,7 +46,7 @@ class PhoneRunner(
                     GriffinAccess.instance?.performGlobalAction(6 /* GLOBAL_ACTION_DISMISS_KEYGUARD */)
                 } catch (_: Exception) {}
 
-                if (task.action in listOf("automated_call", "call", "direct_call", "whatsapp_call")) {
+                if (task.action in listOf("automated_call", "call", "direct_call", "whatsapp_call", "send_sms", "sms")) {
                     handleCall(task)
                 } else {
                     val screen = GriffinAccess.instance
@@ -67,40 +67,161 @@ class PhoneRunner(
     }
 
     private fun handleCall(task: ApiClient.PhoneTask) {
-        if (task.channel == "whatsapp" || task.action == "whatsapp_call") {
-            val target = task.recipientName.ifEmpty { task.number }
-            val res = Actions(context).callWhatsApp(target)
-            api.completeTask(task.id, res ?: "WhatsApp call opened for $target.")
-            return
+        when {
+            task.channel == "whatsapp" || task.action == "whatsapp_call" -> handleWhatsAppCall(task)
+            task.action in listOf("send_sms", "sms") -> handleSms(task)
+            task.callMode == "direct_talk" || task.action == "direct_call" -> handleDirectCall(task)
+            else -> handleAutomatedCall(task)
         }
-        if (task.callMode == "direct_talk" || task.action == "direct_call") {
-            var targetNumber = task.number.trim()
-            if (targetNumber.isEmpty() || !targetNumber.any { it.isDigit() }) {
-                val query = task.recipientName.ifEmpty { task.number }
-                when (val res = Contacts.resolve(context, query)) {
-                    is Contacts.Resolution.Resolved -> targetNumber = res.match.number
-                    is Contacts.Resolution.Ambiguous -> {
-                        val candidates = res.candidates.take(5).joinToString(", ") { "${it.name} (${it.number.takeLast(4).padStart(it.number.length, '*')})" }
-                        api.failTask(task.id, "Ambiguous contact name '$query'. Multiple matches found: $candidates. Please clarify which person you mean.", retryable = false)
-                        return
-                    }
-                    is Contacts.Resolution.NotFound -> {
-                        api.failTask(task.id, "Contact not found for: $query", retryable = false)
-                        return
-                    }
-                }
+    }
+
+    private fun handleWhatsAppCall(task: ApiClient.PhoneTask) {
+        val query = task.recipientName.ifEmpty { task.number }.trim()
+        val match: Contacts.Match = when (val res = Contacts.resolveWhatsApp(context, query)) {
+            is Contacts.Resolution.Resolved -> res.match
+            is Contacts.Resolution.Ambiguous -> {
+                val candidates = res.candidates.take(5).joinToString(", ") { "${it.name} (${it.number.takeLast(4).padStart(it.number.length, '*')})" }
+                api.failTask(task.id, "Ambiguous contact name '$query'. Multiple matches found: $candidates. Please clarify which person you mean.", retryable = false)
+                return
             }
-            if (targetNumber.isNotEmpty()) {
-                val res = Actions(context).call(targetNumber)
-                if (res == null) {
-                    api.completeTask(task.id, "Placed direct call to ${task.recipientName.ifEmpty { task.number }} for owner.")
-                } else {
-                    api.failTask(task.id, res, retryable = false)
-                }
+            is Contacts.Resolution.NotFound -> {
+                api.failTask(task.id, "Contact not found for: $query", retryable = false)
+                return
+            }
+            is Contacts.Resolution.PermissionDenied -> {
+                api.failTask(task.id, "Contact permission denied. Please grant Contacts permission to Griffin.", retryable = false)
                 return
             }
         }
-        handleAutomatedCall(task)
+
+        val targetName = match.name.ifEmpty { query }
+        val targetNumber = match.number
+        val approvalKey = "host_action:call:${targetName.lowercase()}"
+        val numApprovalKey = "host_action:call:${targetNumber.lowercase()}"
+        val waApprovalKey = "host_action:whatsapp_call:${targetName.lowercase()}"
+        if (approvalKey !in task.approved && numApprovalKey !in task.approved && waApprovalKey !in task.approved && "host_action:call:*" !in task.approved) {
+            val payload = JSONObject()
+                .put("action", "whatsapp_call")
+                .put("target_name", targetName)
+                .put("target_number", targetNumber)
+                .put("whatsapp_data_id", match.whatsAppDataId)
+            api.requestApproval(
+                task.id,
+                approvalKey,
+                "Place WhatsApp call to $targetName ($targetNumber)",
+                payload
+            )
+            return
+        }
+
+        val res = Actions(context).callWhatsAppWithResult(match)
+        when (res) {
+            is Actions.ActionResult.Started -> api.completeTask(task.id, res.message)
+            is Actions.ActionResult.Completed -> api.completeTask(task.id, res.message)
+            is Actions.ActionResult.Failed -> api.failTask(task.id, res.error, retryable = res.retryable)
+            is Actions.ActionResult.Unknown -> api.failTask(task.id, res.reason, retryable = false)
+        }
+    }
+
+    private fun handleDirectCall(task: ApiClient.PhoneTask) {
+        val query = task.recipientName.ifEmpty { task.number }.trim()
+        val match: Contacts.Match = if (task.number.isNotEmpty() && task.number.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) {
+            Contacts.Match(name = task.recipientName.ifEmpty { task.number }, number = task.number)
+        } else {
+            when (val res = Contacts.resolve(context, query)) {
+                is Contacts.Resolution.Resolved -> res.match
+                is Contacts.Resolution.Ambiguous -> {
+                    val candidates = res.candidates.take(5).joinToString(", ") { "${it.name} (${it.number.takeLast(4).padStart(it.number.length, '*')})" }
+                    api.failTask(task.id, "Ambiguous contact name '$query'. Multiple matches found: $candidates. Please clarify which person you mean.", retryable = false)
+                    return
+                }
+                is Contacts.Resolution.NotFound -> {
+                    api.failTask(task.id, "Contact not found for: $query", retryable = false)
+                    return
+                }
+                is Contacts.Resolution.PermissionDenied -> {
+                    api.failTask(task.id, "Contact permission denied. Please grant Contacts permission to Griffin.", retryable = false)
+                    return
+                }
+            }
+        }
+
+        val targetName = match.name.ifEmpty { query }
+        val targetNumber = match.number
+        val approvalKey = "host_action:call:${targetName.lowercase()}"
+        val numApprovalKey = "host_action:call:${targetNumber.lowercase()}"
+        if (approvalKey !in task.approved && numApprovalKey !in task.approved && "host_action:call:*" !in task.approved) {
+            val payload = JSONObject()
+                .put("action", "direct_call")
+                .put("target_name", targetName)
+                .put("target_number", targetNumber)
+            api.requestApproval(
+                task.id,
+                approvalKey,
+                "Place direct cellular phone call to $targetName ($targetNumber)",
+                payload
+            )
+            return
+        }
+
+        val res = Actions(context).callWithResult(targetNumber)
+        when (res) {
+            is Actions.ActionResult.Started -> api.completeTask(task.id, "Placed direct call to $targetName ($targetNumber) for owner.")
+            is Actions.ActionResult.Completed -> api.completeTask(task.id, res.message)
+            is Actions.ActionResult.Failed -> api.failTask(task.id, res.error, retryable = res.retryable)
+            is Actions.ActionResult.Unknown -> api.failTask(task.id, res.reason, retryable = false)
+        }
+    }
+
+    private fun handleSms(task: ApiClient.PhoneTask) {
+        val query = task.recipientName.ifEmpty { task.number }.trim()
+        val match: Contacts.Match = if (task.number.isNotEmpty() && task.number.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) {
+            Contacts.Match(name = task.recipientName.ifEmpty { task.number }, number = task.number)
+        } else {
+            when (val res = Contacts.resolve(context, query)) {
+                is Contacts.Resolution.Resolved -> res.match
+                is Contacts.Resolution.Ambiguous -> {
+                    val candidates = res.candidates.take(5).joinToString(", ") { "${it.name} (${it.number.takeLast(4).padStart(it.number.length, '*')})" }
+                    api.failTask(task.id, "Ambiguous contact name '$query'. Multiple matches found: $candidates. Please clarify which person you mean.", retryable = false)
+                    return
+                }
+                is Contacts.Resolution.NotFound -> {
+                    api.failTask(task.id, "Contact not found for: $query", retryable = false)
+                    return
+                }
+                is Contacts.Resolution.PermissionDenied -> {
+                    api.failTask(task.id, "Contact permission denied. Please grant Contacts permission to Griffin.", retryable = false)
+                    return
+                }
+            }
+        }
+
+        val targetName = match.name.ifEmpty { query }
+        val targetNumber = match.number
+        val approvalKey = "host_action:sms:${targetName.lowercase()}"
+        val numApprovalKey = "host_action:sms:${targetNumber.lowercase()}"
+        if (approvalKey !in task.approved && numApprovalKey !in task.approved && "host_action:sms:*" !in task.approved) {
+            val payload = JSONObject()
+                .put("action", "send_sms")
+                .put("target_name", targetName)
+                .put("target_number", targetNumber)
+                .put("message", task.message)
+            api.requestApproval(
+                task.id,
+                approvalKey,
+                "Send SMS to $targetName ($targetNumber): \"${task.message}\"",
+                payload
+            )
+            return
+        }
+
+        val res = Actions(context).sendSmsWithResult(targetNumber, task.message)
+        when (res) {
+            is Actions.ActionResult.Started -> api.completeTask(task.id, res.message)
+            is Actions.ActionResult.Completed -> api.completeTask(task.id, res.message)
+            is Actions.ActionResult.Failed -> api.failTask(task.id, res.error, retryable = res.retryable)
+            is Actions.ActionResult.Unknown -> api.failTask(task.id, res.reason, retryable = false)
+        }
     }
 
     private fun handleAutomatedCall(task: ApiClient.PhoneTask) {
@@ -127,12 +248,17 @@ class PhoneRunner(
                     api.failTask(task.id, "Contact not found for: $query", retryable = false)
                     return
                 }
+                is Contacts.Resolution.PermissionDenied -> {
+                    api.failTask(task.id, "Contact permission denied. Please grant Contacts permission to Griffin.", retryable = false)
+                    return
+                }
             }
         }
 
         // Strictly verify that the owner has explicitly approved placing this call to targetName
         val approvalKey = "host_action:call:${targetName.lowercase()}"
-        if (approvalKey !in task.approved && "host_action:call:*" !in task.approved) {
+        val numApprovalKey = "host_action:call:${targetNumber.lowercase()}"
+        if (approvalKey !in task.approved && numApprovalKey !in task.approved && "host_action:call:*" !in task.approved) {
             val payload = JSONObject()
                 .put("action", "automated_call")
                 .put("target_name", targetName)

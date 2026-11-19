@@ -99,6 +99,12 @@ func TestRouter_ClaudeOffRunsOnAgy(t *testing.T) {
 	if err != nil || res.ProviderName != "antigravity" || agy.calls != 1 {
 		t.Fatalf("claude off must run on agy: %+v %v", res, err)
 	}
+	if res.FallbackReason == nil || *res.FallbackReason != "claude not enabled" {
+		t.Fatalf("expected fallback reason 'claude not enabled', got: %v", res.FallbackReason)
+	}
+	if res.FallbackStage == nil || *res.FallbackStage != "pre_execution" {
+		t.Fatalf("expected fallback stage 'pre_execution', got: %v", res.FallbackStage)
+	}
 }
 
 func TestRouter_UsesClaudeWhenHealthyAndFallsBackWhenNotSignedIn(t *testing.T) {
@@ -115,11 +121,24 @@ func TestRouter_UsesClaudeWhenHealthyAndFallsBackWhenNotSignedIn(t *testing.T) {
 	if err != nil || res.ProviderName != "antigravity" {
 		t.Fatalf("not signed in must fall back to agy: %+v %v", res, err)
 	}
+	if res.FallbackReason == nil || *res.FallbackReason != "claude authentication required (not signed in)" {
+		t.Fatalf("expected auth fallback reason, got: %v", res.FallbackReason)
+	}
+	if res.FallbackStage == nil || *res.FallbackStage != "post_failure" {
+		t.Fatalf("expected post_failure stage, got: %v", res.FallbackStage)
+	}
 
 	cl.healthy, cl.err = false, nil
 	agy.calls = 0
-	if res, _ := r.Execute(context.Background(), claudeTask()); res.ProviderName != "antigravity" || agy.calls != 1 {
+	res, err = r.Execute(context.Background(), claudeTask())
+	if err != nil || res.ProviderName != "antigravity" || agy.calls != 1 {
 		t.Fatalf("unhealthy claude must run on agy: %+v", res)
+	}
+	if res.FallbackReason == nil || *res.FallbackReason != "claude unhealthy" {
+		t.Fatalf("expected unhealthy fallback reason, got: %v", res.FallbackReason)
+	}
+	if res.FallbackStage == nil || *res.FallbackStage != "pre_execution" {
+		t.Fatalf("expected pre_execution stage, got: %v", res.FallbackStage)
 	}
 }
 

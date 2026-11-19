@@ -24,8 +24,10 @@ import (
 // fakeExecutor returns a canned output for every task and records the task it was handed.
 type fakeExecutor struct {
 	mu     sync.Mutex
+	name   string
 	output json.RawMessage
 	err    error
+	result *worker.ExecutionResult
 	seen   []*domain.Task
 }
 
@@ -34,12 +36,31 @@ func (f *fakeExecutor) Execute(_ context.Context, task *domain.Task) (*worker.Ex
 	defer f.mu.Unlock()
 	cp := *task
 	f.seen = append(f.seen, &cp)
+	if f.result != nil {
+		res := *f.result
+		if res.Output == nil && f.output != nil {
+			res.Output = f.output
+		}
+		if res.Status == "" {
+			res.Status = "SUCCESS"
+		}
+		return &res, f.err
+	}
 	if f.err != nil {
 		return &worker.ExecutionResult{Status: "FAILED", Error: f.err}, nil
 	}
-	return &worker.ExecutionResult{Status: "SUCCESS", Output: f.output, PromptTokens: 10, CompletionTokens: 5}, nil
+	pName := f.name
+	if pName == "" {
+		pName = "fake"
+	}
+	return &worker.ExecutionResult{ProviderName: pName, Status: "SUCCESS", Output: f.output, PromptTokens: 10, CompletionTokens: 5}, nil
 }
-func (f *fakeExecutor) Name() string                            { return "fake" }
+func (f *fakeExecutor) Name() string {
+	if f.name != "" {
+		return f.name
+	}
+	return "fake"
+}
 func (f *fakeExecutor) IsHealthy(context.Context) (bool, error) { return true, nil }
 func (f *fakeExecutor) lastTask() *domain.Task {
 	f.mu.Lock()

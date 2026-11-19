@@ -1,49 +1,165 @@
 package handlers
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/griffin/core/internal/api/httputil"
+	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/scheduler"
 	"github.com/griffin/core/internal/service"
 )
 
 // SchedulerHandler handles periodic scheduler tick invocations (e.g. from AWS EventBridge Scheduler).
 type SchedulerHandler struct {
-	engine   *service.TaskEngine
-	taskRepo repository.TaskRepository
-	wakeup   RunnerWakeup
+	engine       *service.TaskEngine
+	taskRepo     repository.TaskRepository
+	scheduleRepo repository.ScheduleRepository
+	wakeup       RunnerWakeup
+	logger       *slog.Logger
 }
 
 // NewSchedulerHandler creates a SchedulerHandler.
-func NewSchedulerHandler(engine *service.TaskEngine, taskRepo repository.TaskRepository, wakeup RunnerWakeup) *SchedulerHandler {
-	return &SchedulerHandler{
-		engine:   engine,
-		taskRepo: taskRepo,
-		wakeup:   wakeup,
+func NewSchedulerHandler(
+	engine *service.TaskEngine,
+	taskRepo repository.TaskRepository,
+	scheduleRepo repository.ScheduleRepository,
+	wakeup RunnerWakeup,
+	logger *slog.Logger,
+) *SchedulerHandler {
+	if logger == nil {
+		logger = slog.Default()
 	}
+	return &SchedulerHandler{
+		engine:       engine,
+		taskRepo:     taskRepo,
+		scheduleRepo: scheduleRepo,
+		wakeup:       wakeup,
+		logger:       logger,
+	}
+}
+
+// WithScheduleRepo returns a copy of SchedulerHandler with the given ScheduleRepository.
+func (h *SchedulerHandler) WithScheduleRepo(repo repository.ScheduleRepository) *SchedulerHandler {
+	cp := *h
+	cp.scheduleRepo = repo
+	return &cp
 }
 
 // TickResponse captures the result of a scheduled tick evaluation.
 type TickResponse struct {
-	EvaluatedAt     time.Time `json:"evaluated_at"`
-	RunnableTasks   int       `json:"runnable_tasks"`
-	WakeupTriggered bool      `json:"wakeup_triggered"`
+	EvaluatedAt      time.Time `json:"evaluated_at"`
+	RunnableTasks    int       `json:"runnable_tasks"`
+	MaterializedJobs int       `json:"materialized_jobs"`
+	WakeupTriggered  bool      `json:"wakeup_triggered"`
 }
 
-// Tick evaluates due recurring schedules and triggers wake-up if work is ready.
+// Tick evaluates due recurring schedules, materializes tasks, and triggers wake-up if work is ready.
 func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	now := time.Now().UTC()
 
-	// 1. Inspect runnable tasks in the queue
+	materializedCount := 0
+
+	// 1. Materialize due recurring schedules from the schedules table (if configured)
+	if h.scheduleRepo != nil && h.engine != nil {
+		dueSchedules, err := h.scheduleRepo.ClaimDueSchedules(ctx, now, 50)
+		if err != nil {
+			h.logger.Error("Failed to claim due schedules", "error", err)
+			httputil.ErrorJSON(w, err)
+			return
+		}
+
+		for _, s := range dueSchedules {
+			if s.IsPaused {
+				continue
+			}
+
+			// Generate next occurrence strictly after now
+			nextRun, err := scheduler.NextOccurrence(s.CronExpression, now)
+			if err != nil {
+				h.logger.Error("Invalid cron expression on schedule; pausing schedule", "schedule_id", s.ID, "cron", s.CronExpression, "error", err)
+				_ = h.scheduleRepo.SetPaused(ctx, s.ID, s.UserID, true)
+				continue
+			}
+
+			// Materialize task spec from template
+			var taskSpec struct {
+				Title        string          `json:"title"`
+				Goal         string          `json:"goal"`
+				Priority     string          `json:"priority"`
+				InputPayload json.RawMessage `json:"input_payload"`
+			}
+			if len(s.TaskSpecTemplate) > 0 {
+				_ = json.Unmarshal(s.TaskSpecTemplate, &taskSpec)
+			}
+			if taskSpec.Title == "" {
+				taskSpec.Title = s.Name
+			}
+			if taskSpec.Goal == "" {
+				taskSpec.Goal = fmt.Sprintf("Recurring execution of schedule %q", s.Name)
+			}
+
+			// Merge schedule metadata into input_payload
+			payloadMap := make(map[string]any)
+			if len(taskSpec.InputPayload) > 0 {
+				_ = json.Unmarshal(taskSpec.InputPayload, &payloadMap)
+			}
+			payloadMap["schedule_id"] = s.ID.String()
+			payloadMap["scheduled_cadence"] = s.CronExpression
+			payloadMap["scheduled_for"] = s.NextRunAt.Format(time.RFC3339)
+			mergedPayload, _ := json.Marshal(payloadMap)
+
+			// Idempotency key per schedule occurrence prevents duplicate runs
+			idemKey := fmt.Sprintf("sched:%s:%d", s.ID.String(), s.NextRunAt.Unix())
+
+			prio := domain.TaskPriorityNormalP2
+			if taskSpec.Priority != "" {
+				prio = domain.TaskPriority(taskSpec.Priority)
+			}
+
+			task := &domain.Task{
+				UserID:         s.UserID,
+				ManagerDomain:  s.ManagerDomain,
+				Title:          taskSpec.Title,
+				Goal:           taskSpec.Goal,
+				Priority:       prio,
+				InputPayload:   mergedPayload,
+				IdempotencyKey: &idemKey,
+				ScheduledFor:   &s.NextRunAt,
+			}
+
+			created, createErr := h.engine.CreateTask(ctx, task, nil)
+			if createErr != nil && !errors.Is(createErr, domain.ErrIdempotentConflict) {
+				h.logger.Error("Failed to materialize task for schedule", "schedule_id", s.ID, "error", createErr)
+				continue
+			}
+
+			// Advance schedule's next_run_at and record last_run_at
+			if advErr := h.scheduleRepo.AdvanceNextRun(ctx, s.ID, now, nextRun); advErr != nil {
+				h.logger.Error("Failed to advance next run for schedule", "schedule_id", s.ID, "error", advErr)
+			}
+
+			if created != nil {
+				materializedCount++
+				h.logger.Info("Materialized recurring schedule run", "schedule_id", s.ID, "task_id", created.ID, "next_run_at", nextRun)
+			}
+		}
+	}
+
+	// 2. Inspect runnable tasks in the queue
 	count, err := h.taskRepo.CountRunnableTasks(ctx)
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return
 	}
 
-	// 2. If runnable work exists and wakeup controller is configured, signal wake-up
+	// 3. If runnable work exists and wakeup controller is configured, signal wake-up
 	wakeupTriggered := false
 	if count > 0 && h.wakeup != nil {
 		if err := h.wakeup.TriggerWakeup(ctx); err != nil {
@@ -55,8 +171,9 @@ func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.JSON(w, http.StatusOK, TickResponse{
-		EvaluatedAt:     time.Now().UTC(),
-		RunnableTasks:   int(count),
-		WakeupTriggered: wakeupTriggered,
+		EvaluatedAt:      now,
+		RunnableTasks:    int(count),
+		MaterializedJobs: materializedCount,
+		WakeupTriggered:  wakeupTriggered,
 	})
 }
