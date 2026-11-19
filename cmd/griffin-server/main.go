@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -369,6 +370,8 @@ func main() {
 	briefer := &service.Briefer{Sources: repository.NewReportRepository(repoDB), Coach: dsaCoach, Sender: dsaCoach.Sender, AppURL: cfg.AppURL, Logger: logger}
 	// Proactive services. They are built in every mode so the API (including the short-lived function)
 	// and the worker share one wiring; durable scheduling of them comes from the scheduler tick.
+	ownerProfiles := repository.NewOwnerProfileRepository(repoDB)
+	antigravity.CandidateContext = newProfileContext(ctx, ownerProfiles)
 	inboundRepo := repository.NewInboundEventRepository(repoDB)
 	inboxRepo := repository.NewInboxRepository(repoDB)
 	discoveryRepo := repository.NewDiscoveryRepository(repoDB)
@@ -376,13 +379,13 @@ func main() {
 	gmailSyncer := &service.GmailSyncer{InboxRepo: inboxRepo, Events: inboundRepo, Triage: triage, Tasks: taskRepo, Logger: logger}
 	jobDiscovery := &service.JobDiscoveryService{
 		DiscoveryRepo: discoveryRepo,
-		Pipeline:      &service.OpportunityPipeline{Tasks: taskRepo, Logger: logger},
+		Pipeline:      &service.OpportunityPipeline{Tasks: taskRepo, Profiles: ownerProfiles, Logger: logger},
 		Client:        &http.Client{Timeout: 20 * time.Second},
 		Logger:        logger,
 	}
 	opsRepo := repository.NewOperationRepository(repoDB)
 	briefer.Ops = opsRepo
-	briefer.Watchdog = &service.OutreachWatchdog{Outreach: outreachRepo, Drafter: outreachDrafter(cfg), Sender: dsaCoach.Sender, Logger: logger}
+	briefer.Watchdog = &service.OutreachWatchdog{Outreach: outreachRepo, Drafter: outreachDrafter(cfg), Sender: dsaCoach.Sender, Profiles: ownerProfiles, Logger: logger}
 	ttsService := service.NewTTSService("")
 
 	if runWorkers { // a long-lived process; the API alone may be a short-lived function
@@ -602,4 +605,29 @@ func deviceDecider(cfg *config.Config) browser.Decider {
 		return nil
 	}
 	return &browser.ModelDecider{Phone: true, Model: &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 700}}
+}
+
+// newProfileContext returns a prompt-context provider backed by the stored owner profile, cached
+// briefly so a burst of career tasks does not hit the database each time. It returns "" when no
+// profile exists, which makes the prompt omit personal claims.
+func newProfileContext(sysCtx context.Context, repo *repository.OwnerProfileRepository) func(uuid.UUID) string {
+	type entry struct {
+		text string
+		at   time.Time
+	}
+	var mu sync.Mutex
+	cache := map[uuid.UUID]entry{}
+	return func(userID uuid.UUID) string {
+		mu.Lock()
+		defer mu.Unlock()
+		if e, ok := cache[userID]; ok && time.Since(e.at) < 5*time.Minute {
+			return e.text
+		}
+		text := ""
+		if p, err := repo.Latest(database.WithSystem(sysCtx), userID); err == nil && p != nil {
+			text = p.ContextBlock()
+		}
+		cache[userID] = entry{text: text, at: time.Now()}
+		return text
+	}
 }

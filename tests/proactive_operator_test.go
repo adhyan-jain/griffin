@@ -95,7 +95,22 @@ func TestOpportunityPipelineTierAScoringAndStaging(t *testing.T) {
 	require.NoError(t, json.Unmarshal(approval.ActionPayload, &payload))
 	assert.Equal(t, "job_application", payload["kind"])
 	assert.Equal(t, "Tier A", payload["tier"])
-	assert.Contains(t, payload["tailored_pitch"], "Adhyan Jain")
+	assert.Equal(t, "profile_missing", payload["pitch_status"], "without a stored profile no pitch claims are invented")
+	assert.Empty(t, payload["tailored_pitch"])
+
+	// With a verified profile the pitch is built only from its facts, and the fact IDs are recorded.
+	profRepo := repository.NewOwnerProfileRepository(env.DB.Pool)
+	_, err = profRepo.Save(ctx, u, testOwnerProfile(), "test-fixture")
+	require.NoError(t, err)
+	grounded := &service.OpportunityPipeline{Tasks: env.TaskRepo, Profiles: profRepo}
+	_, approval2, err := grounded.StageOpportunity(ctx, u, service.OpportunityInput{Company: "Acme", Role: "Systems Intern", URL: "https://acme.example/j/1", Description: "Go distributed systems"})
+	require.NoError(t, err)
+	var payload2 map[string]any
+	require.NoError(t, json.Unmarshal(approval2.ActionPayload, &payload2))
+	assert.Equal(t, "grounded", payload2["pitch_status"])
+	assert.Contains(t, payload2["tailored_pitch"], "Test Candidate")
+	assert.Contains(t, payload2["tailored_pitch"], "Built a Go scheduler that leases jobs through Redis")
+	assert.Equal(t, []any{"fx-sched"}, payload2["fact_ids"])
 
 	// 2. Verify Approval can be approved and task transitions to QUEUED
 	approvedRecord, err := env.Engine.RespondApproval(ctx, approval.ID, u, true, "1-tap submission approved by owner")

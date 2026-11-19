@@ -19,6 +19,7 @@ type OutreachWatchdog struct {
 	Outreach *repository.OutreachRepository
 	Drafter  *OutreachDrafter
 	Sender   notify.Sender
+	Profiles ProfileSource // for the sign-off name; absent means an unsigned fallback draft
 	Logger   *slog.Logger
 	Now      func() time.Time
 }
@@ -107,5 +108,11 @@ func (w *OutreachWatchdog) synthesizeDraft(ctx context.Context, userID uuid.UUID
 		}
 	}
 
-	return fmt.Sprintf("Hi %s,\n\nFollowing up on my previous note to see if you had a chance to review it. Looking forward to connecting when convenient.\n\nBest,\nAdhyan", name)
+	sign := "Best regards"
+	if w.Profiles != nil {
+		if prof, err := w.Profiles.Latest(ctx, userID); err == nil && prof != nil && prof.FirstName() != "" {
+			sign = "Best,\n" + prof.FirstName()
+		}
+	}
+	return fmt.Sprintf("Hi %s,\n\nFollowing up on my previous note to see if you had a chance to review it. Looking forward to connecting when convenient.\n\n%s", name, sign)
 }

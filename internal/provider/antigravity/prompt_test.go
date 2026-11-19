@@ -273,15 +273,20 @@ func TestBuildPrompt_CareerCandidateContext(t *testing.T) {
 		}`),
 	}
 
+	// Fail closed: with no injected profile, no personal claims reach the prompt.
+	CandidateContext = nil
+	bare := buildPromptWith(preamble, task, 1, RuntimeFacts{})
+	assert.NotContains(t, bare, "Candidate Background")
+	assert.Contains(t, bare, "Strictly ZERO emojis")
+
+	CandidateContext = func(uuid.UUID) string {
+		return "Candidate Background (verified owner profile; use only these facts, add no other claims):\n- [fx1] Sched: Built a Go scheduler\n"
+	}
+	defer func() { CandidateContext = nil }()
 	got := buildPromptWith(preamble, task, 1, RuntimeFacts{})
 
-	assert.Contains(t, got, "Candidate Background (Ground Truth):")
-	assert.Contains(t, got, "Adhyan Jain")
-	assert.Contains(t, got, "Vellore Institute of Technology")
-	assert.Contains(t, got, "ComputeHive")
-	assert.Contains(t, got, "Griffin")
-	assert.Contains(t, got, "EchoTales")
-	assert.Contains(t, got, "SGLang")
+	assert.Contains(t, got, "Candidate Background (verified owner profile")
+	assert.Contains(t, got, "[fx1] Sched: Built a Go scheduler")
 	assert.Contains(t, got, "Strictly ZERO emojis")
 	assert.Contains(t, got, "Target Company: Google")
 	assert.Contains(t, got, "Target Role: Software Engineering Intern")

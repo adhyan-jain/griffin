@@ -117,7 +117,7 @@ func extractCallDetails(text string) (target string, message string, channel Cal
 	}
 
 	if message == "" && mode != CallModeDirectTalk {
-		message = fmt.Sprintf("Hello %s, this is an automated message from Adhyan.", target)
+		message = fmt.Sprintf("Hello %s, this is an automated message from Griffin, an assistant calling on behalf of its owner.", target)
 	}
 
 	return target, message, channel, mode, inBackground

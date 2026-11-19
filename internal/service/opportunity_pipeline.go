@@ -28,9 +28,10 @@ type OpportunityInput struct {
 
 // OpportunityPipeline scores incoming listings and automatically stages high-match applications with tailored collateral.
 type OpportunityPipeline struct {
-	Tasks  repository.TaskRepository
-	Logger *slog.Logger
-	Now    func() time.Time
+	Tasks    repository.TaskRepository
+	Profiles ProfileSource // verified owner profile; nil means no pitch claims are generated
+	Logger   *slog.Logger
+	Now      func() time.Time
 }
 
 func (p *OpportunityPipeline) now() time.Time {
@@ -64,7 +65,7 @@ func (p *OpportunityPipeline) StageOpportunity(ctx context.Context, userID uuid.
 	}
 
 	tierA, tierLabel := p.ScoreOpportunity(op)
-	pitch := p.synthesizeTailoredPitch(op)
+	pitch, factIDs, pitchStatus := p.buildPitch(ctx, userID, op)
 
 	payloadMap := map[string]any{
 		"kind":           "job_application",
@@ -73,6 +74,8 @@ func (p *OpportunityPipeline) StageOpportunity(ctx context.Context, userID uuid.
 		"url":            op.URL,
 		"tier":           tierLabel,
 		"tailored_pitch": pitch,
+		"pitch_status":   pitchStatus,
+		"fact_ids":       factIDs,
 		"staged_at":      p.now().Format(time.RFC3339),
 	}
 	payloadBytes, _ := json.Marshal(payloadMap)
@@ -116,19 +119,31 @@ func (p *OpportunityPipeline) StageOpportunity(ctx context.Context, userID uuid.
 	return createdTask, approval, nil
 }
 
-func (p *OpportunityPipeline) synthesizeTailoredPitch(op OpportunityInput) string {
-	return fmt.Sprintf(`Hi %s Hiring Team,
-
-I'm applying for the %s position. With a deep background in distributed AI systems, GPU inference acceleration, and agentic workflows (including contributions to high-throughput serving architectures and bitemporal graphs), I build low-latency, resilient engineering foundations.
-
-Key Highlights:
-• Scaled agentic orchestrators and bitemporal transaction ledgers with strict sub-second fail-closed policy gates.
-• Implemented dual-provider dynamic routing across Claude Code CLI and Google Antigravity engines with real-time in-flight task steering.
-• Distributed systems reliability with Redis Lua leasing, multi-worker parallel execution, and strict concurrency limits.
-
-Looking forward to discussing how my experience can accelerate %s's engineering roadmap.
-
-Best regards,
-Adhyan Jain
-https://github.com/adhyan-jain`, op.Company, op.Role, op.Company)
+// buildPitch drafts a cover note from verified profile facts only. With no stored profile it
+// returns an empty pitch rather than inventing one; the owner is told the profile is missing.
+func (p *OpportunityPipeline) buildPitch(ctx context.Context, userID uuid.UUID, op OpportunityInput) (pitch string, factIDs []string, status string) {
+	if p.Profiles == nil {
+		return "", nil, "profile_missing"
+	}
+	prof, err := p.Profiles.Latest(ctx, userID)
+	if err != nil || prof == nil {
+		return "", nil, "profile_missing"
+	}
+	facts := prof.RelevantFacts(op.Role+" "+op.Description, 3)
+	var b strings.Builder
+	fmt.Fprintf(&b, "Hi %s Hiring Team,\n\nI'm applying for the %s position.", op.Company, op.Role)
+	if len(facts) > 0 {
+		b.WriteString(" Relevant experience:\n")
+		for _, f := range facts {
+			b.WriteString("- " + f.Project + ": " + f.Text + "\n")
+			factIDs = append(factIDs, f.ID)
+		}
+	} else {
+		b.WriteString("\n")
+	}
+	b.WriteString("\nBest regards,\n" + prof.FullName)
+	if prof.GitHub != "" {
+		b.WriteString("\n" + prof.GitHub)
+	}
+	return b.String(), factIDs, "grounded"
 }

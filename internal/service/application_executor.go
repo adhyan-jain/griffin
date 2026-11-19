@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,43 +16,21 @@ import (
 	"github.com/griffin/core/internal/repository"
 )
 
-// CandidateProfile encapsulates the verified owner profile data for applications.
-type CandidateProfile struct {
-	FullName      string `json:"full_name"`
-	Email         string `json:"email"`
-	Phone         string `json:"phone"`
-	School        string `json:"school"`
-	Degree        string `json:"degree"`
-	GradYear      string `json:"grad_year"`
-	GitHub        string `json:"github"`
-	LinkedIn      string `json:"linkedin"`
-	Portfolio     string `json:"portfolio"`
-	Country       string `json:"country"`
-	WorkAuthIndia string `json:"work_auth_india"`
+// ProfileSource loads the canonical owner profile. No personal facts live in source code.
+type ProfileSource interface {
+	Latest(ctx context.Context, userID uuid.UUID) (*domain.OwnerProfile, error)
 }
 
-// DefaultCandidateProfile returns the owner's authentic profile.
-func DefaultCandidateProfile() CandidateProfile {
-	return CandidateProfile{
-		FullName:      "Adhyan Jain",
-		Email:         "adhyanjain2006@gmail.com",
-		Phone:         "+91 99999 99999",
-		School:        "Vellore Institute of Technology, Vellore",
-		Degree:        "B.Tech in Computer Science and Engineering",
-		GradYear:      "2027",
-		GitHub:        "https://github.com/adhyan-jain",
-		LinkedIn:      "https://linkedin.com/in/adhyan-jain",
-		Portfolio:     "https://github.com/adhyan-jain",
-		Country:       "India",
-		WorkAuthIndia: "Yes",
-	}
-}
+// ErrNoOwnerProfile is returned when an operation needs the owner profile and none is stored.
+// Callers must stop and ask the owner rather than guess identity details.
+var ErrNoOwnerProfile = errors.New("owner profile is not configured")
 
-// ApplicationExecutor automates profile-grounded form filling, resume tailoring, and receipt generation under standing policy rules.
+// ApplicationExecutor prepares profile-grounded application packages under standing policy rules.
+// It never submits anything: it records what would be sent, for review or a form adapter.
 type ApplicationExecutor struct {
 	DiscoveryRepo *repository.DiscoveryRepository
+	Profiles      ProfileSource
 	ReceiptDir    string
-	Profile       CandidateProfile
 	Logger        *slog.Logger
 	Now           func() time.Time
 }
@@ -70,83 +49,110 @@ func (e *ApplicationExecutor) log() *slog.Logger {
 	return slog.Default()
 }
 
-// TailorResumeBullets selects the highest-impact verified project highlights matching role requirements.
-func (e *ApplicationExecutor) TailorResumeBullets(company, role string) string {
-	lower := strings.ToLower(role)
-	switch {
-	case strings.Contains(lower, "ai") || strings.Contains(lower, "llm") || strings.Contains(lower, "eval") || strings.Contains(lower, "graph"):
-		return fmt.Sprintf(`+ EchoTales: Architected bitemporal narrative knowledge graph querying entity states via state_of(target, timeline, position, observer).
-+ EchoTales: Engineered identity coreference resolution engine combining rule pre-filters with learned tiebreaker across 21k spans.
-+ EchoTales: Evaluated precision/recall using MUC, B-cubed, and CEAF metrics with a bounded human DEFER escalation queue.
-+ SGLang (Open Source): Contributed developer documentation and structured decoding runtime guides with the ACM VIT team.`)
-
-	case strings.Contains(lower, "agent") || strings.Contains(lower, "full") || strings.Contains(lower, "frontend"):
-		return fmt.Sprintf(`+ Griffin: Architected autonomous agent orchestrator coordinating 11 domain managers across Engineering and Operations.
-+ Griffin: Implemented deterministic intent classification with LLM fallback planning and capability security boundaries.
-+ Griffin: Developed full-stack Next.js web application with real-time SSE streaming for live task tracking and multi-threaded chats.
-+ Griffin: Designed 4-tier risk classification engine enforcing human approval gates on sensitive tool execution.`)
-
-	default: // Distributed systems / backend
-		return fmt.Sprintf(`+ ComputeHive: Engineered distributed task scheduler in Go coordinating job distribution across heterogeneous local/remote nodes.
-+ ComputeHive: Enforced atomic state transitions via server-side Redis Lua scripts, strictly serializing claims and eliminating double-leases.
-+ ComputeHive: Built outbound pull-based worker protocol over TLS and gRPC with dead-worker lease recovery in <15s.
-+ ComputeHive: Hardened container execution sandboxes with dropped Linux capabilities and read-only root filesystems.`)
-	}
+// TailorFacts selects the verified facts most relevant to the role. Facts are returned verbatim;
+// nothing is rephrased, added or inflated, and a role with no supported overlap yields no claims.
+func (e *ApplicationExecutor) TailorFacts(p *domain.OwnerProfile, role string) []domain.ProfileFact {
+	return p.RelevantFacts(role, 4)
 }
 
-// AutoFillForm maps candidate profile data to standard form fields.
-func (e *ApplicationExecutor) AutoFillForm(fields []domain.FormField) map[string]any {
-	p := e.Profile
-	if p.FullName == "" {
-		p = DefaultCandidateProfile()
+// FormatFacts renders facts as bullet lines using their verbatim text.
+func FormatFacts(facts []domain.ProfileFact) string {
+	lines := make([]string, 0, len(facts))
+	for _, f := range facts {
+		lines = append(lines, "+ "+f.Project+": "+f.Text)
 	}
+	return strings.Join(lines, "\n")
+}
 
+// AutoFillForm maps verified profile values to the fields it positively recognises. It returns the
+// payload and the labels of required fields it could not fill from verified data; those must go to
+// the owner (unknown fields fail closed). Empty profile values are never filled.
+func (e *ApplicationExecutor) AutoFillForm(p *domain.OwnerProfile, fields []domain.FormField) (map[string]any, []string) {
 	payload := make(map[string]any)
+	var unfilled []string
 	for _, f := range fields {
 		lbl := strings.ToLower(f.Label + " " + f.Name)
+		var val string
 		switch {
 		case strings.Contains(lbl, "first") && strings.Contains(lbl, "name"):
-			payload[f.Name] = "Adhyan"
+			val = p.FirstName()
 		case strings.Contains(lbl, "last") && strings.Contains(lbl, "name"):
-			payload[f.Name] = "Jain"
-		case strings.Contains(lbl, "name"):
-			payload[f.Name] = p.FullName
+			val = p.LastName()
+		case isPersonNameField(lbl):
+			val = p.FullName
 		case strings.Contains(lbl, "email"):
-			payload[f.Name] = p.Email
+			val = p.Email
 		case strings.Contains(lbl, "phone") || strings.Contains(lbl, "mobile"):
-			payload[f.Name] = p.Phone
+			val = p.Phone
 		case strings.Contains(lbl, "school") || strings.Contains(lbl, "university") || strings.Contains(lbl, "college"):
-			payload[f.Name] = p.School
+			val = p.School
 		case strings.Contains(lbl, "degree") || strings.Contains(lbl, "major"):
-			payload[f.Name] = p.Degree
-		case strings.Contains(lbl, "grad") || strings.Contains(lbl, "year"):
-			payload[f.Name] = p.GradYear
+			val = p.Degree
+		case strings.Contains(lbl, "graduat"):
+			val = p.GradYear
 		case strings.Contains(lbl, "github"):
-			payload[f.Name] = p.GitHub
+			val = p.GitHub
 		case strings.Contains(lbl, "linkedin"):
-			payload[f.Name] = p.LinkedIn
+			val = p.LinkedIn
 		case strings.Contains(lbl, "website") || strings.Contains(lbl, "portfolio"):
-			payload[f.Name] = p.Portfolio
-		case strings.Contains(lbl, "resume") || strings.Contains(lbl, "cv"):
-			payload[f.Name] = "Adhyan_Jain_Resume.pdf"
-		default:
-			if f.Value != "" {
-				payload[f.Name] = f.Value
-			}
+			val = p.Portfolio
+		case f.Type == "file" && (strings.Contains(lbl, "resume") || strings.Contains(lbl, "cv")):
+			val = p.ResumeFile
+		}
+		switch {
+		case val != "":
+			payload[f.Name] = val
+		case f.Value != "":
+			payload[f.Name] = f.Value // pre-filled by the form itself
+		case f.Required:
+			unfilled = append(unfilled, f.Label)
 		}
 	}
-	return payload
+	return payload, unfilled
+}
+
+// isPersonNameField is true for the applicant's own name, not "company name", "school name" etc.
+func isPersonNameField(lbl string) bool {
+	if !strings.Contains(lbl, "name") {
+		return false
+	}
+	for _, other := range []string{"company", "school", "university", "college", "employer", "referr", "manager", "reference", "organi", "project", "file", "user"} {
+		if strings.Contains(lbl, other) {
+			return false
+		}
+	}
+	return true
 }
 
 // ProcessApplication evaluates the standing authorization policy, generates tailored collateral, and records verifiable submission receipts.
 func (e *ApplicationExecutor) ProcessApplication(ctx context.Context, userID uuid.UUID, company, role, url string, fields []domain.FormField) (*domain.SubmissionReceipt, error) {
+	if e.Profiles == nil {
+		return nil, ErrNoOwnerProfile
+	}
+	profile, err := e.Profiles.Latest(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if profile == nil {
+		return nil, ErrNoOwnerProfile
+	}
 	decision, reasons := domain.EvaluateStandingPolicy(fields)
-	tailoredBullets := e.TailorResumeBullets(company, role)
-	formPayload := e.AutoFillForm(fields)
-
+	facts := e.TailorFacts(profile, role)
+	tailoredBullets := FormatFacts(facts)
+	formPayload, unfilled := e.AutoFillForm(profile, fields)
+	for _, label := range unfilled {
+		reasons = append(reasons, "Required field not answerable from verified profile: "+label)
+	}
 	if len(reasons) > 0 {
+		decision = domain.PolicyEscalate
 		formPayload["_escalation_reasons"] = reasons
 	}
+	factIDs := make([]string, len(facts))
+	for i, f := range facts {
+		factIDs[i] = f.ID
+	}
+	formPayload["_supporting_fact_ids"] = factIDs
+	formPayload["_profile_version"] = profile.Version
 
 	subTime := e.now()
 	payloadJSON, _ := json.Marshal(formPayload)

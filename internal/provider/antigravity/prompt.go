@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"os/exec"
 	"strings"
@@ -241,21 +242,14 @@ func detectVersion(binary string, timeout time.Duration) string {
 	return truncateRunes(line, 100)
 }
 
-const candidateProfileContext = `Candidate Background (Ground Truth):
-- Full Name: Adhyan Jain
-- Academic Profile: 3rd-year B.Tech in Computer Science and Engineering at Vellore Institute of Technology (VIT), Vellore (Batch of 2028, CGPA: 9.38 / 10.0).
-- Location: Vellore, Tamil Nadu, India / Bengaluru, India.
-- Relevant Coursework: Data Structures & Algorithms, Operating Systems, Database Management Systems, Distributed Systems, Object-Oriented Programming, Computer Networks.
-- Key Engineering Projects:
-  1. ComputeHive (https://github.com/adhyan-jain/ComputeHive): Self-hosted distributed task runner in Go & Redis. Task leasing serialized through atomic Redis Lua scripts to eliminate double-leases and split-brain execution under heavy concurrency. Validated through a 1,000-job chaos run with zero task loss or duplicate execution across node crashes. Ephemeral Docker sandboxes with dropped Linux capabilities, non-root UID enforcement, and read-only root filesystems. Outbound pull-based worker daemon over gRPC/TLS with sub-15s dead-worker recovery.
-  2. Griffin (https://github.com/adhyan-jain/griffin): Autonomous host orchestration and runtime engine in Go. Capability-gated security engine using cryptographic approval tokens and host policy boundaries, eliminating unauthorized executions with automated false-completion tests. PostgreSQL connection-pooled state machines with SSE streaming.
-  3. EchoTales (https://github.com/adhyan-jain/EchoTales): Applied AI pipeline combining bitemporal knowledge graph querying with multi-speaker voice synthesis and character visual consistency. Deterministic state guardrails with bounded human escalation queues. Evaluated coreference precision and recall across 21,000 entity spans using MUC, B-cubed, and CEAF metrics against gold ground-truth datasets.
-  4. Open Source / SGLang: Contributed to official developer guides, runtime APIs, and structured generation documentation for SGLang (high-performance LLM serving framework) as part of ACM VIT team.
-- Strict Constraints:
-  - Strictly ZERO emojis in all code, text, commits, and summaries.
-  - Never state age "20-year-old".
-  - Always address recipients as "Hi [Name]," (never "Dear [Name]").
-  - Ground all technical statements in verified engineering metrics and projects above; never invent generic placeholders or fictional frameworks.`
+// CandidateContext supplies the verified owner-profile block for career prompts. It is set at
+// startup from the stored profile; when nil or empty, no personal claims are injected at all
+// (fail closed), so the model cannot be fed unverified facts from source code.
+var CandidateContext func(userID uuid.UUID) string
+
+// Hard constraints that are style rules, not facts about the owner.
+const careerStyleConstraints = `- Strictly ZERO emojis in all code, text, commits, and summaries.
+- Never state the owner's age.`
 
 type jobPayloadView struct {
 	Company          string            `json:"company"`
@@ -288,7 +282,13 @@ func appendCareerContext(b *strings.Builder, task *domain.Task) {
 		return
 	}
 	b.WriteString("\n")
-	b.WriteString(candidateProfileContext)
+	if CandidateContext != nil {
+		if ctxBlock := CandidateContext(task.UserID); ctxBlock != "" {
+			b.WriteString(ctxBlock)
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString(careerStyleConstraints)
 	b.WriteString("\n")
 
 	if len(task.InputPayload) == 0 {

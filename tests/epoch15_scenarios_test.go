@@ -159,10 +159,18 @@ func TestScenario2_JobDiscoveryAndApplicationPolicyEndToEnd(t *testing.T) {
 	assert.Empty(t, stagedAgain, "Duplicate openings must be ignored on subsequent sweeps")
 
 	// 2. Prepare Application and Evaluate Submission Policy
+	profRepo := repository.NewOwnerProfileRepository(env.DB.Pool)
 	appExec := &service.ApplicationExecutor{
 		DiscoveryRepo: discRepo,
+		Profiles:      profRepo,
 		ReceiptDir:    t.TempDir(),
 	}
+
+	// Fail closed: without a stored profile nothing is prepared and nothing is guessed.
+	_, err = appExec.ProcessApplication(ctx, u, "Modal Labs", "Systems & Infrastructure Intern", "https://modal.example/careers", nil)
+	require.ErrorIs(t, err, service.ErrNoOwnerProfile)
+	_, err = profRepo.Save(ctx, u, testOwnerProfile(), "test-fixture")
+	require.NoError(t, err)
 
 	// 2A. Standard Form: clean profile fields -> Standing Policy: Auto-Staged
 	standardFields := []domain.FormField{
@@ -180,11 +188,15 @@ func TestScenario2_JobDiscoveryAndApplicationPolicyEndToEnd(t *testing.T) {
 	receiptA, err := appExec.ProcessApplication(ctx, u, "Modal Labs", "Systems & Infrastructure Intern", "https://modal.com/careers/systems-intern-2027", standardFields)
 	require.NoError(t, err)
 	assert.Equal(t, domain.PolicyAutoStaged, receiptA.PolicyDecision)
-	assert.Contains(t, receiptA.TailoredBullets, "ComputeHive: Engineered distributed task scheduler in Go")
-	assert.Contains(t, receiptA.TailoredBullets, "dropped Linux capabilities")
-	assert.Equal(t, "Adhyan", receiptA.FormPayload["first_name"])
-	assert.Equal(t, "Jain", receiptA.FormPayload["last_name"])
-	assert.Equal(t, "adhyanjain2006@gmail.com", receiptA.FormPayload["email"])
+	// Bullets are verbatim verified facts, each traceable by ID; nothing is invented.
+	assert.Contains(t, receiptA.TailoredBullets, "Built a Go scheduler that leases jobs through Redis")
+	assert.NotContains(t, receiptA.TailoredBullets, "Rust compiler")
+	assert.Equal(t, []string{"fx-sched"}, receiptA.FormPayload["_supporting_fact_ids"])
+	assert.Equal(t, "Test", receiptA.FormPayload["first_name"])
+	assert.Equal(t, "Candidate", receiptA.FormPayload["last_name"])
+	assert.Equal(t, "test.candidate@example.com", receiptA.FormPayload["email"])
+	assert.Equal(t, "2028", receiptA.FormPayload["graduation_year"])
+	assert.Equal(t, "Candidate_Resume.pdf", receiptA.FormPayload["resume"])
 	assert.NotEmpty(t, receiptA.ReceiptHash)
 	assert.FileExists(t, receiptA.ReceiptPath)
 
@@ -199,9 +211,25 @@ func TestScenario2_JobDiscoveryAndApplicationPolicyEndToEnd(t *testing.T) {
 	assert.Equal(t, domain.PolicyEscalate, receiptB.PolicyDecision, "Legal declarations and sensitive questions must escalate")
 	reasons, ok := receiptB.FormPayload["_escalation_reasons"].([]string)
 	require.True(t, ok)
-	require.Len(t, reasons, 2)
+	require.Len(t, reasons, 3)
 	assert.Contains(t, reasons[0], "arbitration")
 	assert.Contains(t, reasons[1], "disability")
+	assert.Contains(t, reasons[2], "not answerable from verified profile", "an unanswerable required legal field is also flagged")
+
+	// 2C. A required question the profile cannot answer fails closed, and "company name" is
+	// never filled with the applicant's own name.
+	unknownFields := append(append([]domain.FormField{}, standardFields...),
+		domain.FormField{Name: "company_name", Label: "Current Company Name", Type: "text", Required: false},
+		domain.FormField{Name: "why", Label: "Describe your favourite tabs-vs-spaces opinion", Type: "textarea", Required: true},
+	)
+	receiptC, err := appExec.ProcessApplication(ctx, u, "Modal Labs", "Systems & Infrastructure Intern", "https://modal.example/careers", unknownFields)
+	require.NoError(t, err)
+	assert.Equal(t, domain.PolicyEscalate, receiptC.PolicyDecision)
+	assert.NotContains(t, receiptC.FormPayload, "company_name")
+	assert.NotContains(t, receiptC.FormPayload, "why")
+	cReasons, _ := receiptC.FormPayload["_escalation_reasons"].([]string)
+	require.Len(t, cReasons, 1)
+	assert.Contains(t, cReasons[0], "tabs-vs-spaces")
 }
 
 // Scenario 3: A meaningful event arrives while you're away from your laptop. Griffin decides whether
