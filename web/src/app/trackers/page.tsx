@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { TRACKER_TYPES, groupTrackerTasks } from "@/lib/trackers";
+import { TRACKER_TYPES, groupTrackerTasks, internshipActionMessage, trackerTypeOf, type InternshipAction } from "@/lib/trackers";
 import {
   ArrowDown,
   ArrowUp,
@@ -13,7 +13,9 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  ClipboardList,
   Download,
+  FileText,
   ExternalLink,
   FileSpreadsheet,
   Layers,
@@ -270,8 +272,48 @@ function TableCellContent({ header, rawCell }: { header: string; rawCell: string
 }
 
 /** Individual record card for mobile and card view modes */
+/** Set by an Internships tracker card so its rows can act on themselves (draft, plan, exact URL). */
+const RecordActionsContext = createContext<{ taskId: string } | null>(null);
+
+function InternshipActions({ taskId, entity }: { taskId: string; entity: ReturnType<typeof parseRowToEntity> }) {
+  const [busy, setBusy] = useState<InternshipAction | null>(null);
+  const run = async (action: InternshipAction) => {
+    setBusy(action);
+    try {
+      await api.followUp(taskId, internshipActionMessage(action, entity.title, entity.subtitle));
+      toast.success(action === "url" ? "Looking for the exact URL" : action === "draft" ? "Drafting. It will wait for your approval" : "Building the plan");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not start that");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="grid grid-cols-3 gap-1.5 pt-2">
+      <Button size="sm" variant="outline" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("draft")}>
+        <FileText className="size-3" /> Draft
+      </Button>
+      <Button size="sm" variant="outline" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("plan")}>
+        <ClipboardList className="size-3" /> Plan
+      </Button>
+      {entity.applyLink ? (
+        <Button asChild size="sm" className="h-8 gap-1 rounded-xl text-xs">
+          <a href={entity.applyLink.url} target="_blank" rel="noopener noreferrer">
+            Apply <ExternalLink className="size-3" />
+          </a>
+        </Button>
+      ) : (
+        <Button size="sm" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("url")}>
+          Get URL
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function RecordCard({ entity }: { entity: ReturnType<typeof parseRowToEntity> }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const actions = useContext(RecordActionsContext);
 
   return (
     <div className="flex flex-col justify-between rounded-xl border bg-card p-4 shadow-xs transition-all hover:border-primary/40 hover:shadow-sm">
@@ -402,8 +444,12 @@ function RecordCard({ entity }: { entity: ReturnType<typeof parseRowToEntity> })
         )}
       </div>
 
+      {actions ? (
+        <InternshipActions taskId={actions.taskId} entity={entity} />
+      ) : null}
+
       {/* Action Button */}
-      {entity.applyLink && (
+      {!actions && entity.applyLink && (
         <div className="pt-3 mt-1">
           <Button
             asChild
@@ -686,6 +732,7 @@ function TrackerCard({ task, parsedTables, defaultViewMode = "auto" }: TrackerCa
   }, [primaryTable, tableFilter, sortCol, sortAsc]);
 
   return (
+    <RecordActionsContext.Provider value={trackerTypeOf(task.title) === "internships" ? { taskId: task.id } : null}>
     <div className="overflow-hidden rounded-2xl border bg-card shadow-xs transition-colors hover:border-primary/40">
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 p-4 sm:px-6">
@@ -871,6 +918,7 @@ function TrackerCard({ task, parsedTables, defaultViewMode = "auto" }: TrackerCa
         )}
       </div>
     </div>
+    </RecordActionsContext.Provider>
   );
 }
 

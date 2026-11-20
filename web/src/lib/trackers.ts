@@ -38,3 +38,18 @@ export function groupTrackerTasks(all: Task[], isTracker: (t: Task) => boolean):
     return { ...t, title: root ? root.title : key };
   });
 }
+
+export type InternshipAction = "draft" | "plan" | "url";
+
+/** The follow-up message an internship row's button sends to its tracker. Nothing is submitted: a draft is only a draft until approved. */
+export function internshipActionMessage(action: InternshipAction, company: string, role: string): string {
+  const what = [role, company && `at ${company}`].filter(Boolean).join(" ");
+  switch (action) {
+    case "draft":
+      return `Draft the application for ${what}: a short cover note and a tailored resume summary from my profile. Do not send anything; leave it for my approval.`;
+    case "plan":
+      return `Make a step-by-step application plan for ${what}: deadline, what to prepare, who to reach out to, and the order to do it in.`;
+    case "url":
+      return `Find the exact application URL for ${what} (the posting itself, not a job-board search page) and update this tracker row with it.`;
+  }
+}

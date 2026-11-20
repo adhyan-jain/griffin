@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "@/lib/api";
-import { groupTrackerTasks } from "@/lib/trackers";
+import { groupTrackerTasks, internshipActionMessage } from "@/lib/trackers";
 
 const task = (id: string, over: Partial<Task> = {}, payload: unknown = {}): Task =>
   ({ id, title: id, goal: id, status: "COMPLETED", manager_domain: "research", priority: "NORMAL", created_at: "2026-11-19T10:00:00Z", updated_at: "2026-11-19T10:00:00Z", input_payload: payload, ...over }) as Task;
@@ -47,5 +47,16 @@ describe("groupTrackerTasks", () => {
     const f1 = task("f1", { title: "Follow-up: hackathon list" }, { thread_id: "gone", follow_up_of: "gone" });
     const f2 = task("f2", { title: "Follow-up: hackathon list v2", completed_at: "2026-11-19T12:00:00Z" }, { thread_id: "gone", follow_up_of: "gone" });
     expect(groupTrackerTasks([f1, f2], (t) => /hackathon/i.test(t.title))).toHaveLength(1);
+  });
+});
+
+describe("internshipActionMessage", () => {
+  it("never asks to send anything and names the role and company", () => {
+    const m = internshipActionMessage("draft", "Acme", "SDE Intern");
+    expect(m).toContain("SDE Intern at Acme");
+    expect(m).toMatch(/Do not send/);
+  });
+  it("asks for the exact posting URL", () => {
+    expect(internshipActionMessage("url", "Acme", "SDE Intern")).toMatch(/exact application URL/);
   });
 });
