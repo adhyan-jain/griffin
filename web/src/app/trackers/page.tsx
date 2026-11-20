@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { TRACKER_TYPES, groupTrackerTasks, internshipActionMessage, trackerTypeOf, type InternshipAction } from "@/lib/trackers";
+import { TRACKER_TYPES, appliedKeys, applyTaskInput, classifyTask, groupTrackerTasks, internshipActionMessage, isApplyTask, trackerPeers, trackerTypeOf, type InternshipAction } from "@/lib/trackers";
+import { mergeTables, splitRows } from "@/lib/tracker-rows";
 import {
   ArrowDown,
   ArrowUp,
@@ -48,8 +49,13 @@ const CATEGORIES: { id: TrackerCategory; label: string; pattern: RegExp }[] = [
 ];
 
 function isTrackerTask(task: Task): boolean {
+  if (isApplyTask(task)) return false;
   const t = task.title.toLowerCase();
+  const type = classifyTask(task);
   return (
+    type === "internships" ||
+    type === "hackathons" ||
+    type === "opensource" ||
     t.includes("tracker") ||
     t.includes("internship") ||
     t.includes("hackathon") ||
@@ -276,7 +282,18 @@ function TableCellContent({ header, rawCell }: { header: string; rawCell: string
 const RecordActionsContext = createContext<{ taskId: string } | null>(null);
 
 function InternshipActions({ taskId, entity }: { taskId: string; entity: ReturnType<typeof parseRowToEntity> }) {
-  const [busy, setBusy] = useState<InternshipAction | null>(null);
+  const [busy, setBusy] = useState<InternshipAction | "apply" | null>(null);
+  const apply = async () => {
+    setBusy("apply");
+    try {
+      await api.createTask(applyTaskInput(entity.title, entity.subtitle, entity.applyLink?.url ?? null));
+      toast.success("Application task created. It will ask for your approval before submitting");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not create the application task");
+    } finally {
+      setBusy(null);
+    }
+  };
   const run = async (action: InternshipAction) => {
     setBusy(action);
     try {
@@ -296,17 +313,19 @@ function InternshipActions({ taskId, entity }: { taskId: string; entity: ReturnT
       <Button size="sm" variant="outline" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("plan")}>
         <ClipboardList className="size-3" /> Plan
       </Button>
+      <Button size="sm" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={apply}>
+        Apply
+      </Button>
       {entity.applyLink ? (
-        <Button asChild size="sm" className="h-8 gap-1 rounded-xl text-xs">
-          <a href={entity.applyLink.url} target="_blank" rel="noopener noreferrer">
-            Apply <ExternalLink className="size-3" />
-          </a>
-        </Button>
-      ) : (
-        <Button size="sm" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("url")}>
-          Get URL
-        </Button>
-      )}
+        <a
+          href={entity.applyLink.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="col-span-3 inline-flex items-center justify-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          Open listing <ExternalLink className="size-3" />
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -606,10 +625,11 @@ function CardsView({
 interface TrackerCardProps {
   task: Task;
   parsedTables: ParsedTable[];
+  closed?: { headers: string[]; applied: string[][]; passed: number };
   defaultViewMode?: ViewMode;
 }
 
-function TrackerCard({ task, parsedTables, defaultViewMode = "auto" }: TrackerCardProps) {
+function TrackerCard({ task, parsedTables, closed, defaultViewMode = "auto" }: TrackerCardProps) {
   const { text } = parseResult(task.output_payload);
   const [tableFilter, setTableFilter] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -917,6 +937,29 @@ function TrackerCard({ task, parsedTables, defaultViewMode = "auto" }: TrackerCa
           <p className="text-xs text-muted-foreground italic">No output data available yet for this task.</p>
         )}
       </div>
+      {closed ? (
+        <div className="space-y-2 border-t bg-muted/10 p-4 text-xs sm:px-6">
+          {closed.passed > 0 ? (
+            <p className="text-muted-foreground">{closed.passed} listing{closed.passed === 1 ? "" : "s"} past their deadline {closed.passed === 1 ? "was" : "were"} removed.</p>
+          ) : null}
+          {closed.applied.length > 0 ? (
+            <div>
+              <p className="mb-1 font-semibold text-foreground">Applied ({closed.applied.length})</p>
+              <ul className="space-y-0.5 text-muted-foreground">
+                {closed.applied.map((r, i) => {
+                  const e = parseRowToEntity(closed.headers, r);
+                  return (
+                    <li key={i}>
+                      {e.title}
+                      {e.subtitle ? `, ${e.subtitle}` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
     </RecordActionsContext.Provider>
   );
@@ -964,18 +1007,33 @@ export default function TrackersPage() {
   }, [trackerTasks, category, query]);
 
   // Parsed tables mapped by task id
-  const taskTables = useMemo(() => {
-    const map = new Map<string, ParsedTable[]>();
-    trackerTasks.forEach((t) => {
+  // Each card shows every task of its tracker appended into one list. Applied listings and passed
+  // deadlines come out of the open list; applied ones are kept in their own list.
+  const applied = useMemo(() => appliedKeys(tasks ?? []), [tasks]);
+  const { taskTables, closedByTask } = useMemo(() => {
+    const tables = new Map<string, ParsedTable[]>();
+    const closed = new Map<string, { headers: string[]; applied: string[][]; passed: number }>();
+    const firstTable = (t: Task) => {
       const { text } = parseResult(t.output_payload);
-      if (text) {
-        map.set(t.id, extractTablesFromMarkdown(text));
-      } else {
-        map.set(t.id, []);
+      return text ? extractTablesFromMarkdown(text)[0] : undefined;
+    };
+    const today = new Date();
+    trackerTasks.forEach((t) => {
+      const peers = trackerPeers(tasks ?? [], isTrackerTask, t);
+      const merged = mergeTables(peers.map(firstTable).filter((x): x is ParsedTable => !!x));
+      if (!merged) {
+        const { text } = parseResult(t.output_payload);
+        tables.set(t.id, text ? extractTablesFromMarkdown(text) : []);
+        return;
+      }
+      const split = splitRows(merged, today, applied);
+      tables.set(t.id, [{ ...merged, rows: split.open }]);
+      if (split.applied.length || split.passed.length) {
+        closed.set(t.id, { headers: merged.headers, applied: split.applied, passed: split.passed.length });
       }
     });
-    return map;
-  }, [trackerTasks]);
+    return { taskTables: tables, closedByTask: closed };
+  }, [trackerTasks, tasks, applied]);
 
   // Global Export: Combines latest runs across categories into one multi-sheet Excel
   const exportMasterExcel = () => {
@@ -1169,6 +1227,7 @@ export default function TrackersPage() {
                 key={task.id}
                 task={task}
                 parsedTables={taskTables.get(task.id) || []}
+                closed={closedByTask.get(task.id)}
                 defaultViewMode={globalViewMode}
               />
             ))}
