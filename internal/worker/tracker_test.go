@@ -163,3 +163,17 @@ func TestTheListIsSeededFromEarlierResultsOnFirstUse(t *testing.T) {
 		t.Fatal("seeding twice must not create a second list")
 	}
 }
+
+// If a duplicate list ever exists, tasks read (and rewrite) the newest one, never an arbitrary copy.
+func TestTheNewestListWinsIfThereAreDuplicates(t *testing.T) {
+	store, user := newMemStore(), uuid.New()
+	meta := domain.TrackerListMetadata(storage.ListKind, "internships")
+	old := &domain.Artifact{ID: uuid.New(), Metadata: meta, CreatedAt: time.Now().Add(-time.Hour)}
+	newer := &domain.Artifact{ID: uuid.New(), Metadata: meta, CreatedAt: time.Now()}
+	store.arts[old.ID], store.texts[old.ID] = old, "OLD COPY"
+	store.arts[newer.ID], store.texts[newer.ID] = newer, "NEWEST COPY"
+	seen := trackerWorker(store).withTrackerList(context.Background(), &domain.Task{ID: uuid.New(), UserID: user, Title: "INTERNSHIP TRACKER", Goal: "x"})
+	if !strings.Contains(seen.Goal, "NEWEST COPY") || strings.Contains(seen.Goal, "OLD COPY") {
+		t.Fatalf("the newest list must be the one shown: %q", seen.Goal)
+	}
+}

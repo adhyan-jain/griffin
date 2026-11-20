@@ -65,13 +65,18 @@ func (w *TrackerLists) list(ctx context.Context, userID uuid.UUID, kind, tracker
 	if err != nil {
 		return nil
 	}
+	// If more than one list somehow exists for a type, the newest one is the list.
+	var best *domain.Artifact
 	for _, a := range arts {
 		var m struct {
 			Tracker string `json:"tracker"`
 		}
-		if json.Unmarshal(a.Metadata, &m) == nil && m.Tracker == trackerType {
-			return a
+		if json.Unmarshal(a.Metadata, &m) == nil && m.Tracker == trackerType && (best == nil || a.CreatedAt.After(best.CreatedAt)) {
+			best = a
 		}
+	}
+	if best != nil {
+		return best
 	}
 	return nil
 }

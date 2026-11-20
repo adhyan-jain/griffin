@@ -17,6 +17,9 @@ func TestIntakeTasksFeedTheInternshipsTracker(t *testing.T) {
 		if !strings.Contains(task.Title, "INTERNSHIP TRACKER") {
 			t.Errorf("title %q would not join the Internships tracker", task.Title)
 		}
+		if task.Match == "" {
+			t.Errorf("%q needs a Match so re-registering updates it instead of adding a copy", task.Title)
+		}
 		if !strings.Contains(task.Goal, "Never apply") {
 			t.Errorf("%q must forbid applying without approval", task.Title)
 		}
@@ -27,7 +30,8 @@ func TestIntakeTasksFeedTheInternshipsTracker(t *testing.T) {
 			t.Errorf("cadence %q is not understood by the scheduler: %v", task.Cadence, err)
 		}
 	}
-	if !strings.Contains(tasks[0].Goal, "10 minutes") || tasks[0].Payload["device"] != "phone" {
-		t.Error("the LinkedIn task must be a 10 minute phone scroll")
+	scan, ok := tasks[0].Payload["linkedin_scan"].(map[string]any)
+	if !ok || scan["minutes"] != 10 || scan["workspace"] != 8 {
+		t.Error("the LinkedIn task must be a 10 minute scan on workspace 8")
 	}
 }

@@ -9,6 +9,8 @@ import (
 // "INTERNSHIP TRACKER" so the Trackers page files it under the Internships type instead of
 // creating a tracker of its own.
 type intakeTask struct {
+	// Match finds the task again when it already exists (a title prefix without its cadence).
+	Match   string
 	Title   string
 	Cadence string
 	Goal    string
@@ -27,21 +29,21 @@ const intakeRules = `Rules:
 func intakeTasks(scrollCadence, mailCadence string) []intakeTask {
 	return []intakeTask{
 		{
-			Title:   fmt.Sprintf("INTERNSHIP TRACKER - LINKEDIN PHONE SCROLL (%s, 10 min)", cadenceLabel(scrollCadence)),
+			Match:   "INTERNSHIP TRACKER - LINKEDIN %",
+			Title:   fmt.Sprintf("INTERNSHIP TRACKER - LINKEDIN SCAN (%s, 10 min)", cadenceLabel(scrollCadence)),
 			Cadence: scrollCadence,
-			Goal: "Using the connected Android phone, open LinkedIn and scroll the feed and the Jobs tab for 10 minutes. " +
-				"Pull out every internship or job opportunity: job posts, founders and recruiters hiring, 'we are hiring' posts. " +
-				"Open a post only to read the exact application URL.\n" + intakeRules,
+			Goal: "Scan the owner's LinkedIn feed for 10 minutes, on the laptop in the background (the phone only if the laptop cannot). " +
+				"Expand every truncated post, skip ads and people looking for work, and keep only real internship offers from a named person or company. " +
+				"For each, record company, role, location, deadline and the exact application link, and add it to the Internships list without duplicating a listing already there.\n" + intakeRules,
 			Payload: map[string]any{
-				"cadence":                 scrollCadence,
-				"device":                  "phone",
-				"scroll_duration_minutes": 10,
-				"tool_mode":               "read",
-				"tracker_type":            "internships",
-				"ledger_path":             ledger,
+				"cadence":       scrollCadence,
+				"linkedin_scan": map[string]any{"minutes": 10, "workspace": 8},
+				"tracker_type":  "internships",
+				"ledger_path":   ledger,
 			},
 		},
 		{
+			Match:   "INTERNSHIP TRACKER - JOB EMAILS%",
 			Title:   fmt.Sprintf("INTERNSHIP TRACKER - JOB EMAILS (%s)", cadenceLabel(mailCadence)),
 			Cadence: mailCadence,
 			Goal: "Read the owner's new mail since the last run (job alerts, recruiter mail, LinkedIn and Internshala digests, company newsletters). " +

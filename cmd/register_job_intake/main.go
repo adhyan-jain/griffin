@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,8 +39,7 @@ func main() {
 		payload, _ := json.Marshal(t.Payload)
 		// Match on the title without its cadence so changing a cadence updates the task instead of adding another.
 		var id uuid.UUID
-		key := t.Title[:strings.Index(t.Title, " (")]
-		err = pool.QueryRow(ctx, `SELECT id FROM tasks WHERE user_id = $1 AND title LIKE $2`, userID, key+"%").Scan(&id)
+		err = pool.QueryRow(ctx, `SELECT id FROM tasks WHERE user_id = $1 AND title LIKE $2`, userID, t.Match).Scan(&id)
 		if err == nil {
 			_, err = pool.Exec(ctx, `UPDATE tasks SET title=$1, goal=$2, input_payload=$3::jsonb, scheduled_for=$4, status='QUEUED', updated_at=NOW() WHERE id=$5`,
 				t.Title, t.Goal, string(payload), next, id)
