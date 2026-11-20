@@ -48,7 +48,7 @@ func main() {
 		} else {
 			id = uuid.New()
 			_, err = pool.Exec(ctx, `INSERT INTO tasks (id, user_id, title, goal, status, priority, manager_domain, input_payload, scheduled_for, created_at, updated_at)
-				VALUES ($1,$2,$3,$4,'QUEUED','HIGH','career',$5::jsonb,$6,NOW(),NOW())`, id, userID, t.Title, t.Goal, string(payload), next)
+				VALUES ($1,$2,$3,$4,'QUEUED','HIGH_P1','career',$5::jsonb,$6,NOW(),NOW())`, id, userID, t.Title, t.Goal, string(payload), next)
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", t.Title, err)
