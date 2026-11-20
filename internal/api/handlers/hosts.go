@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -213,6 +214,20 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	// left empty, which makes the host ask again rather than act: failing closed.
 	if approved, aerr := h.engine.ApprovedActionTypes(r.Context(), res.Task); aerr == nil {
 		res.ApprovedActions = approved
+	}
+	// A request to prepare applications for many listings is split into one task per listing, here, instead of
+	// being handed to a device as one job that would time out. The device then has nothing to run.
+	if h.trackers != nil && res.Task != nil {
+		if answer, split := h.trackers.BatchApply(r.Context(), res.Task, func(c context.Context, t *domain.Task) error {
+			_, err := h.engine.CreateTask(c, t, nil)
+			return err
+		}); split {
+			out, _ := json.Marshal(map[string]string{"response": answer})
+			if err := h.engine.CompleteTask(r.Context(), res.Task.ID, host.WorkerID(), out); err == nil {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
 	}
 	// The device works from a copy of the task that carries its tracker's list; the stored task is unchanged.
 	if h.trackers != nil && res.Task != nil {

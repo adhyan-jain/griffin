@@ -151,3 +151,48 @@ func OutputText(output json.RawMessage) string {
 	}
 	return o.Text
 }
+
+var (
+	batchVerb = regexp.MustCompile(`(?i)\b(ready|draft|prepare|apply|applications?)\b`)
+	batchAll  = regexp.MustCompile(`(?i)\b(all|every|each)\b`)
+	batchTier = regexp.MustCompile(`(?i)\btier\s*([abc])\b|\b([abc])[\s-]*tier\b`)
+)
+
+// ApplyBatchOf reports whether a task asks for applications to be prepared for many listings at once ("ready all
+// the internships in list of A tier..."), and for which tier ("A"; "" for every tier). Doing that in one model
+// call times out, so such a task is split into one apply task per listing instead.
+func ApplyBatchOf(title, goal string, inputPayload json.RawMessage) (tier string, ok bool) {
+	if TrackerTypeOf(title, goal, inputPayload) != "internships" {
+		return "", false
+	}
+	text := title + " " + goal
+	if !batchVerb.MatchString(text) {
+		return "", false
+	}
+	m := batchTier.FindStringSubmatch(text)
+	if m == nil && !batchAll.MatchString(text) {
+		return "", false
+	}
+	if m != nil {
+		return strings.ToUpper(m[1] + m[2]), true
+	}
+	return "", true
+}
+
+// ApplyTaskFor builds the task that prepares the application for one listing. It drafts the package and stops
+// for the owner's approval; it never submits anything itself.
+func ApplyTaskFor(company, role, link string) (title, goal string, payload json.RawMessage) {
+	what := strings.TrimSpace(role + " at " + company)
+	goal = "Prepare the application for " + what + "."
+	if link != "" {
+		goal += " The posting is " + link + "."
+	}
+	goal += " Write the complete package from the owner's profile: a tailored resume summary, a short cover note, and answers to the usual application questions. " +
+		"Put the finished draft in your answer so the owner can review it. Do not submit anything: it waits for the owner's approval."
+	payload, _ = json.Marshal(map[string]any{"apply_for": map[string]any{"company": company, "role": role, "url": link}})
+	title = "APPLY - " + company + " - " + role
+	if r := []rune(title); len(r) > 80 {
+		title = string(r[:80])
+	}
+	return title, goal, payload
+}

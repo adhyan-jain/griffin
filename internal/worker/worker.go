@@ -257,6 +257,28 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
+	// "Ready all the A tier internships" is too much for one model call (it times out). Split it into one
+	// application task per listing, and finish this task with the summary.
+	if answer, split := w.trackers().BatchApply(ctx, task, func(c context.Context, t *domain.Task) error {
+		_, err := w.engine.CreateTask(c, t, nil)
+		return err
+	}); split {
+		out, _ := json.Marshal(map[string]string{"response": answer})
+		if err := w.engine.CompleteTask(ctx, task.ID, w.ID, out); err != nil {
+			w.logger.Error("engine.CompleteTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+		} else {
+			w.notifyFinished(ctx, task.ID)
+		}
+		attempt.Status = "COMPLETED"
+		attempt.DurationMs = int(time.Since(start).Milliseconds())
+		now := time.Now().UTC()
+		attempt.CompletedAt = &now
+		if w.taskRepo != nil {
+			w.recordAttempt(ctx, attempt)
+		}
+		return true, nil
+	}
+
 	if notes := w.playbookNotes(ctx, task); notes != "" {
 		execTask = withPlaybookNotes(execTask, notes)
 	}
