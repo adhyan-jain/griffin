@@ -278,7 +278,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Mobile bottom tabs: four primary destinations + More */}
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-background/92 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t bg-background/92 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
       >
         {PRIMARY.map(({ href, label, icon: Icon }) => {
           const active = isActive(pathname, href);

@@ -98,6 +98,8 @@ function extractLinkFromCell(cell: string): { label: string; url: string } | nul
       label = "Link";
     }
   }
+  // The real Apply button creates an application task, so a link must not also be called "Apply".
+  if (/^apply(\s+(now|here|link))?$/i.test(label)) label = "Open listing";
   return { label, url };
 }
 
@@ -193,21 +195,21 @@ function TableCellContent({ header, rawCell }: { header: string; rawCell: string
     const upper = cell.toUpperCase();
     if (upper.includes("TIER A")) {
       return (
-        <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-semibold text-emerald-700 dark:text-emerald-400">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-semibold text-emerald-700 dark:text-emerald-400">
           Tier A
         </span>
       );
     }
     if (upper.includes("TIER B")) {
       return (
-        <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/15 px-2.5 py-0.5 font-semibold text-blue-700 dark:text-blue-400">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full border border-blue-500/30 bg-blue-500/15 px-2.5 py-0.5 font-semibold text-blue-700 dark:text-blue-400">
           Tier B
         </span>
       );
     }
     if (upper.includes("TIER C")) {
       return (
-        <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 font-semibold text-amber-700 dark:text-amber-400">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 font-semibold text-amber-700 dark:text-amber-400">
           Tier C
         </span>
       );
@@ -281,7 +283,7 @@ function TableCellContent({ header, rawCell }: { header: string; rawCell: string
 /** Set by an Internships tracker card so its rows can act on themselves (draft, plan, exact URL). */
 const RecordActionsContext = createContext<{ taskId: string } | null>(null);
 
-function InternshipActions({ taskId, entity }: { taskId: string; entity: ReturnType<typeof parseRowToEntity> }) {
+function InternshipActions({ taskId, entity, compact = false }: { taskId: string; entity: ReturnType<typeof parseRowToEntity>; compact?: boolean }) {
   const [busy, setBusy] = useState<InternshipAction | "apply" | null>(null);
   const apply = async () => {
     setBusy("apply");
@@ -306,12 +308,12 @@ function InternshipActions({ taskId, entity }: { taskId: string; entity: ReturnT
     }
   };
   return (
-    <div className="grid grid-cols-3 gap-1.5 pt-2">
-      <Button size="sm" variant="outline" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("draft")}>
-        <FileText className="size-3" /> Draft
+    <div className={compact ? "flex items-center gap-1.5" : "grid grid-cols-3 gap-1.5 pt-2"}>
+      <Button size="sm" variant="outline" title="Draft the application" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("draft")}>
+        <FileText className="size-3" /> <span className={compact ? "sr-only" : undefined}>Draft</span>
       </Button>
-      <Button size="sm" variant="outline" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("plan")}>
-        <ClipboardList className="size-3" /> Plan
+      <Button size="sm" variant="outline" title="Plan the application" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("plan")}>
+        <ClipboardList className="size-3" /> <span className={compact ? "sr-only" : undefined}>Plan</span>
       </Button>
       <Button size="sm" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={apply}>
         Apply
@@ -321,7 +323,7 @@ function InternshipActions({ taskId, entity }: { taskId: string; entity: ReturnT
           href={entity.applyLink.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="col-span-3 inline-flex items-center justify-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          className={cn("inline-flex items-center justify-center gap-1 text-[11px] text-muted-foreground hover:text-foreground", compact ? "hidden" : "col-span-3")}
         >
           Open listing <ExternalLink className="size-3" />
         </a>
@@ -505,6 +507,7 @@ function TableView({
   onToggleExpanded: () => void;
 }) {
   const displayRows = expanded ? rows : rows.slice(0, 8);
+  const actions = useContext(RecordActionsContext);
 
   return (
     <div className="space-y-3">
@@ -535,12 +538,13 @@ function TableView({
                   </th>
                 );
               })}
+              {actions ? <th className="sticky right-0 bg-muted px-3 py-2.5 font-semibold whitespace-nowrap">Actions</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
             {displayRows.length === 0 ? (
               <tr>
-                <td colSpan={headers.length} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={headers.length + (actions ? 1 : 0)} className="px-4 py-8 text-center text-muted-foreground">
                   No records match your filter.
                 </td>
               </tr>
@@ -552,6 +556,11 @@ function TableView({
                       <TableCellContent header={headers[cIdx] || ""} rawCell={cell} />
                     </td>
                   ))}
+                  {actions ? (
+                    <td className="sticky right-0 bg-card px-3 py-2.5 align-top">
+                      <InternshipActions compact taskId={actions.taskId} entity={parseRowToEntity(headers, row)} />
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}
@@ -949,9 +958,12 @@ function TrackerCard({ task, parsedTables, closed, defaultViewMode = "auto" }: T
                 {closed.applied.map((r, i) => {
                   const e = parseRowToEntity(closed.headers, r);
                   return (
-                    <li key={i}>
-                      {e.title}
-                      {e.subtitle ? `, ${e.subtitle}` : ""}
+                    <li key={i} className="flex items-center gap-1.5">
+                      <CheckCircle2 className="size-3 shrink-0 text-success" />
+                      <span className="min-w-0 truncate">
+                        {e.title}
+                        {e.subtitle ? `, ${e.subtitle}` : ""}
+                      </span>
                     </li>
                   );
                 })}
@@ -994,7 +1006,7 @@ export default function TrackersPage() {
     const activeCat = CATEGORIES.find((c) => c.id === category);
 
     return trackerTasks.filter((t) => {
-      const matchesCategory = category === "all" || (activeCat && activeCat.pattern.test(t.title));
+      const matchesCategory = category === "all" || (activeCat && classifyTask(t) === activeCat.id);
       if (!matchesCategory) return false;
       if (!q) return true;
       const { text } = parseResult(t.output_payload);
@@ -1111,12 +1123,12 @@ export default function TrackersPage() {
       <div className="space-y-6">
         {/* Category Filter Pills & Global View Mode Selector */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="-mx-4 flex items-center gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [scrollbar-width:none]">
             {CATEGORIES.map((cat) => {
               const count =
                 cat.id === "all"
                   ? trackerTasks.length
-                  : trackerTasks.filter((t) => cat.pattern.test(t.title)).length;
+                  : trackerTasks.filter((t) => classifyTask(t) === cat.id).length;
               const active = category === cat.id;
               return (
                 <button
@@ -1124,7 +1136,7 @@ export default function TrackersPage() {
                   type="button"
                   onClick={() => setCategory(cat.id)}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors",
+                    "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors",
                     active
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
