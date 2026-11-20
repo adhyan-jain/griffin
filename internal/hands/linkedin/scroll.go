@@ -206,16 +206,31 @@ func (s Scroller) expand(ctx context.Context, body item) (string, error) {
 		return body.text, err
 	}
 	full := body.text
+	onFeed := hasTabBar(after)
 	for _, i := range after {
-		if isBody(i) && len(i.text) > len(full) && abs(i.t-body.t) < 400 {
+		if onFeed {
+			// Expanded in place: the same tappable block, now longer.
+			if isBody(i) && len(i.text) > len(full) && abs(i.t-body.t) < 400 {
+				full = i.text
+			}
+			continue
+		}
+		// The tap opened the post's own page, where the text is a plain (not tappable) block: take the longest
+		// wide one that carries on from the text we already had.
+		if i.r-i.l >= 700 && len(i.text) > len(full) && strings.HasPrefix(i.text, trimMore(body.text)) {
 			full = i.text
 		}
 	}
-	if !hasTabBar(after) { // the tap opened the post page; come back to the feed
+	if !onFeed { // come back to the feed
 		_, _ = s.ADB.Run(ctx, "shell", "input", "keyevent", "KEYCODE_BACK")
 		sleep(ctx, s.Pause)
 	}
 	return full, nil
+}
+
+// trimMore drops the trailing "… more" so the start of the post can be matched against its full text.
+func trimMore(s string) string {
+	return strings.TrimSpace(moreRe.ReplaceAllString(s, ""))
 }
 
 func abs(x int) int {

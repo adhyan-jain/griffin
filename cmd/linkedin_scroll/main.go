@@ -25,6 +25,9 @@ import (
 	"github.com/griffin/core/internal/provider/gemini"
 )
 
+// visibleWindow is set by -show.
+var visibleWindow bool
+
 func main() {
 	minutes := flag.Float64("minutes", 10, "how long to scroll")
 	via := flag.String("via", "auto", "auto (laptop, else phone), laptop, or phone")
@@ -32,8 +35,14 @@ func main() {
 	fromChrome := flag.String("from-chrome", "Default", "your own Chrome profile whose LinkedIn login Griffin's browser borrows (empty to disable)")
 	home, _ := os.UserHomeDir()
 	out := flag.String("out", filepath.Join(home, "Documents", "Griffin", "internships", "linkedin_posts.json"), "where to save the posts")
+	dump := flag.Bool("dump-posts", false, "laptop only: print every post the reader sees (author, ad or not, length, links), unfiltered, to check the reader")
 	inspect := flag.Bool("inspect", false, "laptop only: print what the feed's markup looks like, to fix the reader when LinkedIn changes it")
+	show := flag.Bool("show", false, "laptop only: show the browser window (default: headless, nothing on screen)")
 	flag.Parse()
+	visibleWindow = *show
+	if *dump {
+		os.Exit(dumpPosts(*fromChrome, *workspace))
+	}
 	if *inspect {
 		os.Exit(inspectFeed(*fromChrome))
 	}
@@ -78,49 +87,19 @@ func main() {
 	}
 }
 
-// viaLaptop scrolls the feed in Griffin's own Chrome profile. It returns an error, before scrolling anything,
-// when Chrome is missing or the profile is not signed in to LinkedIn.
+// viaLaptop scrolls the feed in Griffin's own Chrome profile, signed in with the owner's own LinkedIn login.
 func viaLaptop(ctx context.Context, cl linkedin.Classifier, d time.Duration, workspace int, fromChrome string) ([]linkedin.Post, linkedin.Stats, error) {
 	profile := os.Getenv("BROWSER_PROFILE_DIR")
 	if profile == "" {
 		home, _ := os.UserHomeDir()
 		profile = filepath.Join(home, ".griffin-host", "browser-profile")
 	}
-	if _, err := os.Stat(profile); err != nil {
-		return nil, linkedin.Stats{}, fmt.Errorf("no signed-in browser profile (run griffin-host browser-login)")
-	}
-	// Chrome keeps a SingletonLock in a profile that is open. The host service holds Griffin's profile while it
-	// runs, and a second Chrome cannot share it, so say so instead of failing halfway.
-	if !browser.ClearStaleLock(profile) {
-		return nil, linkedin.Stats{}, fmt.Errorf("the browser profile is in use (griffin-host is running); the laptop route needs the host to own the scroll")
-	}
-	// Use the owner's own LinkedIn login: copy just LinkedIn's login cookies from their Chrome profile into
-	// Griffin's (read-only on their side), refreshed each run so the session stays current.
-	if fromChrome != "" {
-		home, _ := os.UserHomeDir()
-		src := filepath.Join(home, ".config", "google-chrome", fromChrome)
-		if n, err := browser.BorrowCookies(src, profile, []string{"linkedin.com"}); err != nil {
-			fmt.Fprintf(os.Stderr, "could not borrow your LinkedIn login (%v); using whatever Griffin's browser already has\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "borrowed %d LinkedIn cookies from your Chrome profile %q\n", n, fromChrome)
-		}
-	}
-	chrome, err := browser.NewChrome(ctx, browser.ChromeConfig{BrowserPath: os.Getenv("WHATSAPP_BROWSER"), ProfileDir: profile, Visible: true, SystemKeyring: fromChrome != ""})
+	page, closeFn, err := linkedin.OpenLaptop(ctx, linkedin.LaptopConfig{BrowserPath: os.Getenv("WHATSAPP_BROWSER"), ProfileDir: profile, FromChrome: fromChrome, Visible: visibleWindow}, workspace)
 	if err != nil {
 		return nil, linkedin.Stats{}, err
 	}
-	defer chrome.Close()
-	var url, title string
-	if err := chromedp.Run(chrome.Context(), chromedp.Navigate("https://www.linkedin.com/feed/"), chromedp.Sleep(4*time.Second), chromedp.Location(&url), chromedp.Title(&title)); err != nil {
-		return nil, linkedin.Stats{}, err
-	}
-	if strings.Contains(url, "/login") || strings.Contains(url, "/authwall") || strings.Contains(url, "/checkpoint") {
-		return nil, linkedin.Stats{}, fmt.Errorf("the browser profile is not signed in to LinkedIn (it landed on %s, titled %q)", strings.SplitN(url, "?", 2)[0], title)
-	}
-	if err := linkedin.MoveToWorkspace(ctx, workspace, "LinkedIn"); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
-	return linkedin.WebScroller{Page: linkedin.ChromePage{Ctx: chrome.Context()}, Classifier: cl}.Run(ctx, d)
+	defer closeFn()
+	return linkedin.WebScroller{Page: page, Classifier: cl}.Run(ctx, d)
 }
 
 // inspectFeed loads the feed and prints the shape of what a post is made of: which containers exist and the
@@ -161,6 +140,40 @@ func inspectFeed(fromChrome string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	return 0
+}
+
+// dumpPosts reads the feed a few screens deep and prints each post unfiltered, so the reader can be checked
+// against what is really on the page (is "more" being expanded, are authors and ads right).
+func dumpPosts(fromChrome string, workspace int) int {
+	ctx := context.Background()
+	profile := filepath.Join(os.Getenv("HOME"), ".griffin-host", "browser-profile")
+	page, closeFn, err := linkedin.OpenLaptop(ctx, linkedin.LaptopConfig{BrowserPath: os.Getenv("WHATSAPP_BROWSER"), ProfileDir: profile, FromChrome: fromChrome, Visible: visibleWindow}, workspace)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer closeFn()
+	seen := map[string]bool{}
+	for i := 0; i < 6; i++ {
+		posts, err := linkedin.ReadFeed(ctx, page)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		for _, p := range posts {
+			k := p.Author + p.Text[:min(30, len(p.Text))]
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			t := strings.ReplaceAll(p.Text, "\n", " ")
+			end := t[max(0, len(t)-45):]
+			fmt.Printf("author=%q ad=%v len=%d urls=%d ends=%q\n", p.Author, p.Promoted, len(p.Text), len(p.URLs), end)
+		}
+		_ = linkedin.Scroll(ctx, page)
+		time.Sleep(2500 * time.Millisecond)
 	}
 	return 0
 }

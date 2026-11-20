@@ -62,13 +62,9 @@ func (s WebScroller) Run(ctx context.Context, d time.Duration) ([]Post, Stats, e
 	var posts []Post
 	last, same := "", 0
 	for deadline := time.Now().Add(d); time.Now().Before(deadline); {
-		raw, err := s.Page.Eval(ctx, feedScript)
+		onScreen, err := ReadFeed(ctx, s.Page)
 		if err != nil {
-			return posts, st, fmt.Errorf("could not read the feed: %w", err)
-		}
-		var onScreen []WebPost
-		if err := json.Unmarshal(raw, &onScreen); err != nil {
-			return posts, st, fmt.Errorf("could not read the feed: %w", err)
+			return posts, st, err
 		}
 		if sig := sigOf(onScreen); sig == last {
 			if same++; same >= 3 { // the feed stopped moving: its end, or a stuck page
@@ -110,6 +106,25 @@ func (s WebScroller) Run(ctx context.Context, d time.Duration) ([]Post, Stats, e
 		}
 	}
 	return posts, st, nil
+}
+
+// ReadFeed reads the posts on screen, expanding each one's "… more" first.
+func ReadFeed(ctx context.Context, page Page) ([]WebPost, error) {
+	raw, err := page.Eval(ctx, feedScript)
+	if err != nil {
+		return nil, fmt.Errorf("could not read the feed: %w", err)
+	}
+	var posts []WebPost
+	if err := json.Unmarshal(raw, &posts); err != nil {
+		return nil, fmt.Errorf("could not read the feed: %w", err)
+	}
+	return posts, nil
+}
+
+// Scroll moves the page down by most of a screen.
+func Scroll(ctx context.Context, page Page) error {
+	_, err := page.Eval(ctx, `window.scrollBy(0, window.innerHeight * 0.8); null`)
+	return err
 }
 
 func firstN(s string, n int) string {

@@ -161,8 +161,9 @@ func run(logger *slog.Logger, check bool) error {
 	// gateway to the drivers, everything else goes to the agent. The gateway is attached once the agent
 	// exists, because the agent is where the owner's policy arrives.
 	var handsExec *hands.Executor
-	if wa != nil || webSvc != nil || deskSvc != nil || browserSvc != nil {
-		handsExec = &hands.Executor{Agent: exec, Web: webSvc, Desktop: deskSvc, Browser: browserSvc, Logger: logger}
+	liSvc := newLinkedInService(logger)
+	if wa != nil || webSvc != nil || deskSvc != nil || browserSvc != nil || liSvc != nil {
+		handsExec = &hands.Executor{Agent: exec, Web: webSvc, Desktop: deskSvc, Browser: browserSvc, LinkedIn: liSvc, Logger: logger}
 		if wa != nil {
 			handsExec.WhatsApp = wa.messenger
 		}

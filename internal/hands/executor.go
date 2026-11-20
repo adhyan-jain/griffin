@@ -41,7 +41,9 @@ type Executor struct {
 	Desktop *desktop.Service
 	// Browser uses the owner's logged-in browser for a goal; nil when this host has none set up.
 	Browser *BrowserService
-	Logger  *slog.Logger
+	// LinkedIn scans the owner's LinkedIn feed into the shared Internships list; nil when not set up.
+	LinkedIn *LinkedInService
+	Logger   *slog.Logger
 }
 
 // Name implements worker.TaskExecutor.
@@ -75,6 +77,11 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 		return fail(err, false)
 	} else if ba != nil {
 		return e.runBrowser(ctx, task, ba)
+	}
+	if ls, err := domain.ParseLinkedInScan(task.InputPayload); err != nil {
+		return fail(err, false)
+	} else if ls != nil {
+		return e.runLinkedIn(ctx, task, ls)
 	}
 	if wa, err := domain.ParseWebAction(task.InputPayload); err != nil {
 		return fail(err, false)
