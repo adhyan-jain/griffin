@@ -122,3 +122,11 @@ func TestARedrawingScreenIsRetriedNotFatal(t *testing.T) {
 		t.Fatalf("a transient dump failure must not end the run: posts=%+v err=%v", posts, err)
 	}
 }
+
+func TestAFrozenFeedEndsTheRunEarly(t *testing.T) {
+	start := time.Now()
+	_, st, err := Scroller{ADB: &fakeADB{}, Pause: time.Millisecond, Settle: time.Millisecond}.Run(context.Background(), 30*time.Second)
+	if err != nil || !st.Stuck || time.Since(start) > 5*time.Second {
+		t.Fatalf("a screen that never changes must end the run: stuck=%v err=%v after %v", st.Stuck, err, time.Since(start))
+	}
+}

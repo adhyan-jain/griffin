@@ -42,6 +42,7 @@ type Post struct {
 // Stats counts why posts were dropped, so a run can be audited.
 type Stats struct {
 	Seen, Ads, NoAuthor, NotAJob, Seeker, NotReal, Unverified, Kept int
+	Stuck                                                           bool // ended early because the screen stopped changing
 }
 
 type uiNode struct {
@@ -255,10 +256,21 @@ func (s Scroller) Run(ctx context.Context, d time.Duration) ([]Post, Stats, erro
 	}
 	seen := map[string]bool{}
 	var posts []Post
+	last, same := "", 0
 	for deadline := time.Now().Add(d); time.Now().Before(deadline); {
 		items, err := s.dump(ctx)
 		if err != nil {
 			return posts, st, err
+		}
+		// Loop guard (an idea from OpenJarvis): an unchanged screen after a swipe means the feed ended or the
+		// app froze, so stop instead of swiping at nothing for the rest of the time budget.
+		if sig := screenSig(items); sig == last {
+			if same++; same >= 3 {
+				st.Stuck = true
+				return posts, st, nil
+			}
+		} else {
+			last, same = sig, 0
 		}
 		for _, body := range items {
 			if !isBody(body) {
@@ -311,6 +323,15 @@ func (s Scroller) Run(ctx context.Context, d time.Duration) ([]Post, Stats, erro
 		}
 	}
 	return posts, st, nil
+}
+
+func screenSig(items []item) string {
+	var b strings.Builder
+	for _, i := range items {
+		b.WriteString(i.text)
+		b.WriteByte('|')
+	}
+	return b.String()
 }
 
 func sleep(ctx context.Context, d time.Duration) bool {
