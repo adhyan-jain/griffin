@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/storage"
 )
 
@@ -128,5 +130,36 @@ func TestOtherTasksAndApplyTasksNeverTouchTheList(t *testing.T) {
 	w.saveTracker(context.Background(), apply, answer("## Tracker\n\n"+list1))
 	if len(store.arts) != 0 {
 		t.Fatal("an application task works on one posting, not on the list")
+	}
+}
+
+type seedRepo struct {
+	repository.TaskRepository
+	tasks []*domain.Task
+}
+
+func (r seedRepo) ListTasks(context.Context, repository.TaskFilter) ([]*domain.Task, error) {
+	return r.tasks, nil
+}
+
+// The first task to touch a tracker finds the user's existing data, not an empty list, and is told the date.
+func TestTheListIsSeededFromEarlierResultsOnFirstUse(t *testing.T) {
+	store, user := newMemStore(), uuid.New()
+	out, _ := json.Marshal(map[string]string{"response": "Here:\n\n" + list3})
+	old := &domain.Task{ID: uuid.New(), UserID: user, Title: "INTERNSHIP TRACKER (daily 08:00)", Goal: "x", OutputPayload: out, CreatedAt: time.Now().Add(-time.Hour)}
+	w := trackerWorker(store)
+	w.taskRepo = seedRepo{tasks: []*domain.Task{old}}
+
+	op := &domain.Task{ID: uuid.New(), UserID: user, Title: "remove the passed internships, i havent applied on any of them btw", Goal: "remove the passed internships, i havent applied on any of them btw"}
+	seen := w.withTrackerList(context.Background(), op)
+	if !strings.Contains(seen.Goal, "Gamma") || !strings.Contains(seen.Goal, "Today is") {
+		t.Fatalf("the task must see the seeded list and today's date: %q", seen.Goal)
+	}
+	if len(store.arts) != 1 {
+		t.Fatalf("exactly one list must be created, got %d", len(store.arts))
+	}
+	w.withTrackerList(context.Background(), op)
+	if len(store.arts) != 1 {
+		t.Fatal("seeding twice must not create a second list")
 	}
 }

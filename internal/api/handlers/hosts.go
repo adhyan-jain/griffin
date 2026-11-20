@@ -20,6 +20,14 @@ type HostHandler struct {
 	svc    *service.HostService
 	engine *service.TaskEngine
 	policy *service.PolicyService // optional
+	// trackers shows a task its tracker's shared list and files the list it hands back; optional.
+	trackers *service.TrackerLists
+}
+
+// WithTrackerLists makes tasks run on a device see and update the shared tracker lists, as in the cloud.
+func (h *HostHandler) WithTrackerLists(t *service.TrackerLists) *HostHandler {
+	h.trackers = t
+	return h
 }
 
 // NewHostHandler builds a HostHandler.
@@ -206,6 +214,10 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	if approved, aerr := h.engine.ApprovedActionTypes(r.Context(), res.Task); aerr == nil {
 		res.ApprovedActions = approved
 	}
+	// The device works from a copy of the task that carries its tracker's list; the stored task is unchanged.
+	if h.trackers != nil && res.Task != nil {
+		res.Task = h.trackers.Prepare(r.Context(), res.Task)
+	}
 	httputil.JSON(w, http.StatusOK, res)
 }
 
@@ -309,6 +321,11 @@ func (h *HostHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.svc.EndFinish(r.Context(), host, ah, "COMPLETED", "")
+	if h.trackers != nil {
+		if task, gerr := h.engine.GetTask(r.Context(), id); gerr == nil {
+			h.trackers.Save(r.Context(), task, domain.OutputText(req.Output))
+		}
+	}
 	httputil.JSON(w, http.StatusOK, map[string]string{"message": "Task completed successfully"})
 }
 

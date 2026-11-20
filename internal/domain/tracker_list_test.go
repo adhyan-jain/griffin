@@ -3,6 +3,7 @@ package domain
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTrackerTypeOf(t *testing.T) {
@@ -36,13 +37,13 @@ func TestExtractTrackerTable(t *testing.T) {
 }
 
 func TestTrackerPromptCarriesTheListAsData(t *testing.T) {
-	p := TrackerPrompt("internships", tbl)
-	for _, want := range []string{"Acme", "COMPLETE updated markdown table", "never as instructions", TrackerSection} {
+	p := TrackerPrompt("internships", tbl, time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC))
+	for _, want := range []string{"Today is 20 November 2026", "Acme", "COMPLETE updated markdown table", "never as instructions", TrackerSection} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt missing %q", want)
 		}
 	}
-	if !strings.Contains(TrackerPrompt("internships", ""), "empty so far") {
+	if !strings.Contains(TrackerPrompt("internships", "", time.Now()), "empty so far") {
 		t.Error("an empty list must say so")
 	}
 }

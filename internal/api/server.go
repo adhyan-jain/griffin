@@ -370,6 +370,9 @@ func NewServer(deps ServerDependencies) *Server {
 			policySvc = service.NewPolicyService(deps.PolicyRepo)
 		}
 		hostHandler := handlers.NewHostHandler(hostSvc, deps.Engine, policySvc)
+		if deps.StorageService != nil {
+			hostHandler.WithTrackerLists(&service.TrackerLists{Store: deps.StorageService, Tasks: deps.TaskRepo, Logger: deps.Logger})
+		}
 		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))
 		mux.Handle("GET /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.ListHosts)))
 		mux.Handle("PATCH /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.UpdateHost)))
