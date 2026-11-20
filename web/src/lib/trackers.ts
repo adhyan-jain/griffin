@@ -25,12 +25,15 @@ export function groupTrackerTasks(all: Task[], isTracker: (t: Task) => boolean):
   const nameOf = (t: Task) => (rootOf(t) ?? t).title.trim() || t.id;
   const keyOf = (t: Task): string => trackerTypeOf(nameOf(t)) ?? nameOf(t);
   const included = (t: Task) => isTracker(t) || (rootOf(t) !== undefined && isTracker(rootOf(t)!));
+  // A task that has produced nothing yet (queued, running, failed) never hides one that has.
+  const hasOutput = (t: Task) => t.output_payload != null && Object.keys(t.output_payload as object).length > 0;
+  const beats = (a: Task, b: Task) => (hasOutput(a) !== hasOutput(b) ? hasOutput(a) : when(a) >= when(b));
   const when = (t: Task) => Date.parse(t.completed_at || t.updated_at || t.created_at);
   const grouped = new Map<string, Task>();
   for (const t of all.filter(included)) {
     const key = keyOf(t);
     const existing = grouped.get(key);
-    if (!existing || when(t) >= when(existing)) grouped.set(key, t);
+    if (!existing || beats(t, existing)) grouped.set(key, t);
   }
   return Array.from(grouped.entries()).map(([key, t]) => {
     if (!isFollowUp(t)) return t;

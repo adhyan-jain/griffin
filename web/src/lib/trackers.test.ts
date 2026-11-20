@@ -37,6 +37,12 @@ describe("groupTrackerTasks", () => {
     expect(groupTrackerTasks([a, b], (t) => /internship/i.test(t.title)).map((c) => c.id)).toEqual(["b"]);
   });
 
+  it("a newer task with no output yet never hides the tracker that has data", () => {
+    const real = task("real", { title: "INTERNSHIP TRACKER", completed_at: "2026-11-19T08:00:00Z", output_payload: { text: "| Company |\n| Acme |" } as never });
+    const queued = task("queued", { title: "INTERNSHIP TRACKER - JOB EMAILS (daily 07:30)", status: "QUEUED", output_payload: null as never, updated_at: "2026-11-20T14:00:00Z" });
+    expect(groupTrackerTasks([real, queued], (t) => /internship/i.test(t.title)).map((c) => c.id)).toEqual(["real"]);
+  });
+
   it("different trackers stay separate", () => {
     const a = task("a", { title: "HACKATHON TRACKER" });
     const b = task("b", { title: "INTERNSHIP TRACKER" });
