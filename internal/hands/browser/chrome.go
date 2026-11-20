@@ -68,6 +68,9 @@ func NewChrome(ctx context.Context, cfg ChromeConfig) (*Chrome, error) {
 	return &Chrome{ctx: bctx, cancel: cancel}, nil
 }
 
+// Context is the browser's chromedp context, for callers that read pages themselves.
+func (c *Chrome) Context() context.Context { return c.ctx }
+
 // Close shuts the browser down and releases the profile.
 func (c *Chrome) Close() { c.cancel() }
 
