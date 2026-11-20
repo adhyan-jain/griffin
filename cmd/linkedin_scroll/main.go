@@ -13,6 +13,7 @@ import (
 
 	"github.com/griffin/core/internal/hands/linkedin"
 	"github.com/griffin/core/internal/hands/whatsapp"
+	"github.com/griffin/core/internal/provider/gemini"
 )
 
 func main() {
@@ -21,7 +22,12 @@ func main() {
 	out := flag.String("out", filepath.Join(home, "Documents", "Griffin", "internships", "linkedin_posts.json"), "where to save the posts")
 	flag.Parse()
 
-	posts, err := linkedin.Scroller{ADB: whatsapp.ExecADB{Serial: os.Getenv("ANDROID_SERIAL")}}.
+	model := &gemini.Client{APIKey: os.Getenv("GEMINI_API_KEY"), MaxOutputTokens: 10}
+	if !model.Enabled() {
+		fmt.Fprintln(os.Stderr, "set GEMINI_API_KEY: without it no post can be verified, so none would be saved")
+		os.Exit(1)
+	}
+	posts, st, err := linkedin.Scroller{ADB: whatsapp.ExecADB{Serial: os.Getenv("ANDROID_SERIAL")}, Classifier: linkedin.Gemini{Client: model}}.
 		Run(context.Background(), time.Duration(*minutes*float64(time.Minute)))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "scroll stopped: %v (saving the %d posts found)\n", err, len(posts))
@@ -32,7 +38,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, werr)
 		os.Exit(1)
 	}
-	fmt.Printf("%d job-like posts saved to %s\n", len(posts), *out)
+	fmt.Printf("%d real job posts saved to %s\n%+v\n", len(posts), *out, st)
 	if err != nil {
 		os.Exit(1)
 	}
