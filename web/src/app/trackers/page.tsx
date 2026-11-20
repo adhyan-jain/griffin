@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { TRACKER_TYPES, appliedKeys, applyTaskInput, classifyTask, groupTrackerTasks, internshipActionMessage, isApplyTask, trackerPeers, trackerTypeOf, type InternshipAction } from "@/lib/trackers";
-import { mergeTables, splitRows } from "@/lib/tracker-rows";
+import { mergeTables, removeListing, splitRows } from "@/lib/tracker-rows";
 import {
   ArrowDown,
   ArrowUp,
@@ -15,6 +15,7 @@ import {
   ChevronUp,
   Clock,
   ClipboardList,
+  Trash2,
   Download,
   FileText,
   ExternalLink,
@@ -281,9 +282,36 @@ function TableCellContent({ header, rawCell }: { header: string; rawCell: string
 
 /** Individual record card for mobile and card view modes */
 /** Set by an Internships tracker card so its rows can act on themselves (draft, plan, exact URL). */
-const RecordActionsContext = createContext<{ taskId: string } | null>(null);
+type RowActionsValue = { taskId: string; internship: boolean; remove: (company: string, role: string) => Promise<void> };
+const RecordActionsContext = createContext<RowActionsValue | null>(null);
 
-function InternshipActions({ taskId, entity, compact = false }: { taskId: string; entity: ReturnType<typeof parseRowToEntity>; compact?: boolean }) {
+function RemoveButton({ ctx, entity, compact }: { ctx: RowActionsValue; entity: ReturnType<typeof parseRowToEntity>; compact: boolean }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      title="Remove from the list"
+      aria-label={`Remove ${entity.title}`}
+      className={cn("h-8 gap-1 rounded-xl text-xs text-muted-foreground hover:text-destructive", compact ? "px-2" : "px-2")}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await ctx.remove(entity.title, entity.subtitle);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Trash2 className="size-3" />
+      <span className={compact ? "sr-only" : undefined}>Remove</span>
+    </Button>
+  );
+}
+
+function InternshipActions({ ctx, entity, compact = false }: { ctx: RowActionsValue; entity: ReturnType<typeof parseRowToEntity>; compact?: boolean }) {
+  const taskId = ctx.taskId;
   const [busy, setBusy] = useState<InternshipAction | "apply" | null>(null);
   const apply = async () => {
     setBusy("apply");
@@ -318,16 +346,25 @@ function InternshipActions({ taskId, entity, compact = false }: { taskId: string
       <Button size="sm" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={apply}>
         Apply
       </Button>
-      {entity.applyLink ? (
-        <a
-          href={entity.applyLink.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn("inline-flex items-center justify-center gap-1 text-[11px] text-muted-foreground hover:text-foreground", compact ? "hidden" : "col-span-3")}
-        >
-          Open listing <ExternalLink className="size-3" />
-        </a>
-      ) : null}
+      {compact ? (
+        <RemoveButton ctx={ctx} entity={entity} compact />
+      ) : (
+        <div className="col-span-3 flex items-center justify-between">
+          {entity.applyLink ? (
+            <a
+              href={entity.applyLink.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Open listing <ExternalLink className="size-3" />
+            </a>
+          ) : (
+            <span />
+          )}
+          <RemoveButton ctx={ctx} entity={entity} compact={false} />
+        </div>
+      )}
     </div>
   );
 }
@@ -465,12 +502,10 @@ function RecordCard({ entity }: { entity: ReturnType<typeof parseRowToEntity> })
         )}
       </div>
 
-      {actions ? (
-        <InternshipActions taskId={actions.taskId} entity={entity} />
-      ) : null}
+      {actions?.internship ? <InternshipActions ctx={actions} entity={entity} /> : null}
 
       {/* Action Button */}
-      {!actions && entity.applyLink && (
+      {!actions?.internship && entity.applyLink && (
         <div className="pt-3 mt-1">
           <Button
             asChild
@@ -484,6 +519,11 @@ function RecordCard({ entity }: { entity: ReturnType<typeof parseRowToEntity> })
           </Button>
         </div>
       )}
+      {actions && !actions.internship ? (
+        <div className="flex justify-end pt-1">
+          <RemoveButton ctx={actions} entity={entity} compact={false} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -558,7 +598,11 @@ function TableView({
                   ))}
                   {actions ? (
                     <td className="sticky right-0 bg-card px-3 py-2.5 align-top">
-                      <InternshipActions compact taskId={actions.taskId} entity={parseRowToEntity(headers, row)} />
+                      {actions.internship ? (
+                        <InternshipActions compact ctx={actions} entity={parseRowToEntity(headers, row)} />
+                      ) : (
+                        <RemoveButton compact ctx={actions} entity={parseRowToEntity(headers, row)} />
+                      )}
                     </td>
                   ) : null}
                 </tr>
@@ -635,10 +679,11 @@ interface TrackerCardProps {
   task: Task;
   parsedTables: ParsedTable[];
   closed?: { headers: string[]; applied: string[][]; passed: number };
+  onRemove: (task: Task, company: string, role: string) => Promise<void>;
   defaultViewMode?: ViewMode;
 }
 
-function TrackerCard({ task, parsedTables, closed, defaultViewMode = "auto" }: TrackerCardProps) {
+function TrackerCard({ task, parsedTables, closed, onRemove, defaultViewMode = "auto" }: TrackerCardProps) {
   const { text } = parseResult(task.output_payload);
   const [tableFilter, setTableFilter] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -761,7 +806,7 @@ function TrackerCard({ task, parsedTables, closed, defaultViewMode = "auto" }: T
   }, [primaryTable, tableFilter, sortCol, sortAsc]);
 
   return (
-    <RecordActionsContext.Provider value={trackerTypeOf(task.title) === "internships" ? { taskId: task.id } : null}>
+    <RecordActionsContext.Provider value={{ taskId: task.id, internship: classifyTask(task) === "internships", remove: (c, r) => onRemove(task, c, r) }}>
     <div className="overflow-hidden rounded-2xl border bg-card shadow-xs transition-colors hover:border-primary/40">
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 p-4 sm:px-6">
@@ -986,7 +1031,7 @@ export default function TrackersPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   // The shared list of each tracker type, kept by the server. Tasks of a type read and rewrite it.
-  const [sharedLists, setSharedLists] = useState<Record<string, string>>({});
+  const [sharedLists, setSharedLists] = useState<Record<string, { id: string; text: string }>>({});
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -998,7 +1043,7 @@ export default function TrackersPage() {
           (a) => a.metadata?.kind === "list" && typeof a.metadata?.tracker === "string",
         );
         const entries = await Promise.all(
-          arts.map(async (a) => [String(a.metadata?.tracker), await api.getArtifactText(a.id, { signal })] as const),
+          arts.map(async (a) => [String(a.metadata?.tracker), { id: a.id, text: await api.getArtifactText(a.id, { signal }) }] as const),
         );
         setSharedLists(Object.fromEntries(entries));
       } catch {
@@ -1046,7 +1091,7 @@ export default function TrackersPage() {
     const today = new Date();
     trackerTasks.forEach((t) => {
       const shared = sharedLists[classifyTask(t) ?? ""];
-      const fromList = shared ? extractTablesFromMarkdown(shared)[0] : undefined;
+      const fromList = shared ? extractTablesFromMarkdown(shared.text)[0] : undefined;
       const peers = trackerPeers(tasks ?? [], isTrackerTask, t);
       const merged = fromList ?? mergeTables(peers.map(firstTable).filter((x): x is ParsedTable => !!x));
       if (!merged) {
@@ -1062,6 +1107,43 @@ export default function TrackersPage() {
     });
     return { taskTables: tables, closedByTask: closed };
   }, [trackerTasks, tasks, applied, sharedLists]);
+
+  // Remove a listing. With a shared list it is edited in place (with an Undo); before one exists, a task
+  // does it, because tasks are what create and rewrite the list.
+  const removeFromTracker = async (task: Task, company: string, role: string) => {
+    const type = classifyTask(task);
+    const list = type ? sharedLists[type] : undefined;
+    try {
+      if (!list || !type) {
+        const label = TRACKER_TYPES.find((t) => t.id === type)?.label ?? "tracker";
+        await api.createTask({
+          title: `Remove ${company} from the ${label.toLowerCase()} tracker`.slice(0, 80),
+          goal: `Remove ${role} at ${company} from the ${label} tracker list, then give back the complete updated list.`,
+          manager_domain: "career",
+        });
+        toast.success("Removal task created");
+        return;
+      }
+      const { text, removed } = removeListing(list.text, company, role);
+      if (!removed) {
+        toast.info("That listing is not in the shared list");
+        return;
+      }
+      await api.updateArtifactText(list.id, text, "replace");
+      setSharedLists((prev) => ({ ...prev, [type]: { id: list.id, text } }));
+      toast.success(`Removed ${company}`, {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            await api.updateArtifactText(list.id, list.text, "replace");
+            setSharedLists((prev) => ({ ...prev, [type]: list }));
+          },
+        },
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove that listing");
+    }
+  };
 
   // Global Export: Combines latest runs across categories into one multi-sheet Excel
   const exportMasterExcel = () => {
@@ -1256,6 +1338,7 @@ export default function TrackersPage() {
                 task={task}
                 parsedTables={taskTables.get(task.id) || []}
                 closed={closedByTask.get(task.id)}
+                onRemove={removeFromTracker}
                 defaultViewMode={globalViewMode}
               />
             ))}

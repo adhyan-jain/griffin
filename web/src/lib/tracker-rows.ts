@@ -62,3 +62,30 @@ export function splitRows(table: ParsedTable, today: Date, applied: Set<string>)
   }
   return out;
 }
+
+const cellsOf = (line: string) => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+
+/**
+ * Takes one listing out of a list's markdown, leaving every other line as it was. Returns the new text and
+ * how many rows went, so the caller can tell a removal that matched nothing.
+ */
+export function removeListing(markdown: string, company: string, role: string): { text: string; removed: number } {
+  const want = listingKey(company, role);
+  let headers: string[] | null = null;
+  let removed = 0;
+  const kept: string[] = [];
+  for (const line of markdown.split("\n")) {
+    if (!line.trim().startsWith("|")) {
+      kept.push(line);
+      continue;
+    }
+    const cells = cellsOf(line);
+    if (headers === null) headers = cells;
+    else if (!cells.every((c) => /^:?-{3,}:?$/.test(c)) && rowKey(headers, cells) === want) {
+      removed++;
+      continue;
+    }
+    kept.push(line);
+  }
+  return { text: kept.join("\n"), removed };
+}

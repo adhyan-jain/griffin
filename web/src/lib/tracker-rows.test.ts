@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listingKey, mergeTables, splitRows } from "@/lib/tracker-rows";
+import { listingKey, mergeTables, removeListing, splitRows } from "@/lib/tracker-rows";
 
 const H = ["Company", "Role", "Deadline", "Application Link"];
 const t = (rows: string[][], headers = H) => ({ title: "t", headers, rows });
@@ -36,5 +36,21 @@ describe("splitRows", () => {
   });
   it("an applied row with a passed deadline is still applied, not passed", () => {
     expect(splitRows(table, today, new Set([listingKey("Old", "Intern")])).applied.map((r) => r[0])).toEqual(["Old"]);
+  });
+});
+
+describe("removeListing", () => {
+  const md = "# Internships tracker\n\n| Company | Role | Tier |\n|---|---|---|\n| Acme | SDE Intern | A |\n| Beta | ML Intern | C |";
+  it("takes out only the matching row and keeps the rest of the file", () => {
+    const r = removeListing(md, "acme", "sde  intern");
+    expect(r.removed).toBe(1);
+    expect(r.text).toContain("# Internships tracker");
+    expect(r.text).toContain("Beta");
+    expect(r.text).not.toContain("Acme");
+  });
+  it("reports a removal that matched nothing and changes nothing", () => {
+    const r = removeListing(md, "Nobody", "Intern");
+    expect(r.removed).toBe(0);
+    expect(r.text).toBe(md);
   });
 });
