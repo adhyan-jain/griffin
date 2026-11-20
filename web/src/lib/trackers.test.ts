@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "@/lib/api";
-import { groupTrackerTasks, internshipActionMessage } from "@/lib/trackers";
+import { appliedKeys, applyTaskInput, classifyTask, groupTrackerTasks, internshipActionMessage, trackerPeers } from "@/lib/trackers";
 
 const task = (id: string, over: Partial<Task> = {}, payload: unknown = {}): Task =>
   ({ id, title: id, goal: id, status: "COMPLETED", manager_domain: "research", priority: "NORMAL", created_at: "2026-11-19T10:00:00Z", updated_at: "2026-11-19T10:00:00Z", input_payload: payload, ...over }) as Task;
@@ -64,5 +64,39 @@ describe("internshipActionMessage", () => {
   });
   it("asks for the exact posting URL", () => {
     expect(internshipActionMessage("url", "Acme", "SDE Intern")).toMatch(/exact application URL/);
+  });
+});
+
+describe("new internship tasks join the one Internships tracker", () => {
+  const isTracker = (t: Task) => classifyTask(t) === "internships";
+  const tracker = task("t", { title: "INTERNSHIP TRACKER", goal: "weekly list", completed_at: "2026-11-19T08:00:00Z", output_payload: { text: "x" } as never });
+  const gather = task("g", { title: "Find SDE roles", goal: "Gather a list of companies hiring interns for summer 2027", completed_at: "2026-11-20T08:00:00Z", output_payload: { text: "y" } as never });
+
+  it("is typed by its goal when the title has no keyword", () => {
+    expect(classifyTask(gather)).toBe("internships");
+    expect(groupTrackerTasks([tracker, gather], isTracker)).toHaveLength(1);
+  });
+  it("does not mistake 'internal' for an internship", () => {
+    expect(classifyTask(task("i", { title: "Internal audit prep", goal: "check internal docs" }))).not.toBe("internships");
+  });
+  it("lists every task of the tracker so their rows can be appended", () => {
+    const winner = groupTrackerTasks([tracker, gather], isTracker)[0];
+    expect(trackerPeers([tracker, gather], isTracker, winner).map((p) => p.id)).toEqual(["t", "g"]);
+  });
+});
+
+describe("apply tasks", () => {
+  const apply = task("a", { title: "APPLY - Acme - SDE Intern", status: "COMPLETED" }, { apply_for: { company: "Acme", role: "SDE Intern", url: null } });
+  it("never become a tracker, even with 'intern' in the title", () => {
+    expect(groupTrackerTasks([apply], (t) => /intern/i.test(t.title))).toHaveLength(0);
+  });
+  it("mark their listing applied unless cancelled or failed", () => {
+    expect(appliedKeys([apply]).has("acme|sde intern")).toBe(true);
+    expect(appliedKeys([{ ...apply, status: "FAILED" } as Task]).size).toBe(0);
+  });
+  it("wait for approval instead of submitting", () => {
+    const input = applyTaskInput("Acme", "SDE Intern", "https://a/1");
+    expect(input.goal).toMatch(/Do not submit anything until I approve/);
+    expect(input.goal).toContain("https://a/1");
   });
 });
