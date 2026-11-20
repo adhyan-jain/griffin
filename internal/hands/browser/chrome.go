@@ -31,6 +31,9 @@ type ChromeConfig struct {
 	Visible     bool
 	// NoSandbox is for containers and some Linux setups that cannot run Chrome's sandbox.
 	NoSandbox bool
+	// SystemKeyring makes Chrome encrypt and read cookies with the desktop keyring, as a normal Chrome does,
+	// so cookies borrowed from the owner's own Chrome can be read. The default (a fixed key) cannot read them.
+	SystemKeyring bool
 }
 
 // NewChrome starts the browser. Close it when done: it holds the profile open.
@@ -57,6 +60,9 @@ func NewChrome(ctx context.Context, cfg ChromeConfig) (*Chrome, error) {
 	)
 	if cfg.NoSandbox {
 		opts = append(opts, chromedp.NoSandbox)
+	}
+	if cfg.SystemKeyring {
+		opts = append(opts, chromedp.Flag("password-store", false), chromedp.Flag("use-mock-keychain", false))
 	}
 	actx, cancelA := chromedp.NewExecAllocator(ctx, opts...)
 	bctx, cancelB := chromedp.NewContext(actx)

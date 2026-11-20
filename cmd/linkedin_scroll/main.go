@@ -29,9 +29,14 @@ func main() {
 	minutes := flag.Float64("minutes", 10, "how long to scroll")
 	via := flag.String("via", "auto", "auto (laptop, else phone), laptop, or phone")
 	workspace := flag.Int("workspace", 8, "Hyprland workspace for the laptop window")
+	fromChrome := flag.String("from-chrome", "Default", "your own Chrome profile whose LinkedIn login Griffin's browser borrows (empty to disable)")
 	home, _ := os.UserHomeDir()
 	out := flag.String("out", filepath.Join(home, "Documents", "Griffin", "internships", "linkedin_posts.json"), "where to save the posts")
+	inspect := flag.Bool("inspect", false, "laptop only: print what the feed's markup looks like, to fix the reader when LinkedIn changes it")
 	flag.Parse()
+	if *inspect {
+		os.Exit(inspectFeed(*fromChrome))
+	}
 
 	model := &gemini.Client{APIKey: os.Getenv("GEMINI_API_KEY"), MaxOutputTokens: 10}
 	if !model.Enabled() {
@@ -47,7 +52,7 @@ func main() {
 	var err error
 	used := ""
 	if *via == "auto" || *via == "laptop" {
-		posts, st, err = viaLaptop(ctx, cl, d, *workspace)
+		posts, st, err = viaLaptop(ctx, cl, d, *workspace, *fromChrome)
 		used = "laptop"
 		if err != nil && *via == "auto" {
 			fmt.Fprintf(os.Stderr, "laptop route unavailable (%v); using the phone\n", err)
@@ -75,7 +80,7 @@ func main() {
 
 // viaLaptop scrolls the feed in Griffin's own Chrome profile. It returns an error, before scrolling anything,
 // when Chrome is missing or the profile is not signed in to LinkedIn.
-func viaLaptop(ctx context.Context, cl linkedin.Classifier, d time.Duration, workspace int) ([]linkedin.Post, linkedin.Stats, error) {
+func viaLaptop(ctx context.Context, cl linkedin.Classifier, d time.Duration, workspace int, fromChrome string) ([]linkedin.Post, linkedin.Stats, error) {
 	profile := os.Getenv("BROWSER_PROFILE_DIR")
 	if profile == "" {
 		home, _ := os.UserHomeDir()
@@ -86,10 +91,21 @@ func viaLaptop(ctx context.Context, cl linkedin.Classifier, d time.Duration, wor
 	}
 	// Chrome keeps a SingletonLock in a profile that is open. The host service holds Griffin's profile while it
 	// runs, and a second Chrome cannot share it, so say so instead of failing halfway.
-	if _, err := os.Lstat(filepath.Join(profile, "SingletonLock")); err == nil {
+	if !browser.ClearStaleLock(profile) {
 		return nil, linkedin.Stats{}, fmt.Errorf("the browser profile is in use (griffin-host is running); the laptop route needs the host to own the scroll")
 	}
-	chrome, err := browser.NewChrome(ctx, browser.ChromeConfig{BrowserPath: os.Getenv("WHATSAPP_BROWSER"), ProfileDir: profile, Visible: true})
+	// Use the owner's own LinkedIn login: copy just LinkedIn's login cookies from their Chrome profile into
+	// Griffin's (read-only on their side), refreshed each run so the session stays current.
+	if fromChrome != "" {
+		home, _ := os.UserHomeDir()
+		src := filepath.Join(home, ".config", "google-chrome", fromChrome)
+		if n, err := browser.BorrowCookies(src, profile, []string{"linkedin.com"}); err != nil {
+			fmt.Fprintf(os.Stderr, "could not borrow your LinkedIn login (%v); using whatever Griffin's browser already has\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "borrowed %d LinkedIn cookies from your Chrome profile %q\n", n, fromChrome)
+		}
+	}
+	chrome, err := browser.NewChrome(ctx, browser.ChromeConfig{BrowserPath: os.Getenv("WHATSAPP_BROWSER"), ProfileDir: profile, Visible: true, SystemKeyring: fromChrome != ""})
 	if err != nil {
 		return nil, linkedin.Stats{}, err
 	}
@@ -105,4 +121,46 @@ func viaLaptop(ctx context.Context, cl linkedin.Classifier, d time.Duration, wor
 		fmt.Fprintln(os.Stderr, err)
 	}
 	return linkedin.WebScroller{Page: linkedin.ChromePage{Ctx: chrome.Context()}, Classifier: cl}.Run(ctx, d)
+}
+
+// inspectFeed loads the feed and prints the shape of what a post is made of: which containers exist and the
+// class names inside the first ones. Nothing is saved.
+func inspectFeed(fromChrome string) int {
+	ctx := context.Background()
+	profile := filepath.Join(os.Getenv("HOME"), ".griffin-host", "browser-profile")
+	if !browser.ClearStaleLock(profile) {
+		fmt.Fprintln(os.Stderr, "the browser profile is in use")
+		return 1
+	}
+	if fromChrome != "" {
+		_, _ = browser.BorrowCookies(filepath.Join(os.Getenv("HOME"), ".config", "google-chrome", fromChrome), profile, []string{"linkedin.com"})
+	}
+	chrome, err := browser.NewChrome(ctx, browser.ChromeConfig{BrowserPath: os.Getenv("WHATSAPP_BROWSER"), ProfileDir: profile, Visible: true, SystemKeyring: fromChrome != ""})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer chrome.Close()
+	var out string
+	err = chromedp.Run(chrome.Context(), chromedp.Navigate("https://www.linkedin.com/feed/"), chromedp.Sleep(7*time.Second), chromedp.Evaluate(`(() => {
+  const r = [];
+  r.push('url ' + location.href + ' title ' + document.title);
+  for (const sel of ['div.feed-shared-update-v2', '[data-urn^="urn:li:activity"]', '[data-id^="urn:li:activity"]', 'div[role="listitem"]', 'main', 'article', '[componentkey]']) r.push(sel + ' => ' + document.querySelectorAll(sel).length);
+  document.querySelectorAll('div[role="listitem"]').forEach((item, i) => {
+    const links = Array.from(item.querySelectorAll('a[href*="/in/"], a[href*="/company/"], a[href*="/school/"]')).slice(0, 2).map(a => a.getAttribute('href').split('?')[0].slice(0, 50) + ' "' + a.innerText.trim().split('\\n')[0].slice(0, 30) + '"');
+    const btns = Array.from(item.querySelectorAll('button, [role="button"]')).map(b => (b.getAttribute('aria-label') || b.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 30)).filter(Boolean).slice(0, 8);
+    const more = Array.from(item.querySelectorAll('button, span, a, [role="button"]')).filter(e => /^(…|\\.\\.\\.)?\\s*(see )?more$/i.test((e.innerText || '').trim())).map(e => e.tagName + (e.getAttribute('role') ? '[' + e.getAttribute('role') + ']' : ''));
+    r.push('#' + i + ' text: ' + item.innerText.slice(0, 220).replace(/\\n+/g, ' / '));
+    r.push('   links: ' + links.join(' ; '));
+    r.push('   buttons: ' + btns.join(' | '));
+    r.push('   more-controls: ' + more.join(','));
+  });
+  return r.join('\n');
+})()`, &out))
+	fmt.Println(out)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }

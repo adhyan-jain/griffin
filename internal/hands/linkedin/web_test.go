@@ -15,7 +15,7 @@ type fakePage struct {
 
 func (f *fakePage) Eval(_ context.Context, script string) (json.RawMessage, error) {
 	f.scripts = append(f.scripts, script)
-	if strings.Contains(script, "feed-shared-update-v2") {
+	if strings.Contains(script, "Feed post") {
 		return json.Marshal(f.feed)
 	}
 	return json.RawMessage("null"), nil

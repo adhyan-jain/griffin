@@ -30,17 +30,16 @@ type WebPost struct {
 // (the only thing it ever clicks), then returns the author, the full text, whether it is an ad, and its links.
 const feedScript = `(async () => {
   const out = [];
-  const posts = document.querySelectorAll('div.feed-shared-update-v2, [data-urn^="urn:li:activity"]');
-  for (const p of posts) {
-    const more = p.querySelector('button.feed-shared-inline-show-more-text__see-more-less-toggle, button[aria-label*="see more" i]');
-    if (more && /more/i.test(more.innerText || more.getAttribute('aria-label') || '')) { more.click(); await new Promise(r => setTimeout(r, 300)); }
-    const actor = p.querySelector('.update-components-actor__title, .update-components-actor__name');
-    const author = (actor ? (actor.querySelector('span[aria-hidden="true"]') || actor).innerText : '').trim().split('\n')[0];
-    const sub = (p.querySelector('.update-components-actor__sub-description, .update-components-actor__meta') || {}).innerText || '';
-    const promoted = /\b(promoted|sponsored)\b/i.test(sub) || !!p.querySelector('[aria-label*="Promoted" i], [aria-label*="Sponsored" i]');
-    const body = p.querySelector('.update-components-text, .feed-shared-update-v2__description');
-    const text = (body ? body.innerText : '').trim();
-    const urls = Array.from(p.querySelectorAll('a[href^="http"]')).map(a => a.href).filter(h => !/linkedin\.com\/(in|company|feed|hashtag)\//.test(h) || /\/jobs\//.test(h));
+  for (const p of document.querySelectorAll('div[role="listitem"]')) {
+    const raw = (p.innerText || '').trim();
+    if (!/^Feed post/i.test(raw)) continue;
+    const more = Array.from(p.querySelectorAll('button')).find(b => /^(…|\.\.\.)\s*more$/i.test((b.innerText || '').trim()));
+    if (more) { more.click(); await new Promise(r => setTimeout(r, 350)); }
+    const text = (p.innerText || '').trim().replace(/^Feed post\s*/i, '');
+    const menu = p.querySelector('button[aria-label^="Open control menu for post by"]');
+    const author = menu ? menu.getAttribute('aria-label').replace(/^Open control menu for post by\s*/i, '').trim() : '';
+    const promoted = /(^|\n)\s*(promoted|sponsored)\s*(\n|$)/i.test(text);
+    const urls = Array.from(p.querySelectorAll('a[href^="http"]')).map(a => a.href).filter(h => !/linkedin\.com\/(in|company|school|feed|hashtag|posts)\//.test(h) || /\/jobs\//.test(h));
     if (text) out.push({author, text, promoted, urls});
   }
   return out;
