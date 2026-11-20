@@ -196,3 +196,19 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 	}
 	return title, goal, payload
 }
+
+// ProfileKind marks the stored copy of the owner's verified profile that application tasks are shown.
+const ProfileKind = "owner_profile"
+
+// IsApplyTask reports whether a task prepares one application (its payload has apply_for).
+func IsApplyTask(inputPayload json.RawMessage) bool {
+	var p struct {
+		ApplyFor json.RawMessage `json:"apply_for"`
+	}
+	return json.Unmarshal(inputPayload, &p) == nil && len(p.ApplyFor) > 0 && string(p.ApplyFor) != "null"
+}
+
+// ApplyProfilePrompt is what an application task is shown about the owner: verified facts only, no inventing.
+func ApplyProfilePrompt(profile string) string {
+	return "\n\n---\nThe owner's verified profile. Write the application from these facts only: do not invent employers, projects, numbers, skills or links, and leave out anything these facts do not support. Sign it with the real name and contact details below, with no placeholders.\n\n" + strings.TrimSpace(profile)
+}

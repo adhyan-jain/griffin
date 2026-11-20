@@ -89,6 +89,9 @@ func (w *TrackerLists) Prepare(ctx context.Context, task *domain.Task) *domain.T
 	if w == nil || w.Store == nil {
 		return task
 	}
+	if domain.IsApplyTask(task.InputPayload) {
+		return w.withProfile(ctx, task)
+	}
 	t := w.typeFor(ctx, task)
 	if t == "" {
 		return task
@@ -207,4 +210,26 @@ func (w *TrackerLists) seed(ctx context.Context, task *domain.Task, t string) *d
 		return nil
 	}
 	return list
+}
+
+// withProfile shows an application task the owner's verified profile, so a draft is grounded in real facts and
+// carries the real name and links instead of placeholders.
+func (w *TrackerLists) withProfile(ctx context.Context, task *domain.Task) *domain.Task {
+	arts, err := w.Store.ListByKind(ctx, task.UserID, domain.ProfileKind)
+	if err != nil || len(arts) == 0 {
+		return task
+	}
+	best := arts[0]
+	for _, a := range arts {
+		if a.CreatedAt.After(best.CreatedAt) {
+			best = a
+		}
+	}
+	text, err := w.Store.ReadText(ctx, task.UserID, best.ID, trackerReadLimit)
+	if err != nil || strings.TrimSpace(text) == "" {
+		return task
+	}
+	cp := *task
+	cp.Goal = task.Goal + domain.ApplyProfilePrompt(text)
+	return &cp
 }

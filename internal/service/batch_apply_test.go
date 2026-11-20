@@ -81,3 +81,35 @@ func TestAnOrdinaryTaskIsNotSplit(t *testing.T) {
 		t.Fatal("a task that is not a batch request must run as usual")
 	}
 }
+
+func TestApplicationTasksAreShownTheOwnersVerifiedProfile(t *testing.T) {
+	store := profileStore{text: "# Owner profile\n\n- Full name: Ada Lovelace\n- [f1] Engine: Built the Analytical Engine"}
+	w := &TrackerLists{Store: store}
+	title, goal, payload := domain.ApplyTaskFor("Acme", "SDE Intern", "https://a")
+	task := &domain.Task{ID: uuid.New(), UserID: uuid.New(), Title: title, Goal: goal, InputPayload: payload}
+	seen := w.Prepare(context.Background(), task)
+	if !strings.Contains(seen.Goal, "Ada Lovelace") || !strings.Contains(seen.Goal, "do not invent") || !strings.Contains(seen.Goal, "no placeholders") {
+		t.Fatalf("an application task must be shown the profile and told not to invent:\n%s", seen.Goal)
+	}
+	if task.Goal == seen.Goal {
+		t.Fatal("the stored task must not change")
+	}
+}
+
+type profileStore struct{ text string }
+
+func (s profileStore) SaveArtifact(context.Context, storage.SaveArtifactInput) (*domain.Artifact, error) {
+	return nil, nil
+}
+func (s profileStore) ListByKind(_ context.Context, _ uuid.UUID, kind string) ([]*domain.Artifact, error) {
+	if kind != domain.ProfileKind {
+		return nil, nil
+	}
+	return []*domain.Artifact{{ID: uuid.New()}}, nil
+}
+func (s profileStore) ReadText(context.Context, uuid.UUID, uuid.UUID, int64) (string, error) {
+	return s.text, nil
+}
+func (s profileStore) UpdateText(context.Context, uuid.UUID, uuid.UUID, string, bool, int64) (*domain.Artifact, error) {
+	return nil, nil
+}
