@@ -99,7 +99,7 @@ func viaLaptop(ctx context.Context, cl linkedin.Classifier, d time.Duration, wor
 		return nil, linkedin.Stats{}, err
 	}
 	if strings.Contains(url, "/login") || strings.Contains(url, "/authwall") || strings.Contains(url, "/checkpoint") {
-		return nil, linkedin.Stats{}, fmt.Errorf("the browser profile is not signed in to LinkedIn")
+		return nil, linkedin.Stats{}, fmt.Errorf("the browser profile is not signed in to LinkedIn (it landed on %s, titled %q)", strings.SplitN(url, "?", 2)[0], title)
 	}
 	if err := linkedin.MoveToWorkspace(ctx, workspace, "LinkedIn"); err != nil {
 		fmt.Fprintln(os.Stderr, err)
