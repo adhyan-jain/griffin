@@ -985,11 +985,25 @@ export default function TrackersPage() {
   const [globalViewMode, setGlobalViewMode] = useState<ViewMode>("auto");
   const [refreshing, setRefreshing] = useState(false);
 
+  // The shared list of each tracker type, kept by the server. Tasks of a type read and rewrite it.
+  const [sharedLists, setSharedLists] = useState<Record<string, string>>({});
+
   const { refresh } = usePolling(
     async (signal) => {
       const all = await api.listTasks(undefined, { signal });
       setTasks(all);
       setError(null);
+      try {
+        const arts = (await api.listArtifacts(undefined, { signal })).filter(
+          (a) => a.metadata?.kind === "list" && typeof a.metadata?.tracker === "string",
+        );
+        const entries = await Promise.all(
+          arts.map(async (a) => [String(a.metadata?.tracker), await api.getArtifactText(a.id, { signal })] as const),
+        );
+        setSharedLists(Object.fromEntries(entries));
+      } catch {
+        // The list is an enhancement: without it the cards fall back to the task outputs.
+      }
     },
     { intervalMs: 15000 },
   );
@@ -1031,8 +1045,10 @@ export default function TrackersPage() {
     };
     const today = new Date();
     trackerTasks.forEach((t) => {
+      const shared = sharedLists[classifyTask(t) ?? ""];
+      const fromList = shared ? extractTablesFromMarkdown(shared)[0] : undefined;
       const peers = trackerPeers(tasks ?? [], isTrackerTask, t);
-      const merged = mergeTables(peers.map(firstTable).filter((x): x is ParsedTable => !!x));
+      const merged = fromList ?? mergeTables(peers.map(firstTable).filter((x): x is ParsedTable => !!x));
       if (!merged) {
         const { text } = parseResult(t.output_payload);
         tables.set(t.id, text ? extractTablesFromMarkdown(text) : []);
@@ -1045,7 +1061,7 @@ export default function TrackersPage() {
       }
     });
     return { taskTables: tables, closedByTask: closed };
-  }, [trackerTasks, tasks, applied]);
+  }, [trackerTasks, tasks, applied, sharedLists]);
 
   // Global Export: Combines latest runs across categories into one multi-sheet Excel
   const exportMasterExcel = () => {

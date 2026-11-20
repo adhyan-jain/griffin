@@ -165,7 +165,7 @@ export interface Artifact {
   file_size_bytes?: number | null;
   mime_type?: string | null;
   /** Free-form tags; `{ kind: "list" }` marks a living list. */
-  metadata?: { kind?: string } | null;
+  metadata?: { kind?: string; tracker?: string } | null;
   updated_at?: string;
   created_at: string;
 }
