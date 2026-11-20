@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { groupTrackerTasks } from "@/lib/trackers";
+import { TRACKER_TYPES, groupTrackerTasks } from "@/lib/trackers";
 import {
   ArrowDown,
   ArrowUp,
@@ -42,12 +42,7 @@ type TrackerCategory = "all" | "internships" | "hackathons" | "opensource" | "hy
 
 const CATEGORIES: { id: TrackerCategory; label: string; pattern: RegExp }[] = [
   { id: "all", label: "All Trackers", pattern: /.*/ },
-  { id: "internships", label: "Internships", pattern: /internship/i },
-  { id: "hackathons", label: "Hackathons", pattern: /hackathon/i },
-  { id: "opensource", label: "Open Source", pattern: /open-source|oss/i },
-  { id: "hygiene", label: "Repo Hygiene", pattern: /hygiene|repo/i },
-  { id: "dsa", label: "DSA Coach", pattern: /dsa/i },
-  { id: "reports", label: "Reports & Briefs", pattern: /brief|report|scorecard|audit|thread/i },
+  ...TRACKER_TYPES,
 ];
 
 function isTrackerTask(task: Task): boolean {

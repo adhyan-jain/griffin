@@ -24,6 +24,19 @@ describe("groupTrackerTasks", () => {
     expect(cards.map((c) => c.id)).toEqual(["n"]);
   });
 
+  it("a follow-up with unrelated wording still joins its tracker's type", () => {
+    const root = task("r", { title: "HACKATHON TRACKER", completed_at: "2026-11-19T13:00:00Z" });
+    const follow = task("f", { title: "JJ Follow-up: give real events", completed_at: "2026-11-19T14:00:00Z" }, { thread_id: "r", follow_up_of: "r" });
+    const cards = groupTrackerTasks([root, follow], isTracker);
+    expect(cards.map((c) => c.id)).toEqual(["f"]);
+  });
+
+  it("two tasks of one type share a single card", () => {
+    const a = task("a", { title: "INTERNSHIP TRACKER (daily)", completed_at: "2026-11-19T08:00:00Z" });
+    const b = task("b", { title: "Internship tracker: LinkedIn scan", completed_at: "2026-11-20T08:00:00Z" });
+    expect(groupTrackerTasks([a, b], (t) => /internship/i.test(t.title)).map((c) => c.id)).toEqual(["b"]);
+  });
+
   it("different trackers stay separate", () => {
     const a = task("a", { title: "HACKATHON TRACKER" });
     const b = task("b", { title: "INTERNSHIP TRACKER" });
