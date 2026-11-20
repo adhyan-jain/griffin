@@ -261,6 +261,8 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		execTask = withPlaybookNotes(execTask, notes)
 	}
 
+	execTask = w.withTrackerList(ctx, execTask)
+
 	res, execErr := w.executor.Execute(taskCtx, execTask)
 	durationMs := int(time.Since(start).Milliseconds())
 
@@ -382,6 +384,7 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		if !chat {
 			w.saveResultFile(ctx, task, res)
 			w.savePlaybook(ctx, task, res)
+			w.saveTracker(ctx, task, res)
 		}
 		w.notifyFinished(ctx, task.ID)
 	}
