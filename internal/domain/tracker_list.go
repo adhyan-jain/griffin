@@ -205,10 +205,11 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 	}
 	pdf := RepoResumeDir + "/" + fileSafe(company+"_"+role) + ".pdf"
 	goal += "\n\nDo exactly this, nothing extra:\n" +
-		"1. Open the posting and its application form. Note what the form really asks for: each field, upload and question, with any word limit. Do not add standard questions of your own.\n" +
+		"1. Open the posting link once and read its application form: each field, upload and question, with any word limit. Do not add questions of your own. If the posting or role cannot be found within about 5 tool calls, stop searching: use the usual fields of an application form (name, email, phone, location, links, education, resume) and say \"posting not found\" in one line.\n" +
 		"2. Fill every field from the owner's verified profile and resume context. Leave a field out if the facts do not support it. Each written answer is 2-4 sentences, never long paragraphs.\n" +
 		"3. Make ONE tailored one-page resume: keep the owner's real projects and bullets, reorder and trim them to fit this posting, invent nothing. Write it as a complete HTML document with inline CSS that prints well on A4, inside a fenced ```resume block in your answer. Do not run any command to make a PDF: Griffin renders it to " + pdf + " itself. This PDF is what the owner reviews.\n" +
 		"4. Do not submit anything. It waits for the owner's approval. Do not look for referral contacts; a separate task does that.\n" +
+		"Limits: use only the verified profile shown below this task; do not open other files on the owner's computer. Aim to finish in under 5 minutes and about 15 tool calls; a good short answer now beats a perfect one never.\n\n" +
 		"Answer in exactly this shape and keep it short, with no playbook or extra sections:\n" +
 		"RESUME_PDF: " + pdf + "\n" +
 		"FORM:\n- <field>: <value>"

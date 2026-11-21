@@ -87,7 +87,7 @@ func TestApplyTasksNeedAHostThatCanOpenThePosting(t *testing.T) {
 
 func TestApplyTaskIsNarrowAndAsksForOneResumePDF(t *testing.T) {
 	_, goal, _ := ApplyTaskFor("Qdrant", "Systems Intern", "https://q.example/job")
-	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored one-page resume", "Do not submit", "RESUME_PDF:", "Do not look for referral contacts"} {
+	for _, want := range []string{"read its application form", "2-4 sentences", "ONE tailored one-page resume", "Do not submit", "RESUME_PDF:", "Do not look for referral contacts"} {
 		if !strings.Contains(goal, want) {
 			t.Errorf("goal is missing %q", want)
 		}
@@ -161,5 +161,14 @@ func TestResumeHTMLIsTakenFromTheAnswerAndKeptOutOfTheReviewedText(t *testing.T)
 	_, goal, _ := ApplyTaskFor("Acme", "Intern", "")
 	if !strings.Contains(goal, "```resume") || strings.Contains(goal, "chromium") {
 		t.Fatal("the model writes HTML only; it is not asked to run a PDF tool")
+	}
+}
+
+func TestApplyTaskIsBoundedSoItCannotSearchForever(t *testing.T) {
+	_, goal, _ := ApplyTaskFor("Qdrant", "Systems Intern", "https://q.example/job")
+	for _, want := range []string{"5 tool calls", "posting not found", "do not open other files", "under 5 minutes"} {
+		if !strings.Contains(goal, want) {
+			t.Errorf("goal must bound the work: missing %q", want)
+		}
 	}
 }
