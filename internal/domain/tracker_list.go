@@ -661,3 +661,56 @@ func WithListingStatus(text, company, role, status string) (out string, changed 
 	}
 	return text, false
 }
+
+// ListingOf is the listing an application, submission or referral task works on ("" company for any other task).
+func ListingOf(inputPayload json.RawMessage) (company, role string) {
+	var p struct {
+		ApplyFor     struct{ Company, Role string } `json:"apply_for"`
+		SubmitFor    struct{ Company, Role string } `json:"submit_for"`
+		ReferralsFor struct{ Company, Role string } `json:"referrals_for"`
+	}
+	if json.Unmarshal(inputPayload, &p) != nil {
+		return "", ""
+	}
+	for _, l := range []struct{ Company, Role string }{p.ApplyFor, p.SubmitFor, p.ReferralsFor} {
+		if l.Company != "" {
+			return l.Company, l.Role
+		}
+	}
+	return "", ""
+}
+
+// ListingIsClosed reports whether the Internships list marks this listing as not worth working on: closed, no
+// posting, or not verified.
+func ListingIsClosed(table, company, role string) bool {
+	lines := strings.Split(table, "\n")
+	co, ro, st := -1, -1, -1
+	for _, l := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(l), "|") {
+			continue
+		}
+		cells := splitRow(l)
+		if co < 0 {
+			for j, h := range cells {
+				switch hl := strings.ToLower(h); {
+				case strings.Contains(hl, "company") && co < 0:
+					co = j
+				case (strings.Contains(hl, "role") || strings.Contains(hl, "title")) && ro < 0:
+					ro = j
+				case hl == "status":
+					st = j
+				}
+			}
+			continue
+		}
+		if co < 0 || st < 0 || strings.Contains(l, "---") || len(cells) <= st {
+			continue
+		}
+		if !strings.EqualFold(cells[co], strings.TrimSpace(company)) || (ro >= 0 && ro < len(cells) && role != "" && !strings.EqualFold(cells[ro], strings.TrimSpace(role))) {
+			continue
+		}
+		s := strings.ToLower(cells[st])
+		return strings.HasPrefix(s, "closed") || s == "unverified"
+	}
+	return false
+}

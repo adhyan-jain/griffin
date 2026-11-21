@@ -296,3 +296,15 @@ func TestWithListingStatusClosesOneListing(t *testing.T) {
 		t.Fatal("posting-not-found detection")
 	}
 }
+
+func TestClosedListingsAreRecognised(t *testing.T) {
+	tbl := "| Tier | Company | Role | Status |\n|---|---|---|---|\n| A | Qdrant | Systems Intern | closed_no_posting |\n| A | HyperVerge | SDE Intern | unverified |\n| A | Google | SWE Intern | not_applied |"
+	if !ListingIsClosed(tbl, "qdrant", "Systems Intern") || !ListingIsClosed(tbl, "HyperVerge", "SDE Intern") || ListingIsClosed(tbl, "Google", "SWE Intern") || ListingIsClosed(tbl, "Nobody", "x") {
+		t.Fatal("closed detection")
+	}
+	for _, p := range []string{`{"apply_for":{"company":"Qdrant","role":"R"}}`, `{"submit_for":{"company":"Qdrant","role":"R"}}`, `{"referrals_for":{"company":"Qdrant","role":"R"}}`} {
+		if c, r := ListingOf(json.RawMessage(p)); c != "Qdrant" || r != "R" {
+			t.Fatalf("%s -> %q %q", p, c, r)
+		}
+	}
+}

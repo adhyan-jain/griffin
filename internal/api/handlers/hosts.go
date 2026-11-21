@@ -215,6 +215,11 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	if approved, aerr := h.engine.ApprovedActionTypes(r.Context(), res.Task); aerr == nil {
 		res.ApprovedActions = approved
 	}
+	// Work on a listing the Internships list has closed (no posting at its link) is dropped before the device runs it.
+	if h.trackers != nil && res.Task != nil && h.trackers.SkipClosedListing(r.Context(), res.Task, h.engine.CancelTask) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	// A request to prepare applications for many listings is split into one task per listing, here, instead of
 	// being handed to a device as one job that would time out. The device then has nothing to run.
 	if h.trackers != nil && res.Task != nil {

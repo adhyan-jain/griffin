@@ -403,3 +403,28 @@ func (w *TrackerLists) CloseListing(ctx context.Context, userID uuid.UUID, compa
 		}
 	}
 }
+
+// SkipClosedListing cancels an application, submission or referral task whose listing the Internships list marks
+// closed or unverified, before any model runs, so a dead listing is never worked on again. It returns true when
+// the task was dropped.
+func (w *TrackerLists) SkipClosedListing(ctx context.Context, task *domain.Task, cancel func(context.Context, uuid.UUID, string) error) bool {
+	if w == nil || w.Store == nil || task == nil || cancel == nil {
+		return false
+	}
+	company, role := domain.ListingOf(task.InputPayload)
+	if company == "" {
+		return false
+	}
+	list := w.list(ctx, task.UserID, storage.ListKind, "internships")
+	if list == nil {
+		return false
+	}
+	text, err := w.Store.ReadText(ctx, task.UserID, list.ID, trackerReadLimit)
+	if err != nil || !domain.ListingIsClosed(text, company, role) {
+		return false
+	}
+	if err := cancel(ctx, task.ID, "the listing is closed on the Internships list (no posting at its link)"); err != nil {
+		return false
+	}
+	return true
+}

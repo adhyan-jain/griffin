@@ -279,6 +279,11 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
+	// Work on a listing the Internships list has closed is dropped before any model runs.
+	if w.trackers().SkipClosedListing(ctx, task, w.engine.CancelTask) {
+		return true, nil
+	}
+
 	// "Ready all the A tier internships" is too much for one model call (it times out). Split it into one
 	// application task per listing, and finish this task with the summary.
 	if answer, split := w.trackers().BatchApply(ctx, task, func(c context.Context, t *domain.Task) error {

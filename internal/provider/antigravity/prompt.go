@@ -93,6 +93,10 @@ func truncateRunes(s string, n int) string {
 	return string(r[:n])
 }
 
+// oneRunRule stops the model ending a run with "I started a background job and will wait for it": nothing picks
+// that up, so the run's final answer is all the owner ever gets.
+const oneRunRule = "Do the whole task in this one run. Never start background jobs, subagents or anything you would come back to later, and never end with \"I am waiting\": your final answer is all the owner gets, so it must hold the finished result."
+
 // buildPrompt wraps every task in a text-only preamble. Chat tasks additionally
 // get a grounded runtime facts block and the role-labelled conversation history.
 func buildPrompt(task *domain.Task, attemptNumber int, rt RuntimeFacts) string {
@@ -116,6 +120,8 @@ func buildPromptWith(pre string, task *domain.Task, attemptNumber int, rt Runtim
 
 	var b strings.Builder
 	b.WriteString(pre)
+	b.WriteString("\n")
+	b.WriteString(oneRunRule)
 	b.WriteString("\n")
 	if role := roleLine(env.Role.Name, env.Role.Instructions); role != "" {
 		b.WriteString(role)
