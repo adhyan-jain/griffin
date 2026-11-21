@@ -244,3 +244,35 @@ func (w *TrackerLists) withProfile(ctx context.Context, task *domain.Task, promp
 	cp.Goal = task.Goal + prompt(text)
 	return &cp
 }
+
+// RecordApplied adds an application the owner approved to the Applied tracker, once. With no Applied list yet,
+// this starts it. It never fails the approval: problems are only logged.
+func (w *TrackerLists) RecordApplied(ctx context.Context, userID uuid.UUID, company, role, link, resume string) {
+	if w == nil || w.Store == nil || strings.TrimSpace(company) == "" {
+		return
+	}
+	row := domain.AppliedRow(company, role, link, resume, time.Now())
+	list := w.list(ctx, userID, storage.ListKind, "applied")
+	if list == nil {
+		if _, err := w.Store.SaveArtifact(ctx, storage.SaveArtifactInput{
+			UserID: userID, Title: "Applied tracker", Filename: "applied-tracker.md",
+			ArtifactType: "MARKDOWN", ContentType: "text/markdown; charset=utf-8",
+			Body:     bytes.NewReader([]byte("# Applied tracker\n\n" + domain.AppliedHeader + "\n" + row + "\n")),
+			Metadata: domain.TrackerListMetadata(storage.ListKind, "applied"),
+		}); err != nil && w.Logger != nil {
+			w.Logger.Warn("Could not start the Applied tracker", "error", err)
+		}
+		return
+	}
+	text, err := w.Store.ReadText(ctx, userID, list.ID, trackerReadLimit)
+	if err != nil {
+		return
+	}
+	key := "| " + strings.TrimSpace(company) + " | " + strings.TrimSpace(role) + " |"
+	if strings.Contains(strings.ToLower(text), strings.ToLower(key)) {
+		return // already there
+	}
+	if _, err := w.Store.UpdateText(ctx, list.ID, userID, strings.TrimRight(text, "\n")+"\n"+row+"\n", false, trackerReadLimit); err != nil && w.Logger != nil {
+		w.Logger.Warn("Could not add to the Applied tracker", "error", err)
+	}
+}

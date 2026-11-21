@@ -3,6 +3,7 @@ package domain
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseProposalsReadsTheFencedBlockAndDropsJunk(t *testing.T) {
@@ -99,5 +100,36 @@ func TestRepoWorkIsRecognisedAndOnlyThePushStepWaits(t *testing.T) {
 	}
 	if !strings.Contains(RepoWorkRules(), "NEVER run `git push`") {
 		t.Fatal("the rules must forbid pushing")
+	}
+}
+
+func TestInitiativeStaysOnApplyingAndTheList(t *testing.T) {
+	for _, kind := range []string{"internships", "hackathons"} {
+		_, goal := InitiativeTaskFor(kind)
+		for _, prep := range []string{"technical post", "build plan", "interview prep"} {
+			if strings.Contains(strings.ToLower(goal), prep) && !strings.Contains(strings.ToLower(goal), "do not") {
+				t.Errorf("%s initiative must not ask for %q", kind, prep)
+			}
+		}
+	}
+	_, goal := InitiativeTaskFor("internships")
+	if !strings.Contains(goal, "ACM, ISTE, MFC or TAM") {
+		t.Error("referrals must follow the owner's priority order")
+	}
+}
+
+func TestAppliedTrackerAndRoutinesAreNotHijackedAsBatches(t *testing.T) {
+	if TrackerTypeOf("APPLIED TRACKER - GMAIL CHECK (daily 09:00)", AppliedGmailCheckGoal, nil) != "applied" {
+		t.Fatal("the Gmail check works on the Applied list")
+	}
+	if _, ok := ApplyBatchOf("INTERNSHIP TRACKER - JOB EMAILS (daily 07:30)", "Never apply, reply or message anyone. Extract every internship from the owner's mail.", []byte(`{"cadence":"daily 07:30 IST"}`)); ok {
+		t.Fatal("a routine that says 'never apply ... every' must not be split into applications")
+	}
+	if _, ok := ApplyBatchOf("prepare the application drafts for all the A tier internships on my list", "prepare the application drafts for all the A tier internships on my list", nil); !ok {
+		t.Fatal("the real request must still be a batch")
+	}
+	row := AppliedRow("Qdrant", "Systems | Intern", "https://q", "/r.pdf", time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC))
+	if !strings.Contains(row, "Systems / Intern") || !strings.Contains(row, "approved | 2026-11-21") {
+		t.Fatalf("row wrong: %s", row)
 	}
 }

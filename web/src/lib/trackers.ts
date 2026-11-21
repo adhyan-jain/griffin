@@ -4,6 +4,7 @@ import { listingKey } from "@/lib/tracker-rows";
 
 /** The known tracker types. A task joins the first type whose pattern matches its title. */
 export const TRACKER_TYPES = [
+  { id: "applied", label: "Applied", pattern: /applied tracker/i },
   { id: "internships", label: "Internships", pattern: /internship|\binterns?\b/i },
   { id: "hackathons", label: "Hackathons", pattern: /hackathon/i },
   { id: "opensource", label: "Open Source", pattern: /open-source|oss/i },

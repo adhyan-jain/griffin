@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/griffin/core/internal/hands/browser"
@@ -162,6 +163,19 @@ func main() {
 
 	// 6. Initialize Task Engine, Manager Registry & Agent Factory
 	engine := service.NewTaskEngine(taskRepo, approvalRepo, logger)
+	// An application the owner approves is added to the Applied tracker.
+	appliedLists := &service.TrackerLists{Store: storageService, Tasks: taskRepo, Logger: logger}
+	engine.OnApplicationApproved(func(ctx context.Context, a *domain.Approval) {
+		var p struct {
+			Company    string `json:"company"`
+			Role       string `json:"role"`
+			PortalURL  string `json:"portal_url"`
+			ResumePath string `json:"resume_path"`
+		}
+		if json.Unmarshal(a.ActionPayload, &p) == nil {
+			appliedLists.RecordApplied(ctx, a.UserID, p.Company, p.Role, p.PortalURL, p.ResumePath)
+		}
+	})
 	mgrReg := manager.NewDefaultRegistry()
 	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, logger)
 	var senders []notify.Sender

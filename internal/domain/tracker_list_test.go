@@ -84,3 +84,30 @@ func TestApplyTasksNeedAHostThatCanOpenThePosting(t *testing.T) {
 		t.Fatal("must still be recognised as an application task")
 	}
 }
+
+func TestApplyTaskIsNarrowAndAsksForOneResumePDF(t *testing.T) {
+	_, goal, _ := ApplyTaskFor("Qdrant", "Systems Intern", "https://q.example/job")
+	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored resume", "Do not submit", "ACM, ISTE, MFC or TAM", "never invent anyone", "RESUME_PDF:"} {
+		if !strings.Contains(goal, want) {
+			t.Errorf("goal is missing %q", want)
+		}
+	}
+	for _, gone := range []string{"cover note", "usual application questions", "resume summary"} {
+		if strings.Contains(goal, gone) {
+			t.Errorf("goal must no longer ask for %q", gone)
+		}
+	}
+}
+
+func TestApplyDraftApprovalCarriesTheResumePDFPath(t *testing.T) {
+	_, _, payload := ApplyTaskFor("Qdrant", "Systems Intern", "")
+	task := &Task{ID: uuid.New(), UserID: uuid.New(), InputPayload: payload}
+	a := ApplyDraftApproval(task, "RESUME_PDF: /home/adhyan/Documents/Griffin/resumes/Qdrant_Systems_Intern.pdf\nFORM:\n- Name: Adhyan Jain\n")
+	var p map[string]string
+	if err := json.Unmarshal(a.ActionPayload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p["resume_path"] != "/home/adhyan/Documents/Griffin/resumes/Qdrant_Systems_Intern.pdf" {
+		t.Fatalf("resume path not carried: %v", p)
+	}
+}

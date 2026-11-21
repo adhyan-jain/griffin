@@ -105,9 +105,10 @@ func InitiativeTaskFor(kind string) (title, goal string) {
 		goal = "Look at the shared Internships list and the owner's verified profile, and decide what the owner should do next, without waiting to be asked. " +
 			"First, name the listings that are still open and not applied to, by tier. " +
 			"Propose: (1) preparing the application drafts for those, using exactly the sentence 'prepare the application drafts for all the A tier internships on my list and get them ready for my approval' (and the same with B tier if there are open B tier listings); " +
-			"(2) LinkedIn referral requests for the best open listings: find people at the company who could refer the owner, draft a short personal message that mentions the owner's real projects briefly, and queue each for approval before sending; " +
-			"(3) reaching out on other platforms where it fits, such as email to a recruiter or an engineer, or a short post about the owner's product; " +
+			"(2) LinkedIn referral requests for the best open listings: find 2-3 real people at the company who could refer the owner, in this order: VIT alumni from ACM, ISTE, MFC or TAM, then other VIT alumni, then other developers (Indian developers first for a foreign company); draft a 3-4 sentence message for each that mentions the owner's real projects briefly, and queue each for approval before sending; " +
+			"(3) emailing a recruiter or an engineer where that fits; " +
 			"(4) ways to grow the list: sources or searches that would surface more internships that fit the profile, as a task that adds new rows to the Internships list. " +
+			"Stay on applying and maintaining the list: do not propose interview prep, posts, projects or anything else for the owner's own preparation. " +
 			"Keep the first paragraph to what matters most today." + proposalFormat
 	}
 	return title, goal

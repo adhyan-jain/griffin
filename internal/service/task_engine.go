@@ -27,6 +27,13 @@ type TaskEngine struct {
 	approvalRepo repository.ApprovalRepository
 	logger       *slog.Logger
 	notifier     FinishNotifier
+	// onApplicationApproved is told when the owner approves an application draft, so it can be recorded.
+	onApplicationApproved func(ctx context.Context, a *domain.Approval)
+}
+
+// OnApplicationApproved sets what happens when the owner approves an application draft.
+func (e *TaskEngine) OnApplicationApproved(f func(ctx context.Context, a *domain.Approval)) {
+	e.onApplicationApproved = f
 }
 
 // FinishNotifier is told when a top-level task finishes, so the owner can be told. It must be quick and must
@@ -571,6 +578,10 @@ func (e *TaskEngine) RespondApproval(ctx context.Context, approvalID uuid.UUID, 
 	app, err := e.approvalRepo.RespondToApproval(ctx, approvalID, userID, approved, reason)
 	if err != nil {
 		return nil, fmt.Errorf("task_engine: respond approval: %w", err)
+	}
+
+	if approved && app.ActionType == domain.ApplyDraftApprovalAction && e.onApplicationApproved != nil {
+		e.onApplicationApproved(ctx, app)
 	}
 
 	eventType := "STATUS_CHANGE"

@@ -21,6 +21,7 @@ const TrackerBackupKind = "tracker_backup"
 
 // TrackerTypes are the types that have a shared list, with the title shown on it.
 var TrackerTypes = map[string]string{
+	"applied":     "Applied",
 	"internships": "Internships",
 	"hackathons":  "Hackathons",
 	"opensource":  "Open Source",
@@ -30,6 +31,7 @@ var trackerPatterns = []struct {
 	id string
 	re *regexp.Regexp
 }{
+	{"applied", regexp.MustCompile(`(?i)\bapplied tracker\b`)},
 	{"internships", regexp.MustCompile(`(?i)internship|\bintern(s)?\b`)},
 	{"hackathons", regexp.MustCompile(`(?i)hackathon`)},
 	{"opensource", regexp.MustCompile(`(?i)open[- ]source|\boss\b`)},
@@ -167,6 +169,14 @@ func ApplyBatchOf(title, goal string, inputPayload json.RawMessage) (tier string
 	if IsInitiativeTask(title) {
 		return "", false // an initiative task proposes the batch; it is not the batch
 	}
+	// A routine (it has a cadence, or "TRACKER" in its title) works on the list; its instructions say things like
+	// "never apply, surface every listing", which is not a request to apply.
+	var routine struct {
+		Cadence string `json:"cadence"`
+	}
+	if (json.Unmarshal(inputPayload, &routine) == nil && routine.Cadence != "") || strings.Contains(strings.ToUpper(title), "TRACKER") {
+		return "", false
+	}
 	if TrackerTypeOf(title, goal, inputPayload) != "internships" {
 		return "", false
 	}
@@ -184,18 +194,28 @@ func ApplyBatchOf(title, goal string, inputPayload json.RawMessage) (tier string
 	return "", true
 }
 
-// ApplyTaskFor builds the task that prepares the application for one listing. It drafts the package and stops
-// for the owner's approval; it never submits anything itself.
+// ApplyTaskFor builds the task that applies to one listing. It reads what the form really asks, fills it from the
+// owner's resume context, makes one tailored resume PDF and finds a few people for referrals, then stops for the
+// owner's approval; it never submits anything itself.
 func ApplyTaskFor(company, role, link string) (title, goal string, payload json.RawMessage) {
 	what := strings.TrimSpace(role + " at " + company)
-	goal = "Prepare the application for " + what + "."
+	goal = "Apply for " + what + "."
 	if link != "" {
 		goal += " The posting is " + link + "."
 	}
-	goal += " Write the complete package from the owner's profile: a tailored resume summary, a short cover note, and answers to the usual application questions. " +
-		"Put the finished draft in your answer so the owner can review it. Do not submit anything: it waits for the owner's approval."
+	pdf := RepoResumeDir + "/" + fileSafe(company+"_"+role) + ".pdf"
+	goal += "\n\nDo exactly this, nothing extra:\n" +
+		"1. Open the posting and its application form. Note what the form really asks for: each field, upload and question, with any word limit. Do not add standard questions of your own.\n" +
+		"2. Fill every field from the owner's verified profile and resume context. Leave a field out if the facts do not support it. Each written answer is 2-4 sentences, never long paragraphs.\n" +
+		"3. Make ONE tailored resume as a one-page PDF: keep the owner's real projects and bullets, reorder and trim them to fit this posting, invent nothing. Save it as " + pdf + " (write HTML and render it with `chromium --headless --print-to-pdf`, or use xelatex). This PDF is what the owner reviews.\n" +
+		"4. Do not submit anything. It waits for the owner's approval.\n" +
+		"5. Referrals: find 2-3 real people at " + company + " on LinkedIn, in this order: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other developers there (if the company is not Indian, prefer Indian developers). Only list people you actually found, with their profile link; never invent anyone. For each, write a 3-4 sentence message. Use email if their address is public, otherwise a LinkedIn message.\n\n" +
+		"Answer in exactly this shape and keep it short:\n" +
+		"RESUME_PDF: " + pdf + "\n" +
+		"FORM:\n- <field>: <value>\n" +
+		"REFERRALS:\n1. <name> | <title> | <why first, e.g. VIT alum, ACM> | <profile link or email>\n   Message: <3-4 sentences>"
 	// "requires: agent" keeps the task off the text-only cloud worker: only a laptop host, which can open the
-	// posting, runs it, so the draft can use what the posting actually says.
+	// posting, runs it, so the application can use what the posting actually says.
 	payload, _ = json.Marshal(map[string]any{
 		"apply_for": map[string]any{"company": company, "role": role, "url": link},
 		"requires":  []string{HostCapAgent},
@@ -207,6 +227,22 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 	return title, goal, payload
 }
 
+// RepoResumeDir is where tailored resumes are saved.
+const RepoResumeDir = "/home/adhyan/Documents/Griffin/resumes"
+
+var notFileSafe = regexp.MustCompile(`[^A-Za-z0-9]+`)
+
+// fileSafe turns a name into something safe to use in a file name.
+func fileSafe(s string) string {
+	s = strings.Trim(notFileSafe.ReplaceAllString(s, "_"), "_")
+	if r := []rune(s); len(r) > 60 {
+		s = string(r[:60])
+	}
+	return s
+}
+
+var resumePDFRe = regexp.MustCompile(`(?m)^RESUME_PDF:\s*(\S+\.pdf)\s*$`)
+
 // ApplyDraftApprovalAction is the approval type for a finished application draft. Approving it accepts the draft as
 // written; it does not submit anything anywhere.
 const ApplyDraftApprovalAction = "apply_draft"
@@ -217,9 +253,13 @@ func ApplyDraftApproval(task *Task, draft string) *Approval {
 		ApplyFor struct{ Company, Role, URL string } `json:"apply_for"`
 	}
 	_ = json.Unmarshal(task.InputPayload, &p)
-	payload, _ := json.Marshal(map[string]string{
+	fields := map[string]string{
 		"company": p.ApplyFor.Company, "role": p.ApplyFor.Role, "portal_url": p.ApplyFor.URL, "text": draft,
-	})
+	}
+	if m := resumePDFRe.FindStringSubmatch(draft); m != nil {
+		fields["resume_path"] = m[1]
+	}
+	payload, _ := json.Marshal(fields)
 	return &Approval{
 		ID: uuid.New(), UserID: task.UserID, TaskID: task.ID, ActionType: ApplyDraftApprovalAction,
 		RiskLevel: ApprovalRiskLow, ActionPayload: payload,
@@ -247,3 +287,21 @@ func ApplyProfilePrompt(profile string) string {
 func InitiativeProfilePrompt(profile string) string {
 	return "\n\n---\nThe owner's verified profile. Decide from these facts and the list only: do not invent employers, projects, numbers, skills or links.\n\n" + strings.TrimSpace(profile)
 }
+
+// AppliedHeader is the header of the Applied tracker: the places the owner applied to and what came back.
+const AppliedHeader = "| Company | Role | Link | Resume | Status | Approved | Last checked | Notes |\n|---|---|---|---|---|---|---|---|"
+
+// AppliedRow is one row of the Applied tracker for an application the owner approved. The status stays
+// "approved" until the Gmail check sees a confirmation or a reply.
+func AppliedRow(company, role, link, resume string, on time.Time) string {
+	cell := func(s string) string { return strings.ReplaceAll(strings.TrimSpace(s), "|", "/") }
+	return "| " + cell(company) + " | " + cell(role) + " | " + cell(link) + " | " + cell(resume) + " | approved | " + on.Format("2006-01-02") + " |  |  |"
+}
+
+// AppliedGmailCheckGoal is what the routine that keeps tabs on Gmail is asked to do.
+const AppliedGmailCheckGoal = "Keep tabs on Gmail for the places the owner applied to. The Applied list is below. " +
+	"Open Gmail in the owner's signed-in browser (read only). For each row, search the inbox for mail from that company (its name or domain) since the row's Approved date. " +
+	"Set Status to: applied when a confirmation or receipt arrived, replied when a person wrote back, interview when it schedules one or sends an assessment, rejected when it declines, " +
+	"no response when 14 or more days have passed with nothing, otherwise leave it. Put today's date in Last checked, and the subject and date of the newest relevant mail in Notes. " +
+	"Never reply, send, delete, archive or label anything. Begin your answer with one line per email that needs the owner to act (an interview slot, an assessment link, a deadline). " +
+	"Then give the complete updated table under the heading '## Tracker'."
