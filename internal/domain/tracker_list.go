@@ -207,7 +207,7 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 	goal += "\n\nDo exactly this, nothing extra:\n" +
 		"1. Open the posting and its application form. Note what the form really asks for: each field, upload and question, with any word limit. Do not add standard questions of your own.\n" +
 		"2. Fill every field from the owner's verified profile and resume context. Leave a field out if the facts do not support it. Each written answer is 2-4 sentences, never long paragraphs.\n" +
-		"3. Make ONE tailored resume as a one-page PDF: keep the owner's real projects and bullets, reorder and trim them to fit this posting, invent nothing. Save it as " + pdf + " (write HTML and render it with `chromium --headless --print-to-pdf`, or use xelatex). Before you answer, run `ls -l` on it and confirm it exists and is not empty; if it does not, fix it. This PDF is what the owner reviews.\n" +
+		"3. Make ONE tailored one-page resume: keep the owner's real projects and bullets, reorder and trim them to fit this posting, invent nothing. Write it as a complete HTML document with inline CSS that prints well on A4, inside a fenced ```resume block in your answer. Do not run any command to make a PDF: Griffin renders it to " + pdf + " itself. This PDF is what the owner reviews.\n" +
 		"4. Do not submit anything. It waits for the owner's approval. Do not look for referral contacts; a separate task does that.\n" +
 		"Answer in exactly this shape and keep it short, with no playbook or extra sections:\n" +
 		"RESUME_PDF: " + pdf + "\n" +
@@ -242,6 +242,16 @@ func fileSafe(s string) string {
 	return s
 }
 
+var resumeBlockRe = regexp.MustCompile("(?s)```resume\\s*(<.*?)```")
+
+// ResumeHTML is the resume document an application answer carries in its ```resume block ("" when it has none).
+func ResumeHTML(answer string) string {
+	if m := resumeBlockRe.FindStringSubmatch(answer); m != nil {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
 var resumePDFRe = regexp.MustCompile(`(?m)^RESUME_PDF:\s*(\S+\.pdf)\s*$`)
 
 // ResumePDFPath is the resume path an application answer names on its RESUME_PDF line ("" when it names none).
@@ -255,6 +265,7 @@ func ResumePDFPath(answer string) string {
 // StripPlaybook removes the "## Playbook" notes a tool run appends for its own reuse. They are not part of an
 // application the owner reviews.
 func StripPlaybook(answer string) string {
+	answer = strings.TrimSpace(resumeBlockRe.ReplaceAllString(answer, ""))
 	if i := strings.Index(answer, "\n## Playbook"); i >= 0 {
 		return strings.TrimSpace(answer[:i])
 	}

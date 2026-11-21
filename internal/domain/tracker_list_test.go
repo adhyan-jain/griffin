@@ -87,7 +87,7 @@ func TestApplyTasksNeedAHostThatCanOpenThePosting(t *testing.T) {
 
 func TestApplyTaskIsNarrowAndAsksForOneResumePDF(t *testing.T) {
 	_, goal, _ := ApplyTaskFor("Qdrant", "Systems Intern", "https://q.example/job")
-	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored resume", "Do not submit", "RESUME_PDF:", "Do not look for referral contacts"} {
+	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored one-page resume", "Do not submit", "RESUME_PDF:", "Do not look for referral contacts"} {
 		if !strings.Contains(goal, want) {
 			t.Errorf("goal is missing %q", want)
 		}
@@ -145,5 +145,21 @@ func TestReferralTaskIsSeparateAndProposesEachMessage(t *testing.T) {
 	}
 	if ToolModeFor(task) != ToolRead {
 		t.Fatalf("finding people only needs the read tier, got %s", ToolModeFor(task))
+	}
+}
+
+func TestResumeHTMLIsTakenFromTheAnswerAndKeptOutOfTheReviewedText(t *testing.T) {
+	answer := "RESUME_PDF: /x/a.pdf\nFORM:\n- Name: A\n\n```resume\n<html><body>hi</body></html>\n```\n"
+	if ResumeHTML(answer) != "<html><body>hi</body></html>" {
+		t.Fatalf("html not extracted: %q", ResumeHTML(answer))
+	}
+	_, _, payload := ApplyTaskFor("Acme", "Intern", "")
+	a := ApplyDraftApproval(&Task{ID: uuid.New(), UserID: uuid.New(), InputPayload: payload}, answer)
+	if strings.Contains(string(a.ActionPayload), "<html>") {
+		t.Fatal("the long HTML must not be part of the text the owner reads")
+	}
+	_, goal, _ := ApplyTaskFor("Acme", "Intern", "")
+	if !strings.Contains(goal, "```resume") || strings.Contains(goal, "chromium") {
+		t.Fatal("the model writes HTML only; it is not asked to run a PDF tool")
 	}
 }

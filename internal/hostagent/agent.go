@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -346,7 +347,7 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 		if err := a.cfg.Client.Fail(report, id, out.FailReason, out.Retryable); err != nil {
 			a.logger.Error("could not report failure", "task_id", id, "error", err)
 		}
-	case !resumeReady(task, out.Output):
+	case !ensureResume(ctx, task, out.Output):
 		// The answer names a resume PDF that is not on disk. Reporting it as done would hand the owner a draft
 		// whose main file is missing, so the step is retried instead.
 		a.logger.Warn("the resume PDF the answer names does not exist; retrying", "task_id", id)
@@ -379,16 +380,53 @@ func leaseLost(err error) bool {
 	return false
 }
 
-// resumeReady is true unless the task is an application whose answer names a resume PDF that is missing, empty
-// or not a PDF. Only files in the resumes folder count.
-func resumeReady(task *domain.Task, output json.RawMessage) bool {
+// ensureResume is true unless the task is an application whose resume PDF cannot be produced. The answer carries the
+// resume as HTML; the host renders it to the PDF path the answer names (only inside the resumes folder), then checks
+// the file really is a PDF. A model run that fights its sandbox for minutes over this step is avoided that way.
+func ensureResume(ctx context.Context, task *domain.Task, output json.RawMessage) bool {
 	if !domain.IsApplyTask(task.InputPayload) {
 		return true
 	}
-	path := domain.ResumePDFPath(domain.OutputText(output))
+	answer := domain.OutputText(output)
+	path := domain.ResumePDFPath(answer)
 	if path == "" || filepath.Dir(path) != domain.RepoResumeDir {
 		return false
 	}
+	if html := domain.ResumeHTML(answer); html != "" {
+		if err := renderPDF(ctx, html, path); err != nil {
+			return false
+		}
+	}
+	return isPDF(path)
+}
+
+// renderPDF prints an HTML document to a PDF with headless Chromium.
+func renderPDF(ctx context.Context, html, pdfPath string) error {
+	if err := os.MkdirAll(filepath.Dir(pdfPath), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp("", "griffin-resume-*.html")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(html); err != nil {
+		tmp.Close()
+		return err
+	}
+	tmp.Close()
+	bin := os.Getenv("HOST_CHROMIUM")
+	if bin == "" {
+		bin = "chromium"
+	}
+	rctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	return exec.CommandContext(rctx, bin, "--headless", "--disable-gpu", "--no-sandbox", "--no-pdf-header-footer",
+		"--print-to-pdf="+pdfPath, "file://"+tmp.Name()).Run()
+}
+
+// isPDF reports whether path is a non-trivial PDF file.
+func isPDF(path string) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false
