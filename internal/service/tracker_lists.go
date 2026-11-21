@@ -29,6 +29,9 @@ type TrackerLists struct {
 	Store  TrackerStore
 	Tasks  repository.TaskRepository
 	Logger *slog.Logger
+	// ApprovedDrafts returns the tasks whose application draft the owner approved. When set, a finished application
+	// that never went through approval (an older one) does not count as done, so it can be prepared again.
+	ApprovedDrafts func(ctx context.Context, userID uuid.UUID) map[uuid.UUID]bool
 }
 
 const trackerReadLimit = 200 << 10

@@ -457,6 +457,22 @@ func (e *TaskEngine) FinishApprovedApplication(ctx context.Context, task *domain
 	return true
 }
 
+// ApprovedDraftTasks returns the tasks whose application draft the owner approved.
+func (e *TaskEngine) ApprovedDraftTasks(ctx context.Context, userID uuid.UUID) map[uuid.UUID]bool {
+	st := domain.ApprovalStatusApproved
+	list, err := e.approvalRepo.ListApprovals(ctx, userID, &st)
+	out := map[uuid.UUID]bool{}
+	if err != nil {
+		return out
+	}
+	for _, a := range list {
+		if a.ActionType == domain.ApplyDraftApprovalAction {
+			out[a.TaskID] = true
+		}
+	}
+	return out
+}
+
 // ApprovedActionTypes lists the action types the owner has approved for this task.
 func (e *TaskEngine) ApprovedActionTypes(ctx context.Context, task *domain.Task) ([]string, error) {
 	st := domain.ApprovalStatusApproved

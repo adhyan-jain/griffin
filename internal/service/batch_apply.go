@@ -102,12 +102,17 @@ func (w *TrackerLists) BatchApply(ctx context.Context, task *domain.Task, create
 	existing := map[string]bool{}
 	if w.Tasks != nil {
 		uid := task.UserID
+		var approved map[uuid.UUID]bool
+		if w.ApprovedDrafts != nil {
+			approved = w.ApprovedDrafts(ctx, uid)
+		}
 		if all, lerr := w.Tasks.ListTasks(ctx, repository.TaskFilter{UserID: &uid, Limit: 1000}); lerr == nil {
 			for _, t := range all {
 				var p struct {
 					ApplyFor struct{ Company, Role string } `json:"apply_for"`
 				}
-				if json.Unmarshal(t.InputPayload, &p) == nil && p.ApplyFor.Company != "" && t.Status != domain.TaskStatus("CANCELLED") && t.Status != domain.TaskStatus("FAILED") {
+				if json.Unmarshal(t.InputPayload, &p) == nil && p.ApplyFor.Company != "" && t.Status != domain.TaskStatus("CANCELLED") && t.Status != domain.TaskStatus("FAILED") &&
+					(approved == nil || t.Status != domain.TaskStatusCompleted || approved[t.ID]) {
 					existing[strings.ToLower(p.ApplyFor.Company+"|"+p.ApplyFor.Role)] = true
 				}
 			}
