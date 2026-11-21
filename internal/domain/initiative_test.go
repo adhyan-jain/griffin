@@ -70,3 +70,34 @@ func TestAnInitiativeTaskIsNeverTheApplicationBatchItProposes(t *testing.T) {
 		t.Fatal("the hackathon initiative must be shown the hackathons list")
 	}
 }
+
+func TestRepoWorkIsRecognisedAndOnlyThePushStepWaits(t *testing.T) {
+	req := "clean up the READMEs of my repos"
+	if !RepoWorkKindOf(req) {
+		t.Fatal("a README cleanup request is repo work")
+	}
+	for _, not := range []string{"summarise the internship tracker", "write a poem", "what is a readme"} {
+		if RepoWorkKindOf(not) {
+			t.Errorf("%q must not be repo work", not)
+		}
+	}
+	title, goal := RepoWorkTaskFor(req)
+	task := &Task{ManagerDomain: "engineering", Title: title, Goal: goal}
+	if !IsRepoWork(task) || IsPushStep(task) {
+		t.Fatal("the cleanup is repo work and is not a push step")
+	}
+	if ToolModeFor(task) != ToolAct {
+		t.Fatal("repo work runs in the act tier on the owner's standing permission")
+	}
+	push := &Task{ManagerDomain: "engineering", Title: "Push README cleanup", Goal: "In " + RepoWorkDir + "/Archon: git push -u origin griffin/readme and open a pull request"}
+	if !IsRepoWork(push) || !IsPushStep(push) {
+		t.Fatal("the proposed push is repo work and is a push step")
+	}
+	snapshot := &Task{ManagerDomain: "engineering", Title: "REPO HYGIENE (monthly)", Goal: "Merged tracker snapshot", InputPayload: []byte(`{"kind":"tracker_snapshot"}`)}
+	if IsRepoWork(snapshot) {
+		t.Fatal("a stored tracker snapshot must not turn into repo work")
+	}
+	if !strings.Contains(RepoWorkRules(), "NEVER run `git push`") {
+		t.Fatal("the rules must forbid pushing")
+	}
+}

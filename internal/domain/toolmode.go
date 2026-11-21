@@ -52,6 +52,9 @@ func ToolModeFor(task *Task) ToolMode {
 	if v.Mode == ToolNone {
 		return ToolNone
 	}
+	if IsRepoWork(task) {
+		return ToolAct // the owner's standing permission; the gate only holds the push step (see repowork.go)
+	}
 	if task != nil {
 		return SuggestToolMode(task.Title, task.Goal)
 	}

@@ -453,13 +453,39 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 		}
 		text += "What Griffin will do if you approve:\n" + p.Goal
 		payload, _ := json.Marshal(map[string]string{"text": text, "title": p.Title})
+		actionType, risk := domain.ProposalApprovalAction, domain.ApprovalRiskLow
+		if p.Act {
+			// Approving this also grants the act tier for exactly this task, which is what lets a push run.
+			actionType, risk = domain.ToolApprovalAction, domain.ApprovalRiskHigh
+		}
 		if rerr := e.RequestApproval(ctx, created.ID, &domain.Approval{
-			ID: uuid.New(), UserID: parent.UserID, TaskID: created.ID, ActionType: domain.ProposalApprovalAction,
-			RiskLevel: domain.ApprovalRiskLow, Summary: p.Title, ActionPayload: payload,
+			ID: uuid.New(), UserID: parent.UserID, TaskID: created.ID, ActionType: actionType,
+			RiskLevel: risk, Summary: p.Title, ActionPayload: payload,
 		}); rerr != nil {
 			e.logger.Warn("Could not hold a proposed task for approval", "title", p.Title, "error", rerr)
 		}
 	}
+}
+
+// DeferToHost hands a running task back to the queue for a laptop host, because the process holding it cannot do
+// what it needs (open pages, clone repos). The cloud worker has no tools, so work that needs them would otherwise
+// be done as text and look finished. It returns true when the task was handed over.
+func (e *TaskEngine) DeferToHost(ctx context.Context, task *domain.Task) bool {
+	d, ok := e.taskRepo.(interface {
+		DeferToHost(ctx context.Context, taskID uuid.UUID) error
+	})
+	if !ok || task == nil {
+		return false
+	}
+	if err := d.DeferToHost(ctx, task.ID); err != nil {
+		e.logger.Warn("Could not hand a task to a host", "task_id", task.ID, "error", err)
+		return false
+	}
+	_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+		TaskID: task.ID, EventType: "STATUS_CHANGE", Metadata: json.RawMessage("{}"),
+		Message: "This needs tools the cloud worker does not have; waiting for a laptop host",
+	})
+	return true
 }
 
 // HoldApplicationDraft stops a finished application draft at the owner's Approvals page instead of completing the

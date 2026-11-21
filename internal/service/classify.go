@@ -78,6 +78,9 @@ func deviceRequestReason(t string) string {
 	if _, ok := domain.ApplyBatchOf("", s, nil); ok {
 		return "batch-apply-request"
 	}
+	if domain.RepoWorkKindOf(s) {
+		return "repo-work-request"
+	}
 
 	polite := false
 	if loc := politePrefixRe.FindString(s); loc != "" {

@@ -95,6 +95,11 @@ func (w *TrackerLists) Prepare(ctx context.Context, task *domain.Task) *domain.T
 	if domain.IsApplyTask(task.InputPayload) {
 		return w.withProfile(ctx, task, domain.ApplyProfilePrompt)
 	}
+	if domain.IsRepoWork(task) {
+		cp := *task
+		cp.Goal = task.Goal + domain.RepoWorkRules()
+		return &cp
+	}
 	t := w.typeFor(ctx, task)
 	if t == "" {
 		return task

@@ -39,6 +39,9 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 	if plan := initiativePlan(req, mgrReg); plan != nil {
 		return plan, nil
 	}
+	if plan := repoWorkPlan(req, mgrReg); plan != nil {
+		return plan, nil
+	}
 	text := strings.ToLower(req.RequestText)
 	managerID := classifyIntent(text)
 	explicitManager := false
@@ -272,7 +275,7 @@ func NewAIPlanner(executor PlanExecutor) *AIPlanner {
 func (p *AIPlanner) GeneratePlan(ctx context.Context, req *domain.UserRequest, mgrReg *manager.Registry) (*domain.PlanPayload, error) {
 	// "Prepare all the Tier A applications" is about the owner's own list, not a research project: the model is
 	// not asked to decompose it, because it invents generic steps that never read the list.
-	if batchApplyPlan(req, mgrReg) != nil || initiativePlan(req, mgrReg) != nil {
+	if batchApplyPlan(req, mgrReg) != nil || initiativePlan(req, mgrReg) != nil || repoWorkPlan(req, mgrReg) != nil {
 		return p.fallback.GeneratePlan(ctx, req, mgrReg)
 	}
 	if p.executor == nil || !p.executor.IsHealthy(ctx) {
@@ -422,6 +425,48 @@ func initiativePlan(req *domain.UserRequest, mgrReg *manager.Registry) *domain.P
 		ChildTasks: []domain.ChildTaskPlan{{
 			Key: managerID + "_initiative_1", Title: title, Goal: goal, ManagerDomain: managerID, WorkerKey: workerKey,
 			InputPayload: req.Context, Priority: req.Priority, CapabilitiesRequired: []string{domain.CapabilityResearchRead},
+		}},
+		ExpectedOutputs:      def.ExpectedOutputFormats,
+		VerificationCriteria: def.VerificationRules,
+	}
+}
+
+// repoWorkPlan plans a request to clean up the owner's repositories as one engineering task that only a laptop
+// host runs (it needs git and the file system). nil means the request is something else.
+func repoWorkPlan(req *domain.UserRequest, mgrReg *manager.Registry) *domain.PlanPayload {
+	if !domain.RepoWorkKindOf(req.RequestText) {
+		return nil
+	}
+	mgr, ok := mgrReg.Get("engineering")
+	if !ok {
+		return nil
+	}
+	def := mgr.Definition()
+	title, goal := domain.RepoWorkTaskFor(req.RequestText)
+	payload := map[string]any{}
+	if len(req.Context) > 0 {
+		_ = json.Unmarshal(req.Context, &payload)
+	}
+	payload["requires"] = []string{domain.HostCapAgent}
+	raw, _ := json.Marshal(payload)
+	taskType := "GENERAL_OBJECTIVE"
+	if len(def.SupportedTaskTypes) > 0 {
+		taskType = def.SupportedTaskTypes[0]
+	}
+	workerKey := ""
+	if len(def.AvailableWorkers) > 0 {
+		workerKey = def.AvailableWorkers[0]
+	}
+	return &domain.PlanPayload{
+		Objective:           req.RequestText,
+		InterpretedRequest:  "Handled by " + def.Name + ": clone, edit and commit locally; each push waits for the owner's approval",
+		ManagerID:           "engineering",
+		TaskType:            taskType,
+		Priority:            req.Priority,
+		ContextRequirements: def.RequiredContext,
+		ChildTasks: []domain.ChildTaskPlan{{
+			Key: "engineering_repo_work_1", Title: title, Goal: goal, ManagerDomain: "engineering", WorkerKey: workerKey,
+			InputPayload: raw, Priority: req.Priority, CapabilitiesRequired: []string{domain.CapabilityRepoRead},
 		}},
 		ExpectedOutputs:      def.ExpectedOutputFormats,
 		VerificationCriteria: def.VerificationRules,

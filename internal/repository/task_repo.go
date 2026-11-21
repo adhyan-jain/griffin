@@ -1060,3 +1060,21 @@ func (r *PostgresTaskRepository) ExpireStaleDeviceWaits(ctx context.Context, wai
 	}
 	return ids, rows.Err()
 }
+
+// DeferToHost puts a running task back in the queue and marks it as needing a host that runs an agent, so only
+// a laptop host (with tools) claims it from here on.
+func (r *PostgresTaskRepository) DeferToHost(ctx context.Context, taskID uuid.UUID) error {
+	cmd, err := r.pool.Exec(ctx, `
+		UPDATE tasks
+		SET status = 'QUEUED',
+		    input_payload = jsonb_set(COALESCE(NULLIF(input_payload::text, 'null'), '{}')::jsonb, '{requires}', '["agent"]'::jsonb),
+		    leased_by = NULL, lease_expires_at = NULL, started_at = NULL, updated_at = NOW()
+		WHERE id = $1 AND status = 'RUNNING'`, taskID)
+	if err != nil {
+		return fmt.Errorf("defer task to host: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return domain.ErrInvalidTransition
+	}
+	return nil
+}

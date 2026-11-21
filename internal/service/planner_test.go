@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/griffin/core/internal/domain"
@@ -227,5 +228,26 @@ func TestInitiativeRequestPlansOneValidTaskTheDynamicPlannerLeavesAlone(t *testi
 	}
 	if initiativePlan(&domain.UserRequest{RequestText: "write a poem"}, reg) != nil {
 		t.Fatal("an unrelated request must not be routed")
+	}
+}
+
+func TestRepoCleanupRequestPlansOneHostOnlyEngineeringTask(t *testing.T) {
+	reg := manager.NewDefaultRegistry()
+	plan := repoWorkPlan(&domain.UserRequest{RequestText: "clean up the READMEs of my repos", Priority: "NORMAL"}, reg)
+	if plan == nil || len(plan.ChildTasks) != 1 || plan.ChildTasks[0].ManagerDomain != "engineering" {
+		t.Fatalf("want one engineering task, got %+v", plan)
+	}
+	if errs := domain.ValidatePlan(plan, nil); len(errs) > 0 {
+		t.Fatalf("invalid plan: %v", errs)
+	}
+	if dynamicEligible(plan) {
+		t.Fatal("the dynamic planner must leave it alone")
+	}
+	c := plan.ChildTasks[0]
+	if !strings.Contains(string(c.InputPayload), `"requires":["agent"]`) {
+		t.Fatalf("must need a laptop host, payload %s", c.InputPayload)
+	}
+	if !domain.IsRepoWork(&domain.Task{ManagerDomain: c.ManagerDomain, Title: c.Title, Goal: c.Goal}) {
+		t.Fatal("the planned task must be recognised as repo work when it runs")
 	}
 }

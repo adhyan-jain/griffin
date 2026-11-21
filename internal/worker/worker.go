@@ -245,6 +245,16 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		}
 	}
 
+	// Repo work needs tools the cloud worker does not have. Hand it to a laptop host rather than answer it as text.
+	if domain.IsRepoWork(task) {
+		if tc, ok := w.executor.(ToolCapable); !ok || !tc.ToolsEnabled() {
+			if w.engine.DeferToHost(ctx, task) {
+				w.logger.Info("Repo work handed to a laptop host", "worker_id", w.ID, "task_id", task.ID)
+				return true, nil
+			}
+		}
+	}
+
 	// The act tier never runs without the owner's approval for this exact task: ask first and stop.
 	if paused := w.gateActTier(ctx, task); paused {
 		attempt.Status = "AWAITING_APPROVAL"
@@ -615,6 +625,9 @@ func (w *Worker) saveResultFile(ctx context.Context, task *domain.Task, res *Exe
 func (w *Worker) gateActTier(ctx context.Context, task *domain.Task) bool {
 	if domain.ToolModeFor(task) != domain.ToolAct {
 		return false
+	}
+	if domain.IsRepoWork(task) && !domain.IsPushStep(task) {
+		return false // standing permission: only the push waits for the owner
 	}
 	tc, ok := w.executor.(ToolCapable)
 	if !ok || !tc.ToolsEnabled() {

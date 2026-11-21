@@ -92,7 +92,7 @@ func dynamicEligible(plan *domain.PlanPayload) bool {
 		}
 		// A request to prepare applications for the owner's list is split per listing later; a made-up team
 		// would replace it with steps that never read the list.
-		if _, batch := domain.ApplyBatchOf(t.Title, t.Goal, t.InputPayload); batch || domain.IsInitiativeTask(t.Title) {
+		if _, batch := domain.ApplyBatchOf(t.Title, t.Goal, t.InputPayload); batch || domain.IsInitiativeTask(t.Title) || domain.IsRepoWork(&domain.Task{ManagerDomain: t.ManagerDomain, Title: t.Title, Goal: t.Goal}) {
 			return false
 		}
 		var v map[string]json.RawMessage

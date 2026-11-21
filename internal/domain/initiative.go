@@ -21,6 +21,8 @@ type Proposal struct {
 	Title string `json:"title"`
 	Why   string `json:"why"`
 	Goal  string `json:"goal"`
+	// Act marks a proposal whose approval also grants the act tier for that one task (a push, for example).
+	Act bool `json:"act"`
 }
 
 const maxProposals = 8
