@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  ClipboardList,
   Trash2,
   Download,
   FileText,
@@ -336,12 +335,9 @@ function InternshipActions({ ctx, entity, compact = false }: { ctx: RowActionsVa
     }
   };
   return (
-    <div className={compact ? "flex items-center gap-1.5" : "grid grid-cols-3 gap-1.5 pt-2"}>
+    <div className={compact ? "flex items-center gap-1.5" : "grid grid-cols-2 gap-1.5 pt-2"}>
       <Button size="sm" variant="outline" title="Draft the application" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("draft")}>
         <FileText className="size-3" /> <span className={compact ? "sr-only" : undefined}>Draft</span>
-      </Button>
-      <Button size="sm" variant="outline" title="Plan the application" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={() => run("plan")}>
-        <ClipboardList className="size-3" /> <span className={compact ? "sr-only" : undefined}>Plan</span>
       </Button>
       <Button size="sm" className="h-8 gap-1 rounded-xl text-xs" disabled={busy !== null} onClick={apply}>
         Apply
@@ -349,7 +345,7 @@ function InternshipActions({ ctx, entity, compact = false }: { ctx: RowActionsVa
       {compact ? (
         <RemoveButton ctx={ctx} entity={entity} compact />
       ) : (
-        <div className="col-span-3 flex items-center justify-between">
+        <div className="col-span-2 flex items-center justify-between">
           {entity.applyLink ? (
             <a
               href={entity.applyLink.url}
