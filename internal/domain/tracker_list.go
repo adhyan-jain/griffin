@@ -191,7 +191,12 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 	}
 	goal += " Write the complete package from the owner's profile: a tailored resume summary, a short cover note, and answers to the usual application questions. " +
 		"Put the finished draft in your answer so the owner can review it. Do not submit anything: it waits for the owner's approval."
-	payload, _ = json.Marshal(map[string]any{"apply_for": map[string]any{"company": company, "role": role, "url": link}})
+	// "requires: agent" keeps the task off the text-only cloud worker: only a laptop host, which can open the
+	// posting, runs it, so the draft can use what the posting actually says.
+	payload, _ = json.Marshal(map[string]any{
+		"apply_for": map[string]any{"company": company, "role": role, "url": link},
+		"requires":  []string{HostCapAgent},
+	})
 	title = "APPLY - " + company + " - " + role
 	if r := []rune(title); len(r) > 80 {
 		title = string(r[:80])

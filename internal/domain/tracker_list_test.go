@@ -71,3 +71,16 @@ func TestApplyDraftApprovalHoldsTheDraftAndNamesTheListing(t *testing.T) {
 		t.Fatalf("payload wrong: %v", p)
 	}
 }
+
+func TestApplyTasksNeedAHostThatCanOpenThePosting(t *testing.T) {
+	_, _, payload := ApplyTaskFor("Acme", "Backend Intern", "https://acme.example/job")
+	var p struct {
+		Requires []string `json:"requires"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil || len(p.Requires) != 1 || p.Requires[0] != HostCapAgent {
+		t.Fatalf("an application task must require the agent capability, got %s", payload)
+	}
+	if !IsApplyTask(payload) {
+		t.Fatal("must still be recognised as an application task")
+	}
+}

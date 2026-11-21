@@ -48,6 +48,11 @@ function draftOf(a: Approval): ReferralDraftInfo | null {
   };
 }
 
+/** A finished application package ("apply_draft") or a job application the team wants to submit ("JOB_APPLY"). */
+function isApplicationApproval(actionType: string): boolean {
+  return actionType === "JOB_APPLY" || actionType === "apply_draft";
+}
+
 interface TailoringInfo {
   company: string;
   role: string;
@@ -270,13 +275,13 @@ export default function ApprovalsPage() {
           <ul className="space-y-4">
           {[...items].sort((a, b) => {
             // Show Phase 1 (JOB_APPLY) first so user can apply to the portal before messaging
-            const aIsJob = a.action_type === "JOB_APPLY" ? 0 : 1;
-            const bIsJob = b.action_type === "JOB_APPLY" ? 0 : 1;
+            const aIsJob = isApplicationApproval(a.action_type) ? 0 : 1;
+            const bIsJob = isApplicationApproval(b.action_type) ? 0 : 1;
             if (aIsJob !== bIsJob) return aIsJob - bIsJob;
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
           }).map((a) => {
             const pending = a.status === "PENDING";
-            const isJobApply = a.action_type === "JOB_APPLY";
+            const isJobApply = isApplicationApproval(a.action_type);
             return (
               <li key={a.id} className="space-y-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
