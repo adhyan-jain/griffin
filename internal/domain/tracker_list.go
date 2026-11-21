@@ -219,6 +219,9 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 	payload, _ = json.Marshal(map[string]any{
 		"apply_for": map[string]any{"company": company, "role": role, "url": link},
 		"requires":  []string{HostCapAgent},
+		// The task writes a resume PDF, so it needs the tier that can edit files. Read-only (plan mode) only
+		// plans and ends with no answer.
+		ToolModeKey: ToolAct,
 	})
 	title = "APPLY - " + company + " - " + role
 	if r := []rune(title); len(r) > 80 {

@@ -111,3 +111,11 @@ func TestApplyDraftApprovalCarriesTheResumePDFPath(t *testing.T) {
 		t.Fatalf("resume path not carried: %v", p)
 	}
 }
+
+func TestApplyTasksRunInTheTierThatCanWriteTheResume(t *testing.T) {
+	title, goal, payload := ApplyTaskFor("Acme", "Backend Intern", "")
+	task := &Task{Title: title, Goal: goal, InputPayload: payload}
+	if ToolModeFor(task) != ToolAct {
+		t.Fatalf("an application writes a PDF, so it needs the act tier, got %s", ToolModeFor(task))
+	}
+}

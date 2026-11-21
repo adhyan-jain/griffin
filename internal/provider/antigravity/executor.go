@@ -337,6 +337,10 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		if _, err := os.Stat("/home/adhyan/Desktop"); err == nil {
 			args = append(args, "--add-dir", "/home/adhyan/Desktop")
 		}
+		// Tailored resumes are written under Documents/Griffin, outside the Desktop folder.
+		if _, err := os.Stat("/home/adhyan/Documents/Griffin"); err == nil {
+			args = append(args, "--add-dir", "/home/adhyan/Documents/Griffin")
+		}
 	}
 	args = append(args, e.toolArgs(mode)...)
 	if e.cfg.Effort != "" {
