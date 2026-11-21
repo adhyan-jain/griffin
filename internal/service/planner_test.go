@@ -207,3 +207,25 @@ func TestBatchApplyRequestPlansOneCareerTask(t *testing.T) {
 		t.Fatal("an ordinary resume request must not be routed as a batch")
 	}
 }
+
+func TestInitiativeRequestPlansOneValidTaskTheDynamicPlannerLeavesAlone(t *testing.T) {
+	reg := manager.NewDefaultRegistry()
+	for text, wantManager := range map[string]string{
+		"take initiative on my internships and tell me what to do next": "career",
+		"which hackathons are easy wins that i should target":           "research",
+	} {
+		plan := initiativePlan(&domain.UserRequest{RequestText: text, Priority: "NORMAL"}, reg)
+		if plan == nil || len(plan.ChildTasks) != 1 || plan.ChildTasks[0].ManagerDomain != wantManager {
+			t.Fatalf("%q: want one %s task, got %+v", text, wantManager, plan)
+		}
+		if errs := domain.ValidatePlan(plan, nil); len(errs) > 0 {
+			t.Fatalf("%q: invalid plan: %v", text, errs)
+		}
+		if dynamicEligible(plan) {
+			t.Fatalf("%q: the dynamic planner must leave it alone", text)
+		}
+	}
+	if initiativePlan(&domain.UserRequest{RequestText: "write a poem"}, reg) != nil {
+		t.Fatal("an unrelated request must not be routed")
+	}
+}

@@ -93,7 +93,7 @@ func (w *TrackerLists) Prepare(ctx context.Context, task *domain.Task) *domain.T
 		return task
 	}
 	if domain.IsApplyTask(task.InputPayload) {
-		return w.withProfile(ctx, task)
+		return w.withProfile(ctx, task, domain.ApplyProfilePrompt)
 	}
 	t := w.typeFor(ctx, task)
 	if t == "" {
@@ -111,6 +111,9 @@ func (w *TrackerLists) Prepare(ctx context.Context, task *domain.Task) *domain.T
 	}
 	cp := *task
 	cp.Goal = task.Goal + domain.TrackerPrompt(t, current, time.Now())
+	if domain.IsInitiativeTask(task.Title) {
+		return w.withProfile(ctx, &cp, domain.InitiativeProfilePrompt)
+	}
 	return &cp
 }
 
@@ -217,7 +220,7 @@ func (w *TrackerLists) seed(ctx context.Context, task *domain.Task, t string) *d
 
 // withProfile shows an application task the owner's verified profile, so a draft is grounded in real facts and
 // carries the real name and links instead of placeholders.
-func (w *TrackerLists) withProfile(ctx context.Context, task *domain.Task) *domain.Task {
+func (w *TrackerLists) withProfile(ctx context.Context, task *domain.Task, prompt func(string) string) *domain.Task {
 	arts, err := w.Store.ListByKind(ctx, task.UserID, domain.ProfileKind)
 	if err != nil || len(arts) == 0 {
 		return task
@@ -233,6 +236,6 @@ func (w *TrackerLists) withProfile(ctx context.Context, task *domain.Task) *doma
 		return task
 	}
 	cp := *task
-	cp.Goal = task.Goal + domain.ApplyProfilePrompt(text)
+	cp.Goal = task.Goal + prompt(text)
 	return &cp
 }

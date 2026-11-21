@@ -193,6 +193,7 @@ func (e *TaskEngine) CompleteTask(ctx context.Context, taskID uuid.UUID, workerI
 	if workerID != orchestratorWorkerID && domain.IsEmptyOutput(output) {
 		return errors.Join(domain.ErrValidation, errors.New("task output is empty: a task cannot be completed without a result"))
 	}
+	e.createProposals(ctx, taskID, output) // before the proposing task completes, so each proposal can depend on it
 	err := e.taskRepo.CompleteTask(ctx, taskID, workerID, output)
 	if err != nil {
 		return fmt.Errorf("task_engine: complete task: %w", err)
@@ -409,6 +410,56 @@ func (e *TaskEngine) ApprovedApproval(ctx context.Context, task *domain.Task, ac
 		}
 	}
 	return found, nil
+}
+
+// createProposals turns the proposals an initiative task ended its answer with into tasks held on the owner's
+// Approvals page. Each is a child that depends on the proposing task and waits for approval; approving it runs it,
+// rejecting it cancels it. A proposal that is already waiting (the same title) is not made twice, so a daily
+// routine does not pile up copies. It never blocks the proposing task from completing.
+func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, output json.RawMessage) {
+	parent, err := e.taskRepo.GetTaskByID(ctx, taskID)
+	if err != nil || parent == nil || !domain.IsInitiativeTask(parent.Title) {
+		return
+	}
+	proposals := domain.ParseProposals(domain.OutputText(output))
+	if len(proposals) == 0 {
+		return
+	}
+	waiting := map[string]bool{}
+	st := domain.TaskStatusAwaitingApproval
+	uid := parent.UserID
+	if held, lerr := e.taskRepo.ListTasks(ctx, repository.TaskFilter{UserID: &uid, Status: &st, Limit: 500}); lerr == nil {
+		for _, t := range held {
+			waiting[strings.ToLower(t.Title)] = true
+		}
+	}
+	for _, p := range proposals {
+		if waiting[strings.ToLower(p.Title)] {
+			continue
+		}
+		child := &domain.Task{
+			ID: uuid.New(), UserID: parent.UserID, ParentID: &parent.ID, Title: p.Title, Goal: p.Goal,
+			ManagerDomain: parent.ManagerDomain, Priority: parent.Priority,
+			InputPayload: json.RawMessage(`{"proposed_by":"` + parent.ID.String() + `"}`),
+		}
+		created, cerr := e.CreateTask(ctx, child, []uuid.UUID{parent.ID})
+		if cerr != nil {
+			e.logger.Warn("Could not create a proposed task", "title", p.Title, "error", cerr)
+			continue
+		}
+		text := p.Why
+		if text != "" {
+			text += "\n\n"
+		}
+		text += "What Griffin will do if you approve:\n" + p.Goal
+		payload, _ := json.Marshal(map[string]string{"text": text, "title": p.Title})
+		if rerr := e.RequestApproval(ctx, created.ID, &domain.Approval{
+			ID: uuid.New(), UserID: parent.UserID, TaskID: created.ID, ActionType: domain.ProposalApprovalAction,
+			RiskLevel: domain.ApprovalRiskLow, Summary: p.Title, ActionPayload: payload,
+		}); rerr != nil {
+			e.logger.Warn("Could not hold a proposed task for approval", "title", p.Title, "error", rerr)
+		}
+	}
 }
 
 // HoldApplicationDraft stops a finished application draft at the owner's Approvals page instead of completing the

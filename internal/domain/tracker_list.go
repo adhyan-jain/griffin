@@ -164,6 +164,9 @@ var (
 // the internships in list of A tier..."), and for which tier ("A"; "" for every tier). Doing that in one model
 // call times out, so such a task is split into one apply task per listing instead.
 func ApplyBatchOf(title, goal string, inputPayload json.RawMessage) (tier string, ok bool) {
+	if IsInitiativeTask(title) {
+		return "", false // an initiative task proposes the batch; it is not the batch
+	}
 	if TrackerTypeOf(title, goal, inputPayload) != "internships" {
 		return "", false
 	}
@@ -238,4 +241,9 @@ func IsApplyTask(inputPayload json.RawMessage) bool {
 // ApplyProfilePrompt is what an application task is shown about the owner: verified facts only, no inventing.
 func ApplyProfilePrompt(profile string) string {
 	return "\n\n---\nThe owner's verified profile. Write the application from these facts only: do not invent employers, projects, numbers, skills or links, and leave out anything these facts do not support. Sign it with the real name and contact details below, with no placeholders.\n\n" + strings.TrimSpace(profile)
+}
+
+// InitiativeProfilePrompt is what an initiative task is shown about the owner: verified facts only.
+func InitiativeProfilePrompt(profile string) string {
+	return "\n\n---\nThe owner's verified profile. Decide from these facts and the list only: do not invent employers, projects, numbers, skills or links.\n\n" + strings.TrimSpace(profile)
 }
