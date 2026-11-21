@@ -32,6 +32,9 @@ type TrackerLists struct {
 	// ApprovedDrafts returns the tasks whose application draft the owner approved. When set, a finished application
 	// that never went through approval (an older one) does not count as done, so it can be prepared again.
 	ApprovedDrafts func(ctx context.Context, userID uuid.UUID) map[uuid.UUID]bool
+	// CheckPosting, when set, is asked before an application task is made; a listing whose link plainly has no
+	// such internship is closed instead of costing a model run.
+	CheckPosting func(ctx context.Context, link string) PostingState
 }
 
 const trackerReadLimit = 200 << 10
@@ -377,6 +380,26 @@ func (w *TrackerLists) RecordDM(ctx context.Context, task *domain.Task, output j
 	if updated, changed := domain.WithAlumniStatus(text, name, company, status, time.Now()); changed {
 		if _, err := w.Store.UpdateText(ctx, list.ID, task.UserID, updated, false, trackerReadLimit); err != nil && w.Logger != nil {
 			w.Logger.Warn("Could not record the message", "error", err)
+		}
+	}
+}
+
+// CloseListing marks a listing on the Internships list as having no posting, so no batch applies to it again.
+func (w *TrackerLists) CloseListing(ctx context.Context, userID uuid.UUID, company, role string) {
+	if w == nil || w.Store == nil {
+		return
+	}
+	list := w.list(ctx, userID, storage.ListKind, "internships")
+	if list == nil {
+		return
+	}
+	text, err := w.Store.ReadText(ctx, userID, list.ID, trackerReadLimit)
+	if err != nil {
+		return
+	}
+	if updated, ok := domain.WithListingStatus(text, company, role, domain.ListingClosedStatus); ok {
+		if _, err := w.Store.UpdateText(ctx, list.ID, userID, updated, false, trackerReadLimit); err != nil && w.Logger != nil {
+			w.Logger.Warn("Could not close the listing", "company", company, "error", err)
 		}
 	}
 }

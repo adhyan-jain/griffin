@@ -285,3 +285,14 @@ func TestInternshipsListsSearchInternDockFirst(t *testing.T) {
 		t.Fatalf("the internships prompt must name InternDock as the primary source:\n%s", p)
 	}
 }
+
+func TestWithListingStatusClosesOneListing(t *testing.T) {
+	tbl := "| Tier | Company | Role | Application Link | Status |\n|---|---|---|---|---|\n| Tier A | Acme | SDE Intern | x | not_applied |\n| Tier A | Beta | SDE Intern | y | not_applied |"
+	out, ok := WithListingStatus(tbl, "acme", "SDE Intern", ListingClosedStatus)
+	if !ok || !strings.Contains(out, "| Acme | SDE Intern | x | closed_no_posting |") || strings.Count(out, "not_applied") != 1 {
+		t.Fatalf("ok=%v\n%s", ok, out)
+	}
+	if !PostingNotFound("- Posting: posting not found") || PostingNotFound("FORM:\n- Name: A") {
+		t.Fatal("posting-not-found detection")
+	}
+}

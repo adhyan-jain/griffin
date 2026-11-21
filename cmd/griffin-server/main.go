@@ -183,6 +183,7 @@ func main() {
 	})
 	engine.OnSubmitFinished(appliedLists.RecordSubmitted)
 	engine.OnDMFinished(appliedLists.RecordDM)
+	engine.OnPostingMissing(appliedLists.CloseListing)
 	mgrReg := manager.NewDefaultRegistry()
 	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, logger)
 	var senders []notify.Sender

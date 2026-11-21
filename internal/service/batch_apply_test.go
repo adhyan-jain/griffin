@@ -57,8 +57,8 @@ func TestABatchBecomesOneSmallTaskPerOpenUnappliedListing(t *testing.T) {
 	w := &TrackerLists{Store: listStore{ledger()}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	task := &domain.Task{ID: uuid.New(), UserID: uuid.New(), Title: "ready all the internships in list of A tier", Goal: "ready all the internships in list of A tier and get them ready for final approval"}
 	answer, handled := w.BatchApply(context.Background(), task, func(_ context.Context, c *domain.Task) error { made = append(made, c); return nil })
-	// Each listing gets an application task and a separate referral task.
-	if !handled || len(made) != 4 {
+	// Each listing gets an application task; its referral search waits until the draft confirms the posting.
+	if !handled || len(made) != 2 {
 		t.Fatalf("handled=%v made=%d answer=%s", handled, len(made), answer)
 	}
 	var apps, referrals []*domain.Task
@@ -69,8 +69,8 @@ func TestABatchBecomesOneSmallTaskPerOpenUnappliedListing(t *testing.T) {
 			apps = append(apps, c)
 		}
 	}
-	if len(apps) != 2 || len(referrals) != 2 {
-		t.Fatalf("want 2 applications and 2 referral tasks, got %d and %d", len(apps), len(referrals))
+	if len(apps) != 2 || len(referrals) != 0 {
+		t.Fatalf("want 2 applications and no referral task yet (it starts once a posting is confirmed), got %d and %d", len(apps), len(referrals))
 	}
 	made = apps
 	for _, c := range made {
@@ -125,4 +125,25 @@ func (s profileStore) ReadText(context.Context, uuid.UUID, uuid.UUID, int64) (st
 }
 func (s profileStore) UpdateText(context.Context, uuid.UUID, uuid.UUID, string, bool, int64) (*domain.Artifact, error) {
 	return nil, nil
+}
+
+func TestABatchClosesAListingWhoseLinkHasNoInternship(t *testing.T) {
+	var made []*domain.Task
+	w := &TrackerLists{Store: listStore{ledger()}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		CheckPosting: func(_ context.Context, link string) PostingState {
+			if link == "https://a" {
+				return PostingMissing
+			}
+			return PostingUnknown
+		}}
+	task := &domain.Task{ID: uuid.New(), UserID: uuid.New(), Title: "ready all the internships in list of A tier", Goal: "ready all the internships in list of A tier and get them ready for final approval"}
+	answer, _ := w.BatchApply(context.Background(), task, func(_ context.Context, c *domain.Task) error { made = append(made, c); return nil })
+	for _, m := range made {
+		if strings.Contains(m.Title, "Acme") {
+			t.Fatalf("a listing with no posting must not cost a model run: %s", m.Title)
+		}
+	}
+	if !strings.Contains(answer, "closed on the list instead: Acme") {
+		t.Fatalf("answer must say what was closed: %s", answer)
+	}
 }

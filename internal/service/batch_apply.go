@@ -119,10 +119,15 @@ func (w *TrackerLists) BatchApply(ctx context.Context, task *domain.Task, create
 		}
 	}
 
-	var made, skipped []string
+	var made, skipped, closed []string
 	for _, r := range rows {
 		if existing[strings.ToLower(r.company+"|"+r.role)] {
 			skipped = append(skipped, r.company)
+			continue
+		}
+		if w.CheckPosting != nil && w.CheckPosting(ctx, r.link) == PostingMissing {
+			w.CloseListing(ctx, task.UserID, r.company, r.role)
+			closed = append(closed, r.company)
 			continue
 		}
 		if len(made) >= maxBatchApplications {
@@ -142,23 +147,18 @@ func (w *TrackerLists) BatchApply(ctx context.Context, task *domain.Task, create
 			continue
 		}
 		made = append(made, r.company+" ("+r.role+")")
-		// The referral search is its own task: one model run cannot do the application and the search too.
-		rt, rg, rp := domain.ReferralTaskFor(r.company, r.role)
-		referral := &domain.Task{
-			ID: uuid.New(), UserID: task.UserID, ParentID: &parent, Title: rt, Goal: rg,
-			ManagerDomain: "career", Priority: task.Priority, InputPayload: rp, MaxRetries: 2,
-		}
-		if err := create(ctx, referral); err != nil && w.Logger != nil {
-			w.Logger.Warn("Could not create a referral task", "company", r.company, "error", err)
-		}
+		// The referral search starts only once the draft confirms the posting is real (see HoldApplicationDraft).
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Split into %d application tasks, one per listing%s, so each is drafted on its own. Each fills in what the form asks and makes one tailored resume PDF, and a separate task finds referral contacts and proposes each message. Everything waits for your approval; nothing is submitted.\n\n", len(made), tierWords(tier))
+	fmt.Fprintf(&b, "Split into %d application tasks, one per listing%s, so each is drafted on its own. Each fills in what the form asks and makes one tailored resume PDF, and once a draft confirms its posting is real, a separate task finds referral contacts and proposes each message. Everything waits for your approval; nothing is submitted.\n\n", len(made), tierWords(tier))
 	for _, m := range made {
 		b.WriteString("- " + m + "\n")
 	}
 	if len(skipped) > 0 {
 		fmt.Fprintf(&b, "\nAlready had an application task, so skipped: %s.\n", strings.Join(skipped, ", "))
+	}
+	if len(closed) > 0 {
+		fmt.Fprintf(&b, "\nThe link shows no such internship, so these were closed on the list instead: %s.\n", strings.Join(closed, ", "))
 	}
 	return strings.TrimSpace(b.String()), true
 }

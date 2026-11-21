@@ -33,6 +33,13 @@ type TaskEngine struct {
 	onSubmitFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
 	// onDMFinished is told when a LinkedIn message task completes, so the Alumni list shows what really happened.
 	onDMFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
+	// onPostingMissing is told when an application draft says its posting does not exist, so the listing is closed.
+	onPostingMissing func(ctx context.Context, userID uuid.UUID, company, role string)
+}
+
+// OnPostingMissing sets what happens when an application finds no posting.
+func (e *TaskEngine) OnPostingMissing(f func(ctx context.Context, userID uuid.UUID, company, role string)) {
+	e.onPostingMissing = f
 }
 
 // OnDMFinished sets what happens when a task that messages an alumnus completes.
@@ -545,11 +552,33 @@ func (e *TaskEngine) HoldApplicationDraft(ctx context.Context, task *domain.Task
 	if a, err := e.ApprovedApproval(ctx, task, domain.ApplyDraftApprovalAction); err != nil || a != nil {
 		return false
 	}
+	var p struct {
+		ApplyFor struct{ Company, Role string } `json:"apply_for"`
+	}
+	_ = json.Unmarshal(task.InputPayload, &p)
+	if domain.PostingNotFound(draft) {
+		// Nothing to approve or submit: the listing is closed so it is never drafted again.
+		if e.onPostingMissing != nil {
+			e.onPostingMissing(ctx, task.UserID, p.ApplyFor.Company, p.ApplyFor.Role)
+		}
+		e.logger.Info("Application found no posting; listing closed, no approval asked", "task_id", task.ID)
+		return false
+	}
 	if err := e.RequestApproval(ctx, task.ID, domain.ApplyDraftApproval(task, draft)); err != nil {
 		e.logger.Error("Could not request approval for an application draft; completing the task instead", "task_id", task.ID, "error", err)
 		return false
 	}
 	e.logger.Info("Application drafted; paused for the owner's review", "task_id", task.ID)
+	// The posting is real, so now it is worth finding people for a referral.
+	if p.ApplyFor.Company != "" {
+		rt, rg, rp := domain.ReferralTaskFor(p.ApplyFor.Company, p.ApplyFor.Role)
+		if _, err := e.CreateTask(ctx, &domain.Task{
+			ID: uuid.New(), UserID: task.UserID, ParentID: &task.ID, Title: rt, Goal: rg,
+			ManagerDomain: "career", Priority: task.Priority, InputPayload: rp, MaxRetries: 1,
+		}, nil); err != nil {
+			e.logger.Warn("Could not start the referral search", "task_id", task.ID, "error", err)
+		}
+	}
 	return true
 }
 

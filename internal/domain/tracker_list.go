@@ -618,3 +618,46 @@ const InternshipSources = "Primary source for finding internships: InternDock, h
 	"https://www.interndock.com/internships/fields/data-science-ml and a company's page under /companies/<company>. Each role has its own page there; open it and use that page as the listing's link when the employer's own link is not shown (the employer's apply link needs the owner's InternDock sign-in, which the signed-in browser has). " +
 	"Only if InternDock has nothing suitable, look at the company's own careers page. A US role that needs US work authorization does not fit the owner (in India): skip it unless it says remote worldwide or open to international students. " +
 	"Do not guess a company or a role from memory: every row comes from a page you opened today."
+
+var postingNotFound = regexp.MustCompile(`(?i)posting not found`)
+
+// PostingNotFound reports whether an application draft says its posting could not be found.
+func PostingNotFound(draft string) bool { return postingNotFound.MatchString(draft) }
+
+// ListingClosedStatus marks a listing whose link shows no such internship; a batch never applies to it again.
+const ListingClosedStatus = "closed_no_posting"
+
+// WithListingStatus returns the Internships list text with one listing's Status set. The listing is found by company
+// and role. changed is false when no row matches.
+func WithListingStatus(text, company, role, status string) (out string, changed bool) {
+	lines := strings.Split(text, "\n")
+	co, ro, st := -1, -1, -1
+	for i, l := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(l), "|") {
+			continue
+		}
+		cells := splitRow(l)
+		if co < 0 {
+			for j, h := range cells {
+				switch hl := strings.ToLower(h); {
+				case strings.Contains(hl, "company") && co < 0:
+					co = j
+				case (strings.Contains(hl, "role") || strings.Contains(hl, "title")) && ro < 0:
+					ro = j
+				case hl == "status":
+					st = j
+				}
+			}
+			continue
+		}
+		if co < 0 || ro < 0 || st < 0 || strings.Contains(l, "---") || len(cells) <= st || len(cells) <= ro {
+			continue
+		}
+		if strings.EqualFold(cells[co], strings.TrimSpace(company)) && strings.EqualFold(cells[ro], strings.TrimSpace(role)) {
+			cells[st] = status
+			lines[i] = "| " + strings.Join(cells, " | ") + " |"
+			return strings.Join(lines, "\n"), true
+		}
+	}
+	return text, false
+}
