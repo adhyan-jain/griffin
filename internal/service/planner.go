@@ -33,6 +33,9 @@ func NewRuleBasedPlanner() *RuleBasedPlanner {
 
 // GeneratePlan classifies the user request into one of the 11 specialist manager domains and produces child tasks.
 func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserRequest, mgrReg *manager.Registry) (*domain.PlanPayload, error) {
+	if plan := batchApplyPlan(req, mgrReg); plan != nil {
+		return plan, nil
+	}
 	text := strings.ToLower(req.RequestText)
 	managerID := classifyIntent(text)
 	explicitManager := false
@@ -264,6 +267,11 @@ func NewAIPlanner(executor PlanExecutor) *AIPlanner {
 
 // GeneratePlan calls the AI executor with a structured planning prompt and deserializes the output.
 func (p *AIPlanner) GeneratePlan(ctx context.Context, req *domain.UserRequest, mgrReg *manager.Registry) (*domain.PlanPayload, error) {
+	// "Prepare all the Tier A applications" is about the owner's own list, not a research project: the model is
+	// not asked to decompose it, because it invents generic steps that never read the list.
+	if batchApplyPlan(req, mgrReg) != nil {
+		return p.fallback.GeneratePlan(ctx, req, mgrReg)
+	}
 	if p.executor == nil || !p.executor.IsHealthy(ctx) {
 		return p.fallback.GeneratePlan(ctx, req, mgrReg)
 	}
@@ -342,6 +350,36 @@ func wantsSourcedResearch(lowerText string) bool { return sourcedResearch.MatchS
 
 // singleStep is one child task that does the whole request, with an approval when the manager's
 // capabilities require one.
+// batchApplyPlan plans a request to prepare applications for many listings on the owner's list as one career task.
+// That task is later split into one application task per listing. nil means the request is something else.
+func batchApplyPlan(req *domain.UserRequest, mgrReg *manager.Registry) *domain.PlanPayload {
+	if _, ok := domain.ApplyBatchOf("", req.RequestText, nil); !ok {
+		return nil
+	}
+	mgr, ok := mgrReg.Get("career")
+	if !ok {
+		return nil
+	}
+	def := mgr.Definition()
+	steps, _ := singleStep("career", def, req)
+	steps[0].ApprovalRequired = false // each application waits for approval on its own once drafted
+	taskType := "GENERAL_OBJECTIVE"
+	if len(def.SupportedTaskTypes) > 0 {
+		taskType = def.SupportedTaskTypes[0]
+	}
+	return &domain.PlanPayload{
+		Objective:            req.RequestText,
+		InterpretedRequest:   "Handled by " + def.Name + ": one application per listing on the owner's list, each held for approval",
+		ManagerID:            "career",
+		TaskType:             taskType,
+		Priority:             req.Priority,
+		ContextRequirements:  def.RequiredContext,
+		ChildTasks:           steps,
+		ExpectedOutputs:      def.ExpectedOutputFormats,
+		VerificationCriteria: def.VerificationRules,
+	}
+}
+
 func singleStep(managerID string, def manager.ManagerDefinition, req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.ApprovalRequirement) {
 	workerKey := ""
 	if len(def.AvailableWorkers) > 0 {

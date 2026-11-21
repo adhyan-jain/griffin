@@ -170,3 +170,34 @@ func TestRuleBasedPlanner_CareerApplyDoesNotRouteToWhatsApp(t *testing.T) {
 		t.Errorf("expected ActionType %q, got %q", domain.ActionTypeJobApply, plan.ApprovalRequirements[0].ActionType)
 	}
 }
+
+// A request to prepare applications for the owner's own list is one career task that is later split per listing,
+// not a model-invented research/resume/cover-letter pipeline that never reads the list.
+func TestBatchApplyRequestPlansOneCareerTask(t *testing.T) {
+	reg := manager.NewDefaultRegistry()
+	req := &domain.UserRequest{RequestText: "prepare the application drafts for all the A tier internships on my list and get them ready for my approval", Priority: "NORMAL"}
+
+	for name, planner := range map[string]interface {
+		GeneratePlan(context.Context, *domain.UserRequest, *manager.Registry) (*domain.PlanPayload, error)
+	}{"rules": NewRuleBasedPlanner(), "ai": NewAIPlanner(nil)} {
+		plan, err := planner.GeneratePlan(context.Background(), req, reg)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(plan.ChildTasks) != 1 || plan.ChildTasks[0].ManagerDomain != "career" {
+			t.Fatalf("%s: want one career task, got %+v", name, plan.ChildTasks)
+		}
+		c := plan.ChildTasks[0]
+		if c.ApprovalRequired || len(plan.ApprovalRequirements) != 0 {
+			t.Fatalf("%s: the batch task itself must not wait for approval", name)
+		}
+		if _, ok := domain.ApplyBatchOf(c.Title, c.Goal, c.InputPayload); !ok {
+			t.Fatalf("%s: the task must still be recognised as a batch so it is split per listing", name)
+		}
+	}
+
+	other := &domain.UserRequest{RequestText: "tailor my resume for this backend job", Priority: "NORMAL"}
+	if plan := batchApplyPlan(other, reg); plan != nil {
+		t.Fatal("an ordinary resume request must not be routed as a batch")
+	}
+}
