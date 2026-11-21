@@ -362,7 +362,11 @@ func batchApplyPlan(req *domain.UserRequest, mgrReg *manager.Registry) *domain.P
 	}
 	def := mgr.Definition()
 	steps, _ := singleStep("career", def, req)
-	steps[0].ApprovalRequired = false // each application waits for approval on its own once drafted
+	// This task only reads the list and creates one application task per listing, so it carries no sending or
+	// applying capability and needs no approval itself; each application waits for approval once drafted.
+	steps[0].ApprovalRequired = false
+	steps[0].ActionType = ""
+	steps[0].CapabilitiesRequired = []string{domain.CapabilityResearchRead}
 	taskType := "GENERAL_OBJECTIVE"
 	if len(def.SupportedTaskTypes) > 0 {
 		taskType = def.SupportedTaskTypes[0]

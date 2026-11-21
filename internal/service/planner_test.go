@@ -191,6 +191,12 @@ func TestBatchApplyRequestPlansOneCareerTask(t *testing.T) {
 		if c.ApprovalRequired || len(plan.ApprovalRequirements) != 0 {
 			t.Fatalf("%s: the batch task itself must not wait for approval", name)
 		}
+		if errs := domain.ValidatePlan(plan, nil); len(errs) > 0 {
+			t.Fatalf("%s: the plan must pass validation: %v", name, errs)
+		}
+		if dynamicEligible(plan) {
+			t.Fatalf("%s: the dynamic planner must leave a batch plan alone", name)
+		}
 		if _, ok := domain.ApplyBatchOf(c.Title, c.Goal, c.InputPayload); !ok {
 			t.Fatalf("%s: the task must still be recognised as a batch so it is split per listing", name)
 		}

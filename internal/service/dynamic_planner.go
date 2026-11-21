@@ -90,6 +90,11 @@ func dynamicEligible(plan *domain.PlanPayload) bool {
 		if t.ApprovalRequired {
 			return false
 		}
+		// A request to prepare applications for the owner's list is split per listing later; a made-up team
+		// would replace it with steps that never read the list.
+		if _, batch := domain.ApplyBatchOf(t.Title, t.Goal, t.InputPayload); batch {
+			return false
+		}
 		var v map[string]json.RawMessage
 		if len(t.InputPayload) > 0 && json.Unmarshal(t.InputPayload, &v) == nil {
 			for _, special := range []string{"requires", domain.MessagingKey, "web", "kind"} {
