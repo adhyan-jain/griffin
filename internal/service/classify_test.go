@@ -144,3 +144,15 @@ func TestDeviceRequestsAreWorkNotConversation(t *testing.T) {
 		}
 	}
 }
+
+func TestInitiativeAndBatchApplyRequestsAreObjectives(t *testing.T) {
+	for _, msg := range []string{
+		"take initiative on my internship list: some companies are on it and I have not applied, so tell me what to do next",
+		"which hackathons are easy wins that I should target?",
+		"prepare the application drafts for all the A tier internships on my list and get them ready for my approval",
+	} {
+		if kind, reason := ClassifyMessageWithReason(msg); kind != MessageKindObjective {
+			t.Errorf("%q should be an objective, got %s (%s)", msg, kind, reason)
+		}
+	}
+}

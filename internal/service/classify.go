@@ -3,6 +3,8 @@ package service
 import (
 	"regexp"
 	"strings"
+
+	"github.com/griffin/core/internal/domain"
 )
 
 // MessageKind says how a JJ chat message should be handled.
@@ -68,6 +70,15 @@ func ClassifyMessageWithReason(text string) (MessageKind, string) {
 // and leaves questions about them ("how does WhatsApp Web work?") as conversation.
 func deviceRequestReason(t string) string {
 	s := strings.Trim(leadFillerRe.ReplaceAllString(t, ""), " \t.!?")
+	// Asking Griffin to decide what to do about a list, or to prepare applications for it, is work to plan, even
+	// when it is worded as a question.
+	if domain.InitiativeKindOf(s) != "" {
+		return "initiative-request"
+	}
+	if _, ok := domain.ApplyBatchOf("", s, nil); ok {
+		return "batch-apply-request"
+	}
+
 	polite := false
 	if loc := politePrefixRe.FindString(s); loc != "" {
 		polite = true
