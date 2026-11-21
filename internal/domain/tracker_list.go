@@ -90,6 +90,9 @@ func TrackerPrompt(trackerType, current string, today time.Time) string {
 	} else {
 		b.WriteString("\n" + strings.TrimSpace(current) + "\n")
 	}
+	if trackerType == "internships" {
+		b.WriteString("\nRules for adding a listing to this list: (1) Its Application Link must be the real posting. Open that link and confirm the role is on the page and still open before adding the row; if the link shows no such role, is closed, or you have no posting link, do not add the row. (2) Only roles the owner would take: software engineering (SDE), backend, full-stack, distributed systems or infrastructure, and AI of any sort (ML, LLM, agents, applied AI, AI infrastructure). Never add tester or QA, support, sales, marketing, analyst, design, IT or non-engineering roles. Match them to the owner's resume: Go and distributed backends, LLM agents and retrieval, full-stack web, databases.\n")
+	}
 	b.WriteString("\nIf this task adds to, edits, marks or removes rows in the list, end your answer with a section headed \"" + TrackerSection + "\" holding the COMPLETE updated markdown table: every row that should remain, with the same columns. Do not drop a row unless this task asks for it. If the task does not change the list, leave that section out.")
 	return b.String()
 }
@@ -473,8 +476,8 @@ const AlumniHeader = "| Name | Batch | Company | Role | Club | LinkedIn | Why th
 // AlumniMessage is the one friendly draft sent to every person on the Alumni list. {FirstName} and {Company} are the
 // only parts that change.
 const AlumniMessage = "Hi {FirstName},\n\n" +
-	"I'm Adhyan, a pre-final-year CSE student at VIT (grad 2028). I came across your profile through the VIT alumni network and it's inspiring to see you at {Company}. " +
-	"I'm looking for a summer 2027 SDE / systems internship. I've built ComputeHive (a Go distributed task runner with Redis queues and sub-15s failover) and StoryTrace (an agentic narrative-continuity engine on ClickHouse).\n\n" +
+	"I'm Adhyan, a pre-final-year CSE student at VIT and a senior core member of ACM VIT. I found you through the VIT alumni network, and it's inspiring to see you at {Company}. " +
+	"I'm looking for a summer 2027 {RoleFocus} internship. I've built ComputeHive (a distributed task runner in Go with Redis and Docker), interned as an AI Engineer at Palni, and won a track at the DevSoc hackathon.\n\n" +
 	"If there's an opening on your team, would you be open to a quick chat or a referral? I'd be happy to send my resume. Thank you for your time, and no worries at all if it's not possible.\n\n" +
 	"Warm regards,\nAdhyan Jain"
 
@@ -485,7 +488,8 @@ const AlumniGoal = "Grow the owner's Alumni outreach list: VIT graduates who can
 	"Find people from public pages only: LinkedIn search results, the club's pages, GitHub, company teams pages, alumni posts. Open a profile to confirm it before listing it. NEVER invent a person, a batch, a club or a link: a shorter verified list beats a long guessed one. " +
 	"Do not message anyone. Limits: about 30 tool calls and under 8 minutes; add up to 40 new people this run (the list grows every day, aiming for 100 to 200). " +
 	"Put ONLY the new people in the \"## Tracker\" table (Griffin merges them into the list and drops duplicates), with exactly the columns Name, Batch, Company, Role, Club, LinkedIn, Why this company, Status, Added. Status is \"not contacted\", Added is today's date. " +
-	"After the table, add a section \"## Draft message\" with the message below, unchanged, so the owner can read it, then one line: how many people were added and which clubs you reached.\n\nThe message, one draft for everyone:\n" + AlumniMessage
+	"After the table, add a section \"## Draft message\" with the message below, unchanged, so the owner can read it, then one line: how many people were added and which clubs you reached.\n\n" +
+	"The message is one draft for everyone. {RoleFocus} is chosen from each person's Role: backend, platform or infrastructure people get \"backend\"; ML, AI, LLM or data-science people get \"AI/ML\"; everyone else gets \"software engineering\". The owner is open to backend, AI of any sort, and software engineering roles.\n\nThe message:\n" + AlumniMessage
 
 func alumniPrompt(current string, today time.Time) string {
 	var b strings.Builder

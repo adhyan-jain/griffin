@@ -255,3 +255,26 @@ func TestAlumniTrackerIsTypedByItsTitleOnly(t *testing.T) {
 		t.Fatalf("a submit task works on one posting, got %q", got)
 	}
 }
+
+func TestInternshipsListRulesCheckThePostingAndTheRole(t *testing.T) {
+	p := TrackerPrompt("internships", "", time.Now())
+	for _, want := range []string{"Open that link", "do not add the row", "backend", "AI of any sort", "Never add tester or QA"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("internships rules missing %q", want)
+		}
+	}
+	if strings.Contains(TrackerPrompt("hackathons", "", time.Now()), "Open that link") {
+		t.Error("the posting rule is only for internships")
+	}
+}
+
+func TestAlumniMessageUsesTheOwnersRealFactsAndRoleFocus(t *testing.T) {
+	for _, want := range []string{"{FirstName}", "{Company}", "{RoleFocus}", "ACM VIT", "ComputeHive", "Palni"} {
+		if !strings.Contains(AlumniMessage, want) {
+			t.Errorf("message missing %q", want)
+		}
+	}
+	if !strings.Contains(AlumniGoal, "AI/ML") || !strings.Contains(AlumniGoal, "backend") {
+		t.Error("the goal must say how the role focus is chosen")
+	}
+}
