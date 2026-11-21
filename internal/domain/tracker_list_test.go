@@ -186,3 +186,45 @@ func TestCanonicalApplyRebuildsTheButtonsTask(t *testing.T) {
 		t.Fatal("a payload without apply_for is not an application")
 	}
 }
+
+func TestSubmitTaskRunsOnlyOnAHostAndNeverTwice(t *testing.T) {
+	title, goal, payload := SubmitTaskFor("Anyscale", "LLM Serving Intern", "https://x.test/job", "/r/a.pdf", "FORM:\n- Name: A")
+	if title != "SUBMIT - Anyscale - LLM Serving Intern" || !strings.Contains(goal, "/r/a.pdf") || !strings.Contains(goal, "- Name: A") || !strings.Contains(goal, "SUBMIT: submitted | blocked") {
+		t.Fatalf("title=%q goal=%q", title, goal)
+	}
+	if !strings.Contains(string(payload), `"requires":["agent"]`) || !strings.Contains(string(payload), `"tool_mode":"act"`) {
+		t.Fatalf("payload: %s", payload)
+	}
+	if c, r := SubmitOf(payload); c != "Anyscale" || r != "LLM Serving Intern" {
+		t.Fatalf("SubmitOf = %q %q", c, r)
+	}
+	if IsApplyTask(payload) {
+		t.Fatal("a submit task is not a draft task")
+	}
+}
+
+func TestSubmitResult(t *testing.T) {
+	for _, c := range []struct{ in, status, note string }{
+		{"SUBMIT: submitted\nPROOF: Thanks for applying page", "submitted", "Thanks for applying page"},
+		{"submit: Blocked\nPROOF: CAPTCHA on the form", "blocked", "CAPTCHA on the form"},
+		{"I think it worked", "blocked", "the run did not report a confirmation"},
+	} {
+		if s, n := SubmitResult(c.in); s != c.status || n != c.note {
+			t.Errorf("%q -> %q %q", c.in, s, n)
+		}
+	}
+}
+
+func TestWithAppliedStatusUpdatesOnlyThatRow(t *testing.T) {
+	tbl := "# Applied tracker\n\n" + AppliedHeader + "\n" + AppliedRow("A", "Dev", "l", "r.pdf", time.Now()) + "\n" + AppliedRow("B", "Dev", "l", "r.pdf", time.Now()) + "\n"
+	out, ok := WithAppliedStatus(tbl, "B", "Dev", "submitted", "Thanks page", time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC))
+	if !ok || !strings.Contains(out, "| submitted | "+time.Now().Format("2006-01-02")+" | 2026-11-22 | Thanks page |") {
+		t.Fatalf("ok=%v\n%s", ok, out)
+	}
+	if strings.Count(out, "| approved |") != 1 {
+		t.Fatalf("row A must stay approved:\n%s", out)
+	}
+	if _, ok := WithAppliedStatus(tbl, "Z", "Dev", "submitted", "", time.Now()); ok {
+		t.Fatal("no such row")
+	}
+}

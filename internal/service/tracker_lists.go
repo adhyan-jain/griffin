@@ -276,3 +276,64 @@ func (w *TrackerLists) RecordApplied(ctx context.Context, userID uuid.UUID, comp
 		w.Logger.Warn("Could not add to the Applied tracker", "error", err)
 	}
 }
+
+// StartSubmit creates the task that really submits an application the owner just approved, once per listing. The
+// approval is the owner's go-ahead. It never fails the approval: problems are only logged.
+func (w *TrackerLists) StartSubmit(ctx context.Context, a *domain.Approval, create func(context.Context, *domain.Task) error) {
+	if w == nil || a == nil || create == nil {
+		return
+	}
+	var p struct {
+		Company    string `json:"company"`
+		Role       string `json:"role"`
+		PortalURL  string `json:"portal_url"`
+		ResumePath string `json:"resume_path"`
+		Text       string `json:"text"`
+	}
+	if json.Unmarshal(a.ActionPayload, &p) != nil || strings.TrimSpace(p.Company) == "" || strings.TrimSpace(p.Role) == "" {
+		return
+	}
+	if w.Tasks != nil {
+		uid := a.UserID
+		if all, err := w.Tasks.ListTasks(ctx, repository.TaskFilter{UserID: &uid, Limit: 1000}); err == nil {
+			for _, t := range all {
+				if c, r := domain.SubmitOf(t.InputPayload); strings.EqualFold(c, p.Company) && strings.EqualFold(r, p.Role) && t.Status != domain.TaskStatus("CANCELLED") {
+					return // one submission per listing, whatever happened to the first
+				}
+			}
+		}
+	}
+	title, goal, payload := domain.SubmitTaskFor(p.Company, p.Role, p.PortalURL, p.ResumePath, p.Text)
+	task := &domain.Task{
+		ID: uuid.New(), UserID: a.UserID, Title: title, Goal: goal, ManagerDomain: "career",
+		InputPayload: payload, MaxRetries: 0, // a retry could submit twice
+	}
+	if err := create(ctx, task); err != nil && w.Logger != nil {
+		w.Logger.Warn("Could not start the submission", "company", p.Company, "error", err)
+	}
+}
+
+// RecordSubmitted puts what a submit task found into the Applied tracker: submitted with its proof, or blocked
+// with the reason.
+func (w *TrackerLists) RecordSubmitted(ctx context.Context, task *domain.Task, output json.RawMessage) {
+	company, role := domain.SubmitOf(task.InputPayload)
+	if w == nil || w.Store == nil || company == "" {
+		return
+	}
+	status, note := domain.SubmitResult(domain.OutputText(output))
+	list := w.list(ctx, task.UserID, storage.ListKind, "applied")
+	if list == nil {
+		return
+	}
+	text, err := w.Store.ReadText(ctx, task.UserID, list.ID, trackerReadLimit)
+	if err != nil {
+		return
+	}
+	updated, ok := domain.WithAppliedStatus(text, company, role, status, note, time.Now())
+	if !ok {
+		return
+	}
+	if _, err := w.Store.UpdateText(ctx, list.ID, task.UserID, updated, false, trackerReadLimit); err != nil && w.Logger != nil {
+		w.Logger.Warn("Could not record the submission", "error", err)
+	}
+}

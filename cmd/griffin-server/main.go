@@ -175,7 +175,13 @@ func main() {
 		if json.Unmarshal(a.ActionPayload, &p) == nil {
 			appliedLists.RecordApplied(ctx, a.UserID, p.Company, p.Role, p.PortalURL, p.ResumePath)
 		}
+		// Approving the draft is the go-ahead: a host task now really submits it.
+		appliedLists.StartSubmit(ctx, a, func(c context.Context, t *domain.Task) error {
+			_, err := engine.CreateTask(c, t, nil)
+			return err
+		})
 	})
+	engine.OnSubmitFinished(appliedLists.RecordSubmitted)
 	mgrReg := manager.NewDefaultRegistry()
 	agentFactory := service.NewAgentFactoryService(workerDefRepo, mgrReg, logger)
 	var senders []notify.Sender

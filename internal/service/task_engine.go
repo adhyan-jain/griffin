@@ -29,6 +29,13 @@ type TaskEngine struct {
 	notifier     FinishNotifier
 	// onApplicationApproved is told when the owner approves an application draft, so it can be recorded.
 	onApplicationApproved func(ctx context.Context, a *domain.Approval)
+	// onSubmitFinished is told when a submit task completes, so the Applied tracker shows what really happened.
+	onSubmitFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
+}
+
+// OnSubmitFinished sets what happens when a task that submits an application completes.
+func (e *TaskEngine) OnSubmitFinished(f func(ctx context.Context, task *domain.Task, output json.RawMessage)) {
+	e.onSubmitFinished = f
 }
 
 // OnApplicationApproved sets what happens when the owner approves an application draft.
@@ -212,6 +219,14 @@ func (e *TaskEngine) CompleteTask(ctx context.Context, taskID uuid.UUID, workerI
 		Message:   "Task execution completed successfully",
 		Metadata:  json.RawMessage("{}"),
 	})
+
+	if e.onSubmitFinished != nil {
+		if t, gerr := e.taskRepo.GetTaskByID(ctx, taskID); gerr == nil && t != nil {
+			if company, _ := domain.SubmitOf(t.InputPayload); company != "" {
+				e.onSubmitFinished(ctx, t, output)
+			}
+		}
+	}
 
 	// Unblock dependent tasks
 	blockedChildIDs, err := e.taskRepo.GetDependentTasks(ctx, taskID)

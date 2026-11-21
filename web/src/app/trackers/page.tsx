@@ -316,7 +316,7 @@ function InternshipActions({ ctx, entity, compact = false }: { ctx: RowActionsVa
     setBusy("apply");
     try {
       await api.createTask(applyTaskInput(entity.title, entity.subtitle, entity.applyLink?.url ?? null));
-      toast.success("Application task created. It will ask for your approval before submitting");
+      toast.success("Application task created. It will ask for your approval, then submit it");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not create the application task");
     } finally {

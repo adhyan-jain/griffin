@@ -343,6 +343,90 @@ func AppliedRow(company, role, link, resume string, on time.Time) string {
 	return "| " + cell(company) + " | " + cell(role) + " | " + cell(link) + " | " + cell(resume) + " | approved | " + on.Format("2006-01-02") + " |  |  |"
 }
 
+// SubmitTaskFor builds the task that really submits an application the owner approved. It runs only on a laptop
+// host (the owner's browser), fills the form from the approved draft, uploads the approved resume PDF and presses
+// submit. It never retries: a second run could apply twice.
+func SubmitTaskFor(company, role, link, resume, draft string) (title, goal string, payload json.RawMessage) {
+	what := strings.TrimSpace(role + " at " + company)
+	goal = "Submit the application for " + what + ". The owner has read and approved the draft below, so submitting is authorised.\n\n"
+	if link != "" {
+		goal += "Posting: " + link + "\n"
+	}
+	if resume != "" {
+		goal += "Resume PDF to upload (already made and approved): " + resume + "\n"
+	}
+	goal += "\nDo exactly this:\n" +
+		"1. Open the posting and its application form in the browser. Find the Apply button or the form.\n" +
+		"2. Fill each field with the approved answers below, word for word. Upload the resume PDF. Do not add, rewrite or invent anything; leave a field out if the draft has no answer for it.\n" +
+		"3. Submit it, then check the page or the mailbox for a confirmation (a thank-you page, a receipt, a confirmation email).\n" +
+		"4. Do not create an account, solve a CAPTCHA, pay, or sign in with anything but the owner's already signed-in browser. If the posting is gone, a login or CAPTCHA blocks you, or a required field has no approved answer, stop and report blocked.\n" +
+		"Limits: about 20 tool calls and under 8 minutes.\n\n" +
+		"Answer in exactly two lines:\n" +
+		"SUBMIT: submitted | blocked\n" +
+		"PROOF: <what the confirmation said, or the exact reason it is blocked>\n\n" +
+		"The approved draft:\n" + strings.TrimSpace(draft)
+	payload, _ = json.Marshal(map[string]any{
+		"submit_for": map[string]any{"company": company, "role": role, "url": link},
+		"requires":   []string{HostCapAgent},
+		ToolModeKey:  ToolAct,
+	})
+	title = "SUBMIT - " + company + " - " + role
+	if r := []rune(title); len(r) > 80 {
+		title = string(r[:80])
+	}
+	return title, goal, payload
+}
+
+// SubmitOf returns the listing a submit task works on ("" company when the task is not a submit task).
+func SubmitOf(inputPayload json.RawMessage) (company, role string) {
+	var p struct {
+		SubmitFor struct{ Company, Role string } `json:"submit_for"`
+	}
+	if json.Unmarshal(inputPayload, &p) != nil {
+		return "", ""
+	}
+	return p.SubmitFor.Company, p.SubmitFor.Role
+}
+
+var submitRe = regexp.MustCompile(`(?mi)^SUBMIT:\s*(submitted|blocked)\b`)
+var proofRe = regexp.MustCompile(`(?mi)^PROOF:\s*(.+)$`)
+
+// SubmitResult reads a submit task's answer: status is "submitted" or "blocked", note is the proof or the reason.
+// An answer in neither shape is "blocked", because nothing proves it went through.
+func SubmitResult(answer string) (status, note string) {
+	status = "blocked"
+	if m := submitRe.FindStringSubmatch(answer); m != nil {
+		status = strings.ToLower(m[1])
+	}
+	if m := proofRe.FindStringSubmatch(answer); m != nil {
+		note = strings.TrimSpace(m[1])
+	} else if status == "blocked" {
+		note = "the run did not report a confirmation"
+	}
+	return status, note
+}
+
+// WithAppliedStatus returns the Applied list text with one row's Status, Last checked and Notes set. The row is
+// found by company and role. changed is false when no row matches.
+func WithAppliedStatus(text, company, role, status, note string, on time.Time) (out string, changed bool) {
+	key := strings.ToLower("| " + strings.TrimSpace(company) + " | " + strings.TrimSpace(role) + " |")
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(l)), key) {
+			continue
+		}
+		cells := strings.Split(strings.Trim(strings.TrimSpace(l), "|"), "|")
+		for len(cells) < 8 {
+			cells = append(cells, "")
+		}
+		clean := func(s string) string { return " " + strings.ReplaceAll(strings.TrimSpace(s), "|", "/") + " " }
+		cells[4], cells[6], cells[7] = clean(status), clean(on.Format("2006-01-02")), clean(note)
+		lines[i] = "|" + strings.Join(cells, "|") + "|"
+		return strings.Join(lines, "\n"), true
+	}
+	return text, false
+}
+
 // AppliedGmailCheckGoal is what the routine that keeps tabs on Gmail is asked to do.
 const AppliedGmailCheckGoal = "Keep tabs on Gmail for the places the owner applied to. The Applied list is below. " +
 	"Open Gmail in the owner's signed-in browser (read only). For each row, search the inbox for mail from that company (its name or domain) since the row's Approved date. " +

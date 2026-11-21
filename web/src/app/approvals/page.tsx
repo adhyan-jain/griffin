@@ -62,7 +62,7 @@ function isProposalApproval(actionType: string): boolean {
 /** What the owner is deciding on, so the card says so instead of treating everything as an outgoing message. */
 function approvalKind(actionType: string): { badge: string; approve: string } {
   if (actionType === "JOB_APPLY") return { badge: "Phase 1: Apply to Portal First", approve: "Approve & Auto-Apply" };
-  if (actionType === "apply_draft") return { badge: "Application draft", approve: "Approve draft" };
+  if (actionType === "apply_draft") return { badge: "Application draft", approve: "Approve and submit" };
   if (isProposalApproval(actionType)) return { badge: "Proposed by JJ", approve: "Approve & run" };
   return { badge: "Phase 2: Referral Follow-Up", approve: "Approve & Send" };
 }
