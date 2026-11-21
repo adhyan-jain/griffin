@@ -284,6 +284,15 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
+	// The InternDock sync is plain code with no model.
+	if answer, ok := w.trackers().SyncInternDock(ctx, task, nil); ok {
+		out, _ := json.Marshal(map[string]string{"response": answer})
+		if err := w.engine.CompleteTask(ctx, task.ID, w.ID, out); err != nil {
+			w.logger.Error("engine.CompleteTask failed", "worker_id", w.ID, "task_id", task.ID, "error", err)
+		}
+		return true, nil
+	}
+
 	// "Ready all the A tier internships" is too much for one model call (it times out). Split it into one
 	// application task per listing, and finish this task with the summary.
 	if answer, split := w.trackers().BatchApply(ctx, task, func(c context.Context, t *domain.Task) error {

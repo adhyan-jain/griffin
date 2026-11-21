@@ -220,6 +220,16 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// The InternDock sync is plain code: it reads the postings and updates the list here, so the device has nothing to run.
+	if h.trackers != nil && res.Task != nil {
+		if answer, ok := h.trackers.SyncInternDock(r.Context(), res.Task, nil); ok {
+			out, _ := json.Marshal(map[string]string{"response": answer})
+			if err := h.engine.CompleteTask(r.Context(), res.Task.ID, host.WorkerID(), out); err == nil {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+	}
 	// A request to prepare applications for many listings is split into one task per listing, here, instead of
 	// being handed to a device as one job that would time out. The device then has nothing to run.
 	if h.trackers != nil && res.Task != nil {
