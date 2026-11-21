@@ -135,6 +135,13 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An application request, from the Apply button or anywhere else, always becomes the host task that reads the
+	// real form and renders the tailored resume PDF.
+	if title, goal, payload, ok := domain.CanonicalApply(req.InputPayload); ok {
+		req.Title, req.Goal, req.InputPayload = title, goal, payload
+		req.ManagerDomain = "career"
+	}
+
 	// Support idempotency key via header as well
 	if headerKey := r.Header.Get("Idempotency-Key"); headerKey != "" && req.IdempotencyKey == nil {
 		req.IdempotencyKey = &headerKey

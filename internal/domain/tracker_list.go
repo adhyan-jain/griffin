@@ -309,6 +309,20 @@ func IsApplyTask(inputPayload json.RawMessage) bool {
 	return json.Unmarshal(inputPayload, &p) == nil && len(p.ApplyFor) > 0 && string(p.ApplyFor) != "null"
 }
 
+// CanonicalApply rebuilds the task for an application request that names its listing in apply_for, whoever sent it
+// (the Apply button or a script), so every application gets the same host-only, resume-PDF task. ok is false for
+// any other payload.
+func CanonicalApply(inputPayload json.RawMessage) (title, goal string, payload json.RawMessage, ok bool) {
+	var p struct {
+		ApplyFor struct{ Company, Role, URL string } `json:"apply_for"`
+	}
+	if json.Unmarshal(inputPayload, &p) != nil || p.ApplyFor.Company == "" || p.ApplyFor.Role == "" {
+		return "", "", nil, false
+	}
+	title, goal, payload = ApplyTaskFor(p.ApplyFor.Company, p.ApplyFor.Role, p.ApplyFor.URL)
+	return title, goal, payload, true
+}
+
 // ApplyProfilePrompt is what an application task is shown about the owner: verified facts only, no inventing.
 func ApplyProfilePrompt(profile string) string {
 	return "\n\n---\nThe owner's verified profile. Write the application from these facts only: do not invent employers, projects, numbers, skills or links, and leave out anything these facts do not support. Sign it with the real name and contact details below, with no placeholders.\n\n" + strings.TrimSpace(profile)

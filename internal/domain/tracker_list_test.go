@@ -172,3 +172,17 @@ func TestApplyTaskIsBoundedSoItCannotSearchForever(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalApplyRebuildsTheButtonsTask(t *testing.T) {
+	in := json.RawMessage(`{"apply_for":{"company":"Anyscale","role":"LLM Serving Intern","url":"https://x.test/job"}}`)
+	title, goal, payload, ok := CanonicalApply(in)
+	if !ok || title != "APPLY - Anyscale - LLM Serving Intern" || !strings.Contains(goal, "https://x.test/job") || !strings.Contains(goal, "RESUME_PDF:") {
+		t.Fatalf("got ok=%v title=%q goal=%q", ok, title, goal)
+	}
+	if !strings.Contains(string(payload), `"requires":["agent"]`) || !strings.Contains(string(payload), `"tool_mode":"act"`) {
+		t.Fatalf("payload must route to a host with tools: %s", payload)
+	}
+	if _, _, _, ok := CanonicalApply(json.RawMessage(`{"x":1}`)); ok {
+		t.Fatal("a payload without apply_for is not an application")
+	}
+}
