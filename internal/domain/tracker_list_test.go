@@ -131,7 +131,7 @@ func TestApplicationDraftDropsThePlaybookNotes(t *testing.T) {
 
 func TestReferralTaskIsSeparateAndProposesEachMessage(t *testing.T) {
 	title, goal, payload := ReferralTaskFor("Qdrant", "Systems Intern")
-	for _, want := range []string{"ACM, ISTE, MFC or TAM", "Never invent anyone", "3-4 sentence", "Do not send anything", "```proposals"} {
+	for _, want := range []string{"ACM, ISTE, MFC or TAM", "Never invent anyone", "3-4 sentence", "Do not send anything", "under 5 minutes", "```proposals"} {
 		if !strings.Contains(goal, want) {
 			t.Errorf("referral goal is missing %q", want)
 		}

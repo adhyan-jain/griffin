@@ -347,6 +347,7 @@ func ReferralTaskFor(company, role string) (title, goal string, payload json.Raw
 		"Order of preference: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other software engineers there (if the company is not Indian, prefer Indian engineers). " +
 		"Founders, CEOs and CTOs only if nobody else can be found. Open each person's profile and confirm the name and company before listing them; if you could not open it, leave them out. Never invent anyone.\n" +
 		"For each person write a 3-4 sentence message from the owner, using only facts from the owner's verified profile, that mentions the role and one or two real projects. Use email if their address is public, otherwise a LinkedIn message.\n" +
+		"Limits: about 15 tool calls and under 5 minutes. Fewer verified people beat more unverified ones; if you can confirm only one, list one. " +
 		"Do not send anything. Keep your answer to a short list: name, title, why they rank where they do, profile link or email. " +
 		"Then end with the proposals block, one proposal per person, with act set to true, whose goal says exactly: 'Send this message to <name> (<profile link or email>) and nothing else: <the message>'."
 	payload, _ = json.Marshal(map[string]any{
