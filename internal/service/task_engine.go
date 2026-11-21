@@ -31,6 +31,13 @@ type TaskEngine struct {
 	onApplicationApproved func(ctx context.Context, a *domain.Approval)
 	// onSubmitFinished is told when a submit task completes, so the Applied tracker shows what really happened.
 	onSubmitFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
+	// onDMFinished is told when a LinkedIn message task completes, so the Alumni list shows what really happened.
+	onDMFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
+}
+
+// OnDMFinished sets what happens when a task that messages an alumnus completes.
+func (e *TaskEngine) OnDMFinished(f func(ctx context.Context, task *domain.Task, output json.RawMessage)) {
+	e.onDMFinished = f
 }
 
 // OnSubmitFinished sets what happens when a task that submits an application completes.
@@ -220,6 +227,13 @@ func (e *TaskEngine) CompleteTask(ctx context.Context, taskID uuid.UUID, workerI
 		Metadata:  json.RawMessage("{}"),
 	})
 
+	if e.onDMFinished != nil {
+		if t, gerr := e.taskRepo.GetTaskByID(ctx, taskID); gerr == nil && t != nil {
+			if _, _, ok := domain.AlumniDMOf(t.Title); ok {
+				e.onDMFinished(ctx, t, output)
+			}
+		}
+	}
 	if e.onSubmitFinished != nil {
 		if t, gerr := e.taskRepo.GetTaskByID(ctx, taskID); gerr == nil && t != nil {
 			if company, _ := domain.SubmitOf(t.InputPayload); company != "" {
@@ -463,6 +477,9 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 			ID: uuid.New(), UserID: parent.UserID, ParentID: &parent.ID, Title: p.Title, Goal: p.Goal,
 			ManagerDomain: parent.ManagerDomain, Priority: parent.Priority, MaxRetries: 2,
 			InputPayload: json.RawMessage(`{"proposed_by":"` + parent.ID.String() + `"}`),
+		}
+		if strings.HasPrefix(p.Title, domain.AlumniDMPrefix) {
+			child.MaxRetries = 0 // a retry could message the same person twice
 		}
 		if p.Act {
 			// An approved act proposal runs with tools on the laptop host, which is where messages are sent from.
