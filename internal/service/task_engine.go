@@ -425,7 +425,7 @@ func (e *TaskEngine) ApprovedApproval(ctx context.Context, task *domain.Task, ac
 // routine does not pile up copies. It never blocks the proposing task from completing.
 func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, output json.RawMessage) {
 	parent, err := e.taskRepo.GetTaskByID(ctx, taskID)
-	if err != nil || parent == nil || !domain.IsInitiativeTask(parent.Title) {
+	if err != nil || parent == nil || !domain.IsProposingTask(parent) {
 		return
 	}
 	proposals := domain.ParseProposals(domain.OutputText(output))
@@ -448,6 +448,10 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 			ID: uuid.New(), UserID: parent.UserID, ParentID: &parent.ID, Title: p.Title, Goal: p.Goal,
 			ManagerDomain: parent.ManagerDomain, Priority: parent.Priority, MaxRetries: 2,
 			InputPayload: json.RawMessage(`{"proposed_by":"` + parent.ID.String() + `"}`),
+		}
+		if p.Act {
+			// An approved act proposal runs with tools on the laptop host, which is where messages are sent from.
+			child.InputPayload = json.RawMessage(`{"proposed_by":"` + parent.ID.String() + `","requires":["agent"],"tool_mode":"act"}`)
 		}
 		created, cerr := e.CreateTask(ctx, child, []uuid.UUID{parent.ID})
 		if cerr != nil {

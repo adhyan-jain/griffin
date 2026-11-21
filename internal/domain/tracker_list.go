@@ -208,12 +208,10 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 		"1. Open the posting and its application form. Note what the form really asks for: each field, upload and question, with any word limit. Do not add standard questions of your own.\n" +
 		"2. Fill every field from the owner's verified profile and resume context. Leave a field out if the facts do not support it. Each written answer is 2-4 sentences, never long paragraphs.\n" +
 		"3. Make ONE tailored resume as a one-page PDF: keep the owner's real projects and bullets, reorder and trim them to fit this posting, invent nothing. Save it as " + pdf + " (write HTML and render it with `chromium --headless --print-to-pdf`, or use xelatex). Before you answer, run `ls -l` on it and confirm it exists and is not empty; if it does not, fix it. This PDF is what the owner reviews.\n" +
-		"4. Do not submit anything. It waits for the owner's approval.\n" +
-		"5. Referrals: find 2-3 real people at " + company + " on LinkedIn, in this order: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other software engineers there (if the company is not Indian, prefer Indian engineers). Founders, CEOs and CTOs only if nobody else can be found. Open each profile and confirm the name and company before listing the person; if you could not open it, leave the person out. Never invent anyone. For each, write a 3-4 sentence message. Use email if their address is public, otherwise a LinkedIn message.\n\n" +
+		"4. Do not submit anything. It waits for the owner's approval. Do not look for referral contacts; a separate task does that.\n" +
 		"Answer in exactly this shape and keep it short, with no playbook or extra sections:\n" +
 		"RESUME_PDF: " + pdf + "\n" +
-		"FORM:\n- <field>: <value>\n" +
-		"REFERRALS:\n1. <name> | <title> | <why first, e.g. VIT alum, ACM> | <profile link or email>\n   Message: <3-4 sentences>"
+		"FORM:\n- <field>: <value>"
 	// "requires: agent" keeps the task off the text-only cloud worker: only a laptop host, which can open the
 	// posting, runs it, so the application can use what the posting actually says.
 	payload, _ = json.Marshal(map[string]any{
@@ -326,3 +324,28 @@ const AppliedGmailCheckGoal = "Keep tabs on Gmail for the places the owner appli
 	"no response when 14 or more days have passed with nothing, otherwise leave it. Put today's date in Last checked, and the subject and date of the newest relevant mail in Notes. " +
 	"Never reply, send, delete, archive or label anything. Begin your answer with one line per email that needs the owner to act (an interview slot, an assessment link, a deadline). " +
 	"Then give the complete updated table under the heading '## Tracker'."
+
+// ReferralTaskFor builds the task that finds 2-3 real people to ask for a referral at a company, in the owner's
+// priority order, and proposes one message to each. It is separate from the application because one run of the
+// model cannot read a form, write a resume and search LinkedIn within its time limit. Each message is a proposal
+// the owner approves before anything is sent.
+func ReferralTaskFor(company, role string) (title, goal string, payload json.RawMessage) {
+	what := strings.TrimSpace(role + " at " + company)
+	goal = "Find 2-3 real people at " + company + " who could refer the owner for " + what + ". " +
+		"Order of preference: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other software engineers there (if the company is not Indian, prefer Indian engineers). " +
+		"Founders, CEOs and CTOs only if nobody else can be found. Open each person's profile and confirm the name and company before listing them; if you could not open it, leave them out. Never invent anyone.\n" +
+		"For each person write a 3-4 sentence message from the owner, using only facts from the owner's verified profile, that mentions the role and one or two real projects. Use email if their address is public, otherwise a LinkedIn message.\n" +
+		"Do not send anything. Keep your answer to a short list: name, title, why they rank where they do, profile link or email. " +
+		"Then end with the proposals block, one proposal per person, with act set to true, whose goal says exactly: 'Send this message to <name> (<profile link or email>) and nothing else: <the message>'."
+	payload, _ = json.Marshal(map[string]any{
+		"referrals_for": map[string]any{"company": company, "role": role},
+		"requires":      []string{HostCapAgent},
+		"proposes":      true,
+		ToolModeKey:     ToolRead,
+	})
+	title = "REFERRALS - " + company + " - " + role
+	if r := []rune(title); len(r) > 80 {
+		title = string(r[:80])
+	}
+	return title, goal + proposalFormat, payload
+}

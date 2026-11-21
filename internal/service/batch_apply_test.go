@@ -57,9 +57,22 @@ func TestABatchBecomesOneSmallTaskPerOpenUnappliedListing(t *testing.T) {
 	w := &TrackerLists{Store: listStore{ledger()}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	task := &domain.Task{ID: uuid.New(), UserID: uuid.New(), Title: "ready all the internships in list of A tier", Goal: "ready all the internships in list of A tier and get them ready for final approval"}
 	answer, handled := w.BatchApply(context.Background(), task, func(_ context.Context, c *domain.Task) error { made = append(made, c); return nil })
-	if !handled || len(made) != 2 {
+	// Each listing gets an application task and a separate referral task.
+	if !handled || len(made) != 4 {
 		t.Fatalf("handled=%v made=%d answer=%s", handled, len(made), answer)
 	}
+	var apps, referrals []*domain.Task
+	for _, c := range made {
+		if strings.HasPrefix(c.Title, "REFERRALS - ") {
+			referrals = append(referrals, c)
+		} else {
+			apps = append(apps, c)
+		}
+	}
+	if len(apps) != 2 || len(referrals) != 2 {
+		t.Fatalf("want 2 applications and 2 referral tasks, got %d and %d", len(apps), len(referrals))
+	}
+	made = apps
 	for _, c := range made {
 		if c.ParentID == nil || *c.ParentID != task.ID || !strings.HasPrefix(c.Title, "APPLY - ") || !strings.Contains(c.Goal, "Do not submit anything") {
 			t.Fatalf("bad child: %+v", c)

@@ -34,6 +34,21 @@ func IsInitiativeTask(title string) bool {
 	return strings.Contains(strings.ToUpper(title), InitiativeMarker)
 }
 
+// IsProposingTask reports whether a task's answer may end with proposals: an initiative task, or a task whose
+// payload says it proposes.
+func IsProposingTask(t *Task) bool {
+	if t == nil {
+		return false
+	}
+	if IsInitiativeTask(t.Title) {
+		return true
+	}
+	var p struct {
+		Proposes bool `json:"proposes"`
+	}
+	return json.Unmarshal(t.InputPayload, &p) == nil && p.Proposes
+}
+
 // ParseProposals reads the proposals block an initiative task ends its answer with. Entries without a title or a
 // goal are dropped and the list is capped, so a malformed answer never creates junk.
 func ParseProposals(text string) []Proposal {

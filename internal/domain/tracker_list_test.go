@@ -87,7 +87,7 @@ func TestApplyTasksNeedAHostThatCanOpenThePosting(t *testing.T) {
 
 func TestApplyTaskIsNarrowAndAsksForOneResumePDF(t *testing.T) {
 	_, goal, _ := ApplyTaskFor("Qdrant", "Systems Intern", "https://q.example/job")
-	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored resume", "Do not submit", "ACM, ISTE, MFC or TAM", "Never invent anyone", "RESUME_PDF:"} {
+	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored resume", "Do not submit", "RESUME_PDF:", "Do not look for referral contacts"} {
 		if !strings.Contains(goal, want) {
 			t.Errorf("goal is missing %q", want)
 		}
@@ -126,5 +126,24 @@ func TestApplicationDraftDropsThePlaybookNotes(t *testing.T) {
 	a := ApplyDraftApproval(task, "RESUME_PDF: /x/a.pdf\nFORM:\n- Name: A\n\n## Playbook\n1. internal notes")
 	if strings.Contains(string(a.ActionPayload), "Playbook") {
 		t.Fatalf("the playbook notes must not be part of the application: %s", a.ActionPayload)
+	}
+}
+
+func TestReferralTaskIsSeparateAndProposesEachMessage(t *testing.T) {
+	title, goal, payload := ReferralTaskFor("Qdrant", "Systems Intern")
+	for _, want := range []string{"ACM, ISTE, MFC or TAM", "Never invent anyone", "3-4 sentence", "Do not send anything", "```proposals"} {
+		if !strings.Contains(goal, want) {
+			t.Errorf("referral goal is missing %q", want)
+		}
+	}
+	task := &Task{Title: title, Goal: goal, InputPayload: payload}
+	if !IsProposingTask(task) {
+		t.Fatal("its answer must be turned into proposals")
+	}
+	if IsApplyTask(payload) {
+		t.Fatal("it is not an application")
+	}
+	if ToolModeFor(task) != ToolRead {
+		t.Fatalf("finding people only needs the read tier, got %s", ToolModeFor(task))
 	}
 }

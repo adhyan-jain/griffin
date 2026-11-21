@@ -332,6 +332,11 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 		"--output-format", "json",
 		"--disable-slash-commands",
 	}
+	// agy's own wait for a print run is 5 minutes, after which it returns nothing even when the work is going
+	// well. Let it run as long as this executor will, less a margin so the result still comes back in time.
+	if wait := e.cfg.ExecutionTimeout - 20*time.Second; wait > 5*time.Minute {
+		args = append(args, "--print-timeout", fmt.Sprintf("%ds", int(wait/time.Second)))
+	}
 	if e.cfg.ToolsEnabled && e.cfg.AllowBypass {
 		args = append(args, "--dangerously-skip-permissions")
 		if _, err := os.Stat("/home/adhyan/Desktop"); err == nil {
@@ -552,7 +557,10 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 			"task_id", task.ID, "denied_actions", names)
 	} else if !hasContent {
 		cause := fmt.Errorf("%w: empty response and no structured output", ErrEmptyResult)
-		e.logger.Warn("Antigravity returned an empty result", "task_id", task.ID, "exit_code", exitCode)
+		e.logger.Warn("Antigravity returned an empty result", "task_id", task.ID, "exit_code", exitCode,
+			"duration", duration.Round(time.Second).String(),
+			"stdout_tail", truncateRunes(tailString(stdoutBuf.String(), 600), 600),
+			"stderr_tail", truncateRunes(tailString(stderrBuf.String(), 600), 600))
 		return &worker.ExecutionResult{
 			ExecutionID:  execID,
 			ProviderName: "antigravity",
@@ -625,4 +633,12 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, task *domain.Task) (*
 			TotalTokens:  totalTokens,
 		},
 	}, nil
+}
+
+// tailString is the last n bytes of s: for a failed run the end of the output says why it stopped.
+func tailString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }

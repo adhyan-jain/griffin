@@ -142,9 +142,18 @@ func (w *TrackerLists) BatchApply(ctx context.Context, task *domain.Task, create
 			continue
 		}
 		made = append(made, r.company+" ("+r.role+")")
+		// The referral search is its own task: one model run cannot do the application and the search too.
+		rt, rg, rp := domain.ReferralTaskFor(r.company, r.role)
+		referral := &domain.Task{
+			ID: uuid.New(), UserID: task.UserID, ParentID: &parent, Title: rt, Goal: rg,
+			ManagerDomain: "career", Priority: task.Priority, InputPayload: rp, MaxRetries: 2,
+		}
+		if err := create(ctx, referral); err != nil && w.Logger != nil {
+			w.Logger.Warn("Could not create a referral task", "company", r.company, "error", err)
+		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Split into %d application tasks, one per listing%s, so each is drafted on its own. Each prepares the full package (resume summary, cover note, answers) and waits for your approval; nothing is submitted.\n\n", len(made), tierWords(tier))
+	fmt.Fprintf(&b, "Split into %d application tasks, one per listing%s, so each is drafted on its own. Each fills in what the form asks and makes one tailored resume PDF, and a separate task finds referral contacts and proposes each message. Everything waits for your approval; nothing is submitted.\n\n", len(made), tierWords(tier))
 	for _, m := range made {
 		b.WriteString("- " + m + "\n")
 	}
