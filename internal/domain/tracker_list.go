@@ -91,6 +91,7 @@ func TrackerPrompt(trackerType, current string, today time.Time) string {
 		b.WriteString("\n" + strings.TrimSpace(current) + "\n")
 	}
 	if trackerType == "internships" {
+		b.WriteString("\n" + InternshipSources)
 		b.WriteString("\nRules for adding a listing to this list: (1) Its Application Link must be the real posting. Open that link and confirm the role is on the page and still open before adding the row; if the link shows no such role, is closed, or you have no posting link, do not add the row. (2) Only roles the owner would take: software engineering (SDE), backend, full-stack, distributed systems or infrastructure, and AI of any sort (ML, LLM, agents, applied AI, AI infrastructure). Never add tester or QA, support, sales, marketing, analyst, design, IT or non-engineering roles. Match them to the owner's resume: Go and distributed backends, LLM agents and retrieval, full-stack web, databases.\n")
 	}
 	b.WriteString("\nIf this task adds to, edits, marks or removes rows in the list, end your answer with a section headed \"" + TrackerSection + "\" holding the COMPLETE updated markdown table: every row that should remain, with the same columns. Do not drop a row unless this task asks for it. If the task does not change the list, leave that section out.")
@@ -609,3 +610,11 @@ func MergeAlumni(existing, added string) (table string, n int) {
 	}
 	return header + "\n" + sep + "\n" + strings.Join(rows, "\n"), n
 }
+
+// InternshipSources tells a task where to look for internships: InternDock first, because every role there is a real,
+// dated posting, unlike a company's careers page, which often lists no intern roles at all.
+const InternshipSources = "Primary source for finding internships: InternDock, https://www.interndock.com/companies . Start there: " +
+	"https://www.interndock.com/internships/india , https://www.interndock.com/internships/remote , https://www.interndock.com/internships/fields/software-engineering , " +
+	"https://www.interndock.com/internships/fields/data-science-ml and a company's page under /companies/<company>. Each role has its own page there; open it and use that page as the listing's link when the employer's own link is not shown (the employer's apply link needs the owner's InternDock sign-in, which the signed-in browser has). " +
+	"Only if InternDock has nothing suitable, look at the company's own careers page. A US role that needs US work authorization does not fit the owner (in India): skip it unless it says remote worldwide or open to international students. " +
+	"Do not guess a company or a role from memory: every row comes from a page you opened today."

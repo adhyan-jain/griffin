@@ -278,3 +278,10 @@ func TestAlumniMessageUsesTheOwnersRealFactsAndRoleFocus(t *testing.T) {
 		t.Error("the goal must say how the role focus is chosen")
 	}
 }
+
+func TestInternshipsListsSearchInternDockFirst(t *testing.T) {
+	p := TrackerPrompt("internships", "", time.Now())
+	if !strings.Contains(p, "https://www.interndock.com/companies") || !strings.Contains(p, "Do not guess a company") {
+		t.Fatalf("the internships prompt must name InternDock as the primary source:\n%s", p)
+	}
+}
