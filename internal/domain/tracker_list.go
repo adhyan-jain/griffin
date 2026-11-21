@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // A tracker is one shared list per type (internships, hackathons, open source). Any task about that
@@ -195,6 +197,26 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 		title = string(r[:80])
 	}
 	return title, goal, payload
+}
+
+// ApplyDraftApprovalAction is the approval type for a finished application draft. Approving it accepts the draft as
+// written; it does not submit anything anywhere.
+const ApplyDraftApprovalAction = "apply_draft"
+
+// ApplyDraftApproval builds the approval that holds a finished application draft for the owner's review.
+func ApplyDraftApproval(task *Task, draft string) *Approval {
+	var p struct {
+		ApplyFor struct{ Company, Role, URL string } `json:"apply_for"`
+	}
+	_ = json.Unmarshal(task.InputPayload, &p)
+	payload, _ := json.Marshal(map[string]string{
+		"company": p.ApplyFor.Company, "role": p.ApplyFor.Role, "portal_url": p.ApplyFor.URL, "text": draft,
+	})
+	return &Approval{
+		ID: uuid.New(), UserID: task.UserID, TaskID: task.ID, ActionType: ApplyDraftApprovalAction,
+		RiskLevel: ApprovalRiskLow, ActionPayload: payload,
+		Summary: "Review the application draft for " + strings.TrimSpace(p.ApplyFor.Role+" at "+p.ApplyFor.Company),
+	}
 }
 
 // ProfileKind marks the stored copy of the owner's verified profile that application tasks are shown.

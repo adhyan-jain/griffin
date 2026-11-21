@@ -395,6 +395,22 @@ func (e *TaskEngine) HasApprovedAction(ctx context.Context, task *domain.Task, a
 	return false, nil
 }
 
+// ApprovedApproval returns the newest approved approval of this type for the task, or nil when there is none.
+func (e *TaskEngine) ApprovedApproval(ctx context.Context, task *domain.Task, actionType string) (*domain.Approval, error) {
+	st := domain.ApprovalStatusApproved
+	list, err := e.approvalRepo.ListApprovals(ctx, task.UserID, &st)
+	if err != nil {
+		return nil, fmt.Errorf("task_engine: list approvals: %w", err)
+	}
+	var found *domain.Approval
+	for _, a := range list {
+		if a.TaskID == task.ID && a.ActionType == actionType && (found == nil || a.CreatedAt.After(found.CreatedAt)) {
+			found = a
+		}
+	}
+	return found, nil
+}
+
 // ApprovedActionTypes lists the action types the owner has approved for this task.
 func (e *TaskEngine) ApprovedActionTypes(ctx context.Context, task *domain.Task) ([]string, error) {
 	st := domain.ApprovalStatusApproved

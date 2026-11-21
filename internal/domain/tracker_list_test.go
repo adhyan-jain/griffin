@@ -1,9 +1,12 @@
 package domain
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestTrackerTypeOf(t *testing.T) {
@@ -45,5 +48,26 @@ func TestTrackerPromptCarriesTheListAsData(t *testing.T) {
 	}
 	if !strings.Contains(TrackerPrompt("internships", "", time.Now()), "empty so far") {
 		t.Error("an empty list must say so")
+	}
+}
+
+func TestApplyDraftApprovalHoldsTheDraftAndNamesTheListing(t *testing.T) {
+	_, _, payload := ApplyTaskFor("Acme", "Backend Intern", "https://acme.example/job")
+	task := &Task{ID: uuid.New(), UserID: uuid.New(), InputPayload: payload}
+
+	a := ApplyDraftApproval(task, "Dear Acme team")
+
+	if a.TaskID != task.ID || a.UserID != task.UserID || a.ActionType != ApplyDraftApprovalAction {
+		t.Fatalf("approval not tied to the task: %+v", a)
+	}
+	if !strings.Contains(a.Summary, "Backend Intern at Acme") {
+		t.Fatalf("summary should name the listing, got %q", a.Summary)
+	}
+	var p map[string]string
+	if err := json.Unmarshal(a.ActionPayload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p["text"] != "Dear Acme team" || p["company"] != "Acme" || p["portal_url"] != "https://acme.example/job" {
+		t.Fatalf("payload wrong: %v", p)
 	}
 }

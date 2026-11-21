@@ -257,6 +257,18 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
+	// An application draft the owner has approved is finished as written: nothing is drafted again.
+	if w.finishApprovedApplication(ctx, task) {
+		attempt.Status = "COMPLETED"
+		attempt.DurationMs = int(time.Since(start).Milliseconds())
+		now := time.Now().UTC()
+		attempt.CompletedAt = &now
+		if w.taskRepo != nil {
+			w.recordAttempt(ctx, attempt)
+		}
+		return true, nil
+	}
+
 	// "Ready all the A tier internships" is too much for one model call (it times out). Split it into one
 	// application task per listing, and finish this task with the summary.
 	if answer, split := w.trackers().BatchApply(ctx, task, func(c context.Context, t *domain.Task) error {
@@ -384,6 +396,18 @@ func (w *Worker) ProcessNext(ctx context.Context) (bool, error) {
 	if res.RequiresApproval != nil {
 		w.logger.Info("Task execution paused for approval", "worker_id", w.ID, "task_id", task.ID)
 		_ = w.engine.RequestApproval(ctx, task.ID, res.RequiresApproval)
+		return true, nil
+	}
+
+	// A drafted application waits on the owner's Approvals page; approving it re-queues the task to finish.
+	if w.holdApplicationDraft(ctx, task, res) {
+		attempt.Status = "AWAITING_APPROVAL"
+		attempt.DurationMs = durationMs
+		now := time.Now().UTC()
+		attempt.CompletedAt = &now
+		if w.taskRepo != nil {
+			w.recordAttempt(ctx, attempt)
+		}
 		return true, nil
 	}
 
