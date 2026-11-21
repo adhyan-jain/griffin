@@ -207,10 +207,10 @@ func ApplyTaskFor(company, role, link string) (title, goal string, payload json.
 	goal += "\n\nDo exactly this, nothing extra:\n" +
 		"1. Open the posting and its application form. Note what the form really asks for: each field, upload and question, with any word limit. Do not add standard questions of your own.\n" +
 		"2. Fill every field from the owner's verified profile and resume context. Leave a field out if the facts do not support it. Each written answer is 2-4 sentences, never long paragraphs.\n" +
-		"3. Make ONE tailored resume as a one-page PDF: keep the owner's real projects and bullets, reorder and trim them to fit this posting, invent nothing. Save it as " + pdf + " (write HTML and render it with `chromium --headless --print-to-pdf`, or use xelatex). This PDF is what the owner reviews.\n" +
+		"3. Make ONE tailored resume as a one-page PDF: keep the owner's real projects and bullets, reorder and trim them to fit this posting, invent nothing. Save it as " + pdf + " (write HTML and render it with `chromium --headless --print-to-pdf`, or use xelatex). Before you answer, run `ls -l` on it and confirm it exists and is not empty; if it does not, fix it. This PDF is what the owner reviews.\n" +
 		"4. Do not submit anything. It waits for the owner's approval.\n" +
-		"5. Referrals: find 2-3 real people at " + company + " on LinkedIn, in this order: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other developers there (if the company is not Indian, prefer Indian developers). Only list people you actually found, with their profile link; never invent anyone. For each, write a 3-4 sentence message. Use email if their address is public, otherwise a LinkedIn message.\n\n" +
-		"Answer in exactly this shape and keep it short:\n" +
+		"5. Referrals: find 2-3 real people at " + company + " on LinkedIn, in this order: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other software engineers there (if the company is not Indian, prefer Indian engineers). Founders, CEOs and CTOs only if nobody else can be found. Open each profile and confirm the name and company before listing the person; if you could not open it, leave the person out. Never invent anyone. For each, write a 3-4 sentence message. Use email if their address is public, otherwise a LinkedIn message.\n\n" +
+		"Answer in exactly this shape and keep it short, with no playbook or extra sections:\n" +
 		"RESUME_PDF: " + pdf + "\n" +
 		"FORM:\n- <field>: <value>\n" +
 		"REFERRALS:\n1. <name> | <title> | <why first, e.g. VIT alum, ACM> | <profile link or email>\n   Message: <3-4 sentences>"
@@ -246,6 +246,23 @@ func fileSafe(s string) string {
 
 var resumePDFRe = regexp.MustCompile(`(?m)^RESUME_PDF:\s*(\S+\.pdf)\s*$`)
 
+// ResumePDFPath is the resume path an application answer names on its RESUME_PDF line ("" when it names none).
+func ResumePDFPath(answer string) string {
+	if m := resumePDFRe.FindStringSubmatch(answer); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// StripPlaybook removes the "## Playbook" notes a tool run appends for its own reuse. They are not part of an
+// application the owner reviews.
+func StripPlaybook(answer string) string {
+	if i := strings.Index(answer, "\n## Playbook"); i >= 0 {
+		return strings.TrimSpace(answer[:i])
+	}
+	return answer
+}
+
 // ApplyDraftApprovalAction is the approval type for a finished application draft. Approving it accepts the draft as
 // written; it does not submit anything anywhere.
 const ApplyDraftApprovalAction = "apply_draft"
@@ -256,11 +273,12 @@ func ApplyDraftApproval(task *Task, draft string) *Approval {
 		ApplyFor struct{ Company, Role, URL string } `json:"apply_for"`
 	}
 	_ = json.Unmarshal(task.InputPayload, &p)
+	draft = StripPlaybook(draft)
 	fields := map[string]string{
 		"company": p.ApplyFor.Company, "role": p.ApplyFor.Role, "portal_url": p.ApplyFor.URL, "text": draft,
 	}
-	if m := resumePDFRe.FindStringSubmatch(draft); m != nil {
-		fields["resume_path"] = m[1]
+	if path := ResumePDFPath(draft); path != "" {
+		fields["resume_path"] = path
 	}
 	payload, _ := json.Marshal(fields)
 	return &Approval{

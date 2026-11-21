@@ -87,7 +87,7 @@ func TestApplyTasksNeedAHostThatCanOpenThePosting(t *testing.T) {
 
 func TestApplyTaskIsNarrowAndAsksForOneResumePDF(t *testing.T) {
 	_, goal, _ := ApplyTaskFor("Qdrant", "Systems Intern", "https://q.example/job")
-	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored resume", "Do not submit", "ACM, ISTE, MFC or TAM", "never invent anyone", "RESUME_PDF:"} {
+	for _, want := range []string{"what the form really asks", "2-4 sentences", "ONE tailored resume", "Do not submit", "ACM, ISTE, MFC or TAM", "Never invent anyone", "RESUME_PDF:"} {
 		if !strings.Contains(goal, want) {
 			t.Errorf("goal is missing %q", want)
 		}
@@ -117,5 +117,14 @@ func TestApplyTasksRunInTheTierThatCanWriteTheResume(t *testing.T) {
 	task := &Task{Title: title, Goal: goal, InputPayload: payload}
 	if ToolModeFor(task) != ToolAct {
 		t.Fatalf("an application writes a PDF, so it needs the act tier, got %s", ToolModeFor(task))
+	}
+}
+
+func TestApplicationDraftDropsThePlaybookNotes(t *testing.T) {
+	_, _, payload := ApplyTaskFor("Acme", "Intern", "")
+	task := &Task{ID: uuid.New(), UserID: uuid.New(), InputPayload: payload}
+	a := ApplyDraftApproval(task, "RESUME_PDF: /x/a.pdf\nFORM:\n- Name: A\n\n## Playbook\n1. internal notes")
+	if strings.Contains(string(a.ActionPayload), "Playbook") {
+		t.Fatalf("the playbook notes must not be part of the application: %s", a.ActionPayload)
 	}
 }

@@ -2,10 +2,13 @@ package hostagent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -343,6 +346,13 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 		if err := a.cfg.Client.Fail(report, id, out.FailReason, out.Retryable); err != nil {
 			a.logger.Error("could not report failure", "task_id", id, "error", err)
 		}
+	case !resumeReady(task, out.Output):
+		// The answer names a resume PDF that is not on disk. Reporting it as done would hand the owner a draft
+		// whose main file is missing, so the step is retried instead.
+		a.logger.Warn("the resume PDF the answer names does not exist; retrying", "task_id", id)
+		if err := a.cfg.Client.Fail(report, id, "the tailored resume PDF was not created", true); err != nil {
+			a.logger.Error("could not report failure", "task_id", id, "error", err)
+		}
 	default:
 		if err := a.cfg.Client.Complete(report, id, out.Output); err != nil {
 			a.logger.Error("could not report completion", "task_id", id, "error", err)
@@ -367,4 +377,25 @@ func leaseLost(err error) bool {
 		}
 	}
 	return false
+}
+
+// resumeReady is true unless the task is an application whose answer names a resume PDF that is missing, empty
+// or not a PDF. Only files in the resumes folder count.
+func resumeReady(task *domain.Task, output json.RawMessage) bool {
+	if !domain.IsApplyTask(task.InputPayload) {
+		return true
+	}
+	path := domain.ResumePDFPath(domain.OutputText(output))
+	if path == "" || filepath.Dir(path) != domain.RepoResumeDir {
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, 5)
+	n, _ := f.Read(head)
+	st, serr := f.Stat()
+	return serr == nil && st.Size() > 1000 && n == 5 && string(head) == "%PDF-"
 }

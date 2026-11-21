@@ -600,3 +600,24 @@ func TestLeaseLostOnlyWhenTheServerSaysSo(t *testing.T) {
 		t.Fatal("a refused host must stop")
 	}
 }
+
+func TestAnApplicationIsOnlyReadyWhenItsResumePDFExists(t *testing.T) {
+	_, _, payload := domain.ApplyTaskFor("Acme", "Intern", "")
+	apply := &domain.Task{InputPayload: payload}
+	out := func(path string) json.RawMessage {
+		b, _ := json.Marshal(map[string]string{"response": "RESUME_PDF: " + path + "\nFORM:\n- Name: A"})
+		return b
+	}
+	if resumeReady(apply, out(domain.RepoResumeDir+"/Definitely_Missing_File.pdf")) {
+		t.Fatal("a PDF that is not on disk must not count")
+	}
+	if resumeReady(apply, out("/tmp/elsewhere.pdf")) {
+		t.Fatal("only the resumes folder counts")
+	}
+	if resumeReady(apply, json.RawMessage(`{"response":"FORM:\n- Name: A"}`)) {
+		t.Fatal("an answer with no RESUME_PDF line is not ready")
+	}
+	if !resumeReady(&domain.Task{InputPayload: json.RawMessage(`{}`)}, json.RawMessage(`{"response":"hi"}`)) {
+		t.Fatal("tasks that are not applications are never held back")
+	}
+}
