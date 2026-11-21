@@ -229,6 +229,11 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// An application whose draft the owner approved is finished as written; the device has nothing to run.
+	if res.Task != nil && h.engine.FinishApprovedApplication(r.Context(), res.Task, host.WorkerID()) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	// The device works from a copy of the task that carries its tracker's list; the stored task is unchanged.
 	if h.trackers != nil && res.Task != nil {
 		res.Task = h.trackers.Prepare(r.Context(), res.Task)
@@ -331,6 +336,12 @@ func (h *HostHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		req.Output = json.RawMessage("{}")
 	}
 	ah := h.svc.BeginFinish(r.Context(), host, id)
+	// A finished application draft waits on the owner's Approvals page instead of completing.
+	if task, gerr := h.engine.GetTask(r.Context(), id); gerr == nil && h.engine.HoldApplicationDraft(r.Context(), task, req.Output) {
+		h.svc.EndFinish(r.Context(), host, ah, "AWAITING_APPROVAL", "")
+		httputil.JSON(w, http.StatusOK, map[string]string{"message": "Draft is waiting for the owner's approval"})
+		return
+	}
 	if err := h.engine.CompleteTask(r.Context(), id, host.WorkerID(), req.Output); err != nil {
 		httputil.ErrorJSON(w, err)
 		return

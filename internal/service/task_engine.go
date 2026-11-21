@@ -411,6 +411,52 @@ func (e *TaskEngine) ApprovedApproval(ctx context.Context, task *domain.Task, ac
 	return found, nil
 }
 
+// HoldApplicationDraft stops a finished application draft at the owner's Approvals page instead of completing the
+// task, whichever process ran it. It returns true when the task was paused for approval; false means the caller
+// completes the task as usual (not an application, no draft text, or the owner already approved a draft).
+func (e *TaskEngine) HoldApplicationDraft(ctx context.Context, task *domain.Task, output json.RawMessage) bool {
+	if task == nil || !domain.IsApplyTask(task.InputPayload) {
+		return false
+	}
+	draft := strings.TrimSpace(domain.OutputText(output))
+	if draft == "" {
+		return false
+	}
+	if a, err := e.ApprovedApproval(ctx, task, domain.ApplyDraftApprovalAction); err != nil || a != nil {
+		return false
+	}
+	if err := e.RequestApproval(ctx, task.ID, domain.ApplyDraftApproval(task, draft)); err != nil {
+		e.logger.Error("Could not request approval for an application draft; completing the task instead", "task_id", task.ID, "error", err)
+		return false
+	}
+	e.logger.Info("Application drafted; paused for the owner's review", "task_id", task.ID)
+	return true
+}
+
+// FinishApprovedApplication completes an application task whose draft the owner approved, with the draft held on
+// the approval, so the draft is not written again. Nothing is submitted. It returns true when the task was finished.
+func (e *TaskEngine) FinishApprovedApplication(ctx context.Context, task *domain.Task, workerID string) bool {
+	if task == nil || !domain.IsApplyTask(task.InputPayload) {
+		return false
+	}
+	a, err := e.ApprovedApproval(ctx, task, domain.ApplyDraftApprovalAction)
+	if err != nil || a == nil {
+		return false
+	}
+	var p struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(a.ActionPayload, &p) != nil || strings.TrimSpace(p.Text) == "" {
+		return false
+	}
+	out, _ := json.Marshal(map[string]string{"response": p.Text})
+	if err := e.CompleteTask(ctx, task.ID, workerID, out); err != nil {
+		e.logger.Error("Could not complete an approved application", "task_id", task.ID, "error", err)
+		return false
+	}
+	return true
+}
+
 // ApprovedActionTypes lists the action types the owner has approved for this task.
 func (e *TaskEngine) ApprovedActionTypes(ctx context.Context, task *domain.Task) ([]string, error) {
 	st := domain.ApprovalStatusApproved
