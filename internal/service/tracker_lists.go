@@ -147,6 +147,14 @@ func (w *TrackerLists) Save(ctx context.Context, task *domain.Task, answer strin
 		w.Logger.Warn("Tracker list not saved: it looked like it contained a credential", "task_id", task.ID)
 		return
 	}
+	if t == "alumni" {
+		// The routine hands back only the new people; Griffin merges them into the list without duplicates.
+		prev := ""
+		if list != nil {
+			prev, _ = w.Store.ReadText(ctx, task.UserID, list.ID, trackerReadLimit)
+		}
+		table, _ = domain.MergeAlumni(prev, table)
+	}
 	title := domain.TrackerTypes[t] + " tracker"
 	taskID := task.ID
 	if list == nil {

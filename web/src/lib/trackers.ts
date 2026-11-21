@@ -5,6 +5,7 @@ import { listingKey } from "@/lib/tracker-rows";
 /** The known tracker types. A task joins the first type whose pattern matches its title. */
 export const TRACKER_TYPES = [
   { id: "applied", label: "Applied", pattern: /applied tracker/i },
+  { id: "alumni", label: "Alumni", pattern: /alumni (tracker|outreach)/i },
   { id: "internships", label: "Internships", pattern: /internship|\binterns?\b/i },
   { id: "hackathons", label: "Hackathons", pattern: /hackathon/i },
   { id: "opensource", label: "Open Source", pattern: /open-source|oss/i },
@@ -15,11 +16,12 @@ export const TRACKER_TYPES = [
 
 export const trackerTypeOf = (title: string) => TRACKER_TYPES.find((t) => t.pattern.test(title))?.id ?? null;
 
-type ApplyPayload = { apply_for?: { company?: unknown; role?: unknown; url?: unknown } } | null | undefined;
+type ApplyPayload = { apply_for?: { company?: unknown; role?: unknown; url?: unknown }; submit_for?: unknown } | null | undefined;
 const applyOf = (t: Task) => (t.input_payload as ApplyPayload)?.apply_for;
+const submitOf = (t: Task) => (t.input_payload as ApplyPayload)?.submit_for;
 
-/** An application task made from a tracker row. It is work on a listing, never a tracker itself. */
-export const isApplyTask = (t: Task) => applyOf(t) !== undefined && applyOf(t) !== null;
+/** An application task (the draft, or the submission after approval) made from a tracker row. It is work on a listing, never a tracker itself. */
+export const isApplyTask = (t: Task) => (applyOf(t) !== undefined && applyOf(t) !== null) || (submitOf(t) !== undefined && submitOf(t) !== null);
 
 /**
  * A task's tracker type: from its title, else from how its goal begins, so "find companies hiring SDE

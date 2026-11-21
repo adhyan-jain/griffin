@@ -228,3 +228,30 @@ func TestWithAppliedStatusUpdatesOnlyThatRow(t *testing.T) {
 		t.Fatal("no such row")
 	}
 }
+
+func TestAlumniMergeNeverDuplicates(t *testing.T) {
+	existing := AlumniHeader + "\n| Riya Sen | 2023 | Google | SDE | ACM | https://www.linkedin.com/in/riya-sen/ | why | not contacted | 2026-11-22 |\n"
+	added := AlumniHeader +
+		"\n| Riya S | 2023 | Google | SDE | ACM | https://linkedin.com/in/riya-sen | why | not contacted | 2026-11-23 |" + // same profile, other spelling
+		"\n| Aman Rao | 2024 | Atlassian | SDE | ISTE |  | why | not contacted | 2026-11-23 |" +
+		"\n| aman  rao | 2024 | Atlassian | SDE | ISTE |  | why | not contacted | 2026-11-23 |" // same name and company
+	out, n := MergeAlumni(existing, added)
+	if n != 1 || strings.Count(out, "Riya") != 1 || strings.Count(strings.ToLower(out), "aman") != 1 {
+		t.Fatalf("n=%d\n%s", n, out)
+	}
+	if first, _ := MergeAlumni("", added); strings.Count(first, "\n|---") != 1 || strings.Count(first, "Riya") != 1 {
+		t.Fatalf("a new list is one table:\n%s", first)
+	}
+}
+
+func TestAlumniTrackerIsTypedByItsTitleOnly(t *testing.T) {
+	if TrackerTypeOf("ALUMNI OUTREACH TRACKER", AlumniGoal, nil) != "alumni" {
+		t.Fatal("the routine is the alumni tracker")
+	}
+	if got := TrackerTypeOf("REFERRALS - Linear - Intern", "find VIT alumni at Linear", nil); got == "alumni" {
+		t.Fatal("a referral task is not the alumni tracker")
+	}
+	if got := TrackerTypeOf("SUBMIT - A - Intern", "x", json.RawMessage(`{"submit_for":{"company":"A","role":"Intern"}}`)); got != "" {
+		t.Fatalf("a submit task works on one posting, got %q", got)
+	}
+}
