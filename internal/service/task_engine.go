@@ -446,7 +446,7 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 		}
 		child := &domain.Task{
 			ID: uuid.New(), UserID: parent.UserID, ParentID: &parent.ID, Title: p.Title, Goal: p.Goal,
-			ManagerDomain: parent.ManagerDomain, Priority: parent.Priority,
+			ManagerDomain: parent.ManagerDomain, Priority: parent.Priority, MaxRetries: 2,
 			InputPayload: json.RawMessage(`{"proposed_by":"` + parent.ID.String() + `"}`),
 		}
 		created, cerr := e.CreateTask(ctx, child, []uuid.UUID{parent.ID})

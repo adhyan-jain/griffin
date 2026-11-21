@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -277,9 +278,15 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 				return
 			case <-t.C:
 				if err := a.cfg.Client.RenewLease(taskCtx, id); err != nil {
-					a.logger.Error("lease renewal failed; abandoning the task", "task_id", id, "error", err)
-					cancelTask()
-					return
+					// A network blip must not kill a task that may take minutes of model work. Only the server saying
+					// the lease is gone (or the owner revoking this host) means someone else may own the task now;
+					// anything else is retried on the next tick.
+					if leaseLost(err) {
+						a.logger.Error("lease is gone; abandoning the task", "task_id", id, "error", err)
+						cancelTask()
+						return
+					}
+					a.logger.Warn("lease renewal failed; will retry", "task_id", id, "error", err)
 				}
 			}
 		}
@@ -343,4 +350,21 @@ func (a *Agent) runTask(ctx context.Context, c *Claimed) {
 		}
 		a.logger.Info("task completed", "task_id", id)
 	}
+}
+
+// leaseLost reports whether a failed lease renewal means the server no longer considers this host the task's
+// owner: the task is gone, was taken back, or this host's access was refused. Network errors and server
+// hiccups are not that.
+func leaseLost(err error) bool {
+	if errors.Is(err, ErrUnauthorized) {
+		return true
+	}
+	var ae *APIError
+	if errors.As(err, &ae) {
+		switch ae.Status {
+		case http.StatusNotFound, http.StatusConflict, http.StatusGone, http.StatusForbidden:
+			return true
+		}
+	}
+	return false
 }

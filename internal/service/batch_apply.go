@@ -133,6 +133,7 @@ func (w *TrackerLists) BatchApply(ctx context.Context, task *domain.Task, create
 		child := &domain.Task{
 			ID: uuid.New(), UserID: task.UserID, ParentID: &parent, Title: title, Goal: goal,
 			ManagerDomain: "career", Priority: task.Priority, InputPayload: payload,
+			MaxRetries: 2, // a dropped connection must not fail an application for good
 		}
 		if err := create(ctx, child); err != nil {
 			if w.Logger != nil {

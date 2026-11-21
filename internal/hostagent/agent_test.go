@@ -583,3 +583,20 @@ func TestDrainWithNothingRunningIsHarmless(t *testing.T) {
 		t.Fatal("Resume must clear the pause")
 	}
 }
+
+func TestLeaseLostOnlyWhenTheServerSaysSo(t *testing.T) {
+	if leaseLost(errors.New(`Post "https://x": dial tcp: i/o timeout`)) {
+		t.Fatal("a network error is not a lost lease")
+	}
+	if leaseLost(&APIError{Status: 502}) || leaseLost(&APIError{Status: 500}) {
+		t.Fatal("a server hiccup is not a lost lease")
+	}
+	for _, st := range []int{404, 409, 410, 403} {
+		if !leaseLost(&APIError{Status: st}) {
+			t.Fatalf("status %d means the task is no longer this host's", st)
+		}
+	}
+	if !leaseLost(ErrUnauthorized) {
+		t.Fatal("a refused host must stop")
+	}
+}
