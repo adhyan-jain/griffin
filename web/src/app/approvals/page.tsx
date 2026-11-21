@@ -29,6 +29,7 @@ interface ReferralDraftInfo {
 
 /** The message a send approval is about, when it has one (other approvals carry no draft). */
 function draftOf(a: Approval): ReferralDraftInfo | null {
+  if (a.action_type === "apply_draft" || isProposalApproval(a.action_type)) return null; // shown by their own blocks
   const p = a.action_payload;
   if (!p || typeof p !== "object") return null;
   const raw = p as Record<string, unknown>;
@@ -51,6 +52,19 @@ function draftOf(a: Approval): ReferralDraftInfo | null {
 /** A finished application package ("apply_draft") or a job application the team wants to submit ("JOB_APPLY"). */
 function isApplicationApproval(actionType: string): boolean {
   return actionType === "JOB_APPLY" || actionType === "apply_draft";
+}
+
+/** A task Griffin proposed on its own ("task_proposal"): the owner approves it to let it run. */
+function isProposalApproval(actionType: string): boolean {
+  return actionType === "task_proposal";
+}
+
+/** What the owner is deciding on, so the card says so instead of treating everything as an outgoing message. */
+function approvalKind(actionType: string): { badge: string; approve: string } {
+  if (actionType === "JOB_APPLY") return { badge: "Phase 1: Apply to Portal First", approve: "Approve & Auto-Apply" };
+  if (actionType === "apply_draft") return { badge: "Application draft", approve: "Approve draft" };
+  if (isProposalApproval(actionType)) return { badge: "Proposed by JJ", approve: "Approve & run" };
+  return { badge: "Phase 2: Referral Follow-Up", approve: "Approve & Send" };
 }
 
 interface TailoringInfo {
@@ -288,7 +302,7 @@ export default function ApprovalsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <RiskBadge risk={a.risk_level} />
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isJobApply ? "bg-primary/20 text-primary border border-primary/30" : "bg-muted text-muted-foreground"}`}>
-                      {isJobApply ? "Phase 1: Apply to Portal First" : "Phase 2: Referral Follow-Up"}
+                      {approvalKind(a.action_type).badge}
                     </span>
                     {!pending && <StatusBadge status={a.status} />}
                   </div>
@@ -414,6 +428,11 @@ export default function ApprovalsPage() {
                     </div>
                   );
                 })()}
+                {isProposalApproval(a.action_type) && typeof (a.action_payload as { text?: unknown } | null)?.text === "string" && (
+                  <div className="whitespace-pre-wrap rounded-lg border bg-muted/40 p-3.5 text-sm leading-relaxed text-foreground">
+                    {(a.action_payload as { text: string }).text}
+                  </div>
+                )}
                 {(() => {
                   const draft = draftOf(a);
                   if (!draft) return null;
@@ -573,7 +592,7 @@ export default function ApprovalsPage() {
                         <X /> Reject
                       </Button>
                       <Button className="h-11" disabled={busyId === a.id} onClick={() => respond(a, true)}>
-                        {busyId === a.id ? <Loader2 className="animate-spin" /> : <Check />} {isJobApply ? "Approve & Auto-Apply" : "Approve & Send"}
+                        {busyId === a.id ? <Loader2 className="animate-spin" /> : <Check />} {approvalKind(a.action_type).approve}
                       </Button>
                     </div>
                   </>
