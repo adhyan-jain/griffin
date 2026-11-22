@@ -199,3 +199,35 @@ func TestChatCanAskForJSONAtTemperatureZero(t *testing.T) {
 		t.Fatalf("default request changed: %s", seen.body)
 	}
 }
+
+func TestAnOverloadedModelFallsBackToTheLighterOneOnce(t *testing.T) {
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Path)
+		if strings.Contains(r.URL.Path, DefaultFallbackModel) {
+			_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"from the fallback"}]}}]}`))
+			return
+		}
+		w.WriteHeader(503)
+		_, _ = w.Write([]byte(`{"error":{"message":"high demand"}}`))
+	}))
+	defer srv.Close()
+	c := &Client{APIKey: "k", BaseURL: srv.URL, Model: "gemini-flash-latest"}
+	out, err := c.Chat(context.Background(), "s", []Turn{{Role: "user", Text: "x"}})
+	if err != nil || out != "from the fallback" {
+		t.Fatalf("%q %v", out, err)
+	}
+	if !strings.Contains(asked[len(asked)-1], DefaultFallbackModel) {
+		t.Fatalf("the fallback is asked last: %v", asked)
+	}
+	asked = nil
+	off := &Client{APIKey: "k", BaseURL: srv.URL, Model: "gemini-flash-latest", Fallback: "none"}
+	if _, err := off.Chat(context.Background(), "s", []Turn{{Role: "user", Text: "x"}}); err == nil {
+		t.Fatal("with the fallback off, the overload is reported")
+	}
+	for _, p := range asked {
+		if strings.Contains(p, DefaultFallbackModel) {
+			t.Fatal("no fallback when it is off")
+		}
+	}
+}

@@ -55,13 +55,51 @@ type Client struct {
 	Temperature *float64
 	// JSONOutput asks for a JSON reply (responseMimeType application/json). The caller still validates it.
 	JSONOutput bool
+	// Fallback is the model asked once when Model is overloaded (503/5xx), rate limited (429) or retired (404).
+	// Empty means DefaultFallbackModel; "none" turns the fallback off.
+	Fallback string
 }
+
+// DefaultFallbackModel answers when the main model is overloaded: Google's lighter flash model.
+const DefaultFallbackModel = "gemini-flash-lite-latest"
 
 // Enabled reports whether the client can be used.
 func (c *Client) Enabled() bool { return c != nil && strings.TrimSpace(c.APIKey) != "" }
 
-// Chat answers the last user turn in the voice of system. Turns must end with a user turn.
+// Chat answers the last user turn in the voice of system. Turns must end with a user turn. When the model is
+// overloaded, rate limited or retired, the fallback model is asked once.
 func (c *Client) Chat(ctx context.Context, system string, turns []Turn) (string, error) {
+	out, err := c.chat(ctx, system, turns)
+	if err == nil || !unavailable(err) || ctx.Err() != nil {
+		return out, err
+	}
+	fb := c.Fallback
+	if fb == "" {
+		fb = DefaultFallbackModel
+	}
+	model := c.Model
+	if model == "" {
+		model = DefaultModel
+	}
+	if fb == "none" || fb == model {
+		return out, err
+	}
+	alt := *c
+	alt.Model, alt.Fallback = fb, "none"
+	return alt.chat(ctx, system, turns)
+}
+
+// unavailable reports whether err means the model could not answer right now (or no longer exists), so another
+// model may.
+func unavailable(err error) bool {
+	if errors.Is(err, ErrRateLimited) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "gemini: HTTP 5") || strings.Contains(msg, "gemini: HTTP 404")
+}
+
+func (c *Client) chat(ctx context.Context, system string, turns []Turn) (string, error) {
 	if !c.Enabled() {
 		return "", ErrNotConfigured
 	}
