@@ -198,9 +198,16 @@ func (h *HostHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var reapEvery = &service.Every{Interval: time.Minute}
+
 // Claim leases the next task this host can do (204 when there is none).
 func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	host := middleware.GetHost(r.Context())
+	// Hosts ask for work every few seconds, so this is where abandoned tasks (a host that crashed or was restarted
+	// mid-task) are put back in the queue; the cloud worker that used to do it is usually asleep.
+	if reapEvery.Due() {
+		_, _ = h.engine.ReapExpiredLeases(r.Context())
+	}
 	res, err := h.svc.Claim(r.Context(), host)
 	if err != nil {
 		httputil.ErrorJSON(w, err)

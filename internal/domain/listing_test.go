@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -27,5 +28,30 @@ func TestAFetchedPostingBecomesAVerifiedListing(t *testing.T) {
 	l := ListingFromPosting(uuid.New(), "unstop", "A", Posting{Company: " Acme ", Title: "SDE Intern", Link: "https://x/1", Location: "Bengaluru"}, at)
 	if l.Stage != StageVerified || l.Company != "Acme" || l.VerifiedAt == nil || l.PostedAt != nil || l.Tier != "A" {
 		t.Fatalf("%+v", l)
+	}
+}
+
+func TestTheInternshipsListIsWrittenOnlyFromVerifiedListings(t *testing.T) {
+	at := time.Now()
+	open := ListingFromPosting(uuid.New(), "unstop", "B", Posting{Company: "Acme", Title: "SDE Intern", Link: "https://unstop.com/1", Location: "Pune", Pay: "₹20,000 /month"}, at)
+	top := ListingFromPosting(uuid.New(), "internshala", "A", Posting{Company: "Coy", Title: "Software Engineer Intern", Link: "https://internshala.com/2", Pay: "₹45,000 /month"}, at)
+	gone := ListingFromPosting(uuid.New(), "unstop", "A", Posting{Company: "Gone", Title: "ML Intern", Link: "https://unstop.com/3"}, at)
+	gone.Stage = StageClosed
+	text := ListingsListText([]*Listing{open, gone, top})
+
+	if !strings.Contains(text, VerifiedListMarker) || strings.Index(text, "Coy") > strings.Index(text, "Acme") || strings.Index(text, "Acme") > strings.Index(text, "Gone") {
+		t.Fatalf("best tier first, closed last:\n%s", text)
+	}
+	if !ListingIsClosed(text, "Gone", "ML Intern") || ListingIsClosed(text, "Acme", "SDE Intern") {
+		t.Fatalf("a closed listing reads as closed, an open one does not:\n%s", text)
+	}
+	if !ListingIsUnverified(text, "Qdrant") || ListingIsUnverified(text, "acme") {
+		t.Fatal("a company that is not on the verified list is unverified; one that is, is not")
+	}
+	if ListingIsUnverified("| Company |\n| Qdrant |", "Other") {
+		t.Fatal("an old hand-written list says nothing about verification")
+	}
+	if rows := strings.Count(text, "\n| Tier "); rows != 4 { // the header and three listings
+		t.Fatalf("one row per listing: %d", rows)
 	}
 }

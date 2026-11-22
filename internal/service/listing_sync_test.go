@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -31,6 +32,10 @@ func (m *memListings) Upsert(_ context.Context, l *domain.Listing) (bool, error)
 func (m *memListings) List(_ context.Context, _ uuid.UUID, stages []string, _ int) ([]*domain.Listing, error) {
 	var out []*domain.Listing
 	for _, r := range m.rows {
+		if len(stages) == 0 { // like the table: no stages means every listing
+			out = append(out, r)
+			continue
+		}
 		for _, s := range stages {
 			if r.Stage == s {
 				out = append(out, r)
@@ -104,5 +109,35 @@ func TestTheSyncRoutineRunsInCode(t *testing.T) {
 	answer, how := w.RunInCode(context.Background(), &domain.Task{UserID: uuid.New(), Title: ListingsSyncTitle}, nil, nil)
 	if how != Answered || !strings.Contains(answer, "No new openings today") {
 		t.Fatalf("%v %s", how, answer)
+	}
+}
+
+func TestTheInternshipsListIsReplacedByTheVerifiedListingsAndFakeApplicationsAreDropped(t *testing.T) {
+	ctx := context.Background()
+	owner := uuid.New()
+	fake := "# Internships tracker\n\n| Tier | Company | Role | Status |\n|---|---|---|---|\n| Tier A | Qdrant | Open Source Vector Engine Intern | not applied |\n"
+	list := &memList{text: fake}
+	listings := &memListings{rows: []*domain.Listing{
+		{ID: uuid.New(), Company: "Coy", Role: "Software Engineer Intern", URL: "https://unstop.com/1", Tier: "A", Stage: domain.StageVerified},
+	}}
+	w := &TrackerLists{Store: list, Sync: &ListingSync{Listings: listings}}
+	if err := w.WriteListingsList(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(list.text, "Qdrant") || !strings.Contains(list.text, "| Tier A | Coy | Software Engineer Intern |") {
+		t.Fatalf("the list holds only verified listings:\n%s", list.text)
+	}
+
+	var cancelled []string
+	cancel := func(_ context.Context, _ uuid.UUID, why string) error { cancelled = append(cancelled, why); return nil }
+	apply := func(company, role string) *domain.Task {
+		p, _ := json.Marshal(map[string]any{"apply_for": map[string]string{"company": company, "role": role}})
+		return &domain.Task{ID: uuid.New(), UserID: owner, Title: "APPLY - " + company, InputPayload: p}
+	}
+	if !w.SkipClosedListing(ctx, apply("Qdrant", "Open Source Vector Engine Intern"), cancel) || !strings.Contains(cancelled[0], "not a verified listing") {
+		t.Fatalf("an application for a company that was never verified is dropped: %v", cancelled)
+	}
+	if w.SkipClosedListing(ctx, apply("Coy", "Software Engineer Intern"), cancel) {
+		t.Fatal("an application for a verified listing goes ahead")
 	}
 }

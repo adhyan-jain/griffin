@@ -434,10 +434,19 @@ func (w *TrackerLists) SkipClosedListing(ctx context.Context, task *domain.Task,
 		return false
 	}
 	text, err := w.Store.ReadText(ctx, task.UserID, list.ID, trackerReadLimit)
-	if err != nil || !domain.ListingIsClosed(text, company, role) {
+	if err != nil {
 		return false
 	}
-	if err := cancel(ctx, task.ID, "the listing is closed on the Internships list (no posting at its link)"); err != nil {
+	reason := ""
+	switch {
+	case domain.ListingIsClosed(text, company, role):
+		reason = "the listing is closed on the Internships list (no posting at its link)"
+	case domain.ListingIsUnverified(text, company):
+		reason = company + " is not a verified listing (it was never seen on Internshala, Unstop or InternDock)"
+	default:
+		return false
+	}
+	if err := cancel(ctx, task.ID, reason); err != nil {
 		return false
 	}
 	return true

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/sources"
+	"github.com/griffin/core/internal/storage"
 )
 
 // ListingsSyncTitle is the daily routine that refreshes the verified internship listings, in code.
@@ -127,5 +129,33 @@ func (w *TrackerLists) SyncListings(ctx context.Context, task *domain.Task) (str
 	if err != nil {
 		return "", false // the normal path reports and retries it
 	}
+	if err := w.WriteListingsList(ctx, task.UserID); err != nil {
+		return res.Summary() + "\n\nCould not refresh the Internships list: " + err.Error(), true
+	}
 	return res.Summary(), true
+}
+
+// WriteListingsList replaces the Internships list with the verified listings, so every reader of that list (the
+// apply batch, the tracker routines, the Trackers page) sees only postings read from the internship sites. Rows
+// written by hand or by a model before are dropped.
+func (w *TrackerLists) WriteListingsList(ctx context.Context, userID uuid.UUID) error {
+	if w == nil || w.Store == nil || w.Sync == nil || w.Sync.Listings == nil {
+		return nil
+	}
+	all, err := w.Sync.Listings.List(ctx, userID, nil, 500)
+	if err != nil {
+		return err
+	}
+	text := domain.ListingsListText(all)
+	if list := w.list(ctx, userID, storage.ListKind, "internships"); list != nil {
+		_, err = w.Store.UpdateText(ctx, list.ID, userID, text, false, trackerReadLimit)
+		return err
+	}
+	_, err = w.Store.SaveArtifact(ctx, storage.SaveArtifactInput{
+		UserID: userID, Title: "Internships tracker", Filename: "internships-tracker.md",
+		ArtifactType: "MARKDOWN", ContentType: "text/markdown; charset=utf-8",
+		Body:     bytes.NewReader([]byte(text)),
+		Metadata: domain.TrackerListMetadata(storage.ListKind, "internships"),
+	})
+	return err
 }

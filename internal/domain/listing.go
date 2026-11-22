@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -74,4 +76,54 @@ func ListingFromPosting(userID uuid.UUID, source, tier string, p Posting, at tim
 		l.PostedAt = &posted
 	}
 	return l
+}
+
+// VerifiedListMarker opens the Internships list once Griffin writes it from the verified listings. A list that
+// carries it holds every listing Griffin knows is real, so anything missing from it was never verified.
+const VerifiedListMarker = "<!-- verified listings: written by Griffin from Internshala, Unstop and InternDock; edits are replaced daily -->"
+
+// listStatus is a listing's Status cell on the Internships list, in the words the list's readers understand.
+func listStatus(stage string) string {
+	switch stage {
+	case StageVerified:
+		return "not applied"
+	case StageConfirmed:
+		return "applied"
+	case StageClosed:
+		return ListingClosedStatus
+	default:
+		return stage
+	}
+}
+
+// ListingsListText is the Internships list written from the verified listings, best tier first. Closed listings
+// stay on it (marked closed) so a task for one is dropped rather than worked on.
+func ListingsListText(listings []*Listing) string {
+	cell := func(s string) string {
+		return strings.TrimSpace(strings.Join(strings.Fields(strings.ReplaceAll(s, "|", "/")), " "))
+	}
+	sorted := append([]*Listing(nil), listings...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		oi, oj := sorted[i].Stage == StageClosed, sorted[j].Stage == StageClosed
+		if oi != oj {
+			return !oi
+		}
+		return sorted[i].Tier < sorted[j].Tier
+	})
+	var b strings.Builder
+	b.WriteString(VerifiedListMarker + "\n# Internships tracker\n\n")
+	b.WriteString("| Tier | Company | Role | Location | Stipend | Source | Link | Status |\n|---|---|---|---|---|---|---|---|\n")
+	for _, l := range sorted {
+		fmt.Fprintf(&b, "| Tier %s | %s | %s | %s | %s | %s | %s | %s |\n", cell(l.Tier), cell(l.Company), cell(l.Role), cell(l.Location), cell(l.Pay), cell(l.Source), cell(l.URL), listStatus(l.Stage))
+	}
+	return b.String()
+}
+
+// ListingIsUnverified reports whether the Internships list is Griffin's verified list and this company is not on
+// it: an application for it would be for a listing nobody ever saw on a real posting.
+func ListingIsUnverified(text, company string) bool {
+	if !strings.Contains(text, VerifiedListMarker) || strings.TrimSpace(company) == "" {
+		return false
+	}
+	return !strings.Contains(strings.ToLower(text), "| "+strings.ToLower(strings.TrimSpace(company))+" |")
 }
