@@ -10,6 +10,12 @@ package com.griffin.assistant.core
 object PaymentPause {
     /** How long after Griffin steps aside a bank app that vanished is treated as "it closed itself because of us". */
     const val RELAUNCH_WINDOW_MS = 6_000L
+    /**
+     * Bank apps open other screens of their own (a Google location prompt, the camera for a QR code, a contact
+     * picker). Another app in front counts as "left" only after it has stayed there this long; the home screen
+     * counts at once.
+     */
+    const val AWAY_MS = 20_000L
 
     sealed class Step {
         object Wait : Step()
@@ -22,22 +28,28 @@ object PaymentPause {
     /**
      * [fromHome] is true when the bank app was opened from the home screen. It is false when another app handed
      * it a payment (a UPI link), which a fresh start would lose, so that is never restarted while in front.
+     * [awaySince] is when some other app came to the front, while it stays there.
      */
-    data class State(val pkg: String, val since: Long, val fromHome: Boolean, val relaunched: Boolean = false)
+    data class State(val pkg: String, val since: Long, val fromHome: Boolean, val relaunched: Boolean = false, val awaySince: Long? = null)
+
+    data class Decision(val step: Step, val state: State)
 
     /**
      * What to do now, given the app in front. [isPayment], [isHome] and [isTransient] classify [front]; null
      * [front] means it is not known yet.
      */
-    fun next(state: State, front: String?, now: Long, isPayment: Boolean, isHome: Boolean, isTransient: Boolean): Step {
+    fun next(state: State, front: String?, now: Long, isPayment: Boolean, isHome: Boolean, isTransient: Boolean): Decision {
         val early = now - state.since < RELAUNCH_WINDOW_MS
         if (!state.relaunched && early) {
-            if (front == state.pkg && state.fromHome) return Step.Relaunch(state.pkg)
-            if (isHome) return Step.Relaunch(state.pkg) // it closed itself
+            if (front == state.pkg && state.fromHome) return Decision(Step.Relaunch(state.pkg), state.copy(relaunched = true))
+            if (isHome) return Decision(Step.Relaunch(state.pkg), state.copy(relaunched = true)) // it closed itself
         }
-        if (front == null || isTransient || isPayment) return Step.Wait
-        if (isHome && early) return Step.Wait // give the reopened app a moment to come up
-        return Step.Restore
+        if (front == null || isTransient) return Decision(Step.Wait, state)
+        if (isPayment) return Decision(Step.Wait, state.copy(awaySince = null))
+        if (isHome) return if (early) Decision(Step.Wait, state) else Decision(Step.Restore, state)
+        val away = state.awaySince ?: now
+        if (now - away >= AWAY_MS) return Decision(Step.Restore, state)
+        return Decision(Step.Wait, state.copy(awaySince = away))
     }
 
     /** The enabled-services setting with [component] removed (a colon-separated list). */

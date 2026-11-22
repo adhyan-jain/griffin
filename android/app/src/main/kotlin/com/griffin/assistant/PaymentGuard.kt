@@ -82,17 +82,15 @@ object PaymentGuard {
                 if (s == null) { ticking = false; return }
                 val front = frontApp(app)
                 val home = homePackage(app)
-                val step = PaymentPause.next(
+                val d = PaymentPause.next(
                     s, front, System.currentTimeMillis(),
                     isPayment = PaymentApps.isPaymentApp(app, front),
                     isHome = front != null && front == home,
                     isTransient = PaymentApps.isTransientSystemPackage(front),
                 )
-                when (step) {
-                    is PaymentPause.Step.Relaunch -> {
-                        state = s.copy(relaunched = true)
-                        relaunch(app, step.pkg)
-                    }
+                state = d.state
+                when (val step = d.step) {
+                    is PaymentPause.Step.Relaunch -> relaunch(app, step.pkg)
                     PaymentPause.Step.Restore -> { restore(app); ticking = false; return }
                     PaymentPause.Step.Wait -> {}
                 }
