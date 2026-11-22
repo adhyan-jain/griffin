@@ -1,0 +1,882 @@
+{
+ "data": {
+  "current_page": 1,
+  "total": 172,
+  "data": [
+   {
+    "title": "Claude Build Challenge 2026",
+    "seo_url": "https://unstop.com/hackathons/claude-build-challenge-2026-sage-university-bhopal-1821912",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-12-25T23:59:00+05:30",
+    "organisation": {
+     "name": "SAGE University Bhopal"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-25T23:59:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "Artificial Intelligence (AI)"
+     },
+     {
+      "skill": "Conversational AI"
+     },
+     {
+      "skill": "Machine Learning Concepts"
+     },
+     {
+      "skill": "Natural Language Processing (NLP)"
+     }
+    ]
+   },
+   {
+    "title": "ELUCode - 9",
+    "seo_url": "https://unstop.com/hackathons/elucode-9-edulinkup-1822884",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-12-06T21:00:31+05:30",
+    "organisation": {
+     "name": "EduLinkUp"
+    },
+    "address_with_country_logo": {
+     "city": null,
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-06T21:00:31+05:30"
+    },
+    "prizes": [
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "ELUCoders"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "ELUCode Grand Champion"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "ELUCode Elite Solver"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "ELUCode Advanced Coder"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "ELUCode Proficient Coder"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "ELUCoders"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Data Structures and Algorithms"
+     },
+     {
+      "skill": "Problem Solving"
+     },
+     {
+      "skill": "C++ Programming Language"
+     },
+     {
+      "skill": "Python"
+     }
+    ]
+   },
+   {
+    "title": "PromptWars x Quad Patna",
+    "seo_url": "https://unstop.com/hackathons/promptwars-x-quad-patna-quad-ai-school-of-technology-management-1821984",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "offline",
+    "end_date": "2026-12-04T13:00:00+05:30",
+    "organisation": {
+     "name": "Quad AI School of Technology & Management"
+    },
+    "address_with_country_logo": {
+     "city": "Patna",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-04T13:00:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 10000,
+      "currency": "fa-rupee",
+      "rank": "1st"
+     },
+     {
+      "cash": 6000,
+      "currency": "fa-rupee",
+      "rank": "2nd"
+     },
+     {
+      "cash": 4000,
+      "currency": "fa-rupee",
+      "rank": "3rd"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Artificial Intelligence (AI)"
+     },
+     {
+      "skill": "Problem Solving"
+     },
+     {
+      "skill": "Critical Thinking"
+     },
+     {
+      "skill": "Ideation"
+     }
+    ]
+   },
+   {
+    "title": "Mogoj Dholai",
+    "seo_url": "https://unstop.com/hackathons/mogoj-dholai-kernel-10-department-of-information-technology-jadavpur-university-1822588",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "hybrid",
+    "end_date": "2026-12-05T00:00:00+05:30",
+    "organisation": {
+     "name": "Department of Information Technology, Jadavpur University"
+    },
+    "address_with_country_logo": {
+     "city": "Kolkata",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-05T00:00:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "Data Structures and Algorithms"
+     },
+     {
+      "skill": "Graph Theory"
+     },
+     {
+      "skill": "Problem Solving"
+     },
+     {
+      "skill": "C++ Programming Language"
+     }
+    ]
+   },
+   {
+    "title": "Hojohborolo",
+    "seo_url": "https://unstop.com/hackathons/hojohborolo-kernel-10-department-of-information-technology-jadavpur-university-1822587",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "hybrid",
+    "end_date": "2026-12-05T00:00:00+05:30",
+    "organisation": {
+     "name": "Department of Information Technology, Jadavpur University"
+    },
+    "address_with_country_logo": {
+     "city": "Kolkata",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-05T00:00:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "Creativity"
+     },
+     {
+      "skill": "Creative Thinking"
+     },
+     {
+      "skill": "UI/UX Design"
+     },
+     {
+      "skill": "UI Prototyping"
+     }
+    ]
+   },
+   {
+    "title": "Data Nilaam",
+    "seo_url": "https://unstop.com/hackathons/data-nilaam-kernel-10-department-of-information-technology-jadavpur-university-1822546",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "hybrid",
+    "end_date": "2026-12-12T21:00:00+05:30",
+    "organisation": {
+     "name": "Department of Information Technology, Jadavpur University"
+    },
+    "address_with_country_logo": {
+     "city": "Kolkata",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-05T00:00:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 3000,
+      "currency": "fa-rupee",
+      "rank": "Winner"
+     },
+     {
+      "cash": 2000,
+      "currency": "fa-rupee",
+      "rank": "1st-Runner Up"
+     },
+     {
+      "cash": 1000,
+      "currency": "fa-rupee",
+      "rank": "1000"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Python"
+     },
+     {
+      "skill": "Predictive Modeling"
+     },
+     {
+      "skill": "Risk Analysis"
+     },
+     {
+      "skill": "Data-Driven Decision Making"
+     }
+    ]
+   },
+   {
+    "title": "Operation Blackout",
+    "seo_url": "https://unstop.com/hackathons/operation-blackout-react-2026-rv-college-of-engineering-rvce-bangalore-1818820",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "hybrid",
+    "end_date": "2026-12-01T23:59:00+05:30",
+    "organisation": {
+     "name": "R.V. College of Engineering (RVCE), Bangalore"
+    },
+    "address_with_country_logo": {
+     "city": "Bangalore Urban",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-01T23:59:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 20000,
+      "currency": "fa-rupee",
+      "rank": "1st Prize"
+     },
+     {
+      "cash": 10000,
+      "currency": "fa-rupee",
+      "rank": "2nd Prize"
+     },
+     {
+      "cash": 5000,
+      "currency": "fa-rupee",
+      "rank": "3rd Prize"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Bioinformatics"
+     },
+     {
+      "skill": "Engineering Skills"
+     },
+     {
+      "skill": "Critical Thinking"
+     },
+     {
+      "skill": "Problem Solving"
+     }
+    ]
+   },
+   {
+    "title": "EinoHacks",
+    "seo_url": "https://unstop.com/hackathons/einohacks-altairx-tech-1820882",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-11-23T18:01:00+05:30",
+    "organisation": {
+     "name": "AltairX Tech"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-22T18:00:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "Innovation Management"
+     },
+     {
+      "skill": "Ideation"
+     },
+     {
+      "skill": "Problem Solving"
+     },
+     {
+      "skill": "Technical Skills"
+     }
+    ]
+   },
+   {
+    "title": "BIOFORGE 2026 – Interdisciplinary Healthcare Innovation Hackathon",
+    "seo_url": "https://unstop.com/hackathons/bioforge-2026-interdisciplinary-healthcare-innovation-hackathon-dayananda-sagar-college-of-engineering-dsce-b-1819682",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "hybrid",
+    "end_date": "2026-12-30T09:00:00+05:30",
+    "organisation": {
+     "name": "Dayananda Sagar College of Engineering (DSCE), Bengaluru"
+    },
+    "address_with_country_logo": {
+     "city": "Bangalore Urban",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-23T12:01:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "Bioinformatics"
+     },
+     {
+      "skill": "Drug Discovery"
+     },
+     {
+      "skill": "Artificial Intelligence (AI)"
+     },
+     {
+      "skill": "Health Informatics"
+     }
+    ]
+   },
+   {
+    "title": "Buildathon: AI Hackathon",
+    "seo_url": "https://unstop.com/hackathons/buildathon-ai-hackathon-dr-mgr-institute-of-education-and-research-institute-1815227",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "offline",
+    "end_date": "2026-11-23T00:00:00+05:30",
+    "organisation": {
+     "name": "Dr MGR Institute of Education and Research Institute"
+    },
+    "address_with_country_logo": {
+     "city": "Chennai",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-23T00:00:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 7000,
+      "currency": "fa-rupee",
+      "rank": "1st Prize"
+     },
+     {
+      "cash": 4000,
+      "currency": "fa-rupee",
+      "rank": "2nd Prize"
+     },
+     {
+      "cash": 2000,
+      "currency": "fa-rupee",
+      "rank": "3rd Prize"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Artificial Intelligence (AI)"
+     },
+     {
+      "skill": "API Integration"
+     },
+     {
+      "skill": "Solution Architecture"
+     },
+     {
+      "skill": "Python"
+     }
+    ]
+   },
+   {
+    "title": "Protothon 2K26",
+    "seo_url": "https://unstop.com/hackathons/protothon-2k26-hindustan-institute-of-technology-and-science-hits-chennai-1814983",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "offline",
+    "end_date": "2026-12-09T13:00:00+05:30",
+    "organisation": {
+     "name": "Hindustan Institute of Technology and Science (HITS), Chennai"
+    },
+    "address_with_country_logo": {
+     "city": "Chennai",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-01T00:00:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "Ideation"
+     },
+     {
+      "skill": "Problem Solving"
+     },
+     {
+      "skill": "Creativity"
+     },
+     {
+      "skill": "Teamwork and Collaboration"
+     }
+    ]
+   },
+   {
+    "title": "AWS Winter League 2026",
+    "seo_url": "https://unstop.com/hackathons/aws-winter-league-2026-rajiv-gandhi-university-of-knowledge-technologies-rgukt-nuzvid-1820870",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-12-25T23:59:00+05:30",
+    "organisation": {
+     "name": "Rajiv Gandhi University of Knowledge Technologies (RGUKT), Nuzvid"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-20T23:59:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "AWS (Amazon Web Services)"
+     },
+     {
+      "skill": "Cloud computing"
+     },
+     {
+      "skill": "Serverless Architecture"
+     },
+     {
+      "skill": "Software Documentation"
+     }
+    ]
+   },
+   {
+    "title": "AI-Powered Career Development Hackathon",
+    "seo_url": "https://unstop.com/hackathons/ai-powered-career-development-hackathon-unsaidtalks-education-1821954",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-11-29T20:30:00+05:30",
+    "organisation": {
+     "name": "UnsaidTalks Education"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-28T23:59:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 30000,
+      "currency": "fa-rupee",
+      "rank": "Winner"
+     },
+     {
+      "cash": 3499,
+      "currency": "fa-rupee",
+      "rank": "First Runner-Up"
+     },
+     {
+      "cash": 3499,
+      "currency": "fa-rupee",
+      "rank": "Second Runner-Up"
+     },
+     {
+      "cash": 3499,
+      "currency": "fa-rupee",
+      "rank": "Top 10 Submissions"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Artificial Intelligence (AI)"
+     },
+     {
+      "skill": "Gap Analysis"
+     },
+     {
+      "skill": "Career Development"
+     },
+     {
+      "skill": "User Experience (UX) Design"
+     }
+    ]
+   },
+   {
+    "title": "Tauras by Revat: Crypto Trading Hackathon | Prove Your Edge, Then Trade It Live",
+    "seo_url": "https://unstop.com/hackathons/tauras-by-revat-crypto-trading-hackathon-prove-your-edge-then-trade-it-live-revat-crypto-fund-1820715",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2027-03-09T12:06:52+05:30",
+    "organisation": {
+     "name": "Revat Crypto Fund"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-06T23:59:36+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 750,
+      "currency": "fa-dollar",
+      "rank": "1"
+     },
+     {
+      "cash": 500,
+      "currency": "fa-dollar",
+      "rank": "2"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Trading Systems"
+     },
+     {
+      "skill": "Quantitative Analysis"
+     },
+     {
+      "skill": "Python"
+     },
+     {
+      "skill": "Data Interpretation"
+     }
+    ]
+   },
+   {
+    "title": "BUILDFEST 2026 – National Student Hackathon",
+    "seo_url": "https://unstop.com/hackathons/buildfest-2026-learnix-labs-1814814",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-12-30T17:46:00+05:30",
+    "organisation": {
+     "name": "Learnix Labs"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-15T00:00:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "Winner"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "First Runner-Up"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "Second Runner-Up"
+     },
+     {
+      "cash": null,
+      "currency": "fa-rupee",
+      "rank": "Top 10 Performers"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Project proposal"
+     },
+     {
+      "skill": "Technical Communication"
+     },
+     {
+      "skill": "Creativity"
+     },
+     {
+      "skill": "Problem Solving"
+     }
+    ]
+   },
+   {
+    "title": "ThinCovation 2026",
+    "seo_url": "https://unstop.com/hackathons/thincovation-2026-thincovation-2026-mdi-1821962",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-12-15T23:59:00+05:30",
+    "organisation": {
+     "name": "Management Development Institute (MDI), Gurgaon"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-28T00:00:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 40000,
+      "currency": "fa-rupee",
+      "rank": "1"
+     },
+     {
+      "cash": 35000,
+      "currency": "fa-rupee",
+      "rank": "2"
+     },
+     {
+      "cash": 25000,
+      "currency": "fa-rupee",
+      "rank": "3"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Critical Thinking"
+     },
+     {
+      "skill": "Problem Solving"
+     },
+     {
+      "skill": "Public Speaking and Presentation Skills"
+     },
+     {
+      "skill": "Microsoft PowerPoint"
+     }
+    ]
+   },
+   {
+    "title": "Rajasthan Police Hackathon 2026",
+    "seo_url": "https://unstop.com/hackathons/rajasthan-police-hackathon-2026-rajasthan-police-rajasathana-palsa-1818639",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "offline",
+    "end_date": "2026-12-29T16:00:00+05:30",
+    "organisation": {
+     "name": "Rajasthan Police (राजस्थान पुलिस)"
+    },
+    "address_with_country_logo": {
+     "city": "Jaipur",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-24T23:59:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 250000,
+      "currency": "fa-rupee",
+      "rank": "Winner (1st Prize)"
+     },
+     {
+      "cash": 175000,
+      "currency": "fa-rupee",
+      "rank": "1st Runner-Up (2nd Prize)"
+     },
+     {
+      "cash": 75000,
+      "currency": "fa-rupee",
+      "rank": " Second Runner Up (3rd Prize)"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Digital Forensics"
+     },
+     {
+      "skill": "Artificial Intelligence (AI)"
+     },
+     {
+      "skill": "Machine Learning Concepts"
+     },
+     {
+      "skill": "Open Source Intelligence (OSINT)"
+     }
+    ]
+   },
+   {
+    "title": "Merry Shipmas Bengaluru: Christmas AI Hackathon ",
+    "seo_url": "https://unstop.com/hackathons/merry-shipmas-bengaluru-christmas-ai-hackathon-nerdconf-1820028",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "hybrid",
+    "end_date": "2026-12-12T00:00:00+05:30",
+    "organisation": {
+     "name": "NERDCONF"
+    },
+    "address_with_country_logo": {
+     "city": "Bangalore",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-12-12T00:00:00+05:30"
+    },
+    "prizes": [],
+    "required_skills": [
+     {
+      "skill": "Artificial Intelligence (AI)"
+     },
+     {
+      "skill": "New Product Development"
+     },
+     {
+      "skill": "Go-to-Market Strategy"
+     },
+     {
+      "skill": "Customer Acquisition"
+     }
+    ]
+   },
+   {
+    "title": "MyOnne National Bug Bounty Challenge 2026",
+    "seo_url": "https://unstop.com/hackathons/myonne-national-bug-bounty-challenge-2026-myonne-amora-private-limited-1817686",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "online",
+    "end_date": "2026-11-28T17:30:00+05:30",
+    "organisation": {
+     "name": "MyOnne Amora Private Limited"
+    },
+    "address_with_country_logo": {
+     "city": "",
+     "country": null
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-26T17:00:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 300000,
+      "currency": "fa-rupee",
+      "rank": "Bounty rewards"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Web Application Security Testing"
+     },
+     {
+      "skill": "Vulnerability Assessment"
+     },
+     {
+      "skill": "Ethical Hacking"
+     },
+     {
+      "skill": "Report Writing"
+     }
+    ]
+   },
+   {
+    "title": "CircuitX",
+    "seo_url": "https://unstop.com/hackathons/circuitx-bms-institute-of-technology-and-management-bmsitm-bangalore-1811526",
+    "regn_open": 1,
+    "status": "LIVE",
+    "region": "offline",
+    "end_date": "2026-12-20T09:00:00+05:30",
+    "organisation": {
+     "name": "BMS Institute of Technology and Management (BMSITM), Bangalore"
+    },
+    "address_with_country_logo": {
+     "city": "Bangalore Urban",
+     "country": {
+      "name": "India"
+     }
+    },
+    "regnRequirements": {
+     "end_regn_dt": "2026-11-30T23:59:00+05:30"
+    },
+    "prizes": [
+     {
+      "cash": 40000,
+      "currency": "fa-rupee",
+      "rank": "Prize pool"
+     }
+    ],
+    "required_skills": [
+     {
+      "skill": "Embedded Systems Design"
+     },
+     {
+      "skill": "Sensor Technology"
+     },
+     {
+      "skill": "Ideation"
+     },
+     {
+      "skill": "PowerPoint"
+     }
+    ]
+   }
+  ]
+ }
+}

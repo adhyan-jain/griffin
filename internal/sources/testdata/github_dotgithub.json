@@ -1,0 +1,58 @@
+[
+ {
+  "name": "CODEOWNERS",
+  "type": "file"
+ },
+ {
+  "name": "CODE_OF_CONDUCT.md",
+  "type": "file"
+ },
+ {
+  "name": "CONTRIBUTING.md",
+  "type": "file"
+ },
+ {
+  "name": "ISSUE_TEMPLATE",
+  "type": "dir"
+ },
+ {
+  "name": "PULL_REQUEST_TEMPLATE.md",
+  "type": "file"
+ },
+ {
+  "name": "actions",
+  "type": "dir"
+ },
+ {
+  "name": "agents",
+  "type": "dir"
+ },
+ {
+  "name": "config.yml",
+  "type": "file"
+ },
+ {
+  "name": "dependabot.yml",
+  "type": "file"
+ },
+ {
+  "name": "instructions",
+  "type": "dir"
+ },
+ {
+  "name": "rulesets",
+  "type": "dir"
+ },
+ {
+  "name": "skills",
+  "type": "dir"
+ },
+ {
+  "name": "workflows",
+  "type": "dir"
+ },
+ {
+  "name": "zizmor.yml",
+  "type": "file"
+ }
+]

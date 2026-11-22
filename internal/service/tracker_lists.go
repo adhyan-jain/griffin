@@ -40,6 +40,10 @@ type TrackerLists struct {
 	Sync *ListingSync
 	// CommunityGet fetches the community pages for the daily scan; nil means the network.
 	CommunityGet sources.Get
+	// Hackathons, OpenSource and Hygiene write their trackers from the sites' own data; nil leaves a routine to the model path.
+	Hackathons *HackathonSync
+	OpenSource *OpenSourceSync
+	Hygiene    *HygieneSync
 }
 
 const trackerReadLimit = 200 << 10

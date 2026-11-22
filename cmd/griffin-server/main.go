@@ -348,6 +348,7 @@ func main() {
 				Artifacts:         storageService,
 				Playbooks:         storageService,
 				Listings:          listingRepo,
+				GitHubLogin:       cfg.GitHubLogin,
 				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
 					if err := jjOrchestrator.ReconcileByChildTask(hookCtx, taskID); err != nil {
 						logger.Warn("Orchestration reconcile after task finish failed", "task_id", taskID, "error", err)
@@ -504,6 +505,7 @@ func main() {
 			AliasRepo:        aliasRepo,
 			NotificationRepo: notificationRepo,
 			ListingRepo:      listingRepo,
+			GitHubLogin:      cfg.GitHubLogin,
 			OutreachRepo:     outreachRepo,
 			ReportRepo:       repository.NewReportRepository(repoDB),
 			Dsa:              dsaCoach,

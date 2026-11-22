@@ -264,3 +264,16 @@ func TestDefaultsInDev(t *testing.T) {
 		t.Fatal("no wildcard origin by default")
 	}
 }
+
+func TestGitHubLoginHasNoDefault(t *testing.T) {
+	devEnv(t)
+	t.Setenv("GITHUB_LOGIN", "")
+	cfg, err := config.Load()
+	if err != nil || cfg.GitHubLogin != "" {
+		t.Fatalf("unset means the hygiene routine stays off: %q %v", cfg.GitHubLogin, err)
+	}
+	t.Setenv("GITHUB_LOGIN", "octocat")
+	if cfg, err = config.Load(); err != nil || cfg.GitHubLogin != "octocat" {
+		t.Fatalf("%q %v", cfg.GitHubLogin, err)
+	}
+}

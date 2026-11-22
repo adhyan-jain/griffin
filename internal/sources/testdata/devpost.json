@@ -1,0 +1,340 @@
+{
+ "hackathons": [
+  {
+   "title": "Kiroween 2026",
+   "url": "https://kiroween.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Oct 30 - Dec 04, 2026",
+   "themes": [
+    {
+     "id": 23,
+     "name": "Beginner Friendly"
+    },
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 22,
+     "name": "Open Ended"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>100,000</span>",
+   "organization_name": "Kiro",
+   "invite_only": false,
+   "time_left_to_submission": "12 days left"
+  },
+  {
+   "title": "#BuildHybridAI 2026",
+   "url": "https://firebasehybridaihackathon.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 11 - 30, 2026",
+   "themes": [
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 26,
+     "name": "Mobile"
+    },
+    {
+     "id": 25,
+     "name": "Web"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>30,000</span>",
+   "organization_name": "Google",
+   "invite_only": false,
+   "time_left_to_submission": "8 days left"
+  },
+  {
+   "title": "Codegeist 2026: Build with context. Ship with confidence.",
+   "url": "https://codegeist2026.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Oct 27 - Dec 22, 2026",
+   "themes": [
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 21,
+     "name": "Enterprise"
+    },
+    {
+     "id": 11,
+     "name": "Productivity"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>120,000</span>",
+   "organization_name": "Atlassian",
+   "invite_only": false,
+   "time_left_to_submission": "about 1 month left"
+  },
+  {
+   "title": "QNX Global Hackathon",
+   "url": "https://qnx.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 02 - Dec 15, 2026",
+   "themes": [
+    {
+     "id": 7,
+     "name": "IoT"
+    },
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 22,
+     "name": "Open Ended"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>50,000</span>",
+   "organization_name": "QNX",
+   "invite_only": false,
+   "time_left_to_submission": "23 days left"
+  },
+  {
+   "title": "Reddit’s Game of the Day Hackathon",
+   "url": "https://redditgameofday2026.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 11 - Dec 08, 2026",
+   "themes": [
+    {
+     "id": 23,
+     "name": "Beginner Friendly"
+    },
+    {
+     "id": 4,
+     "name": "Gaming"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>35,000</span>",
+   "organization_name": "reddit",
+   "invite_only": false,
+   "time_left_to_submission": "17 days left"
+  },
+  {
+   "title": "Deck the Pixels",
+   "url": "https://deckthepixels.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 10 - Dec 07, 2026",
+   "themes": [
+    {
+     "id": 18,
+     "name": "Design"
+    },
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 17,
+     "name": "Low/No Code"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>25,000</span>",
+   "organization_name": "Google",
+   "invite_only": false,
+   "time_left_to_submission": "15 days left"
+  },
+  {
+   "title": "Open Agentic Web Challenge",
+   "url": "https://cognizant-agenticweb.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 11, 2026 - Jan 11, 2027",
+   "themes": [
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 25,
+     "name": "Web"
+    },
+    {
+     "id": 13,
+     "name": "Social Good"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>10,000</span>",
+   "organization_name": "Cognizant",
+   "invite_only": false,
+   "time_left_to_submission": "about 2 months left"
+  },
+  {
+   "title": "Arbiter Hacks V1",
+   "url": "https://arbiter-hacks-v1.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Oct 20 - Dec 21, 2026",
+   "themes": [
+    {
+     "id": 23,
+     "name": "Beginner Friendly"
+    },
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 22,
+     "name": "Open Ended"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>7,800</span>",
+   "organization_name": "Arbiter ",
+   "invite_only": false,
+   "time_left_to_submission": "29 days left"
+  },
+  {
+   "title": "Cloud9 x JetBrains: Sky's The Limit Hackathon 2026",
+   "url": "https://cloud9.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 17, 2026 - Jan 12, 2027",
+   "themes": [
+    {
+     "id": 28,
+     "name": "Databases"
+    },
+    {
+     "id": 4,
+     "name": "Gaming"
+    },
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>25,000</span>",
+   "organization_name": "Cloud9",
+   "invite_only": false,
+   "time_left_to_submission": "about 2 months left"
+  },
+  {
+   "title": "Code for Humanity",
+   "url": "https://code-for-humanity.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Jul 16, 2026 - Jan 15, 2027",
+   "themes": [
+    {
+     "id": 19,
+     "name": "Education"
+    },
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 25,
+     "name": "Web"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>0</span>",
+   "organization_name": "nill",
+   "invite_only": false,
+   "time_left_to_submission": "about 2 months left"
+  },
+  {
+   "title": "AWS MSP AI Hackathon",
+   "url": "https://aws-agentic-msp.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 02 - Dec 11, 2026",
+   "themes": [
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    },
+    {
+     "id": 11,
+     "name": "Productivity"
+    },
+    {
+     "id": 25,
+     "name": "Web"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>64,000</span>",
+   "organization_name": "AWS",
+   "invite_only": false,
+   "time_left_to_submission": "19 days left"
+  },
+  {
+   "title": "Learn AR with SPECS",
+   "url": "https://learn-specs.devpost.com/",
+   "open_state": "open",
+   "displayed_location": {
+    "icon": "globe",
+    "location": "Online"
+   },
+   "submission_period_dates": "Nov 10 - Dec 07, 2026",
+   "themes": [
+    {
+     "id": 5,
+     "name": "AR/VR"
+    },
+    {
+     "id": 18,
+     "name": "Design"
+    },
+    {
+     "id": 6,
+     "name": "Machine Learning/AI"
+    }
+   ],
+   "prize_amount": "$<span data-currency-value>2,500</span>",
+   "organization_name": "Devpost",
+   "invite_only": false,
+   "time_left_to_submission": "16 days left"
+  }
+ ],
+ "meta": {
+  "total_count": 55,
+  "per_page": 9
+ }
+}

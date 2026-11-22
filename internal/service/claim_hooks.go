@@ -44,6 +44,15 @@ func (w *TrackerLists) RunInCode(ctx context.Context, task *domain.Task,
 	if answer, ok := w.ScanCommunities(ctx, task, w.CommunityGet, nil); ok {
 		return answer, Answered
 	}
+	if answer, ok := w.SyncHackathons(ctx, task); ok {
+		return answer, Answered
+	}
+	if answer, ok := w.SyncOpenSource(ctx, task); ok {
+		return answer, Answered
+	}
+	if answer, ok := w.SyncHygiene(ctx, task); ok {
+		return answer, Answered
+	}
 	if answer, ok := w.AlumniDMBatch(ctx, task); ok {
 		return answer, Answered
 	}

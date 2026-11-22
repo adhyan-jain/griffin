@@ -16,7 +16,8 @@ func (w *Worker) trackers() *service.TrackerLists {
 	t := &service.TrackerLists{Store: w.playbooks, Tasks: w.taskRepo, Logger: w.logger, ApprovedDrafts: w.engine.ApprovedDraftTasks,
 		CheckPosting: func(ctx context.Context, link string) service.PostingState {
 			return service.CheckPosting(ctx, nil, link)
-		}}
+		},
+		Hackathons: &service.HackathonSync{}, OpenSource: &service.OpenSourceSync{}, Hygiene: &service.HygieneSync{Login: w.githubLogin}}
 	if w.listings != nil {
 		t.Sync = &service.ListingSync{Listings: w.listings}
 	}

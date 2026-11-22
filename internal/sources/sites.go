@@ -54,7 +54,7 @@ func HTTPGet(ctx context.Context, u string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) Griffin/1.0")
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req) // Unstop's open-hackathon search takes 30 seconds on a bad day
 	if err != nil {
 		return nil, err
 	}

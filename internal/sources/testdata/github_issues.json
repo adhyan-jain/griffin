@@ -1,0 +1,187 @@
+{
+ "total_count": 8,
+ "items": [
+  {
+   "title": "Support for PowerPC `ppc64le` architecture",
+   "number": 3940,
+   "html_url": "https://github.com/qdrant/qdrant/issues/3940",
+   "repository_url": "https://api.github.com/repos/qdrant/qdrant",
+   "comments": 3,
+   "created_at": "2024-03-30T12:32:06Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "help wanted"
+    }
+   ]
+  },
+  {
+   "title": "Flacky `test_parallel_graph_build` on Windows",
+   "number": 1452,
+   "html_url": "https://github.com/qdrant/qdrant/issues/1452",
+   "repository_url": "https://api.github.com/repos/qdrant/qdrant",
+   "comments": 2,
+   "created_at": "2023-02-09T12:48:09Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "help wanted"
+    },
+    {
+     "name": "can't reproduce"
+    }
+   ]
+  },
+  {
+   "title": "[RFC]: Support ViT Full CUDA Graph (Tracker)",
+   "number": 38175,
+   "html_url": "https://github.com/vllm-project/vllm/issues/38175",
+   "repository_url": "https://api.github.com/repos/vllm-project/vllm",
+   "comments": 51,
+   "created_at": "2026-03-26T02:22:01Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "help wanted"
+    },
+    {
+     "name": "RFC"
+    },
+    {
+     "name": "multi-modality"
+    },
+    {
+     "name": "kimi"
+    }
+   ]
+  },
+  {
+   "title": "[Roadmap]: PD Disaggregation with `NixlConnector` Roadmap",
+   "number": 33702,
+   "html_url": "https://github.com/vllm-project/vllm/issues/33702",
+   "repository_url": "https://api.github.com/repos/vllm-project/vllm",
+   "comments": 8,
+   "created_at": "2026-02-03T14:55:43Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "help wanted"
+    },
+    {
+     "name": "feature request"
+    }
+   ]
+  },
+  {
+   "title": "[Feature]: Tracking Whisper feature requests",
+   "number": 25750,
+   "html_url": "https://github.com/vllm-project/vllm/issues/25750",
+   "repository_url": "https://api.github.com/repos/vllm-project/vllm",
+   "comments": 28,
+   "created_at": "2025-09-26T07:54:28Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "help wanted"
+    },
+    {
+     "name": "good first issue"
+    },
+    {
+     "name": "feature request"
+    },
+    {
+     "name": "keep-open"
+    },
+    {
+     "name": "multi-modality"
+    }
+   ]
+  },
+  {
+   "title": "Discussion/Suggestion: Decoupling `x` and `tools` packages.",
+   "number": 880,
+   "html_url": "https://github.com/hibiken/asynq/issues/880",
+   "repository_url": "https://api.github.com/repos/hibiken/asynq",
+   "comments": 2,
+   "created_at": "2024-05-03T11:51:14Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "help wanted"
+    },
+    {
+     "name": "idea"
+    }
+   ]
+  },
+  {
+   "title": "Workflow Reset: add logic of determining the reset point to the service",
+   "number": 1338,
+   "html_url": "https://github.com/temporalio/temporal/issues/1338",
+   "repository_url": "https://api.github.com/repos/temporalio/temporal",
+   "comments": 4,
+   "created_at": "2021-03-01T16:25:54Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "enhancement"
+    },
+    {
+     "name": "good first issue"
+    },
+    {
+     "name": "refactoring"
+    },
+    {
+     "name": "up-for-grabs"
+    }
+   ]
+  },
+  {
+   "title": "Record activity started and failed event for activity in retry on workflow completion",
+   "number": 503,
+   "html_url": "https://github.com/temporalio/temporal/issues/503",
+   "repository_url": "https://api.github.com/repos/temporalio/temporal",
+   "comments": 2,
+   "created_at": "2020-07-07T18:50:28Z",
+   "state": "open",
+   "assignee": null,
+   "assignees": [],
+   "labels": [
+    {
+     "name": "enhancement"
+    },
+    {
+     "name": "good first issue"
+    },
+    {
+     "name": "difficulty: easy"
+    },
+    {
+     "name": "planning"
+    },
+    {
+     "name": "operations"
+    },
+    {
+     "name": "up-for-grabs"
+    }
+   ]
+  }
+ ]
+}

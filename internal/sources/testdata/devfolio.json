@@ -1,0 +1,207 @@
+{
+ "hits": {
+  "total": {
+   "value": 19
+  },
+  "hits": [
+   {
+    "_source": {
+     "name": "Code N Mod",
+     "slug": "codenmod",
+     "tagline": "Learn the craft. Build the game. Play your creation.",
+     "is_online": false,
+     "private": false,
+     "city": "Tumakur",
+     "country": "India",
+     "themes": [],
+     "prizes": [],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-11-23T02:45:00+00:00"
+     }
+    }
+   },
+   {
+    "_source": {
+     "name": "Founders' House Kolkata",
+     "slug": "founders-house-kolkata",
+     "tagline": "Build. Validate. Launch.",
+     "is_online": false,
+     "private": false,
+     "city": null,
+     "country": null,
+     "themes": [],
+     "prizes": [],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-11-24T18:30:00+00:00"
+     }
+    }
+   },
+   {
+    "_source": {
+     "name": "MakerSpark",
+     "slug": "makerspark",
+     "tagline": null,
+     "is_online": false,
+     "private": false,
+     "city": "Thiruvananthapuram",
+     "country": "India",
+     "themes": [
+      {
+       "name": "Hardware"
+      }
+     ],
+     "prizes": [
+      {
+       "name": "Prize Pool",
+       "desc": ""
+      }
+     ],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-11-25T18:29:00+00:00"
+     }
+    }
+   },
+   {
+    "_source": {
+     "name": "Health Hackathon 3.0",
+     "slug": "health-hackathon",
+     "tagline": "Global Health Access Innovation Challenge",
+     "is_online": false,
+     "private": false,
+     "city": "Kothri Kalan",
+     "country": "India",
+     "themes": [],
+     "prizes": [
+      {
+       "name": "Total Price Value",
+       "desc": "First price 100000, 2nd 50000, 3rd 25000, 4th 10000, 5th 5000"
+      }
+     ],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-11-30T18:29:00+00:00"
+     }
+    }
+   },
+   {
+    "_source": {
+     "name": "Clash of Commits",
+     "slug": "clash-of-commits",
+     "tagline": "Every commit is a battle!",
+     "is_online": false,
+     "private": false,
+     "city": "Chennai",
+     "country": "India",
+     "themes": [],
+     "prizes": [
+      {
+       "name": "Clash of Commits",
+       "desc": ""
+      },
+      {
+       "name": "Eleven Labs",
+       "desc": ""
+      },
+      {
+       "name": "Hardware Goodies",
+       "desc": ""
+      },
+      {
+       "name": "Adaption",
+       "desc": ""
+      },
+      {
+       "name": "Code Crafters",
+       "desc": ""
+      }
+     ],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-11-30T18:29:00+00:00"
+     }
+    }
+   },
+   {
+    "_source": {
+     "name": "Hack For Tomorrow 2026",
+     "slug": "hft2026",
+     "tagline": "Innovate Today. Impact Tomorrow",
+     "is_online": false,
+     "private": false,
+     "city": "Ernakulam",
+     "country": "India",
+     "themes": [],
+     "prizes": [
+      {
+       "name": "Prize Pool",
+       "desc": "A total prize pool of ₹30,000 awaits the winning teams! Showcase your creativity, build innovative solutions, and compete for exciting rewards. Give your best, turn your ideas into reality, and stand a chance to win."
+      }
+     ],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-12-05T18:29:00+00:00"
+     }
+    }
+   },
+   {
+    "_source": {
+     "name": "promptwaves",
+     "slug": "promptwaves",
+     "tagline": "24 hours. one challenge!",
+     "is_online": true,
+     "private": false,
+     "city": null,
+     "country": null,
+     "themes": [
+      {
+       "name": "No Restrictions"
+      }
+     ],
+     "prizes": [
+      {
+       "name": "promptwaves",
+       "desc": "Cash Prize"
+      }
+     ],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-12-08T18:29:00+00:00"
+     }
+    }
+   },
+   {
+    "_source": {
+     "name": "ETHChiangmai & Longevity Hackathon 2026",
+     "slug": "chiangmai",
+     "tagline": null,
+     "is_online": false,
+     "private": false,
+     "city": null,
+     "country": "Thailand",
+     "themes": [
+      {
+       "name": "HealthTech"
+      }
+     ],
+     "prizes": [
+      {
+       "name": "Track Prizes",
+       "desc": ""
+      },
+      {
+       "name": "Track Prizes",
+       "desc": ""
+      },
+      {
+       "name": "Track Prizes",
+       "desc": ""
+      },
+      {
+       "name": "Track Prizes",
+       "desc": ""
+      }
+     ],
+     "hackathon_setting": {
+      "reg_ends_at": "2026-12-09T17:00:00+00:00"
+     }
+    }
+   }
+  ]
+ }
+}

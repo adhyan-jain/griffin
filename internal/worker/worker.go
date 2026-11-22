@@ -63,6 +63,7 @@ type Worker struct {
 	artifacts         ArtifactSaver
 	playbooks         PlaybookStore
 	listings          service.ListingStore
+	githubLogin       string
 
 	paused   atomic.Bool
 	inFlight atomic.Int32
@@ -92,6 +93,8 @@ type Config struct {
 	Playbooks PlaybookStore
 	// Listings, if set, lets the daily listings sync run here in code.
 	Listings service.ListingStore
+	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine.
+	GitHubLogin string
 }
 
 // NewWorker initializes a Worker.
@@ -129,6 +132,7 @@ func NewWorker(cfg Config) *Worker {
 		artifacts:         cfg.Artifacts,
 		playbooks:         cfg.Playbooks,
 		listings:          cfg.Listings,
+		githubLogin:       cfg.GitHubLogin,
 	}
 }
 

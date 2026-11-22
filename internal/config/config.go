@@ -45,6 +45,7 @@ type Config struct {
 	GeminiModel                string // default gemini-flash-lite-latest
 	HostsEnabled               bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
 	ClaudeBinary               string
+	GitHubLogin                string // the owner's GitHub username, for the repo hygiene tracker; empty turns that routine off
 	MaxConcurrentClaude        int
 	AgyToolsEnabled            bool     // read/act tool tiers for agy; off by default
 	AgyReadArgs                []string // extra agy flags for the read tier
@@ -158,6 +159,7 @@ func Load() (*Config, error) {
 		GeminiAPIKey:                    getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:                     getEnv("GEMINI_MODEL", ""),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
+		GitHubLogin:                     getEnv("GITHUB_LOGIN", ""),
 		MaxConcurrentClaude:             getEnvAsInt("MAX_CONCURRENT_CLAUDE", 2),
 		AgyToolsEnabled:                 getEnvAsBool("AGY_TOOLS_ENABLED", false),
 		AgyReadArgs:                     strings.Fields(getEnv("AGY_READ_ARGS", "--mode plan --sandbox")),
