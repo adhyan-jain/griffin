@@ -131,7 +131,7 @@ func TestApplicationDraftDropsThePlaybookNotes(t *testing.T) {
 
 func TestReferralTaskIsSeparateAndProposesEachMessage(t *testing.T) {
 	title, goal, payload := ReferralTaskFor("Qdrant", "Systems Intern")
-	for _, want := range []string{"ACM, ISTE, MFC or TAM", "Never invent anyone", "3-4 sentence", "Do not send anything", "under 5 minutes", "```proposals"} {
+	for _, want := range []string{"ACM, ISTE, MFC or TAM", "Never invent anyone", "under 70 words", "ONLY if the company is a startup", "Mention ACM only if", "Do not send anything", "under 5 minutes", "```proposals", "\"contact\""} {
 		if !strings.Contains(goal, want) {
 			t.Errorf("referral goal is missing %q", want)
 		}
@@ -270,12 +270,12 @@ func TestInternshipsListRulesCheckThePostingAndTheRole(t *testing.T) {
 
 func TestAlumniMessageUsesTheOwnersRealFactsAndRoleFocus(t *testing.T) {
 	for _, want := range []string{"{FirstName}", "{Company}", "{RoleFocus}", "ACM VIT", "ComputeHive", "Palni"} {
-		if !strings.Contains(AlumniMessage, want) {
+		if !strings.Contains(AlumniGoal, want) {
 			t.Errorf("message missing %q", want)
 		}
 	}
-	if !strings.Contains(AlumniGoal, "AI/ML") || !strings.Contains(AlumniGoal, "backend") {
-		t.Error("the goal must say how the role focus is chosen")
+	if !strings.Contains(AlumniGoal, "ACM in a message only to ACM people") {
+		t.Error("the goal must say ACM is named only to ACM people")
 	}
 }
 

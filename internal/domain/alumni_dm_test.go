@@ -32,13 +32,39 @@ func TestWithAlumniStatusSetsOnlyThatPerson(t *testing.T) {
 	}
 }
 
-func TestAlumniDMBatchNamesTheResumesAndNeverSendsItself(t *testing.T) {
-	for _, want := range []string{"Adhyan_Jain_Resume_Backend.pdf", "Adhyan_Jain_Resume_AI_ML.pdf", "Adhyan_Jain_Resume_SDE.pdf", "Do NOT message anyone yourself", AlumniDMPrefix, "{RoleFocus}"} {
-		if !strings.Contains(AlumniDMBatchGoal, want) {
-			t.Errorf("goal missing %q", want)
-		}
-	}
+func TestAlumniDMBatchIsItsOwnRoutine(t *testing.T) {
 	if !IsAlumniDMBatch("ALUMNI DM BATCH") || TrackerTypeOf("ALUMNI DM BATCH", AlumniDMBatchGoal, nil) == "alumni" {
 		t.Error("the batch is its own routine, not the alumni list builder")
+	}
+}
+
+func TestTheNextAlumniToMessageArePickedInCodeACMFirst(t *testing.T) {
+	list := AlumniHeader + "\n" +
+		"| Ravi Kumar | 2023 | Atlassian | Backend Engineer | ISTE | https://www.linkedin.com/in/ravi | intern ₹1L | not contacted | 2026-11-20 |\n" +
+		"| Sara Iyer | 2024 | Google | ML Engineer | ACM VIT | https://www.linkedin.com/in/sara | intern ₹1.5L | not contacted | 2026-11-20 |\n" +
+		"| Old Contact | 2022 | Uber | SDE | ACM VIT | https://www.linkedin.com/in/old | x | sent 2026-11-21 | 2026-11-19 |\n" +
+		"| No Link | 2023 | Uber | SDE | | | x | not contacted | 2026-11-19 |\n" +
+		"| Meera Das | 2025 | Razorpay | Software Engineer | | https://www.linkedin.com/in/meera | x | not contacted | 2026-11-20 |"
+	ps := AlumniDMProposals(list, 8)
+	if len(ps) != 3 {
+		t.Fatalf("only not-contacted people with a profile link: %d %+v", len(ps), ps)
+	}
+	if ps[0].Contact.Name != "Sara Iyer" || ps[1].Contact.Name != "Ravi Kumar" || ps[2].Contact.Name != "Meera Das" {
+		t.Fatalf("ACM first, then other clubs, then the rest: %s, %s, %s", ps[0].Contact.Name, ps[1].Contact.Name, ps[2].Contact.Name)
+	}
+	if !strings.Contains(ps[0].Contact.Message, "ACM") || strings.Contains(ps[1].Contact.Message, "ACM") || strings.Contains(ps[2].Contact.Message, "ACM") {
+		t.Fatal("ACM is named only to the ACM alum")
+	}
+	if ps[0].Resume != ResumeFiles["AI/ML"] || ps[1].Resume != ResumeFiles["backend"] || ps[2].Resume != ResumeFiles["software engineering"] {
+		t.Fatalf("the resume follows the alum's role: %s %s %s", ps[0].Resume, ps[1].Resume, ps[2].Resume)
+	}
+	if !strings.HasPrefix(ps[0].Title, AlumniDMPrefix) || !ps[0].Act {
+		t.Fatalf("title/act: %+v", ps[0])
+	}
+	if got := ParseProposals(FormatProposals(ps)); len(got) != 3 || got[0].Contact == nil || got[0].Contact.Link != "https://www.linkedin.com/in/sara" {
+		t.Fatalf("the block round-trips through the parser: %+v", got)
+	}
+	if got := AlumniDMProposals(list, 1); len(got) != 1 {
+		t.Fatalf("the limit holds: %d", len(got))
 	}
 }

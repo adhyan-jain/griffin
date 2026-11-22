@@ -396,6 +396,8 @@ func main() {
 	// and the worker share one wiring; durable scheduling of them comes from the scheduler tick.
 	ownerProfiles := repository.NewOwnerProfileRepository(repoDB)
 	antigravity.CandidateContext = newProfileContext(ctx, ownerProfiles)
+	ownerFacts := antigravity.CandidateContext
+	engine.SetOwnerFacts(func(_ context.Context, userID uuid.UUID) string { return ownerFacts(userID) })
 	inboundRepo := repository.NewInboundEventRepository(repoDB)
 	inboxRepo := repository.NewInboxRepository(repoDB)
 	discoveryRepo := repository.NewDiscoveryRepository(repoDB)

@@ -84,14 +84,93 @@ func WithAlumniStatus(text, name, company, status string, on time.Time) (out str
 	return text, false
 }
 
-// AlumniDMBatchGoal is what the routine that proposes LinkedIn messages is asked to do.
-var AlumniDMBatchGoal = "Prepare the next LinkedIn messages to the owner's alumni. The Alumni list is below. " +
-	"Pick up to 8 people whose Status is \"not contacted\", ACM people first, then other clubs, then the rest. Skip anyone with no LinkedIn link. " +
-	"For each person choose the focus from their Role: backend, platform or infrastructure people get \"backend\"; ML, AI, LLM or data-science people get \"AI/ML\"; everyone else gets \"software engineering\". " +
-	"The resume to attach for each focus: backend = " + ResumeFiles["backend"] + " ; AI/ML = " + ResumeFiles["AI/ML"] + " ; software engineering = " + ResumeFiles["software engineering"] + " . " +
-	"Do NOT message anyone yourself and do not open LinkedIn now. Your answer is one proposal per person, in a ```proposals JSON block: a list of {\"title\", \"why\", \"goal\", \"act\": true}. " +
-	"title is exactly \"" + AlumniDMPrefix + "<Name> - <Company>\". why is one line (their club, role and why they are worth messaging). " +
-	"goal is these instructions with the person's details filled in: \"Open <their LinkedIn link> in the owner's signed-in browser. If LinkedIn lets you message them directly, send the message below and attach the resume file <path> with the attach button. " +
-	"If it only allows a connection request, send one with a note of at most 280 characters (the first two sentences of the message) and attach nothing. Send nothing else and message nobody else. " +
-	"Finish with two lines: DM: sent | requested | blocked, then PROOF: what LinkedIn showed, or the exact reason it is blocked. Limits: about 12 tool calls, under 4 minutes. The message: <the message with {FirstName}, {Company} and {RoleFocus} filled in>\". " +
-	"Each message is the owner's, so use this text and change only those three fields:\n\n" + AlumniMessage
+// AlumniDMBatchGoal is the stored goal of the routine that proposes LinkedIn messages. The routine runs as code
+// (AlumniDMProposals): no model picks the people or writes the words.
+const AlumniDMBatchGoal = "Propose the next LinkedIn messages to the owner's alumni: up to 8 people on the Alumni list whose Status is \"not contacted\", ACM people first, " +
+	"each with the owner's short message and the resume that fits their role. Griffin does this in code and asks the owner before anything is sent."
+
+var (
+	focusBackend = regexp.MustCompile(`(?i)\b(backend|back-end|platform|infra|infrastructure|sre|devops|distributed|systems)\b`)
+	focusAI      = regexp.MustCompile(`(?i)\b(ml|ai|llm|machine learning|data scien\w*|deep learning|nlp|computer vision|genai)\b`)
+)
+
+// RoleFocus picks which of the owner's three roles to ask an alum about, from the alum's own role.
+func RoleFocus(role string) string {
+	switch {
+	case focusAI.MatchString(role):
+		return "AI/ML"
+	case focusBackend.MatchString(role):
+		return "backend"
+	default:
+		return "software engineering"
+	}
+}
+
+// AlumniDMProposals picks the next people to message from the Alumni list, in code: up to limit people whose
+// Status is "not contacted" and who have a LinkedIn link, ACM people first, then other clubs, then the rest. Each
+// proposal carries the person and the owner's message, so the rules (CheckOutreach) run on exactly what will be
+// sent, and the send goal is written by code.
+func AlumniDMProposals(list string, limit int) []Proposal {
+	var header []string
+	type row struct {
+		c    OutreachContact
+		role string
+		rank int
+	}
+	var rows []row
+	for _, l := range strings.Split(list, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(l), "|") || strings.Contains(l, "---") {
+			continue
+		}
+		cells := splitRow(l)
+		if header == nil {
+			header = cells
+			continue
+		}
+		get := func(name string) string {
+			for i, h := range header {
+				if strings.EqualFold(strings.TrimSpace(h), name) && i < len(cells) {
+					return strings.TrimSpace(cells[i])
+				}
+			}
+			return ""
+		}
+		link := get("LinkedIn")
+		if !strings.Contains(strings.ToLower(get("Status")), "not contacted") || !strings.Contains(link, "linkedin.com/in/") {
+			continue
+		}
+		club := get("Club")
+		rank := 2
+		if strings.Contains(strings.ToUpper(club), "ACM") {
+			rank = 0
+		} else if club != "" && !strings.EqualFold(club, "none") && club != "-" {
+			rank = 1
+		}
+		rows = append(rows, row{c: OutreachContact{Name: get("Name"), Title: get("Role"), Company: get("Company"), Club: club, Link: link}, role: get("Role"), rank: rank})
+	}
+	sortStable(len(rows), func(i, j int) bool { return rows[i].rank < rows[j].rank }, func(i, j int) { rows[i], rows[j] = rows[j], rows[i] })
+	var out []Proposal
+	for _, r := range rows {
+		if len(out) == limit {
+			break
+		}
+		if r.c.Name == "" || r.c.Company == "" {
+			continue
+		}
+		focus := RoleFocus(r.role)
+		c := r.c
+		c.Message = AlumniMessageFor(strings.Fields(c.Name)[0], c.Company, focus, r.rank == 0)
+		why := strings.TrimSpace(strings.Join([]string{c.Club, c.Title + " at " + c.Company}, ", "))
+		out = append(out, Proposal{Title: AlumniDMPrefix + c.Name + " - " + c.Company, Why: strings.TrimLeft(why, ", "), Act: true, Contact: &c, Resume: ResumeFiles[focus]})
+	}
+	return out
+}
+
+// sortStable is an insertion sort, which keeps the list's own order among equals (the oldest additions first).
+func sortStable(n int, less func(i, j int) bool, swap func(i, j int)) {
+	for i := 1; i < n; i++ {
+		for j := i; j > 0 && less(j, j-1); j-- {
+			swap(j, j-1)
+		}
+	}
+}

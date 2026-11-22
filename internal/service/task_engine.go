@@ -27,6 +27,8 @@ type TaskEngine struct {
 	approvalRepo repository.ApprovalRepository
 	logger       *slog.Logger
 	notifier     FinishNotifier
+	// ownerFacts returns the owner's verified profile; outreach messages are checked against it.
+	ownerFacts func(ctx context.Context, userID uuid.UUID) string
 	// onApplicationApproved is told when the owner approves an application draft, so it can be recorded.
 	onApplicationApproved func(ctx context.Context, a *domain.Approval)
 	// onSubmitFinished is told when a submit task completes, so the Applied tracker shows what really happened.
@@ -476,16 +478,29 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 			waiting[strings.ToLower(t.Title)] = true
 		}
 	}
+	outreach := domain.IsOutreachTask(parent)
+	var rejected []string
 	for _, p := range proposals {
 		if waiting[strings.ToLower(p.Title)] {
 			continue
+		}
+		if outreach || p.Contact != nil {
+			problems := e.checkOutreach(ctx, parent.UserID, p)
+			if len(problems) > 0 {
+				rejected = append(rejected, p.Title+": "+strings.Join(problems, "; "))
+				continue
+			}
+			if !domain.IsResumeFile(p.Resume) {
+				p.Resume = ""
+			}
+			p.Goal, p.Act = domain.OutreachSendGoal(*p.Contact, p.Resume), true
 		}
 		child := &domain.Task{
 			ID: uuid.New(), UserID: parent.UserID, ParentID: &parent.ID, Title: p.Title, Goal: p.Goal,
 			ManagerDomain: parent.ManagerDomain, Priority: parent.Priority, MaxRetries: 2,
 			InputPayload: json.RawMessage(`{"proposed_by":"` + parent.ID.String() + `"}`),
 		}
-		if strings.HasPrefix(p.Title, domain.AlumniDMPrefix) {
+		if p.Contact != nil || strings.HasPrefix(p.Title, domain.AlumniDMPrefix) {
 			child.MaxRetries = 0 // a retry could message the same person twice
 		}
 		if p.Act {
@@ -515,6 +530,33 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 			e.logger.Warn("Could not hold a proposed task for approval", "title", p.Title, "error", rerr)
 		}
 	}
+	if len(rejected) > 0 {
+		_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+			TaskID: parent.ID, EventType: "LOG", Metadata: json.RawMessage("{}"),
+			Message: "Griffin did not ask you about these, because they break the outreach rules:\n- " + strings.Join(rejected, "\n- "),
+		})
+	}
+}
+
+// SetOwnerFacts gives the engine the owner's verified profile, which every outreach message is checked against.
+func (e *TaskEngine) SetOwnerFacts(f func(ctx context.Context, userID uuid.UUID) string) {
+	e.ownerFacts = f
+}
+
+// checkOutreach applies the outreach rules to one proposal. Without the owner's verified profile nothing can be
+// checked, so nothing is proposed.
+func (e *TaskEngine) checkOutreach(ctx context.Context, userID uuid.UUID, p domain.Proposal) []string {
+	if p.Contact == nil {
+		return []string{"no contact details (name, title, company, profile link and message)"}
+	}
+	facts := ""
+	if e.ownerFacts != nil {
+		facts = e.ownerFacts(ctx, userID)
+	}
+	if strings.TrimSpace(facts) == "" {
+		return []string{"no verified owner profile to check the message against"}
+	}
+	return domain.CheckOutreach(*p.Contact, facts)
 }
 
 // DeferToHost hands a running task back to the queue for a laptop host, because the process holding it cannot do

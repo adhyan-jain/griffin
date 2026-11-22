@@ -23,6 +23,17 @@ type Proposal struct {
 	Goal  string `json:"goal"`
 	// Act marks a proposal whose approval also grants the act tier for that one task (a push, for example).
 	Act bool `json:"act"`
+	// Contact, when set, makes this an outreach proposal: Griffin checks the person and the message against the
+	// outreach rules and writes the send goal itself (Goal is then ignored).
+	Contact *OutreachContact `json:"contact,omitempty"`
+	// Resume is the resume file to attach to an outreach message, one of ResumeFiles.
+	Resume string `json:"resume,omitempty"`
+}
+
+// FormatProposals writes proposals as the fenced block ParseProposals reads.
+func FormatProposals(ps []Proposal) string {
+	b, _ := json.MarshalIndent(ps, "", "  ")
+	return "```proposals\n" + string(b) + "\n```"
 }
 
 const maxProposals = 8
@@ -40,7 +51,7 @@ func IsProposingTask(t *Task) bool {
 	if t == nil {
 		return false
 	}
-	if IsInitiativeTask(t.Title) {
+	if IsInitiativeTask(t.Title) || IsAlumniDMBatch(t.Title) {
 		return true
 	}
 	var p struct {
@@ -63,7 +74,7 @@ func ParseProposals(text string) []Proposal {
 	var out []Proposal
 	for _, p := range all {
 		p.Title, p.Goal, p.Why = strings.TrimSpace(p.Title), strings.TrimSpace(p.Goal), strings.TrimSpace(p.Why)
-		if p.Title == "" || p.Goal == "" {
+		if p.Title == "" || (p.Goal == "" && p.Contact == nil) {
 			continue
 		}
 		if r := []rune(p.Title); len(r) > 80 {

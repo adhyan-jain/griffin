@@ -452,12 +452,16 @@ const AppliedGmailCheckGoal = "Keep tabs on Gmail for the places the owner appli
 func ReferralTaskFor(company, role string) (title, goal string, payload json.RawMessage) {
 	what := strings.TrimSpace(role + " at " + company)
 	goal = "Find 2-3 real people at " + company + " who could refer the owner for " + what + ". " +
-		"Order of preference: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other software engineers there (if the company is not Indian, prefer Indian engineers). " +
-		"Founders, CEOs and CTOs only if nobody else can be found. Open each person's profile and confirm the name and company before listing them; if you could not open it, leave them out. Never invent anyone.\n" +
-		"For each person write a 3-4 sentence message from the owner, using only facts from the owner's verified profile, that mentions the role and one or two real projects. Use email if their address is public, otherwise a LinkedIn message.\n" +
-		"Limits: about 15 tool calls and under 5 minutes. Fewer verified people beat more unverified ones; if you can confirm only one, list one. " +
-		"Do not send anything. Keep your answer to a short list: name, title, why they rank where they do, profile link or email. " +
-		"Then end with the proposals block, one proposal per person, with act set to true, whose goal says exactly: 'Send this message to <name> (<profile link or email>) and nothing else: <the message>'."
+		"Who: software engineers, ML engineers or engineering managers on a relevant team. Order of preference: VIT alumni who were in ACM, ISTE, MFC or TAM; then other VIT alumni; then other engineers there (if the company is not Indian, prefer Indian engineers). " +
+		"Founders, CEOs, CTOs, VPs, directors, professors and principals ONLY if the company is a startup (under about 200 people); otherwise never. " +
+		"Open each person's profile and copy their name, current title, company and VIT club exactly as the profile shows them; if you could not open it, leave them out. Never invent anyone.\n" +
+		"For each person write the message: at most 3 short sentences and under 70 words, one clear ask (a referral for this role), using only facts from the owner's verified profile. " +
+		"Mention ACM only if that person's profile shows ACM VIT. Do not mention clubs, numbers, tools or achievements that are not in the profile.\n" +
+		"Limits: about 15 tool calls and under 5 minutes. Fewer verified people beat more unverified ones. Do not send anything. " +
+		"End with the proposals block, one entry per person: {\"title\": \"Message <name> - " + company + "\", \"why\": \"one line\", \"act\": true, " +
+		"\"contact\": {\"name\", \"title\", \"company\", \"club\", \"link\": \"their profile URL or mailto: address\", \"startup\": true or false, \"message\"}}. " +
+		"Griffin checks every message against these rules and writes the sending instructions itself; a message that breaks them is not shown to the owner.\n\n" +
+		"```proposals\n[{\"title\":\"Message Riya Sharma - " + company + "\",\"why\":\"backend engineer on the payments team, VIT 2023\",\"act\":true,\"contact\":{\"name\":\"Riya Sharma\",\"title\":\"Software Engineer II\",\"company\":\"" + company + "\",\"club\":\"\",\"link\":\"https://www.linkedin.com/in/...\",\"startup\":false,\"message\":\"Hi Riya, ...\"}}]\n```"
 	payload, _ = json.Marshal(map[string]any{
 		"referrals_for": map[string]any{"company": company, "role": role},
 		"requires":      []string{HostCapAgent},
@@ -468,29 +472,22 @@ func ReferralTaskFor(company, role string) (title, goal string, payload json.Raw
 	if r := []rune(title); len(r) > 80 {
 		title = string(r[:80])
 	}
-	return title, goal + proposalFormat, payload
+	return title, goal, payload
 }
 
 // AlumniHeader is the Alumni tracker's table head.
 const AlumniHeader = "| Name | Batch | Company | Role | Club | LinkedIn | Why this company | Status | Added |\n|---|---|---|---|---|---|---|---|---|"
 
-// AlumniMessage is the one friendly draft sent to every person on the Alumni list. {FirstName} and {Company} are the
-// only parts that change.
-const AlumniMessage = "Hi {FirstName},\n\n" +
-	"I'm Adhyan, a pre-final-year CSE student at VIT and a senior core member of ACM VIT. I found you through the VIT alumni network, and it's inspiring to see you at {Company}. " +
-	"I'm looking for a summer 2027 {RoleFocus} internship. I've built ComputeHive (a distributed task runner in Go with Redis and Docker), interned as an AI Engineer at Palni, and won a track at the DevSoc hackathon.\n\n" +
-	"If there's an opening on your team, would you be open to a quick chat or a referral? I'd be happy to send my resume. Thank you for your time, and no worries at all if it's not possible.\n\n" +
-	"Warm regards,\nAdhyan Jain"
-
 // AlumniGoal is what the daily Alumni routine is asked to do.
-const AlumniGoal = "Grow the owner's Alumni outreach list: VIT graduates who can refer or advise on internships. " +
+var AlumniGoal = "Grow the owner's Alumni outreach list: VIT graduates who can refer or advise on internships. " +
 	"Who to add, in this priority order: (1) VIT alumni who were in ACM (VIT's ACM chapter), then other tech clubs such as ISTE, MFC, TAM; (2) any other VIT alumni; both only if they graduated within the last 4 years (batches 2022 to 2026). " +
 	"They must work at a company that pays interns about ₹40,000 a month or more AND where converting interns to full-time pays about ₹15 LPA or more. In the \"Why this company\" column give the evidence in a few words (e.g. \"intern ₹1.2L/mo, PPO ~₹40 LPA, Levels.fyi\"). Skip companies you cannot back with evidence. " +
 	"Find people from public pages only: LinkedIn search results, the club's pages, GitHub, company teams pages, alumni posts. Open a profile to confirm it before listing it. NEVER invent a person, a batch, a club or a link: a shorter verified list beats a long guessed one. " +
 	"Do not message anyone. Limits: about 30 tool calls and under 8 minutes; add up to 40 new people this run (the list grows every day, aiming for 100 to 200). " +
 	"Put ONLY the new people in the \"## Tracker\" table (Griffin merges them into the list and drops duplicates), with exactly the columns Name, Batch, Company, Role, Club, LinkedIn, Why this company, Status, Added. Status is \"not contacted\", Added is today's date. " +
-	"After the table, add a section \"## Draft message\" with the message below, unchanged, so the owner can read it, then one line: how many people were added and which clubs you reached.\n\n" +
-	"The message is one draft for everyone. {RoleFocus} is chosen from each person's Role: backend, platform or infrastructure people get \"backend\"; ML, AI, LLM or data-science people get \"AI/ML\"; everyone else gets \"software engineering\". The owner is open to backend, AI of any sort, and software engineering roles.\n\nThe message:\n" + AlumniMessage
+	"Copy the Club column exactly as the profile shows it (\"ACM VIT\", \"ISTE\", ...), or leave it empty: Griffin mentions ACM in a message only to ACM people. " +
+	"After the table, write one line: how many people were added and which clubs you reached. Griffin writes the messages itself from the owner's short template.\n\n" +
+	"The message each person will get (ACM line only for ACM VIT people):\n" + AlumniMessageFor("{FirstName}", "{Company}", "{RoleFocus}", true)
 
 func alumniPrompt(current string, today time.Time) string {
 	var b strings.Builder
