@@ -16,9 +16,14 @@ import (
 // CommunityScanTitle is the daily routine that finds conversations worth joining, in code.
 const CommunityScanTitle = "COMMUNITY SCAN"
 
-// IsCommunityScan reports whether a task is that routine.
+// CommunityRepliesTitle is the routine that only writes replies for listed threads that have none: reading the sites
+// takes most of a run's time, so replies get a run of their own.
+const CommunityRepliesTitle = "COMMUNITY REPLIES"
+
+// IsCommunityScan reports whether a task is that routine (or its replies-only run).
 func IsCommunityScan(title string) bool {
-	return strings.Contains(strings.ToUpper(title), CommunityScanTitle)
+	upper := strings.ToUpper(title)
+	return strings.Contains(upper, CommunityScanTitle) || strings.Contains(upper, CommunityRepliesTitle)
 }
 
 // CommunityHeader is the columns of the Communities list.
@@ -40,11 +45,22 @@ type CommunityScanResult struct {
 	Names                       []string
 	Problems                    []string
 	SaveError                   string
+	RepliesOnly                 bool // a run that wrote replies for listed threads and read no site
 }
 
 // Summary is the owner-facing line for a scan.
 func (r CommunityScanResult) Summary() string {
 	var b strings.Builder
+	if r.RepliesOnly {
+		if r.SaveError != "" {
+			return "Wrote replies for listed threads but could not save them to the Communities list: " + r.SaveError
+		}
+		fmt.Fprintf(&b, "Community replies: wrote %d ready-to-send replies for threads on the Communities list.", r.Backfilled)
+		if r.ReplyLeft > 0 {
+			fmt.Fprintf(&b, " %d threads still have none (a draft failed the fact check, or there was no time); the next run tries them.", r.ReplyLeft)
+		}
+		return b.String()
+	}
 	if r.SaveError != "" {
 		fmt.Fprintf(&b, "Community scan found %d new conversations that fit you but could not save them to the Communities list: %s", r.Added, r.SaveError)
 	} else {
@@ -94,10 +110,15 @@ func (w *TrackerLists) ScanCommunities(ctx context.Context, task *domain.Task, g
 	// end before the deadline so the list can still be saved.
 	work, cancelWork := budget.Work(ctx)
 	defer cancelWork()
-	readCtx, cancelRead := budget.Share(work, 0.6)
-	defer cancelRead()
-	threads, problems := sources.ReadCommunities(readCtx, get, at)
-	res := CommunityScanResult{Read: len(threads), Problems: problems}
+	repliesOnly := strings.Contains(strings.ToUpper(task.Title), CommunityRepliesTitle)
+	var threads []sources.Thread
+	var problems []string
+	if !repliesOnly {
+		readCtx, cancelRead := budget.Share(work, 0.6)
+		threads, problems = sources.ReadCommunities(readCtx, get, at)
+		cancelRead()
+	}
+	res := CommunityScanResult{Read: len(threads), Problems: problems, RepliesOnly: repliesOnly}
 
 	list := w.list(ctx, task.UserID, storage.ListKind, "community")
 	text := ""

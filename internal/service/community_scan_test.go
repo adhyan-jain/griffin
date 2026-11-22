@@ -178,3 +178,19 @@ func TestTheCommunityScanRunsInCodeAndHasItsOwnTracker(t *testing.T) {
 		t.Fatal("the routine is found by its title")
 	}
 }
+
+func TestTheRepliesRunReadsNoSiteAndOnlyFillsListedThreads(t *testing.T) {
+	ctx := context.Background()
+	reads := 0
+	get := func(_ context.Context, u string) ([]byte, error) {
+		if !strings.Contains(u, "/items/") {
+			reads++
+		}
+		return nil, errors.New("offline")
+	}
+	w := &TrackerLists{Store: &memList{text: ""}}
+	answer, ok := w.ScanCommunities(ctx, &domain.Task{UserID: uuid.New(), Title: CommunityRepliesTitle}, get, nil)
+	if !ok || reads != 0 || !strings.HasPrefix(answer, "Community replies:") {
+		t.Fatalf("a replies run reads no site and says what it wrote: ok=%v reads=%d %s", ok, reads, answer)
+	}
+}
