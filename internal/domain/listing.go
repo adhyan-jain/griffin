@@ -34,6 +34,30 @@ type Listing struct {
 	TaskID        *uuid.UUID `json:"task_id,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+
+	// Opportunity intelligence. Verification is "lead" for anything read from an aggregator and
+	// "employer_verified" only for a posting fetched from the employer's own board or site. Unknown values are
+	// nil, never guessed.
+	CompanyID        *uuid.UUID `json:"company_id,omitempty"`
+	ATSBoardID       *uuid.UUID `json:"ats_board_id,omitempty"`
+	SourceKind       string     `json:"source_kind"`
+	Verification     string     `json:"verification"`
+	CanonicalURL     *string    `json:"canonical_url,omitempty"`
+	EmployerURL      *string    `json:"employer_url,omitempty"`
+	DescriptionHash  *string    `json:"description_hash,omitempty"`
+	CompensationText *string    `json:"compensation_text,omitempty"`
+	Deadline         *time.Time `json:"deadline,omitempty"`
+	FirstSeenAt      time.Time  `json:"first_seen_at"`
+	LastSeenAt       *time.Time `json:"last_seen_at,omitempty"`
+	ClosedAt         *time.Time `json:"closed_at,omitempty"`
+	ReopenedCount    int        `json:"reopened_count"`
+	// Description is the posting's text. It is stored, but list reads do not load it.
+	Description string `json:"-"`
+	// EmployerKey, RoleKey and SourceTarget are the identity keys and the scan target the listing was last read
+	// from; they are internal.
+	EmployerKey  string `json:"-"`
+	RoleKey      string `json:"-"`
+	SourceTarget string `json:"-"`
 }
 
 // Listing stages: the application pipeline. Code moves a listing forward; nothing skips a step.
@@ -57,6 +81,10 @@ var stageMoves = map[string][]string{
 	StageClosed:     {StageVerified},
 }
 
+// ClosedByOwnerNote is the stage note of a listing the owner closed. A scan that sees the posting again does not
+// reopen it: the owner dropped it, the posting did not go away.
+const ClosedByOwnerNote = "closed by you"
+
 // CanMove reports whether a listing may go from one stage to another.
 func CanMove(from, to string) bool {
 	for _, s := range stageMoves[from] {
@@ -70,7 +98,8 @@ func CanMove(from, to string) bool {
 // ListingFromPosting turns a fetched posting into a verified listing.
 func ListingFromPosting(userID uuid.UUID, source, tier string, p Posting, at time.Time) *Listing {
 	l := &Listing{UserID: userID, Source: source, Tier: tier, Company: strings.TrimSpace(p.Company), Role: strings.TrimSpace(p.Title), URL: strings.TrimSpace(p.Link),
-		Location: p.Location, Pay: p.Pay, Stage: StageVerified, VerifiedAt: &at, LastCheckedAt: &at}
+		Location: p.Location, Pay: p.Pay, Stage: StageVerified, VerifiedAt: &at, LastCheckedAt: &at,
+		SourceKind: SourceKindAggregator, Verification: VerificationLead, FirstSeenAt: at, LastSeenAt: &at}
 	if !p.Posted.IsZero() {
 		posted := p.Posted
 		l.PostedAt = &posted
@@ -96,6 +125,15 @@ func listStatus(stage string) string {
 	}
 }
 
+// verifiedCell is the list's Verified column: "employer" only for a posting fetched from the employer itself,
+// otherwise "lead" (an aggregator listing, however complete it looks).
+func verifiedCell(l *Listing) string {
+	if l.Verification == VerificationEmployer {
+		return "employer"
+	}
+	return "lead"
+}
+
 // ListingsListText is the Internships list written from the verified listings, best tier first. Closed listings
 // stay on it (marked closed) so a task for one is dropped rather than worked on.
 func ListingsListText(listings []*Listing) string {
@@ -112,9 +150,9 @@ func ListingsListText(listings []*Listing) string {
 	})
 	var b strings.Builder
 	b.WriteString(VerifiedListMarker + "\n# Internships tracker\n\n")
-	b.WriteString("| Tier | Company | Role | Location | Stipend | Source | Link | Status |\n|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| Tier | Company | Role | Location | Stipend | Source | Verified | Link | Status |\n|---|---|---|---|---|---|---|---|---|\n")
 	for _, l := range sorted {
-		fmt.Fprintf(&b, "| Tier %s | %s | %s | %s | %s | %s | %s | %s |\n", cell(l.Tier), cell(l.Company), cell(l.Role), cell(l.Location), cell(l.Pay), cell(l.Source), cell(l.URL), listStatus(l.Stage))
+		fmt.Fprintf(&b, "| Tier %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", cell(l.Tier), cell(l.Company), cell(l.Role), cell(l.Location), cell(l.Pay), cell(l.Source), verifiedCell(l), cell(l.URL), listStatus(l.Stage))
 	}
 	return b.String()
 }

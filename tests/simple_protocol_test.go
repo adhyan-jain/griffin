@@ -65,3 +65,34 @@ func TestNotificationAndListingQueriesWorkThroughThePooler(t *testing.T) {
 		t.Fatalf("checked: %v", err)
 	}
 }
+
+// The opportunity ingest (companies, boards, scan history, snapshots, evidence, closing and source health) must
+// work through the pooler too: no typed arrays or uuid slices, only scalars and string lists.
+func TestOpportunityIngestWorksThroughThePooler(t *testing.T) {
+	env := SetupTestEnv(t)
+	defer env.Teardown()
+	ctx := context.Background()
+	owner := CreateTestUser(t, env.DB, "pooler-opportunities@example.com")
+
+	url := os.Getenv("GRIFFIN_TEST_DB_URL")
+	if url == "" {
+		url = TestDBURL
+	}
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	exerciseOpportunities(t, ctx, pool, owner)
+
+	repo := repository.NewOpportunityRepository(pool)
+	if _, err := repo.ListCompanies(ctx, owner, []string{domain.CompanyActive, domain.CompanyCandidate}); err != nil {
+		t.Fatalf("a status list must work through the pooler: %v", err)
+	}
+}

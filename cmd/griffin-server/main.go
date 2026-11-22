@@ -133,7 +133,7 @@ func main() {
 	profileRepo := repository.NewPostgresProfileRepository(repoDB)
 	aliasRepo := repository.NewPostgresAliasRepository(repoDB)
 	notificationRepo := repository.NewPostgresNotificationRepository(repoDB)
-	listingRepo := repository.NewListingRepository(repoDB)
+	listingRepo := repository.NewOpportunityRepository(repoDB)
 	outreachRepo := repository.NewOutreachRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)

@@ -47,6 +47,36 @@ func (h *ListingsHandler) List(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, rows)
 }
 
+// SourceHealthStore is what the source-health route needs.
+type SourceHealthStore interface {
+	SourceHealth(ctx context.Context, userID uuid.UUID) ([]domain.SourceHealth, error)
+}
+
+// SourcesHandler serves how each opportunity source is doing.
+type SourcesHandler struct{ repo SourceHealthStore }
+
+// NewSourcesHandler builds a SourcesHandler.
+func NewSourcesHandler(repo SourceHealthStore) *SourcesHandler { return &SourcesHandler{repo: repo} }
+
+// Health returns the latest scan of every source target the owner has scanned, with how many failed since the last
+// good one, so a source that went quiet is visible instead of reading as "no openings".
+func (h *SourcesHandler) Health(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	rows, err := h.repo.SourceHealth(r.Context(), userID)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []domain.SourceHealth{}
+	}
+	httputil.JSON(w, http.StatusOK, rows)
+}
+
 // Close lets the owner drop a listing they do not want.
 func (h *ListingsHandler) Close(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r.Context())
@@ -64,7 +94,7 @@ func (h *ListingsHandler) Close(w http.ResponseWriter, r *http.Request) {
 		httputil.ErrorJSON(w, err)
 		return
 	}
-	if err := h.repo.Move(r.Context(), userID, id, l.Stage, domain.StageClosed, "closed by you", nil); err != nil {
+	if err := h.repo.Move(r.Context(), userID, id, l.Stage, domain.StageClosed, domain.ClosedByOwnerNote, nil); err != nil {
 		httputil.ErrorJSON(w, err)
 		return
 	}

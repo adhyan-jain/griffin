@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/jobs"
 )
 
 // Site names, recorded as each listing's source.
@@ -65,42 +66,107 @@ func HTTPGet(ctx context.Context, u string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 }
 
-// Read collects the postings from every page of every site. A page that fails is named in problems; the rest
-// still count.
-func Read(ctx context.Context, get Get) (posts []domain.Posting, problems []string) {
+// pageRead is one page or search of one site, read or failed.
+type pageRead struct {
+	source, target, label string
+	posts                 []domain.Posting
+	err                   error
+}
+
+// readPages reads every page of every site. A page that fails carries its error; the rest still count.
+func readPages(ctx context.Context, get Get) []pageRead {
 	if get == nil {
 		get = HTTPGet
 	}
+	var out []pageRead
 	for _, p := range InternshalaPages {
+		pr := pageRead{source: Internshala, target: p, label: "Internshala " + p}
 		body, err := get(ctx, internshalaBase+p)
 		if err != nil {
-			problems = append(problems, "Internshala "+p)
-			continue
+			pr.err = err
+		} else {
+			pr.posts = ParseInternshala(string(body))
 		}
-		posts = append(posts, ParseInternshala(string(body))...)
+		out = append(out, pr)
 	}
 	for _, q := range UnstopSearches {
+		pr := pageRead{source: Unstop, target: q, label: "Unstop \"" + q + "\""}
 		body, err := get(ctx, unstopSearch+url.QueryEscape(q))
-		if err != nil {
-			problems = append(problems, "Unstop \""+q+"\"")
-			continue
+		if err == nil {
+			pr.posts, err = ParseUnstop(body, time.Now())
 		}
-		ps, err := ParseUnstop(body, time.Now())
-		if err != nil {
-			problems = append(problems, "Unstop \""+q+"\"")
-			continue
-		}
-		posts = append(posts, ps...)
+		pr.err = err
+		out = append(out, pr)
 	}
 	for _, p := range domain.InternDockPages {
+		pr := pageRead{source: InternDock, target: p, label: "InternDock " + p}
 		body, err := get(ctx, domain.InternDockBase+p)
 		if err != nil {
-			problems = append(problems, "InternDock "+p)
+			pr.err = err
+		} else {
+			pr.posts = domain.ParseInternDock(string(body))
+		}
+		out = append(out, pr)
+	}
+	return out
+}
+
+// Read collects the postings from every page of every site. A page that fails is named in problems; the rest
+// still count.
+func Read(ctx context.Context, get Get) (posts []domain.Posting, problems []string) {
+	for _, pr := range readPages(ctx, get) {
+		if pr.err != nil {
+			problems = append(problems, pr.label)
 			continue
 		}
-		posts = append(posts, domain.ParseInternDock(string(body))...)
+		posts = append(posts, pr.posts...)
 	}
 	return posts, problems
+}
+
+// RawJobFromPosting adapts an aggregator posting to the canonical shape. The site is an aggregator: its postings
+// are leads, whatever they say about the employer. Nothing is added: unknown stays empty.
+func RawJobFromPosting(p domain.Posting, fetchedAt time.Time) jobs.RawJob {
+	j := jobs.RawJob{
+		Source: p.Source, SourceKind: jobs.Aggregator, EmployerName: p.Company, Title: p.Title, URL: p.Link,
+		Compensation: p.Pay, FetchedAt: fetchedAt,
+	}
+	if p.Location != "" {
+		j.Locations = []string{p.Location}
+	}
+	if !p.Posted.IsZero() {
+		posted := p.Posted
+		j.PostedAt = &posted
+	}
+	return j
+}
+
+// PostingFromRawJob is the reverse, for the owner-fit rules, which are written over postings.
+func PostingFromRawJob(j jobs.RawJob) domain.Posting {
+	p := domain.Posting{Title: j.Title, Company: j.EmployerName, Location: strings.Join(j.Locations, "; "), Pay: j.Compensation, Link: j.URL, Source: j.Source}
+	if j.PostedAt != nil {
+		p.Posted = *j.PostedAt
+	}
+	return p
+}
+
+// ReadScans reads every page of every site as one canonical scan per page, so each page's success or failure is
+// recorded on its own. A page that could not be read is a failed scan, never an empty one.
+func ReadScans(ctx context.Context, get Get) []jobs.Scan {
+	var out []jobs.Scan
+	for _, pr := range readPages(ctx, get) {
+		started := time.Now()
+		sc := jobs.Scan{Source: pr.source, Target: pr.target, Status: jobs.ScanOK, Pages: 1, StartedAt: started}
+		if pr.err != nil {
+			sc.Status, sc.Error, sc.Pages = jobs.ScanFailed, pr.err.Error(), 0
+		}
+		for _, p := range pr.posts {
+			sc.Jobs = append(sc.Jobs, RawJobFromPosting(p, started))
+		}
+		sc.FinishedAt = time.Now()
+		out = append(out, sc)
+	}
+	return out
 }
 
 var (
@@ -274,9 +340,6 @@ func lowestStipend(pay string) int {
 	return low
 }
 
-// MinStipend is the least a listing must pay a month to be shown: below it are mostly unpaid "training" posts.
-const MinStipend = 10000
-
 // Tier ranks a listing by its stipend: A reaches the owner's bar (₹40,000 a month) and starts at ₹15,000 or more
 // (so "₹ 4,000 - 40,000" is not A), B reaches ₹15,000, C the rest.
 func Tier(pay string) string {
@@ -296,11 +359,8 @@ var internship = regexp.MustCompile(`(?i)\b(intern|interns|internship|trainee)\b
 func IsInternship(title string) bool { return internship.MatchString(title) }
 
 // Fits reports whether a posting is one the owner should see: an internship in a role the owner takes, in a
-// place the owner can work, paying at least MinStipend a month. InternDock shows no rupee stipend, so its
-// postings are kept on role and place alone.
+// place the owner can work. Pay is not a filter: an unpaid research internship, or one that does not say what it
+// pays, is kept (its tier is C until the pay is known). Pay only ranks.
 func Fits(p domain.Posting) bool {
-	if !IsInternship(p.Title) || !domain.FitsOwner(p) {
-		return false
-	}
-	return p.Source == InternDock || MonthlyStipend(p.Pay) >= MinStipend
+	return IsInternship(p.Title) && domain.FitsOwner(p)
 }

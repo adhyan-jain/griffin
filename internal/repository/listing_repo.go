@@ -23,30 +23,47 @@ func NewListingRepository(pool database.Querier) *ListingRepository {
 	return &ListingRepository{pool: pool}
 }
 
-const listingCols = `id, source, external_id, company, role, url, location, pay, tier, posted_at, stage, stage_note, verified_at, last_checked_at, task_id, created_at, updated_at`
+const listingCols = `id, source, external_id, company, role, url, location, pay, tier, posted_at, stage, stage_note, verified_at, last_checked_at, task_id, created_at, updated_at,
+	company_id, ats_board_id, source_kind, verification, canonical_url, employer_url, description_hash, compensation_text, deadline, first_seen_at, last_seen_at, closed_at, reopened_count, employer_key, role_key, source_target`
+
+func scanTargets(l *domain.Listing) []any {
+	return []any{&l.ID, &l.Source, &l.ExternalID, &l.Company, &l.Role, &l.URL, &l.Location, &l.Pay, &l.Tier, &l.PostedAt, &l.Stage, &l.StageNote, &l.VerifiedAt, &l.LastCheckedAt, &l.TaskID, &l.CreatedAt, &l.UpdatedAt,
+		&l.CompanyID, &l.ATSBoardID, &l.SourceKind, &l.Verification, &l.CanonicalURL, &l.EmployerURL, &l.DescriptionHash, &l.CompensationText, &l.Deadline, &l.FirstSeenAt, &l.LastSeenAt, &l.ClosedAt, &l.ReopenedCount, &l.EmployerKey, &l.RoleKey, &l.SourceTarget}
+}
 
 func scanListing(row pgx.Row, userID uuid.UUID) (*domain.Listing, error) {
 	l := &domain.Listing{UserID: userID}
-	err := row.Scan(&l.ID, &l.Source, &l.ExternalID, &l.Company, &l.Role, &l.URL, &l.Location, &l.Pay, &l.Tier, &l.PostedAt, &l.Stage, &l.StageNote, &l.VerifiedAt, &l.LastCheckedAt, &l.TaskID, &l.CreatedAt, &l.UpdatedAt)
+	err := row.Scan(scanTargets(l)...)
 	return l, err
 }
 
-// Upsert records a verified listing once per owner, company and role. A listing seen again is re-checked (its
+// Upsert records an aggregator listing once per owner, company and role. A listing seen again is re-checked (its
 // link, location and check time refresh) and a closed one reopens; its pipeline stage is otherwise kept.
-// created reports whether it is new.
+// created reports whether it is new. The sync reads through Ingest; this stays for callers that hold a single
+// fetched posting.
 func (r *ListingRepository) Upsert(ctx context.Context, l *domain.Listing) (created bool, err error) {
 	var inserted bool
+	id := domain.NewIdentity(l.Source, l.ExternalID, l.Company, l.Role, l.URL)
+	var canonical *string
+	if id.CanonicalURL != "" {
+		canonical = &id.CanonicalURL
+	}
+	targets := append(scanTargets(l), &inserted)
 	err = r.pool.QueryRow(ctx, `
-		INSERT INTO job_discoveries (user_id, source, external_id, company, role, url, description, tier, status, location, pay, posted_at, stage, verified_at, last_checked_at)
-		VALUES ($1, $2, $3, $4, $5, $6, '', $10, 'discovered', $7, $8, $9, 'verified', NOW(), NOW())
+		INSERT INTO job_discoveries (user_id, source, external_id, company, role, url, description, tier, status, location, pay, posted_at, stage, verified_at, last_checked_at,
+			employer_key, role_key, canonical_url, last_seen_at)
+		VALUES ($1, $2, $3, $4, $5, $6, '', $10, 'discovered', $7, $8, $9, 'verified', NOW(), NOW(), $11, $12, $13, NOW())
 		ON CONFLICT (user_id, company, role) DO UPDATE SET
 			url = EXCLUDED.url, location = EXCLUDED.location, pay = CASE WHEN EXCLUDED.pay <> '' THEN EXCLUDED.pay ELSE job_discoveries.pay END, tier = EXCLUDED.tier,
-			last_checked_at = NOW(), updated_at = NOW(),
+			employer_key = EXCLUDED.employer_key, role_key = EXCLUDED.role_key, canonical_url = EXCLUDED.canonical_url,
+			last_checked_at = NOW(), last_seen_at = NOW(), updated_at = NOW(),
+			reopened_count = job_discoveries.reopened_count + CASE WHEN job_discoveries.stage = 'closed' THEN 1 ELSE 0 END,
+			closed_at = CASE WHEN job_discoveries.stage = 'closed' THEN NULL ELSE job_discoveries.closed_at END,
 			stage = CASE WHEN job_discoveries.stage = 'closed' THEN 'verified' ELSE job_discoveries.stage END,
 			stage_note = CASE WHEN job_discoveries.stage = 'closed' THEN 'reopened: the posting is back' ELSE job_discoveries.stage_note END
 		RETURNING `+listingCols+`, (xmax = 0)`,
-		l.UserID, l.Source, l.ExternalID, l.Company, l.Role, l.URL, l.Location, l.Pay, l.PostedAt, l.Tier,
-	).Scan(&l.ID, &l.Source, &l.ExternalID, &l.Company, &l.Role, &l.URL, &l.Location, &l.Pay, &l.Tier, &l.PostedAt, &l.Stage, &l.StageNote, &l.VerifiedAt, &l.LastCheckedAt, &l.TaskID, &l.CreatedAt, &l.UpdatedAt, &inserted)
+		l.UserID, l.Source, l.ExternalID, l.Company, l.Role, l.URL, l.Location, l.Pay, l.PostedAt, l.Tier, id.EmployerKey, id.RoleKey, canonical,
+	).Scan(targets...)
 	if err != nil {
 		return false, fmt.Errorf("upsert listing: %w", err)
 	}
@@ -101,7 +118,8 @@ func (r *ListingRepository) Move(ctx context.Context, userID, id uuid.UUID, from
 	}
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE job_discoveries SET stage = $4, stage_note = $5, task_id = COALESCE($6, task_id), updated_at = NOW(),
-			status = CASE WHEN $4 = 'confirmed' THEN 'applied' WHEN $4 = 'closed' THEN 'rejected' ELSE status END
+			status = CASE WHEN $4 = 'confirmed' THEN 'applied' WHEN $4 = 'closed' THEN 'rejected' ELSE status END,
+			closed_at = CASE WHEN $4 = 'closed' THEN COALESCE(closed_at, NOW()) WHEN $3 = 'closed' THEN NULL ELSE closed_at END
 		WHERE user_id = $1 AND id = $2 AND stage = $3`, userID, id, from, to, note, taskID)
 	if err != nil {
 		return fmt.Errorf("move listing: %w", err)

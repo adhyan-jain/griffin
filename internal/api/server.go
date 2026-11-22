@@ -52,8 +52,8 @@ type ServerDependencies struct {
 	OutreachRepo *repository.OutreachRepository
 	// AliasRepo stores the owner's aliases ("mummy" means "mom"); nil leaves aliases off.
 	AliasRepo repository.AliasRepository
-	// ListingRepo stores verified internship listings; nil leaves the listings routes and sync off.
-	ListingRepo *repository.ListingRepository
+	// ListingRepo stores internship listings, companies, boards and scan history; nil leaves the listings routes and sync off.
+	ListingRepo *repository.OpportunityRepository
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine on a host claim.
 	GitHubLogin string
 	// NotificationRepo is the notification outbox devices read from; nil leaves the routes off.
@@ -417,6 +417,8 @@ func NewServer(deps ServerDependencies) *Server {
 			listingHandler := handlers.NewListingsHandler(deps.ListingRepo)
 			mux.Handle("GET /api/v1/listings", userAuth(http.HandlerFunc(listingHandler.List)))
 			mux.Handle("POST /api/v1/listings/{id}/close", userAuth(http.HandlerFunc(listingHandler.Close)))
+			sourcesHandler := handlers.NewSourcesHandler(deps.ListingRepo)
+			mux.Handle("GET /api/v1/sources/health", userAuth(http.HandlerFunc(sourcesHandler.Health)))
 		}
 
 		if deps.NotificationRepo != nil {

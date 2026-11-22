@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/jobs"
 	"github.com/griffin/core/internal/sources"
 	"github.com/griffin/core/internal/storage"
 )
@@ -31,15 +32,40 @@ type ListingStore interface {
 	Checked(ctx context.Context, userID, id uuid.UUID) error
 }
 
-// ListingSync keeps the verified listings true to the internship sites (Internshala, Unstop, InternDock). Every
-// listing it adds was read from a site's own listing and fits the owner (role, place, stipend); every open listing
-// whose link stops showing the role is closed. No model is involved.
+// ListingSync keeps the listings true to the internship sites (Internshala, Unstop, InternDock). Each page it reads
+// is ingested as one scan (Ingester), so every listing is a lead: it was read from an aggregator, never from the
+// employer. Every listing it adds fits the owner's role and place; pay never excludes one. Every open listing whose
+// link stops showing the role is closed. No model is involved.
 type ListingSync struct {
 	Listings ListingStore
+	// Ingest records the scans and writes the listings; nil means Listings itself when it is an IngestStore.
+	Ingest *Ingester
 	// Get fetches a page; nil means the network.
 	Get   sources.Get
 	Check func(ctx context.Context, link string) PostingState
 	Now   func() time.Time
+}
+
+func (s *ListingSync) ingester() (*Ingester, error) {
+	if s.Ingest != nil {
+		return s.Ingest, nil
+	}
+	if st, ok := s.Listings.(IngestStore); ok {
+		return &Ingester{Store: st, Now: s.Now}, nil
+	}
+	return nil, fmt.Errorf("listing sync: the listings store cannot ingest scans")
+}
+
+// pageLabel names a page that could not be read, for the owner.
+func pageLabel(scan jobs.Scan) string {
+	switch scan.Source {
+	case sources.Unstop:
+		return "Unstop \"" + scan.Target + "\""
+	case sources.InternDock:
+		return "InternDock " + scan.Target
+	default:
+		return "Internshala " + scan.Target
+	}
 }
 
 // ListingSyncResult counts what one sync did.
@@ -78,24 +104,40 @@ func (s *ListingSync) Run(ctx context.Context, userID uuid.UUID) (ListingSyncRes
 	if now == nil {
 		now = time.Now
 	}
-	posts, problems := sources.Read(ctx, s.Get)
-	res.Problems = problems
+	ing, err := s.ingester()
+	if err != nil {
+		return res, err
+	}
+	// Each page is one scan. A role listed on several pages is counted once.
 	seen := map[string]bool{}
-	for _, p := range posts {
-		key := strings.ToLower(p.Company + "|" + p.Title)
-		if seen[key] || p.Link == "" || p.Company == "" || p.Title == "" || !sources.Fits(p) {
-			continue
+	for _, scan := range sources.ReadScans(ctx, s.Get) {
+		if scan.Status == jobs.ScanFailed {
+			res.Problems = append(res.Problems, pageLabel(scan))
 		}
-		seen[key] = true
-		created, err := s.Listings.Upsert(ctx, domain.ListingFromPosting(userID, p.Source, sources.Tier(p.Pay), p, now()))
-		switch {
-		case err != nil:
-			res.Problems = append(res.Problems, p.Company+" "+p.Title)
-		case created:
+		var fit []jobs.RawJob
+		for _, j := range scan.Jobs {
+			p := sources.PostingFromRawJob(j)
+			key := domain.NormalizeEmployer(p.Company) + "|" + domain.NormalizeRole(p.Title)
+			if seen[key] || p.Link == "" || p.Company == "" || p.Title == "" || !sources.Fits(p) {
+				continue
+			}
+			seen[key] = true
+			fit = append(fit, j)
+		}
+		scan.Jobs = fit
+		out, err := ing.Ingest(ctx, userID, scan)
+		if err != nil {
+			return res, err
+		}
+		res.Problems = append(res.Problems, out.Problems...)
+		res.Seen += out.Updated + out.Merged
+		for _, l := range out.Created {
+			pay := l.Pay
+			if pay == "" {
+				pay = "pay not stated"
+			}
 			res.Added++
-			res.AddedNames = append(res.AddedNames, p.Title+" at "+p.Company+" ("+p.Pay+")")
-		default:
-			res.Seen++
+			res.AddedNames = append(res.AddedNames, l.Role+" at "+l.Company+" ("+pay+")")
 		}
 	}
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/jobs"
 )
 
 func TestInternshalaCardsAreReadFromTheRealPage(t *testing.T) {
@@ -29,13 +30,81 @@ func TestInternshalaCardsAreReadFromTheRealPage(t *testing.T) {
 		t.Fatalf("work from home and unpaid are read as such: %+v", ps[1])
 	}
 	for _, p := range ps {
-		if Fits(p) {
-			t.Errorf("unpaid and ₹2-5k posts are not shown: %+v", p)
+		if !Fits(p) {
+			t.Errorf("pay never excludes a posting: unpaid and ₹2-5k software internships are kept: %+v", p)
+		}
+		if Tier(p.Pay) != "C" {
+			t.Errorf("a posting that pays under ₹15,000, or not at all, ranks C: %+v", p)
 		}
 	}
 	rich := strings.Replace(string(page), "₹ 5,000 /month", "₹ 25,000 - 45,000 /month", 1)
 	if p := ParseInternshala(rich)[0]; !Fits(p) || Tier(p.Pay) != "A" {
 		t.Fatalf("a well-paid software internship in Pune fits and is tier A: %+v", p)
+	}
+}
+
+func TestAnUnpaidOrUndisclosedPayResearchInternshipIsKept(t *testing.T) {
+	for _, pay := range []string{"Unpaid", "", "₹ 2,000 /month", "Not disclosed"} {
+		p := domain.Posting{Title: "Machine Learning Research Intern", Company: "Some Lab", Location: "Remote (India)", Pay: pay, Link: "https://x/1"}
+		if !Fits(p) {
+			t.Errorf("pay %q must not drop a fitting research internship", pay)
+		}
+	}
+	if Fits(domain.Posting{Title: "Marketing Intern", Location: "Remote (India)", Pay: "₹ 90,000 /month"}) {
+		t.Error("pay does not make a role the owner does not take fit")
+	}
+}
+
+func TestEachPageIsOneScanAndAFailedPageIsAFailedScanNotAnEmptyOne(t *testing.T) {
+	unstop, _ := os.ReadFile("testdata/unstop.json")
+	scans := ReadScans(context.Background(), func(_ context.Context, u string) ([]byte, error) {
+		if strings.Contains(u, "unstop.com") {
+			return unstop, nil
+		}
+		return nil, errors.New("down")
+	})
+	if len(scans) != len(InternshalaPages)+len(UnstopSearches)+len(domain.InternDockPages) {
+		t.Fatalf("one scan per page: %d", len(scans))
+	}
+	var ok, failed int
+	for _, sc := range scans {
+		switch sc.Status {
+		case jobs.ScanOK:
+			ok++
+			if sc.Source != Unstop || sc.Pages != 1 || sc.Error != "" || sc.Complete() == false {
+				t.Errorf("an ok scan: %+v", sc)
+			}
+			for _, j := range sc.Jobs {
+				if j.SourceKind != jobs.Aggregator || j.Source != Unstop || j.EmployerName == "" || j.BoardToken != "" {
+					t.Errorf("aggregator postings are leads: %+v", j)
+				}
+			}
+		case jobs.ScanFailed:
+			failed++
+			if sc.Error == "" || len(sc.Jobs) != 0 || sc.Pages != 0 || sc.Complete() {
+				t.Errorf("a failed scan names its error and is never complete: %+v", sc)
+			}
+		default:
+			t.Errorf("unexpected status %q", sc.Status)
+		}
+	}
+	if ok != len(UnstopSearches) || failed != len(InternshalaPages)+len(domain.InternDockPages) {
+		t.Fatalf("ok %d failed %d", ok, failed)
+	}
+}
+
+func TestAPostingSurvivesTheRoundTripToTheCanonicalShapeUnchanged(t *testing.T) {
+	posted := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	p := domain.Posting{Title: "SDE Intern", Company: "Acme", Location: "Pune, India", Pay: "₹ 30,000 /month", Link: "https://unstop.com/x", Source: Unstop, Posted: posted}
+	j := RawJobFromPosting(p, posted)
+	if j.ExternalID != "" || j.EmployerDomain != "" || j.Description != "" || j.Deadline != nil || j.Remote != nil {
+		t.Fatalf("nothing the site did not give is invented: %+v", j)
+	}
+	if back := PostingFromRawJob(j); back != p {
+		t.Fatalf("round trip: %+v", back)
+	}
+	if bare := RawJobFromPosting(domain.Posting{Title: "T", Company: "C", Link: "l", Source: Internshala}, posted); bare.Locations != nil || bare.PostedAt != nil || bare.Compensation != "" {
+		t.Fatalf("unknown stays empty: %+v", bare)
 	}
 }
 

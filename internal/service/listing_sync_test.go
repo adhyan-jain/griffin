@@ -13,56 +13,7 @@ import (
 	"github.com/griffin/core/internal/domain"
 )
 
-// memListings is an in-memory listings table with the same one-per-company-and-role rule.
-type memListings struct {
-	rows []*domain.Listing
-}
-
-func (m *memListings) Upsert(_ context.Context, l *domain.Listing) (bool, error) {
-	for _, r := range m.rows {
-		if strings.EqualFold(r.Company, l.Company) && strings.EqualFold(r.Role, l.Role) {
-			*l = *r
-			return false, nil
-		}
-	}
-	l.ID = uuid.New()
-	m.rows = append(m.rows, l)
-	return true, nil
-}
-func (m *memListings) List(_ context.Context, _ uuid.UUID, stages []string, _ int) ([]*domain.Listing, error) {
-	var out []*domain.Listing
-	for _, r := range m.rows {
-		if len(stages) == 0 { // like the table: no stages means every listing
-			out = append(out, r)
-			continue
-		}
-		for _, s := range stages {
-			if r.Stage == s {
-				out = append(out, r)
-			}
-		}
-	}
-	return out, nil
-}
-func (m *memListings) Get(_ context.Context, _ uuid.UUID, id uuid.UUID) (*domain.Listing, error) {
-	for _, r := range m.rows {
-		if r.ID == id {
-			return r, nil
-		}
-	}
-	return nil, domain.ErrNotFound
-}
-func (m *memListings) Move(_ context.Context, _ uuid.UUID, id uuid.UUID, from, to, note string, _ *uuid.UUID) error {
-	for _, r := range m.rows {
-		if r.ID == id && r.Stage == from && domain.CanMove(from, to) {
-			r.Stage, r.StageNote = to, note
-			return nil
-		}
-	}
-	return errors.New("illegal move")
-}
-func (m *memListings) Checked(context.Context, uuid.UUID, uuid.UUID) error { return nil }
-func TestTheSyncListsOnlyRealFittingPostingsAndClosesDeadOnes(t *testing.T) {
+func TestTheSyncListsFittingPostingsWhateverTheyPayAndClosesDeadOnes(t *testing.T) {
 	old := time.Now().Add(-48 * time.Hour)
 	store := &memListings{rows: []*domain.Listing{{ID: uuid.New(), Company: "Gone Co", Role: "SDE Intern", URL: "https://gone", Stage: domain.StageVerified, LastCheckedAt: &old}}}
 	unstop := `{"data":{"data":[
@@ -88,15 +39,21 @@ func TestTheSyncListsOnlyRealFittingPostingsAndClosesDeadOnes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Added != 1 || res.Closed != 1 || store.rows[0].Stage != domain.StageClosed {
-		t.Fatalf("only the paid software internship is added (not testing, not ₹5k), and the dead one closes: %+v", res)
+	if res.Added != 2 || res.Closed != 1 || store.rows[0].Stage != domain.StageClosed {
+		t.Fatalf("the software and backend internships are added whatever they pay (not testing), and the dead one closes: %+v", res)
 	}
 	added := store.rows[1]
 	if added.Company != "Coy" || added.Tier != "A" || added.Source != "unstop" || added.URL != "https://unstop.com/internships/coy-1" {
 		t.Fatalf("added: %+v", added)
 	}
+	if added.SourceKind != domain.SourceKindAggregator || added.Verification != domain.VerificationLead || added.EmployerURL != nil {
+		t.Fatalf("Unstop is an aggregator: its listings are leads with no employer link: %+v", added)
+	}
+	if cheap := store.rows[2]; cheap.Company != "Cheap Co" || cheap.Tier != "C" {
+		t.Fatalf("a ₹3-5k internship is kept and ranked C: %+v", cheap)
+	}
 	again, _ := sync.Run(context.Background(), uuid.New())
-	if again.Added != 0 || again.Seen != 1 {
+	if again.Added != 0 || again.Seen != 2 {
 		t.Fatalf("a second run adds nothing twice: %+v", again)
 	}
 	if !strings.Contains(res.Summary(), "Software Engineer Intern at Coy") || !strings.Contains(res.Summary(), "Internshala") {
