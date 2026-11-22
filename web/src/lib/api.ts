@@ -690,8 +690,9 @@ export const api = {
   wakeRunner: () => fetchWithAuth<{ message?: string; status?: string }>("/api/v1/runner/wake", { method: "POST" }),
 
   // Tasks
-  listTasks(params?: { status?: TaskStatus; limit?: number; parent_id?: string }, opts?: ReqOpts) {
+  listTasks(params?: { status?: TaskStatus; limit?: number; parent_id?: string; archived?: boolean }, opts?: ReqOpts) {
     const q = new URLSearchParams();
+    if (params?.archived) q.set("archived", "true");
     if (params?.status) q.set("status", params.status);
     if (params?.parent_id) q.set("parent_id", params.parent_id);
     if (params?.limit) q.set("limit", String(params.limit));
@@ -724,6 +725,11 @@ export const api = {
   resumeTask: (id: string) => fetchWithAuth<Task>(`/api/v1/tasks/${id}/resume`, { method: "POST" }),
   /** Permanently deletes a finished task and its subtasks (409 while anything in it is still active). */
   deleteTask: (id: string) => fetchWithAuth<unknown>(`/api/v1/tasks/${id}`, { method: "DELETE" }),
+  /** Hides a finished task, with its subtasks, from the normal list (409 while anything in it is still active). */
+  archiveTask: (id: string) => fetchWithAuth<unknown>(`/api/v1/tasks/${id}/archive`, { method: "POST" }),
+  unarchiveTask: (id: string) => fetchWithAuth<unknown>(`/api/v1/tasks/${id}/unarchive`, { method: "POST" }),
+  /** Permanently deletes every archived task. Returns how many were deleted. */
+  deleteArchivedTasks: () => fetchWithAuth<{ deleted: number }>("/api/v1/tasks/archived/delete", { method: "POST" }),
   getTaskEvents: (id: string, opts?: ReqOpts) => fetchList<TaskEvent>(`/api/v1/tasks/${id}/events`, opts),
   getTaskAttempts: (id: string, opts?: ReqOpts) => fetchList<TaskAttempt>(`/api/v1/tasks/${id}/attempts`, opts),
 

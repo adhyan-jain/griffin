@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -23,6 +24,14 @@ type HostHandler struct {
 	policy *service.PolicyService // optional
 	// trackers shows a task its tracker's shared list and files the list it hands back; optional.
 	trackers *service.TrackerLists
+	// archiver tidies the owner's old finished tasks while hosts poll for work; optional.
+	archiver *service.AutoArchiver
+}
+
+// WithAutoArchive makes a host's claim also archive the owner's old, finished, minor tasks (at most hourly).
+func (h *HostHandler) WithAutoArchive(a *service.AutoArchiver) *HostHandler {
+	h.archiver = a
+	return h
 }
 
 // WithTrackerLists makes tasks run on a device see and update the shared tracker lists, as in the cloud.
@@ -200,6 +209,20 @@ func (h *HostHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 
 var reapEvery = &service.Every{Interval: time.Minute}
 
+// autoArchive is best effort and bounded: it never delays or fails the claim it rides on.
+func (h *HostHandler) autoArchive(ctx context.Context, userID uuid.UUID) {
+	if h.archiver == nil {
+		return
+	}
+	actx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if n, err := h.archiver.Run(actx, userID); err != nil {
+		slog.Warn("auto-archive failed", "user_id", userID, "error", err)
+	} else if n > 0 {
+		slog.Info("auto-archived finished tasks", "user_id", userID, "tasks", n)
+	}
+}
+
 // Claim leases the next task this host can do (204 when there is none).
 func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	host := middleware.GetHost(r.Context())
@@ -208,6 +231,7 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	if reapEvery.Due() {
 		_, _ = h.engine.ReapExpiredLeases(r.Context())
 	}
+	h.autoArchive(r.Context(), host.UserID)
 	res, err := h.svc.Claim(r.Context(), host)
 	if err != nil {
 		httputil.ErrorJSON(w, err)

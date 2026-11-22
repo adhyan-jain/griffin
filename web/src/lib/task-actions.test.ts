@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "@/lib/api";
-import { canCancel, canDelete, canResume, findRecentResult, canRunAgain, inPeriod, isPlan, runBulk } from "@/lib/task-actions";
+import { canArchive, canCancel, canDelete, canResume, findRecentResult, canRunAgain, inPeriod, isPlan, runBulk } from "@/lib/task-actions";
 
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-11-06T12:00:00Z");
@@ -33,6 +33,12 @@ describe("task action eligibility", () => {
   it("deletes only finished tasks", () => {
     for (const s of ["COMPLETED", "FAILED", "CANCELLED"]) expect(canDelete(task({ status: s as Task["status"] }))).toBe(true);
     for (const s of ["RUNNING", "QUEUED", "RETRYING", "AWAITING_APPROVAL"]) expect(canDelete(task({ status: s as Task["status"] }))).toBe(false);
+  });
+
+  it("archives only finished top-level tasks", () => {
+    for (const s of ["COMPLETED", "FAILED", "CANCELLED"]) expect(canArchive(task({ status: s as Task["status"] }))).toBe(true);
+    for (const s of ["RUNNING", "QUEUED", "AWAITING_APPROVAL"]) expect(canArchive(task({ status: s as Task["status"] }))).toBe(false);
+    expect(canArchive(task({ status: "COMPLETED", parent_id: "p" }))).toBe(false);
   });
 
   it("cancels only unfinished top-level work", () => {

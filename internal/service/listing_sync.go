@@ -15,7 +15,7 @@ import (
 )
 
 // ListingsSyncTitle is the daily routine that refreshes the verified internship listings, in code.
-const ListingsSyncTitle = "LISTINGS SYNC"
+const ListingsSyncTitle = domain.ListingsSyncTitle
 
 // IsListingsSync reports whether a task is that routine.
 func IsListingsSync(title string) bool {

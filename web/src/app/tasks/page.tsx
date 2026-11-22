@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isFollowUp } from "@/lib/threads";
 import { usePolling } from "@/lib/use-polling";
 import { useRouter } from "next/navigation";
-import { ListChecks, Play, Plus, Search, Sparkles, Square, Trash2, X } from "lucide-react";
+import { Archive, ListChecks, Play, Plus, Search, Sparkles, Square, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Task } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ const FILTERS = [
   { value: "active", label: "Active" },
   { value: "approval", label: "Approval" },
   { value: "done", label: "Done" },
+  { value: "archived", label: "Archived" },
 ] as const;
 type Filter = (typeof FILTERS)[number]["value"];
 
@@ -32,6 +33,7 @@ type Filter = (typeof FILTERS)[number]["value"];
 
 const matches = (t: Task, f: Filter) =>
   f === "all" ||
+  f === "archived" ||
   (f === "active" && (ACTIVE_STATUSES.includes(t.status) || WAITING_STATUSES.includes(t.status))) ||
   (f === "approval" && t.status === "AWAITING_APPROVAL") ||
   (f === "done" && isDone(t.status));
@@ -39,6 +41,8 @@ const matches = (t: Task, f: Filter) =>
 export default function TasksPage() {
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [archivedTasks, setArchivedTasks] = useState<Task[] | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -53,6 +57,8 @@ export default function TasksPage() {
   const { refresh } = usePolling(
     async (signal) => {
       setTasks(await api.listTasks({ limit: 200 }, { signal }));
+      // The archive is only fetched while its tab is open.
+      if (filter === "archived") setArchivedTasks(await api.listTasks({ archived: true, limit: 200 }, { signal }));
       setError(null);
     },
     {
@@ -60,14 +66,20 @@ export default function TasksPage() {
       onError: (e) => {
         setError(e instanceof Error ? e.message : "Could not load tasks.");
         setTasks((prev) => prev ?? []);
+        setArchivedTasks((prev) => prev ?? []);
       },
     },
   );
+  useEffect(() => {
+    if (filter === "archived") refresh();
+  }, [filter, refresh]);
 
   useFxActivity(tasks ? tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).length : null);
 
+  const showingArchive = filter === "archived";
+  const loaded = showingArchive ? archivedTasks : tasks;
   const { rows, subtaskCount } = useMemo(() => {
-    const all = tasks ?? [];
+    const all = (showingArchive ? archivedTasks : tasks) ?? [];
     const counts = new Map<string, number>();
     all.forEach((t) => t.parent_id && counts.set(t.parent_id, (counts.get(t.parent_id) ?? 0) + 1));
     const q = query.trim().toLowerCase();
@@ -78,7 +90,7 @@ export default function TasksPage() {
       .filter((t) => filter !== "done" || inPeriod(t, period))
       .filter((t) => !q || `${t.title} ${t.goal} ${t.manager_domain} ${t.id}`.toLowerCase().includes(q));
     return { rows, subtaskCount: counts };
-  }, [tasks, filter, query, period]);
+  }, [tasks, archivedTasks, showingArchive, filter, query, period]);
 
   const chosen = rows.filter((t) => selected.has(t.id));
   const exitSelect = () => {
@@ -141,7 +153,43 @@ export default function TasksPage() {
     exitSelect();
     refresh();
   };
-  const rowActions = { onResume: (t: Task) => doResume([t]), onRunAgain: doRunAgain, onDelete: (t: Task) => setPendingDelete([t]) };
+  const doArchive = async (t: Task) => {
+    try {
+      await api.archiveTask(t.id);
+      toast.success("Archived");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not archive it.");
+    }
+    refresh();
+  };
+  const doUnarchive = async (t: Task) => {
+    try {
+      await api.unarchiveTask(t.id);
+      toast.success("Moved back to your tasks");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not restore it.");
+    }
+    refresh();
+  };
+  const doClearArchive = async () => {
+    setBusy(true);
+    try {
+      const { deleted } = await api.deleteArchivedTasks();
+      toast.success(`Deleted ${deleted} archived task${deleted === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete the archive.");
+    }
+    setBusy(false);
+    setConfirmClear(false);
+    refresh();
+  };
+  const rowActions = {
+    onResume: (t: Task) => doResume([t]),
+    onRunAgain: doRunAgain,
+    onDelete: (t: Task) => setPendingDelete([t]),
+    onArchive: doArchive,
+    onUnarchive: doUnarchive,
+  };
 
   return (
     <PageContainer className={selecting ? "pb-28" : undefined}>
@@ -201,6 +249,11 @@ export default function TasksPage() {
           ) : (
             <span className="text-xs text-muted-foreground tabular-nums">{rows.length} task{rows.length === 1 ? "" : "s"}</span>
           )}
+          {showingArchive && rows.length > 0 && !selecting && (
+            <Button variant="outline" className="h-11 text-destructive" disabled={busy} onClick={() => setConfirmClear(true)}>
+              <Trash2 /> Delete all archived
+            </Button>
+          )}
           {rows.length > 0 &&
             (selecting ? (
               <div className="flex items-center gap-1">
@@ -220,7 +273,7 @@ export default function TasksPage() {
 
         {error && <ErrorNote message={error} />}
 
-        {tasks === null ? (
+        {loaded === null ? (
           <div className="space-y-2">
             {[0, 1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-16 w-full rounded-xl" />
@@ -228,17 +281,19 @@ export default function TasksPage() {
           </div>
         ) : rows.length === 0 ? (
           <EmptyState
-            icon={<ListChecks />}
-            title={tasks.length ? "Nothing matches" : "No tasks yet"}
+            icon={showingArchive ? <Archive /> : <ListChecks />}
+            title={showingArchive && !loaded.length ? "Nothing archived" : loaded.length ? "Nothing matches" : "No tasks yet"}
             description={
-              tasks.length
+              showingArchive && !loaded.length
+                ? "Finished tasks you archive, and old minor ones, are kept here until you delete them."
+                : loaded.length
                 ? filter === "done" && period !== "all"
                   ? "Nothing finished in that window. Try a longer one."
                   : "Try another filter or search."
                 : "Create a task and it will show up here."
             }
             action={
-              !tasks.length && (
+              !showingArchive && !loaded.length && (
                 <Button onClick={() => setNewOpen(true)}>
                   <Plus /> New task
                 </Button>
@@ -253,6 +308,7 @@ export default function TasksPage() {
                 task={t}
                 subtasks={subtaskCount.get(t.id) ?? 0}
                 actions={rowActions}
+                archived={showingArchive}
                 selecting={selecting}
                 selected={selected.has(t.id)}
                 onToggle={toggle}
@@ -298,6 +354,22 @@ export default function TasksPage() {
           </Button>
           <Button variant="destructive" className="h-11" disabled={busy} onClick={doDelete}>
             {busy ? "Deleting..." : "Delete"}
+          </Button>
+        </div>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        open={confirmClear}
+        onOpenChange={(o) => !o && !busy && setConfirmClear(false)}
+        title="Delete all archived tasks?"
+        description="This permanently removes every archived task with its subtasks, activity and attempts. Files already saved stay in storage. It cannot be undone."
+      >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" className="h-11" disabled={busy} onClick={() => setConfirmClear(false)}>
+            Keep them
+          </Button>
+          <Button variant="destructive" className="h-11" disabled={busy} onClick={doClearArchive}>
+            {busy ? "Deleting..." : "Delete all"}
           </Button>
         </div>
       </ResponsiveDialog>

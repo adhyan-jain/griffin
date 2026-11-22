@@ -117,6 +117,23 @@ describe("list endpoints", () => {
     expect(u.searchParams.get("limit")).toBe("5");
     expect(u.searchParams.get("parent_id")).toBe("p1");
   });
+  it("asks for archived tasks only when told to", async () => {
+    fetchMock.mockImplementation(async () => json(envelope([fixtures.task])));
+    await mod.api.listTasks({ limit: 5 });
+    expect(new URL(lastCall().url).searchParams.has("archived")).toBe(false);
+    await mod.api.listTasks({ archived: true });
+    expect(new URL(lastCall().url).searchParams.get("archived")).toBe("true");
+  });
+  it("archives, restores and bulk-deletes through the task routes", async () => {
+    fetchMock.mockImplementation(async () => json(envelope({ deleted: 3 })));
+    await mod.api.archiveTask("t1");
+    expect(lastCall().url).toContain("/api/v1/tasks/t1/archive");
+    expect(lastCall().init.method).toBe("POST");
+    await mod.api.unarchiveTask("t1");
+    expect(lastCall().url).toContain("/api/v1/tasks/t1/unarchive");
+    expect(await mod.api.deleteArchivedTasks()).toEqual({ deleted: 3 });
+    expect(lastCall().url).toContain("/api/v1/tasks/archived/delete");
+  });
   it("filters approvals by status", async () => {
     fetchMock.mockResolvedValue(json(envelope([fixtures.approval])));
     const r = await mod.api.listApprovals("PENDING");

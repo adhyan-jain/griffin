@@ -21,8 +21,11 @@ type TaskFilter struct {
 	Status        *domain.TaskStatus
 	ManagerDomain *string
 	ParentID      *uuid.UUID
-	Limit         int
-	Offset        int
+	// Archived lists only archived tasks; the default lists only tasks that are not archived. A list of one
+	// task's subtasks (ParentID) is not filtered, so an archived task still shows its subtasks.
+	Archived bool
+	Limit    int
+	Offset   int
 }
 
 // DependencyOutput is the result of a completed prerequisite task.
@@ -212,6 +215,7 @@ func (r *PostgresTaskRepository) ListTasks(ctx context.Context, filter TaskFilte
 		  AND ($2::task_status IS NULL OR status = $2)
 		  AND ($3::varchar IS NULL OR manager_domain = $3)
 		  AND ($4::uuid IS NULL OR parent_id = $4)
+		  AND ($4::uuid IS NOT NULL OR (archived_at IS NOT NULL) = $7::boolean)
 		ORDER BY created_at DESC
 		LIMIT $5 OFFSET $6
 	`
@@ -220,7 +224,7 @@ func (r *PostgresTaskRepository) ListTasks(ctx context.Context, filter TaskFilte
 		limit = 50
 	}
 
-	rows, err := r.pool.Query(ctx, query, filter.UserID, filter.Status, filter.ManagerDomain, filter.ParentID, limit, filter.Offset)
+	rows, err := r.pool.Query(ctx, query, filter.UserID, filter.Status, filter.ManagerDomain, filter.ParentID, limit, filter.Offset, filter.Archived)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks query: %w", err)
 	}
@@ -475,6 +479,7 @@ func (r *PostgresTaskRepository) ResumeTask(ctx context.Context, taskID uuid.UUI
 			completed_at = NULL,
 			leased_by = NULL,
 			lease_expires_at = NULL,
+			archived_at = NULL,
 			updated_at = $2::timestamptz
 		WHERE id = $1
 		  AND status IN ('FAILED', 'CANCELLED')

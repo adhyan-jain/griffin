@@ -187,6 +187,9 @@ func NewServer(deps ServerDependencies) *Server {
 	mux.Handle("POST /api/v1/tasks/{id}/cancel", userAuth(http.HandlerFunc(taskHandler.CancelTask)))
 	mux.Handle("POST /api/v1/tasks/{id}/resume", userAuth(http.HandlerFunc(taskHandler.ResumeTask)))
 	mux.Handle("DELETE /api/v1/tasks/{id}", userAuth(http.HandlerFunc(taskHandler.DeleteTask)))
+	mux.Handle("POST /api/v1/tasks/{id}/archive", userAuth(http.HandlerFunc(taskHandler.ArchiveTask)))
+	mux.Handle("POST /api/v1/tasks/{id}/unarchive", userAuth(http.HandlerFunc(taskHandler.UnarchiveTask)))
+	mux.Handle("POST /api/v1/tasks/archived/delete", userAuth(http.HandlerFunc(taskHandler.DeleteArchivedTasks)))
 	mux.Handle("GET /api/v1/tasks/{id}/events", userAuth(http.HandlerFunc(taskHandler.GetTaskEvents)))
 	mux.Handle("GET /api/v1/tasks/{id}/attempts", userAuth(http.HandlerFunc(taskHandler.GetTaskAttempts)))
 
@@ -389,6 +392,9 @@ func NewServer(deps ServerDependencies) *Server {
 			policySvc = service.NewPolicyService(deps.PolicyRepo)
 		}
 		hostHandler := handlers.NewHostHandler(hostSvc, deps.Engine, policySvc)
+		if archiver, ok := deps.TaskRepo.(repository.TaskArchiver); ok {
+			hostHandler.WithAutoArchive(&service.AutoArchiver{Store: archiver})
+		}
 		if deps.StorageService != nil {
 			lists := &service.TrackerLists{Store: deps.StorageService, Tasks: deps.TaskRepo, Logger: deps.Logger, ApprovedDrafts: deps.Engine.ApprovedDraftTasks,
 				CheckPosting: func(ctx context.Context, link string) service.PostingState {

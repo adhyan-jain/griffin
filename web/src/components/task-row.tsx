@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { MoreVertical, Play, RotateCw, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, MoreVertical, Play, RotateCw, Trash2 } from "lucide-react";
 import type { Task } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/StatusBadge";
 import { timeAgo } from "@/components/page";
-import { canDelete, canResume, canRunAgain } from "@/lib/task-actions";
+import { canArchive, canDelete, canResume, canRunAgain } from "@/lib/task-actions";
 
 const PRIORITY_NOTE: Record<string, string> = { CRITICAL_P0: "Critical", HIGH_P1: "High priority" };
 
@@ -14,11 +14,14 @@ export type RowActions = {
   onResume: (t: Task) => void;
   onRunAgain: (t: Task) => void;
   onDelete: (t: Task) => void;
+  onArchive: (t: Task) => void;
+  onUnarchive: (t: Task) => void;
 };
 
 /**
  * One task as a single tappable row: title first, one quiet meta line, status on the right.
- * Finished work gets a quiet overflow menu (resume / run again / delete). In selection mode the
+ * Finished work gets a quiet overflow menu (resume / run again / archive / delete); an archived task's menu
+ * restores or deletes it. In selection mode the
  * whole row toggles a checkbox instead of navigating.
  */
 export function TaskRow({
@@ -27,6 +30,7 @@ export function TaskRow({
   actions,
   selecting = false,
   selected = false,
+  archived = false,
   onToggle,
 }: {
   task: Task;
@@ -34,6 +38,8 @@ export function TaskRow({
   actions?: RowActions;
   selecting?: boolean;
   selected?: boolean;
+  /** The task is in the archive, so its menu offers Unarchive instead of Archive. */
+  archived?: boolean;
   onToggle?: (t: Task) => void;
 }) {
   const meta = [
@@ -52,7 +58,7 @@ export function TaskRow({
     </>
   );
   const rowCls = "flex min-h-16 min-w-0 flex-1 items-start gap-3 py-3.5 transition-colors";
-  const hasMenu = actions && (canResume(task) || canRunAgain(task) || canDelete(task));
+  const hasMenu = actions && (archived || canResume(task) || canRunAgain(task) || canArchive(task) || canDelete(task));
 
   if (selecting) {
     return (
@@ -75,14 +81,24 @@ export function TaskRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
-            {canResume(task) && (
+            {archived && (
+              <DropdownMenuItem className="min-h-11" onSelect={() => actions.onUnarchive(task)}>
+                <ArchiveRestore /> Unarchive
+              </DropdownMenuItem>
+            )}
+            {!archived && canResume(task) && (
               <DropdownMenuItem className="min-h-11" onSelect={() => actions.onResume(task)}>
                 <Play /> Resume
               </DropdownMenuItem>
             )}
-            {canRunAgain(task) && (
+            {!archived && canRunAgain(task) && (
               <DropdownMenuItem className="min-h-11" onSelect={() => actions.onRunAgain(task)}>
                 <RotateCw /> Run again
+              </DropdownMenuItem>
+            )}
+            {!archived && canArchive(task) && (
+              <DropdownMenuItem className="min-h-11" onSelect={() => actions.onArchive(task)}>
+                <Archive /> Archive
               </DropdownMenuItem>
             )}
             {canDelete(task) && (

@@ -59,6 +59,9 @@ type TaskHandler struct {
 	lastReconcile map[uuid.UUID]time.Time
 
 	objectives ObjectiveSubmitter
+
+	// archiver is the task store's archive side; nil when the store has none.
+	archiver repository.TaskArchiver
 }
 
 // WithObjectives lets the handler route top-level objective requests through the orchestrator.
@@ -97,11 +100,13 @@ func (h *TaskHandler) reconcilePlans(ctx context.Context, userID uuid.UUID) {
 }
 
 func NewTaskHandler(engine *service.TaskEngine, taskRepo repository.TaskRepository, wakeup RunnerWakeup, scaleToZeroEnabled bool) *TaskHandler {
+	archiver, _ := taskRepo.(repository.TaskArchiver)
 	return &TaskHandler{
 		engine:             engine,
 		taskRepo:           taskRepo,
 		wakeup:             wakeup,
 		scaleToZeroEnabled: scaleToZeroEnabled,
+		archiver:           archiver,
 	}
 }
 
@@ -277,6 +282,8 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	filter.Archived = query.Get("archived") == "true"
+
 	if limitStr := query.Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
 			filter.Limit = l
@@ -397,6 +404,73 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ArchiveTask hides a finished top-level task, its subtasks and its follow-ups from the normal list.
+func (h *TaskHandler) ArchiveTask(w http.ResponseWriter, r *http.Request) {
+	taskID, task, ok := h.ownedTaskID(w, r)
+	if !ok {
+		return
+	}
+	if h.archiver == nil {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: archiving is not available", domain.ErrConflict))
+		return
+	}
+	if task.ParentID != nil {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: a subtask is archived with its parent task", domain.ErrConflict))
+		return
+	}
+	n, err := h.archiver.ArchiveTasks(r.Context(), task.UserID, []uuid.UUID{taskID}, time.Now())
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if n == 0 {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: only a finished task that is not archived already can be archived", domain.ErrConflict))
+		return
+	}
+	httputil.JSON(w, http.StatusOK, map[string]any{"archived": n})
+}
+
+// UnarchiveTask brings an archived task, with its subtasks and follow-ups, back to the normal list.
+func (h *TaskHandler) UnarchiveTask(w http.ResponseWriter, r *http.Request) {
+	taskID, task, ok := h.ownedTaskID(w, r)
+	if !ok {
+		return
+	}
+	if h.archiver == nil {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: archiving is not available", domain.ErrConflict))
+		return
+	}
+	n, err := h.archiver.UnarchiveTask(r.Context(), task.UserID, taskID)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	if n == 0 {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: the task is not archived", domain.ErrConflict))
+		return
+	}
+	httputil.JSON(w, http.StatusOK, map[string]any{"unarchived": n})
+}
+
+// DeleteArchivedTasks permanently deletes every archived task of the caller.
+func (h *TaskHandler) DeleteArchivedTasks(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r.Context())
+	if err != nil {
+		httputil.ErrorJSON(w, domain.ErrUnauthorized)
+		return
+	}
+	if h.archiver == nil {
+		httputil.ErrorJSON(w, fmt.Errorf("%w: archiving is not available", domain.ErrConflict))
+		return
+	}
+	n, err := h.archiver.DeleteArchived(r.Context(), userID)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, map[string]any{"deleted": n})
 }
 
 func (h *TaskHandler) GetTaskEvents(w http.ResponseWriter, r *http.Request) {
