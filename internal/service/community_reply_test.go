@@ -131,7 +131,7 @@ func TestEachNewThreadGetsACheckedReplyBeforeItsLink(t *testing.T) {
 func TestADraftThatFailsTheFactCheckLeavesTheCellEmpty(t *testing.T) {
 	bad := map[string]string{ // what the model says, raw
 		"an invented number":  jsonReply(strings.Replace(redditReply, "a Redis list", "a Redis list with 40 percent fewer lost jobs", 1)),
-		"an invented product": jsonReply(strings.Replace(redditReply, "a Redis list", "a Kafka topic", 1)),
+		"an invented product": jsonReply(strings.Replace(redditReply, "a Redis list", "a Pulsarix stream", 1)),
 		"not json":            "Sure! Here is a reply.",
 		"an empty reply":      `{"reply": ""}`,
 		"a link":              jsonReply(redditReply + " See https://example.com"),
