@@ -7,7 +7,7 @@ set -e
 echo "==> [pre-commit] Running Griffin pre-commit checks..."
 
 # 1. Format check
-UNFORMATTED=$(gofmt -l .)
+UNFORMATTED=$(git ls-files -z -- "*.go" | xargs -0 gofmt -l)
 if [ -n "$UNFORMATTED" ]; then
     echo "ERROR: [pre-commit] Unformatted Go files detected:"
     echo "$UNFORMATTED"

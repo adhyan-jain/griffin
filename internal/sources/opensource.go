@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ var OpenSourceRepos = []string{
 const (
 	githubSearch = "https://api.github.com/search/issues?"
 	// IssueMaxAge is how old an open issue may be and still be listed.
-	IssueMaxAge = 120 * 24 * time.Hour
+	IssueMaxAge = 365 * 24 * time.Hour
 	// IssueRows is how many issues the tracker lists.
 	IssueRows = 25
 	// reposPerQuery keeps a search query under GitHub's 256-character limit.
@@ -62,6 +63,9 @@ func IssueQueries(repos []string, now time.Time) []string {
 	return out
 }
 
+// metaIssue is a planning thread (an RFC, roadmap or tracking issue), not a piece of work a newcomer can pick up.
+var metaIssue = regexp.MustCompile(`(?i)^\s*\[(rfc|roadmap|tracker|tracking|meta|discussion)\]|\b(roadmap|tracking issue|tracking .* (feature )?requests)\b|\(tracker\)`)
+
 // ParseIssueSearch reads a GitHub issue search result. Pull requests, assigned issues and ones past the age
 // limit are skipped.
 func ParseIssueSearch(body []byte, now time.Time) ([]Issue, error) {
@@ -92,7 +96,7 @@ func ParseIssueSearch(body []byte, now time.Time) ([]Issue, error) {
 		hasAssignee := len(it.Assignee) > 0 && string(it.Assignee) != "null"
 		isPR := len(it.PR) > 0 && string(it.PR) != "null"
 		i := strings.Index(it.RepoURL, "/repos/")
-		if err != nil || i < 0 || it.HTMLURL == "" || it.State != "open" || hasAssignee || len(it.Assigns) > 0 || isPR || now.Sub(opened) > IssueMaxAge {
+		if err != nil || i < 0 || it.HTMLURL == "" || it.State != "open" || hasAssignee || len(it.Assigns) > 0 || isPR || now.Sub(opened) > IssueMaxAge || metaIssue.MatchString(it.Title) {
 			continue
 		}
 		is := Issue{Repo: it.RepoURL[i+len("/repos/"):], Title: clean(it.Title), Link: it.HTMLURL, Number: it.Number, Comments: it.Comments, Opened: opened.UTC()}

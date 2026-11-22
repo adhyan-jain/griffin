@@ -23,7 +23,7 @@ func TestIssueQueriesStayShortAndAskForUnassignedUnlinkedLabelledIssues(t *testi
 		if len(q) > 256 {
 			t.Errorf("GitHub refuses queries over 256 characters: %d %s", len(q), q)
 		}
-		for _, want := range []string{"is:issue", "is:open", "no:assignee", "-linked:pr", `label:"good first issue","help wanted"`, "created:>=2025-12-11"} {
+		for _, want := range []string{"is:issue", "is:open", "no:assignee", "-linked:pr", `label:"good first issue","help wanted"`, "created:>=2025-04-10"} {
 			if !strings.Contains(q, want) {
 				t.Errorf("query lacks %s: %s", want, q)
 			}
@@ -33,12 +33,14 @@ func TestIssueQueriesStayShortAndAskForUnassignedUnlinkedLabelledIssues(t *testi
 
 func TestOpenIssuesAreReadFromTheRealSearchAnswer(t *testing.T) {
 	is, err := ParseIssueSearch(fixture(t, "github_issues.json"), issueNow)
-	if err != nil || len(is) != 2 {
-		t.Fatalf("only the two issues under 120 days old: %d %v", len(is), err)
+	// #39001 is hand-built (the captured answer had no ordinary issue under a year old); RFC, roadmap and tracking
+	// threads are planning, not work a newcomer can pick up, so they are skipped.
+	if err != nil || len(is) != 1 {
+		t.Fatalf("only the one ordinary issue under a year old: %d %v", len(is), err)
 	}
 	v := is[0]
-	if v.Repo != "vllm-project/vllm" || v.Number != 38175 || v.Comments != 51 || v.Opened.Format("2006-01-02") != "2026-03-26" ||
-		v.Link != "https://github.com/vllm-project/vllm/issues/38175" || !strings.Contains(strings.Join(v.Labels, ","), "help wanted") {
+	if v.Repo != "vllm-project/vllm" || v.Number != 39001 || v.Comments != 2 || v.Opened.Format("2006-01-02") != "2026-03-20" ||
+		v.Link != "https://github.com/vllm-project/vllm/issues/39001" || !strings.Contains(strings.Join(v.Labels, ","), "good first issue") {
 		t.Fatalf("%+v", v)
 	}
 }
@@ -91,7 +93,7 @@ func TestIssuesListIsATable(t *testing.T) {
 	is, _ := ParseIssueSearch(fixture(t, "github_issues.json"), issueNow)
 	text := IssuesListText(is)
 	if !strings.Contains(text, "| Repo | Issue | Labels | Comments | Opened | Link | Status |") ||
-		!strings.Contains(text, "| vllm-project/vllm | #38175 [RFC]: Support ViT Full CUDA Graph (Tracker) | help wanted, RFC, multi-modality, kimi | 51 | 2026-03-26 | https://github.com/vllm-project/vllm/issues/38175 | open, unassigned |") {
+		!strings.Contains(text, "| vllm-project/vllm | #39001 [Bug]: Streaming usage stats report the wrong completion token count | bug, good first issue | 2 | 2026-03-20 | https://github.com/vllm-project/vllm/issues/39001 | open, unassigned |") {
 		t.Fatalf("\n%s", text)
 	}
 }

@@ -140,10 +140,10 @@ func TestTheOpenSourceRoutineWritesTheOpenIssues(t *testing.T) {
 	}}
 	answer, how := w.RunInCode(context.Background(), routineTask("OPEN-SOURCE WATCH (Monday 09:00)"), nil, nil)
 	list := store.text["opensource"]
-	if how != Answered || strings.Contains(list, "prose") || !strings.Contains(list, "| vllm-project/vllm | #38175 [RFC]: Support ViT Full CUDA Graph (Tracker) |") {
+	if how != Answered || strings.Contains(list, "prose") || !strings.Contains(list, "| vllm-project/vllm | #39001 [Bug]: Streaming usage stats report the wrong completion token count |") || strings.Contains(list, "[RFC]") {
 		t.Fatalf("%v\n%s", how, list)
 	}
-	if !strings.HasPrefix(answer, "2 open unassigned issues across 1 projects. Newest: vllm-project/vllm #38175") {
+	if !strings.HasPrefix(answer, "1 open unassigned issue across 1 project. Newest: vllm-project/vllm #39001") {
 		t.Fatalf("summary: %s", answer)
 	}
 }

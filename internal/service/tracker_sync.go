@@ -156,7 +156,7 @@ func (s *OpenSourceSync) Run(ctx context.Context) OpenSourceSyncResult {
 // Summary is the owner-facing line for a sync.
 func (r OpenSourceSyncResult) Summary() string {
 	if len(r.Issues) == 0 {
-		return "No open unassigned good-first-issue or help-wanted issue under 120 days old in the watched projects right now." + problemsLine(r.Problems)
+		return "No open unassigned good-first-issue or help-wanted issue opened in the last year in the watched projects right now." + problemsLine(r.Problems)
 	}
 	repos := map[string]bool{}
 	for _, is := range r.Issues {
@@ -166,7 +166,15 @@ func (r OpenSourceSyncResult) Summary() string {
 	for _, is := range r.Issues[:min(3, len(r.Issues))] {
 		top = append(top, fmt.Sprintf("%s #%d %s", is.Repo, is.Number, is.Title))
 	}
-	return fmt.Sprintf("%d open unassigned issues across %d projects. Newest: %s.", len(r.Issues), len(repos), strings.Join(top, "; ")) + problemsLine(r.Problems)
+	return fmt.Sprintf("%s across %s. Newest: %s.", countOf(len(r.Issues), "open unassigned issue"), countOf(len(repos), "project"), strings.Join(top, "; ")) + problemsLine(r.Problems)
+}
+
+// countOf writes "1 project" or "3 projects".
+func countOf(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // SyncOpenSource runs the open-source routine in code. handled is false for any other task.
