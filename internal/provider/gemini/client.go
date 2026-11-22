@@ -51,6 +51,10 @@ type Client struct {
 	HTTP    *http.Client
 	// MaxOutputTokens bounds one reply. Voice answers are short.
 	MaxOutputTokens int
+	// Temperature, when set, replaces the conversational default (0.7); a classifier sets 0.
+	Temperature *float64
+	// JSONOutput asks for a JSON reply (responseMimeType application/json). The caller still validates it.
+	JSONOutput bool
 }
 
 // Enabled reports whether the client can be used.
@@ -80,8 +84,9 @@ func (c *Client) Chat(ctx context.Context, system string, turns []Turn) (string,
 		SystemInstruction content   `json:"systemInstruction"`
 		Contents          []content `json:"contents"`
 		GenerationConfig  struct {
-			MaxOutputTokens int     `json:"maxOutputTokens"`
-			Temperature     float64 `json:"temperature"`
+			MaxOutputTokens  int     `json:"maxOutputTokens"`
+			Temperature      float64 `json:"temperature"`
+			ResponseMIMEType string  `json:"responseMimeType,omitempty"`
 		} `json:"generationConfig"`
 	}{SystemInstruction: content{Parts: []part{{Text: system}}}}
 	body.GenerationConfig.MaxOutputTokens = c.MaxOutputTokens
@@ -89,6 +94,12 @@ func (c *Client) Chat(ctx context.Context, system string, turns []Turn) (string,
 		body.GenerationConfig.MaxOutputTokens = 300
 	}
 	body.GenerationConfig.Temperature = 0.7
+	if c.Temperature != nil {
+		body.GenerationConfig.Temperature = *c.Temperature
+	}
+	if c.JSONOutput {
+		body.GenerationConfig.ResponseMIMEType = "application/json"
+	}
 	for _, t := range turns {
 		role := "user"
 		if t.Role == "assistant" {

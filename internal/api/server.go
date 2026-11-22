@@ -54,6 +54,8 @@ type ServerDependencies struct {
 	AliasRepo repository.AliasRepository
 	// ListingRepo stores internship listings, companies, boards and scan history; nil leaves the listings routes and sync off.
 	ListingRepo *repository.OpportunityRepository
+	// Assess runs the opportunity assessment routine on a host claim; nil leaves it to the model path.
+	Assess *service.OpportunityAssess
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine on a host claim.
 	GitHubLogin string
 	// CommunityReplies writes the reply for each new thread of the daily community scan on a host claim; nil leaves those cells empty.
@@ -411,6 +413,7 @@ func NewServer(deps ServerDependencies) *Server {
 			if deps.ListingRepo != nil {
 				lists.Sync = &service.ListingSync{Listings: deps.ListingRepo}
 			}
+			lists.Assess = deps.Assess
 			hostHandler.WithTrackerLists(lists)
 		}
 		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))

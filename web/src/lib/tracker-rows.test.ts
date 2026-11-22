@@ -64,11 +64,27 @@ describe("listingsTable", () => {
     { ...base, id: "3", company: "Gone", role: "ML Intern", tier: "A", stage: "closed" },
   ] as unknown as Listing[];
 
-  it("lists only open verified listings, best tier first", () => {
+  it("lists only open verified listings, best tier first when none is assessed", () => {
     const md = listingsTable(ls);
-    expect(md).toContain("| Tier A | Coy | AI Intern |");
+    expect(md).toContain("| Tier A | not assessed | Coy | AI Intern |");
     expect(md.indexOf("Coy")).toBeLessThan(md.indexOf("Acme"));
     expect(md).not.toContain("Gone");
+  });
+
+  it("sorts by career value and shows it in a Value column", () => {
+    const assessed = (score: number, cls: string) => ({ value_score: score, value_class: cls });
+    const rated = [
+      { ...ls[0], assessment: assessed(41, "exploratory") }, // Acme, tier B
+      { ...ls[1], assessment: assessed(23, "low") }, // Coy, tier A pays more but is worth less
+      { ...base, id: "4", company: "Deep", role: "Backend Intern", tier: "C", assessment: assessed(88, "exceptional") },
+      { ...base, id: "5", company: "Fresh", role: "Unassessed Intern", tier: "A" },
+    ] as unknown as Listing[];
+    const md = listingsTable(rated);
+    expect(md.split("\n")[0]).toBe("| Tier | Value | Company | Role | Mode & Location | Stipend | Source | Link |");
+    expect(md).toContain("| Tier C | 88 exceptional | Deep | Backend Intern |");
+    const order = ["Deep", "Acme", "Coy", "Fresh"].map((n) => md.indexOf(`| ${n} |`));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(order.every((i) => i > 0)).toBe(true);
   });
 
   it("finds the listing behind a row so removing it closes the listing", () => {

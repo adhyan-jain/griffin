@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -25,7 +26,38 @@ type ListingsHandler struct{ repo ListingStore }
 // NewListingsHandler builds a ListingsHandler.
 func NewListingsHandler(repo ListingStore) *ListingsHandler { return &ListingsHandler{repo: repo} }
 
-// List returns the owner's listings, newest first. ?stage=verified,drafted filters.
+// AssessedLister is the store read that adds each listing's assessment and filters by it. The real repository
+// implements it; a store that does not still serves the plain list.
+type AssessedLister interface {
+	ListAssessed(ctx context.Context, userID uuid.UUID, f domain.AssessedFilter) ([]*domain.Listing, error)
+}
+
+var (
+	valueClasses  = map[string]bool{domain.ValueExceptional: true, domain.ValueStrong: true, domain.ValueGood: true, domain.ValueExploratory: true, domain.ValueLow: true}
+	eligibilities = map[string]bool{domain.EligibilityConfirmed: true, domain.EligibilityLikely: true, domain.EligibilityUnknown: true, domain.EligibilityIneligible: true}
+)
+
+// listParam reads a comma-separated query value, keeping only the allowed words. A word that is not allowed is a
+// validation error, so a typo never silently widens the list.
+func listParam(r *http.Request, name string, allowed map[string]bool) ([]string, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return nil, nil
+	}
+	var out []string
+	for _, v := range strings.Split(raw, ",") {
+		v = strings.TrimSpace(v)
+		if !allowed[v] {
+			return nil, fmt.Errorf("%w: %s has no value %q", domain.ErrValidation, name, v)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// List returns the owner's listings with their assessments, best value first (listings not yet assessed last).
+// ?stage=verified,drafted filters by stage, ?class=exceptional,strong by value class and ?eligibility=unknown by
+// eligibility (unknown also matches a listing not assessed yet: it is waiting for review).
 func (h *ListingsHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r.Context())
 	if err != nil {
@@ -36,7 +68,22 @@ func (h *ListingsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if s := strings.TrimSpace(r.URL.Query().Get("stage")); s != "" {
 		stages = strings.Split(s, ",")
 	}
-	rows, err := h.repo.List(r.Context(), userID, stages, 500)
+	classes, err := listParam(r, "class", valueClasses)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	elig, err := listParam(r, "eligibility", eligibilities)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
+	var rows []*domain.Listing
+	if lister, ok := h.repo.(AssessedLister); ok {
+		rows, err = lister.ListAssessed(r.Context(), userID, domain.AssessedFilter{Stages: stages, Classes: classes, Eligibility: elig, Limit: 500})
+	} else {
+		rows, err = h.repo.List(r.Context(), userID, stages, 500)
+	}
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return

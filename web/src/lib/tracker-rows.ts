@@ -97,16 +97,18 @@ export const LISTINGS_LIST_ID = "listings";
 const OPEN_STAGES = new Set(["verified", "drafted", "approved", "submitting", "needs_you"]);
 
 /**
- * The Internships card's table, built from the verified listings (read from the internship sites by code),
- * best tier first. Closed and confirmed listings are left out.
+ * The Internships card's table, built from the verified listings (read from the internship sites by code), best
+ * value first: the career-value score, then tier for listings not assessed yet. Closed and confirmed listings are
+ * left out.
  */
 export function listingsTable(listings: Listing[]): string {
   const cell = (s: string) => (s || "").replace(/\|/g, "/").replace(/\s+/g, " ").trim();
+  const value = (l: Listing) => (l.assessment ? `${l.assessment.value_score} ${l.assessment.value_class}` : "not assessed");
   const rows = listings
     .filter((l) => OPEN_STAGES.has(l.stage))
-    .sort((a, b) => (a.tier || "Z").localeCompare(b.tier || "Z"))
-    .map((l) => `| Tier ${cell(l.tier)} | ${cell(l.company)} | ${cell(l.role)} | ${cell(l.location)} | ${cell(l.pay)} | ${cell(l.source)} | ${cell(l.url)} |`);
-  return ["| Tier | Company | Role | Mode & Location | Stipend | Source | Link |", "| --- | --- | --- | --- | --- | --- | --- |", ...rows].join("\n");
+    .sort((a, b) => (b.assessment?.value_score ?? -1) - (a.assessment?.value_score ?? -1) || (a.tier || "Z").localeCompare(b.tier || "Z"))
+    .map((l) => `| Tier ${cell(l.tier)} | ${cell(value(l))} | ${cell(l.company)} | ${cell(l.role)} | ${cell(l.location)} | ${cell(l.pay)} | ${cell(l.source)} | ${cell(l.url)} |`);
+  return ["| Tier | Value | Company | Role | Mode & Location | Stipend | Source | Link |", "| --- | --- | --- | --- | --- | --- | --- | --- |", ...rows].join("\n");
 }
 
 /** The open listing with this company and role, if any. */

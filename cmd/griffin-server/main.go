@@ -134,6 +134,7 @@ func main() {
 	aliasRepo := repository.NewPostgresAliasRepository(repoDB)
 	notificationRepo := repository.NewPostgresNotificationRepository(repoDB)
 	listingRepo := repository.NewOpportunityRepository(repoDB)
+	assessRoutine := opportunityAssess(cfg, listingRepo)
 	outreachRepo := repository.NewOutreachRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
@@ -348,6 +349,7 @@ func main() {
 				Artifacts:         storageService,
 				Playbooks:         storageService,
 				Listings:          listingRepo,
+				Assess:            assessRoutine,
 				GitHubLogin:       cfg.GitHubLogin,
 				CommunityReplies:  communityReplier(cfg),
 				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
@@ -506,6 +508,7 @@ func main() {
 			AliasRepo:        aliasRepo,
 			NotificationRepo: notificationRepo,
 			ListingRepo:      listingRepo,
+			Assess:           assessRoutine,
 			GitHubLogin:      cfg.GitHubLogin,
 			CommunityReplies: communityReplier(cfg),
 			OutreachRepo:     outreachRepo,
@@ -626,6 +629,23 @@ func summaryBrainFor(cfg *config.Config) service.PlanBrain {
 		return b
 	}
 	return nil
+}
+
+// opportunityAssess builds the routine that assesses open listings. With a Gemini key it may ask Gemini Flash, at most
+// service.DefaultMaxModelCalls times a run and once per listing and description; without one it assesses by code alone.
+func opportunityAssess(cfg *config.Config, store service.AssessStore) *service.OpportunityAssess {
+	o := &service.OpportunityAssess{Store: store}
+	if cfg.GeminiAPIKey == "" {
+		return o
+	}
+	zero := 0.0
+	c := &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 2500, Temperature: &zero, JSONOutput: true,
+		HTTP: &http.Client{Timeout: 60 * time.Second}}
+	o.ModelName = c.Model
+	o.Model = func(ctx context.Context, system, user string) (string, error) {
+		return c.Chat(ctx, system, []gemini.Turn{{Role: "user", Text: user}})
+	}
+	return o
 }
 
 // outreachDrafter writes first drafts with the same Gemini key as the voice route; nil when there is none.

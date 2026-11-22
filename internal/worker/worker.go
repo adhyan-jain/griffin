@@ -63,6 +63,7 @@ type Worker struct {
 	artifacts         ArtifactSaver
 	playbooks         PlaybookStore
 	listings          service.ListingStore
+	assess            *service.OpportunityAssess
 	githubLogin       string
 	communityReplies  service.OutreachChatter
 
@@ -94,6 +95,8 @@ type Config struct {
 	Playbooks PlaybookStore
 	// Listings, if set, lets the daily listings sync run here in code.
 	Listings service.ListingStore
+	// Assess, if set, lets the opportunity assessment routine run here in code.
+	Assess *service.OpportunityAssess
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine.
 	GitHubLogin string
 	// CommunityReplies, if set, writes the reply for each new thread of the daily community scan (one call per thread).
@@ -135,6 +138,7 @@ func NewWorker(cfg Config) *Worker {
 		artifacts:         cfg.Artifacts,
 		playbooks:         cfg.Playbooks,
 		listings:          cfg.Listings,
+		assess:            cfg.Assess,
 		githubLogin:       cfg.GitHubLogin,
 		communityReplies:  cfg.CommunityReplies,
 	}

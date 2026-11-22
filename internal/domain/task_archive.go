@@ -15,6 +15,9 @@ const ArchiveAfter = 72 * time.Hour
 // ListingsSyncTitle is the daily routine that refreshes the verified internship listings, in code.
 const ListingsSyncTitle = "LISTINGS SYNC"
 
+// OpportunityAssessTitle is the routine that assesses new and changed open listings, in code.
+const OpportunityAssessTitle = "OPPORTUNITY ASSESS"
+
 // junkMaxChars is how short a finished answer must be to count as junk.
 const junkMaxChars = 200
 
@@ -49,7 +52,7 @@ func IsRoutine(t *Task) bool {
 		return true
 	}
 	upper := strings.ToUpper(t.Title)
-	return strings.Contains(upper, "TRACKER") || IsAlumniDMBatch(t.Title) || strings.Contains(upper, ListingsSyncTitle)
+	return strings.Contains(upper, "TRACKER") || IsAlumniDMBatch(t.Title) || strings.Contains(upper, ListingsSyncTitle) || strings.Contains(upper, OpportunityAssessTitle)
 }
 
 // isTrackerCard mirrors the web Trackers page: the tasks it builds cards from.

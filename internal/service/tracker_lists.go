@@ -38,6 +38,8 @@ type TrackerLists struct {
 	CheckPosting func(ctx context.Context, link string) PostingState
 	// Sync refreshes the verified listings table from the companies' boards; nil leaves the routine to the model path.
 	Sync *ListingSync
+	// Assess assesses open listings (value, eligibility, pay, skills); nil leaves the routine to the model path.
+	Assess *OpportunityAssess
 	// CommunityGet fetches the community pages for the daily scan; nil means the network.
 	CommunityGet sources.Get
 	// ReplyModel writes the "Reply you can send" for each new community thread (at most one call per thread);

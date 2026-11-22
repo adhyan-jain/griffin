@@ -633,6 +633,38 @@ export type Listing = {
   posted_at?: string | null;
   last_checked_at?: string | null;
   created_at: string;
+  /** "employer_ats" and "employer_site" are the employer's own posting; "aggregator" is a third-party lead. */
+  source_kind?: "employer_ats" | "employer_site" | "aggregator";
+  /** Only an employer's own posting, fetched by code, is employer_verified; everything else is a lead. */
+  verification?: "lead" | "employer_verified";
+  /** What Griffin concluded from the listing's text; null until it has been assessed. */
+  assessment?: ListingAssessment | null;
+};
+
+export type ValueClass = "exceptional" | "strong" | "good" | "exploratory" | "low";
+export type Eligibility = "confirmed" | "likely" | "unknown" | "ineligible";
+
+/** One part of the value score. `unknown` parts were not in the listing and sit at the midpoint of their range. */
+export type ValueComponent = { name: string; max: number; points: number; reason: string; quote?: string; unknown: boolean };
+
+export type ListingAssessment = {
+  employment_class: "internship" | "full_time" | "unknown";
+  role_class: string;
+  eligibility: Eligibility;
+  /** Why, with the exact words of the posting; a reason without a quote is an observation by code. */
+  eligibility_reasons: { reason: string; quote: string }[];
+  location_fit: "india" | "remote_ok" | "relocation" | "outside" | "unknown";
+  grad_year_fit: "fit" | "mismatch" | "unknown";
+  /** Monthly rupees stated by the listing (0 when it says unpaid); null when it says nothing. */
+  compensation_monthly_inr: number | null;
+  compensation_quote?: string;
+  duration: string | null;
+  skills_matched: { skill: string; quote: string }[];
+  value_score: number;
+  value_breakdown: ValueComponent[];
+  value_class: ValueClass;
+  assessed_at: string;
+  model_used?: string | null;
 };
 
 export const api = {

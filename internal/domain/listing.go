@@ -51,6 +51,9 @@ type Listing struct {
 	LastSeenAt       *time.Time `json:"last_seen_at,omitempty"`
 	ClosedAt         *time.Time `json:"closed_at,omitempty"`
 	ReopenedCount    int        `json:"reopened_count"`
+	// Assessment is what Griffin concluded about the listing's text; nil until it has been assessed. Only the
+	// assessed listing reads fill it in.
+	Assessment *Assessment `json:"assessment"`
 	// Description is the posting's text. It is stored, but list reads do not load it.
 	Description string `json:"-"`
 	// EmployerKey, RoleKey and SourceTarget are the identity keys and the scan target the listing was last read

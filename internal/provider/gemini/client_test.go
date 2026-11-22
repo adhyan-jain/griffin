@@ -168,3 +168,34 @@ func TestChatWithImages(t *testing.T) {
 		t.Errorf("part 1 inlineData mismatch: %+v", p1.InlineData)
 	}
 }
+
+func TestChatCanAskForJSONAtTemperatureZero(t *testing.T) {
+	var seen struct{ path, key, body string }
+	srv := standIn(t, 200, okReply, &seen)
+	defer srv.Close()
+	zero := 0.0
+	c := &Client{APIKey: "k", Model: "m1", BaseURL: srv.URL, Temperature: &zero, JSONOutput: true}
+	if _, err := c.Chat(context.Background(), "classify", []Turn{{Role: "user", Text: "x"}}); err != nil {
+		t.Fatal(err)
+	}
+	var sent struct {
+		GenerationConfig struct {
+			Temperature      float64 `json:"temperature"`
+			ResponseMIMEType string  `json:"responseMimeType"`
+		} `json:"generationConfig"`
+	}
+	if err := json.Unmarshal([]byte(seen.body), &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent.GenerationConfig.Temperature != 0 || sent.GenerationConfig.ResponseMIMEType != "application/json" {
+		t.Fatalf("the classifier setting did not reach the request: %s", seen.body)
+	}
+	// The conversational default is untouched.
+	c2 := &Client{APIKey: "k", Model: "m1", BaseURL: srv.URL}
+	if _, err := c2.Chat(context.Background(), "chat", []Turn{{Role: "user", Text: "x"}}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(seen.body, "responseMimeType") || !strings.Contains(seen.body, `"temperature":0.7`) {
+		t.Fatalf("default request changed: %s", seen.body)
+	}
+}
