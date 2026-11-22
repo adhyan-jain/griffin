@@ -95,7 +95,12 @@ func (r *PostgresNotificationRepository) Ack(ctx context.Context, userID uuid.UU
 	if len(ids) == 0 {
 		return nil
 	}
-	if _, err := r.pool.Exec(ctx, `UPDATE notifications SET acked_at = NOW(), read_at = COALESCE(read_at, NOW()) WHERE user_id = $1 AND id = ANY($2) AND acked_at IS NULL`, userID, ids); err != nil {
+	// Sent as text and cast: the production pooler uses the simple protocol, which cannot encode a uuid array.
+	texts := make([]string, len(ids))
+	for i, id := range ids {
+		texts[i] = id.String()
+	}
+	if _, err := r.pool.Exec(ctx, `UPDATE notifications SET acked_at = NOW(), read_at = COALESCE(read_at, NOW()) WHERE user_id = $1 AND id = ANY($2::uuid[]) AND acked_at IS NULL`, userID, texts); err != nil {
 		return fmt.Errorf("ack notifications: %w", err)
 	}
 	return nil
