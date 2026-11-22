@@ -108,7 +108,7 @@ func (c *captureSender) Send(_ context.Context, m notify.Message) error {
 	return c.err
 }
 
-func TestTaskNotifierWordsEachCaseAndLinksToTheListenPage(t *testing.T) {
+func TestTaskNotifierWordsEachCaseAndOpensTheTaskWithListenAsAnAction(t *testing.T) {
 	s := &captureSender{}
 	n := &TaskNotifier{Sender: s, Summ: &Summarizer{}, AppURL: "https://app.example/", ManagerName: func(context.Context, uuid.UUID) string { return "Jarvis" }}
 
@@ -121,7 +121,7 @@ func TestTaskNotifierWordsEachCaseAndLinksToTheListenPage(t *testing.T) {
 	if len(s.msgs) != 2 {
 		t.Fatalf("want two notifications, got %d", len(s.msgs))
 	}
-	if m := s.msgs[0]; m.Title != "Jarvis: done" || m.Body != "Dear team, I would love to join." || m.ClickURL != "https://app.example/listen/"+ok.ID.String() || m.Priority != 0 {
+	if m := s.msgs[0]; m.Title != "Jarvis: done" || m.Body != "Dear team, I would love to join." || m.ClickURL != "https://app.example/tasks/"+ok.ID.String() || m.ListenURL != "https://app.example/listen/"+ok.ID.String() || m.Priority != 0 {
 		t.Errorf("done: %+v", m)
 	}
 	if m := s.msgs[1]; m.Title != "Jarvis: needs attention" || m.Priority != 4 || !strings.Contains(m.Body, "did not finish") {

@@ -19,6 +19,22 @@ fun parseVoiceReply(body: String): VoiceReply {
     return VoiceReply(d.optString("kind", "conversation"), d.optString("reply", ""), d.optBoolean("handoff", false), d.optString("manager_name", "JJ"), d.optString("fallback").ifEmpty { null }, d.optString("confirm_token").ifEmpty { null }, d.optString("draft").ifEmpty { null })
 }
 
+/** Parses one page of the notification outbox (a pure function, so it is tested without a phone). */
+fun parseOutboxPage(body: String): com.griffin.assistant.core.OutboxPage {
+    val root = JSONObject(body)
+    val d = root.optJSONObject("data") ?: root
+    val rows = d.optJSONArray("data") ?: JSONArray()
+    val items = (0 until rows.length()).mapNotNull { i ->
+        val o = rows.optJSONObject(i) ?: return@mapNotNull null
+        val id = o.optString("id")
+        val seq = o.optLong("seq", -1)
+        if (id.isBlank() || seq < 0) return@mapNotNull null
+        com.griffin.assistant.core.OutboxNotice(id, seq, o.optString("kind"), o.optString("entity_id"), o.optString("title"),
+            o.optString("body"), o.optString("priority", "NORMAL"), o.optString("action_url"))
+    }
+    return com.griffin.assistant.core.OutboxPage(d.optLong("cursor", 0), items)
+}
+
 /** What the phone can do for Griffin today. Advertised on every heartbeat; the owner can still narrow it on the web. */
 val PHONE_CAPABILITIES = listOf("phone_apps", "sms", "calls", "messaging")
 /** Granted at registration; advertised on a heartbeat only while the accessibility service is actually on. */
@@ -334,40 +350,14 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         api("POST", "/api/v1/calls/record", body)
     }
 
-    data class CompletedTaskNotice(
-        val id: String,
-        val title: String,
-        val goal: String,
-        val status: String,
-        val response: String,
-        val completedAt: String,
-    )
+    /** Rows of the notification outbox after [after] (a seq, or "latest" for just the current cursor). */
+    fun fetchOutbox(after: String): com.griffin.assistant.core.OutboxPage =
+        parseOutboxPage(api("GET", "/api/v1/notifications?after=$after&limit=20"))
 
-    /** Fetches recently completed tasks from Griffin API to notify the owner on their phone. */
-    fun fetchRecentCompletedTasks(): List<CompletedTaskNotice> {
-        val jsonStr = try {
-            api("GET", "/api/v1/tasks?status=COMPLETED&limit=10")
-        } catch (_: Exception) {
-            return emptyList()
-        }
-        val out = mutableListOf<CompletedTaskNotice>()
-        try {
-            val root = JSONObject(jsonStr)
-            val data = root.optJSONArray("data") ?: root.optJSONArray("tasks") ?: return emptyList()
-            for (i in 0 until data.length()) {
-                val obj = data.getJSONObject(i)
-                val id = obj.optString("id")
-                val title = obj.optString("title").ifEmpty { obj.optString("goal") }
-                val goal = obj.optString("goal")
-                val status = obj.optString("status")
-                val output = obj.optJSONObject("output_payload")?.optString("response").orEmpty()
-                val completedAt = obj.optString("completed_at").ifEmpty { obj.optString("updated_at") }
-                if (id.isNotBlank()) {
-                    out.add(CompletedTaskNotice(id, title, goal, status, output, completedAt))
-                }
-            }
-        } catch (_: Exception) {}
-        return out
+    /** Tells Griffin these outbox rows were shown on this phone. */
+    fun ackOutbox(ids: List<String>) {
+        if (ids.isEmpty()) return
+        api("POST", "/api/v1/notifications/ack", JSONObject().put("ids", JSONArray(ids)))
     }
 
     /** Streams neural audio MP3 bytes for the given text. Returns null if unreachable. */

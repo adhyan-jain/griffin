@@ -20,8 +20,10 @@ import (
 type Message struct {
 	Title string
 	Body  string
-	// ClickURL opens when the notification is tapped, and is also offered as a "Listen" button.
+	// ClickURL opens when the notification is tapped.
 	ClickURL string
+	// ListenURL, when set, is offered as a "Listen" button (a page that reads the summary aloud).
+	ListenURL string
 	// Priority is ntfy's 1 (min) to 5 (max); 0 means default.
 	Priority int
 	Tags     []string
@@ -55,7 +57,9 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	body := map[string]any{"topic": n.Topic, "title": clip(m.Title, 120), "message": clip(m.Body, 500)}
 	if m.ClickURL != "" {
 		body["click"] = m.ClickURL
-		body["actions"] = []map[string]any{{"action": "view", "label": "Listen", "url": m.ClickURL}}
+	}
+	if m.ListenURL != "" {
+		body["actions"] = []map[string]any{{"action": "view", "label": "Listen", "url": m.ListenURL}}
 	}
 	if m.Priority >= 1 && m.Priority <= 5 {
 		body["priority"] = m.Priority

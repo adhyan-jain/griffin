@@ -26,6 +26,10 @@ import com.griffin.assistant.core.Command
 import com.griffin.assistant.core.Commands
 import com.griffin.assistant.core.Effect
 import com.griffin.assistant.core.MessageBook
+import com.griffin.assistant.core.OutboxNotice
+import com.griffin.assistant.core.OutboxPoller
+import com.griffin.assistant.core.notificationIdFor
+import com.griffin.assistant.core.wakesScreen
 import com.griffin.assistant.core.PendingAction
 import com.griffin.assistant.core.Phase
 
@@ -221,86 +225,64 @@ class AssistantService : Service() {
             }
             app.jobs.execute { try { phoneRunner.tick() } catch (e: Exception) { app.dlog("phone job: ${e.message}") } }
             if (refreshNames) app.net.execute { try { app.replyWatch.update(app.api.awaitingNames()) } catch (_: Exception) {} }
-            checkAndNotifyCompletedTasks()
+            checkOutbox()
             app.main.postDelayed(this, 30_000)
         }
     }
 
-    private fun checkAndNotifyCompletedTasks() {
+    /**
+     * Shows Griffin's notification outbox: each event exactly once (a cursor, never a set of ids that can be
+     * trimmed and forgotten), only one poll at a time, and a tap opens the exact page the event is about.
+     */
+    private val outbox by lazy {
+        val prefs = getSharedPreferences("griffin_outbox", Context.MODE_PRIVATE)
+        OutboxPoller(
+            load = { if (prefs.contains("cursor")) prefs.getLong("cursor", 0) else null },
+            save = { prefs.edit().putLong("cursor", it).apply() },
+            fetch = { app.api.fetchOutbox(it) },
+            show = ::showNotice,
+            ack = { app.api.ackOutbox(it) },
+        )
+    }
+
+    private fun checkOutbox() {
         if (!app.api.signedIn) return
         app.net.execute {
+            try { outbox.poll() } catch (e: Exception) { app.dlog("outbox check failed: ${e.message}") }
+        }
+    }
+
+    private fun showNotice(n: OutboxNotice) {
+        val open = if (n.actionUrl.startsWith("https://") || n.actionUrl.startsWith("http://")) {
+            Intent(Intent.ACTION_VIEW, Uri.parse(n.actionUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        } else {
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val id = notificationIdFor(n)
+        val pi = PendingIntent.getActivity(this, id, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        if (wakesScreen(n)) {
             try {
-                val tasks = app.api.fetchRecentCompletedTasks()
-                if (tasks.isEmpty()) return@execute
-                val prefs = getSharedPreferences("griffin_task_notifs", Context.MODE_PRIVATE)
-                val seen = prefs.getStringSet("seen_tasks", emptySet())?.toMutableSet() ?: mutableSetOf()
-                val newlyCompleted = tasks.filter { it.id !in seen }
-                if (newlyCompleted.isEmpty()) return@execute
-
-                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                for (task in newlyCompleted) {
-                    seen.add(task.id)
-                    val resp = task.response.trim()
-                    if (resp.isEmpty() ||
-                        resp.contains("cannot inspect", ignoreCase = true) ||
-                        resp.contains("cannot access", ignoreCase = true) ||
-                        resp.contains("couldn't find any information", ignoreCase = true) ||
-                        resp.contains("I have NO tools", ignoreCase = true) ||
-                        resp.contains("do not have tool", ignoreCase = true)
-                    ) {
-                        continue
-                    }
-                    val title = when {
-                        task.title.contains("DSA", ignoreCase = true) || task.title.contains("LeetCode", ignoreCase = true) ->
-                            "DSA / LeetCode Update"
-                        task.title.contains("Brief", ignoreCase = true) || task.title.contains("Morning", ignoreCase = true) ->
-                            "Daily Executive Briefing Ready"
-                        task.title.contains("Post", ignoreCase = true) || task.title.contains("Weekly", ignoreCase = true) ->
-                            "Weekly Report Ready"
-                        else -> "Task Completed: ${task.title.take(50)}"
-                    }
-                    val body = resp.take(250)
-                    val appIntent = Intent(this, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        putExtra("task_id", task.id)
-                        putExtra("task_title", task.title)
-                        putExtra("task_response", resp)
-                    }
-                    val pi = PendingIntent.getActivity(this, task.id.hashCode(), appIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
-                    // Wake up screen if locked/asleep so notification is immediately noticed
-                    try {
-                        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                        @Suppress("DEPRECATION")
-                        val wakeLock = pm.newWakeLock(
-                            PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
-                            "griffin:task_completion_alert"
-                        )
-                        wakeLock.acquire(4000L)
-                    } catch (e: Exception) {
-                        app.dlog("wake lock acquire failed: ${e.message}")
-                    }
-
-                    val notif = NotificationCompat.Builder(this, "griffin_task_updates")
-                        .setSmallIcon(R.drawable.ic_stat_griffin)
-                        .setContentTitle(title)
-                        .setContentText(body)
-                        .setStyle(NotificationCompat.BigTextStyle().bigText(task.response.ifEmpty { task.goal }))
-                        .setContentIntent(pi)
-                        .setAutoCancel(true)
-                        .setPriority(NotificationCompat.PRIORITY_MAX)
-                        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                        .setCategory(NotificationCompat.CATEGORY_EVENT)
-                        .setDefaults(Notification.DEFAULT_ALL)
-                        .build()
-
-                    nm.notify(task.id.hashCode(), notif)
-                }
-                prefs.edit().putStringSet("seen_tasks", seen.toList().takeLast(100).toSet()).apply()
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                @Suppress("DEPRECATION")
+                pm.newWakeLock(PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE, "griffin:approval_alert")
+                    .acquire(4000L)
             } catch (e: Exception) {
-                app.dlog("task notif check failed: ${e.message}")
+                app.dlog("wake lock acquire failed: ${e.message}")
             }
         }
+        val notif = NotificationCompat.Builder(this, "griffin_task_updates")
+            .setSmallIcon(R.drawable.ic_stat_griffin)
+            .setContentTitle(n.title.ifBlank { "Griffin" })
+            .setContentText(n.body.take(250))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(n.body))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(if (n.priority == "HIGH") NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_DEFAULT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(if (n.kind == "approval") NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_EVENT)
+            .build()
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(id, notif)
     }
 
     private fun refreshName() {

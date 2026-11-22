@@ -132,6 +132,7 @@ func main() {
 	policyRepo := repository.NewPostgresPolicyRepository(repoDB)
 	profileRepo := repository.NewPostgresProfileRepository(repoDB)
 	aliasRepo := repository.NewPostgresAliasRepository(repoDB)
+	notificationRepo := repository.NewPostgresNotificationRepository(repoDB)
 	outreachRepo := repository.NewOutreachRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
@@ -195,6 +196,7 @@ func main() {
 	engine.SetNotifier(&service.TaskNotifier{
 		Sender: notify.MultiSender(senders),
 		Summ:   &service.Summarizer{Brain: summaryBrainFor(cfg)},
+		Outbox: notificationRepo,
 		AppURL: cfg.AppURL,
 		ManagerName: func(ctx context.Context, userID uuid.UUID) string {
 			name, _ := profileRepo.ManagerName(ctx, userID)
@@ -493,6 +495,7 @@ func main() {
 			PolicyRepo:       policyRepo,
 			ProfileRepo:      profileRepo,
 			AliasRepo:        aliasRepo,
+			NotificationRepo: notificationRepo,
 			OutreachRepo:     outreachRepo,
 			ReportRepo:       repository.NewReportRepository(repoDB),
 			Dsa:              dsaCoach,

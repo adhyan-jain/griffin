@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePolling } from "@/lib/use-polling";
 import { Check, CheckCheck, Copy, ExternalLink, FileText, Loader2, MessageSquareDiff, Pencil, ShieldCheck, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
@@ -122,6 +122,9 @@ export default function ApprovalsPage() {
   const [revising, setRevising] = useState<Record<string, string>>({});
   const [reviseOpen, setReviseOpen] = useState<Record<string, boolean>>({});
   const [revisingBusyId, setRevisingBusyId] = useState<string | null>(null);
+  // A notification opens /approvals?id=<id>: scroll to that approval and mark it.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const focused = useRef(false);
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -143,6 +146,23 @@ export default function ApprovalsPage() {
     setItems(null);
     refresh();
   }, [tab, refresh]);
+
+  useEffect(() => {
+    setFocusId(new URLSearchParams(window.location.search).get("id"));
+  }, []);
+
+  useEffect(() => {
+    if (!focusId || !items || focused.current) return;
+    const el = document.getElementById(`approval-${focusId}`);
+    if (el) {
+      focused.current = true;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (tab === "pending") {
+      setTab("all"); // already decided: it is listed under All
+    } else {
+      focused.current = true;
+    }
+  }, [focusId, items, tab]);
 
   const respond = async (a: Approval, approve: boolean) => {
     setBusyId(a.id);
@@ -297,7 +317,11 @@ export default function ApprovalsPage() {
             const pending = a.status === "PENDING";
             const isJobApply = isApplicationApproval(a.action_type);
             return (
-              <li key={a.id} className="space-y-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+              <li
+                key={a.id}
+                id={`approval-${a.id}`}
+                className={`space-y-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs scroll-mt-20 ${a.id === focusId ? "ring-2 ring-primary" : ""}`}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <RiskBadge risk={a.risk_level} />

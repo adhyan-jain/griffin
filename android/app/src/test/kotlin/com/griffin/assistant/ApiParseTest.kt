@@ -19,4 +19,12 @@ class ApiParseTest {
         val r = parseVoiceReply("""{"data":{}}""")
         assertEquals("", r.reply); assertEquals(false, r.handoff); assertNull(r.confirmToken)
     }
+
+    @Test fun `an outbox page from the server`() {
+        val p = parseOutboxPage("""{"success":true,"data":{"cursor":7,"data":[{"id":"a","seq":7,"kind":"approval","entity_id":"x","title":"JJ: waiting for you","body":"Send it?","priority":"HIGH","action_url":"https://app/approvals?id=x"},{"id":"","seq":8}]}}""")
+        assertEquals(7L, p.cursor)
+        assertEquals(1, p.items.size)
+        assertEquals("https://app/approvals?id=x", p.items[0].actionUrl)
+        assertEquals("approval", p.items[0].kind)
+    }
 }

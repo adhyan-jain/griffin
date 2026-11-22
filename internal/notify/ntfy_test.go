@@ -20,19 +20,29 @@ func TestNtfyPublishesAJSONMessageWithTapAndListenAction(t *testing.T) {
 	}))
 	defer srv.Close()
 	n := &Ntfy{Server: srv.URL + "/", Topic: "griffin-secret-topic", Token: "tk_abc"}
-	err := n.Send(context.Background(), Message{Title: "JJ: done ✓", Body: "Your cover letter is ready.", ClickURL: "https://app.example/listen/1", Priority: 4, Tags: []string{"white_check_mark"}})
+	err := n.Send(context.Background(), Message{Title: "JJ: done ✓", Body: "Your cover letter is ready.", ClickURL: "https://app.example/tasks/1", ListenURL: "https://app.example/listen/1", Priority: 4, Tags: []string{"white_check_mark"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if path != "/" || ctype != "application/json" || auth != "Bearer tk_abc" {
 		t.Errorf("path %q type %q auth %q", path, ctype, auth)
 	}
-	if got["topic"] != "griffin-secret-topic" || got["title"] != "JJ: done ✓" || got["click"] != "https://app.example/listen/1" || got["priority"] != float64(4) {
-		t.Errorf("unexpected body: %v", got)
+	if got["topic"] != "griffin-secret-topic" || got["title"] != "JJ: done ✓" || got["click"] != "https://app.example/tasks/1" || got["priority"] != float64(4) {
+		t.Errorf("a tap opens the task: %v", got)
 	}
-	actions := got["actions"].([]any)
+	actions, _ := got["actions"].([]any)
+	if len(actions) != 1 {
+		t.Fatalf("want one Listen action, got %v", got["actions"])
+	}
 	if a := actions[0].(map[string]any); a["label"] != "Listen" || a["url"] != "https://app.example/listen/1" {
-		t.Errorf("the Listen action must open the same page: %v", actions)
+		t.Errorf("the Listen action opens the listen page: %v", actions)
+	}
+	got = nil
+	if err := n.Send(context.Background(), Message{Title: "t", Body: "b", ClickURL: "https://app.example/approvals?id=1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := got["actions"]; has {
+		t.Errorf("no Listen button without a listen page: %v", got)
 	}
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TRACKER_TYPES, appliedKeys, applyTaskInput, classifyTask, groupTrackerTasks, internshipActionMessage, isApplyTask, trackerPeers, trackerTypeOf, type InternshipAction } from "@/lib/trackers";
 import { mergeTables, removeListing, splitRows } from "@/lib/tracker-rows";
@@ -1025,6 +1025,9 @@ export default function TrackersPage() {
   const [query, setQuery] = useState("");
   const [globalViewMode, setGlobalViewMode] = useState<ViewMode>("auto");
   const [refreshing, setRefreshing] = useState(false);
+  // A notification opens /trackers?task=<id>: show that tracker's category and scroll to its card.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const focused = useRef(false);
 
   // The shared list of each tracker type, kept by the server. Tasks of a type read and rewrite it.
   const [sharedLists, setSharedLists] = useState<Record<string, { id: string; text: string }>>({});
@@ -1048,6 +1051,22 @@ export default function TrackersPage() {
     },
     { intervalMs: 15000 },
   );
+
+  useEffect(() => {
+    setFocusId(new URLSearchParams(window.location.search).get("task"));
+  }, []);
+
+  useEffect(() => {
+    if (!focusId || !tasks || focused.current) return;
+    focused.current = true;
+    const t = tasks.find((x) => x.id === focusId);
+    const cat = t ? classifyTask(t) : null;
+    if (cat && CATEGORIES.some((c) => c.id === cat)) setCategory(cat as TrackerCategory);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`tracker-${focusId}`) ?? document.querySelector("[data-tracker-card]");
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [focusId, tasks]);
 
   // Filter tasks to only trackers, grouping recurring runs under a single card showing the latest run
   const trackerTasks = useMemo(() => {
@@ -1329,14 +1348,20 @@ export default function TrackersPage() {
         ) : (
           <div className="space-y-6">
             {filteredTasks.map((task) => (
-              <TrackerCard
+              <div
                 key={task.id}
-                task={task}
-                parsedTables={taskTables.get(task.id) || []}
-                closed={closedByTask.get(task.id)}
-                onRemove={removeFromTracker}
-                defaultViewMode={globalViewMode}
-              />
+                id={`tracker-${task.id}`}
+                data-tracker-card
+                className={`scroll-mt-20 rounded-xl ${task.id === focusId ? "ring-2 ring-primary" : ""}`}
+              >
+                <TrackerCard
+                  task={task}
+                  parsedTables={taskTables.get(task.id) || []}
+                  closed={closedByTask.get(task.id)}
+                  onRemove={removeFromTracker}
+                  defaultViewMode={globalViewMode}
+                />
+              </div>
             ))}
           </div>
         )}

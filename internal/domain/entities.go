@@ -41,18 +41,6 @@ type Artifact struct {
 	CreatedAt       time.Time       `json:"created_at"`
 }
 
-type Notification struct {
-	ID        uuid.UUID  `json:"id"`
-	UserID    uuid.UUID  `json:"user_id"`
-	Title     string     `json:"title"`
-	Body      string     `json:"body"`
-	Channel   string     `json:"channel"`  // 'IN_APP', 'WEB_PUSH', 'EMAIL'
-	Priority  string     `json:"priority"` // 'NORMAL', 'HIGH', 'URGENT'
-	ReadAt    *time.Time `json:"read_at,omitempty"`
-	ActionURL *string    `json:"action_url,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-}
-
 type Schedule struct {
 	ID               uuid.UUID       `json:"id"`
 	UserID           uuid.UUID       `json:"user_id"`

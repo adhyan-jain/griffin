@@ -52,6 +52,8 @@ type ServerDependencies struct {
 	OutreachRepo *repository.OutreachRepository
 	// AliasRepo stores the owner's aliases ("mummy" means "mom"); nil leaves aliases off.
 	AliasRepo repository.AliasRepository
+	// NotificationRepo is the notification outbox devices read from; nil leaves the routes off.
+	NotificationRepo repository.NotificationRepository
 	// ReportRepo enables the scorecard and per-task audit trail; nil leaves those routes off.
 	ReportRepo *repository.ReportRepository
 	// Calls enables the inbound call webhooks (signed by the phone provider, not by the owner); nil leaves them off.
@@ -380,6 +382,12 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("GET /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.ListHosts)))
 		mux.Handle("PATCH /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.UpdateHost)))
 		mux.Handle("DELETE /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.RevokeHost)))
+
+		if deps.NotificationRepo != nil {
+			notifHandler := handlers.NewNotificationsHandler(deps.NotificationRepo)
+			mux.Handle("GET /api/v1/notifications", userAuth(http.HandlerFunc(notifHandler.List)))
+			mux.Handle("POST /api/v1/notifications/ack", userAuth(http.HandlerFunc(notifHandler.Ack)))
+		}
 
 		if deps.AliasRepo != nil {
 			aliasHandler := handlers.NewAliasesHandler(deps.AliasRepo)
