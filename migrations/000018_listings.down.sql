@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS idx_job_discoveries_user_stage;
+ALTER TABLE job_discoveries DROP CONSTRAINT IF EXISTS job_discoveries_stage_check;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS updated_at;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS stage_note;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS last_checked_at;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS verified_at;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS posted_at;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS pay;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS location;
+ALTER TABLE job_discoveries DROP COLUMN IF EXISTS stage;

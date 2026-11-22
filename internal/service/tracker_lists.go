@@ -35,6 +35,8 @@ type TrackerLists struct {
 	// CheckPosting, when set, is asked before an application task is made; a listing whose link plainly has no
 	// such internship is closed instead of costing a model run.
 	CheckPosting func(ctx context.Context, link string) PostingState
+	// Sync refreshes the verified listings table from the companies' boards; nil leaves the routine to the model path.
+	Sync *ListingSync
 }
 
 const trackerReadLimit = 200 << 10

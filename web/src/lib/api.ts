@@ -618,6 +618,23 @@ async function fetchList<T>(path: string, opts?: ReqOpts): Promise<T[]> {
 // Client
 // ---------------------------------------------------------------------------
 
+/** One verified internship: read by code from a site's own listing, never written by a model. */
+export type Listing = {
+  id: string;
+  source: string;
+  company: string;
+  role: string;
+  url: string;
+  location: string;
+  pay: string;
+  tier: string;
+  stage: "verified" | "drafted" | "approved" | "submitting" | "confirmed" | "needs_you" | "closed";
+  stage_note: string;
+  posted_at?: string | null;
+  last_checked_at?: string | null;
+  created_at: string;
+};
+
 export const api = {
   /** Supabase email/password sign-in (the production path). */
   async signIn(email: string, password: string): Promise<UserProfile> {
@@ -765,6 +782,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ inbound_calls_enabled: enabled }),
     }),
+
+  // Verified internship listings (read by code from Internshala, Unstop and InternDock)
+  listListings: (opts?: ReqOpts) => fetchList<Listing>(`/api/v1/listings`, opts),
+  closeListing: (id: string) => fetchWithAuth<unknown>(`/api/v1/listings/${id}/close`, { method: "POST" }),
 
   // Approvals
   listApprovals: (status?: ApprovalStatus, opts?: ReqOpts) =>

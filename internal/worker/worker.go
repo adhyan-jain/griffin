@@ -62,6 +62,7 @@ type Worker struct {
 	onTaskFinished    func(ctx context.Context, taskID uuid.UUID)
 	artifacts         ArtifactSaver
 	playbooks         PlaybookStore
+	listings          service.ListingStore
 
 	paused   atomic.Bool
 	inFlight atomic.Int32
@@ -89,6 +90,8 @@ type Config struct {
 	// Playbooks, if set, lets tool-tier tasks reuse notes from earlier similar runs and leave new ones.
 	// It only acts when the executor has tools enabled, so with tools off it does nothing.
 	Playbooks PlaybookStore
+	// Listings, if set, lets the daily listings sync run here in code.
+	Listings service.ListingStore
 }
 
 // NewWorker initializes a Worker.
@@ -125,6 +128,7 @@ func NewWorker(cfg Config) *Worker {
 		onTaskFinished:    cfg.OnTaskFinished,
 		artifacts:         cfg.Artifacts,
 		playbooks:         cfg.Playbooks,
+		listings:          cfg.Listings,
 	}
 }
 

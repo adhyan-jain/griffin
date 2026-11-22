@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
+  Briefcase,
   FolderOpen,
   LockKeyhole,
   LayoutDashboard,
@@ -45,6 +46,7 @@ const PRIMARY: NavItem[] = [
   { href: "/chat", label: "Ask JJ", icon: MessageSquare },
   { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/trackers", label: "Trackers", icon: Table2 },
+  { href: "/internships", label: "Internships", icon: Briefcase },
   { href: "/approvals", label: "Approvals", icon: ShieldCheck },
 ];
 const SECONDARY: NavItem[] = [

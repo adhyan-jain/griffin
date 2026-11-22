@@ -13,10 +13,14 @@ func (w *Worker) trackers() *service.TrackerLists {
 	if w.playbooks == nil {
 		return nil
 	}
-	return &service.TrackerLists{Store: w.playbooks, Tasks: w.taskRepo, Logger: w.logger, ApprovedDrafts: w.engine.ApprovedDraftTasks,
+	t := &service.TrackerLists{Store: w.playbooks, Tasks: w.taskRepo, Logger: w.logger, ApprovedDrafts: w.engine.ApprovedDraftTasks,
 		CheckPosting: func(ctx context.Context, link string) service.PostingState {
 			return service.CheckPosting(ctx, nil, link)
 		}}
+	if w.listings != nil {
+		t.Sync = &service.ListingSync{Listings: w.listings}
+	}
+	return t
 }
 
 // withTrackerList shows a task its tracker's shared list.

@@ -133,6 +133,7 @@ func main() {
 	profileRepo := repository.NewPostgresProfileRepository(repoDB)
 	aliasRepo := repository.NewPostgresAliasRepository(repoDB)
 	notificationRepo := repository.NewPostgresNotificationRepository(repoDB)
+	listingRepo := repository.NewListingRepository(repoDB)
 	outreachRepo := repository.NewOutreachRepository(repoDB)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
@@ -346,6 +347,7 @@ func main() {
 				Logger:            logger,
 				Artifacts:         storageService,
 				Playbooks:         storageService,
+				Listings:          listingRepo,
 				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
 					if err := jjOrchestrator.ReconcileByChildTask(hookCtx, taskID); err != nil {
 						logger.Warn("Orchestration reconcile after task finish failed", "task_id", taskID, "error", err)
@@ -501,6 +503,7 @@ func main() {
 			ProfileRepo:      profileRepo,
 			AliasRepo:        aliasRepo,
 			NotificationRepo: notificationRepo,
+			ListingRepo:      listingRepo,
 			OutreachRepo:     outreachRepo,
 			ReportRepo:       repository.NewReportRepository(repoDB),
 			Dsa:              dsaCoach,

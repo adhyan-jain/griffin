@@ -35,6 +35,9 @@ func (w *TrackerLists) RunInCode(ctx context.Context, task *domain.Task,
 	if cancel != nil && w.SkipClosedListing(ctx, task, cancel) {
 		return "", Dropped
 	}
+	if answer, ok := w.SyncListings(ctx, task); ok {
+		return answer, Answered
+	}
 	if answer, ok := w.SyncInternDock(ctx, task, nil); ok {
 		return answer, Answered
 	}

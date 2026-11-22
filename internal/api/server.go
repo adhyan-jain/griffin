@@ -52,6 +52,8 @@ type ServerDependencies struct {
 	OutreachRepo *repository.OutreachRepository
 	// AliasRepo stores the owner's aliases ("mummy" means "mom"); nil leaves aliases off.
 	AliasRepo repository.AliasRepository
+	// ListingRepo stores verified internship listings; nil leaves the listings routes and sync off.
+	ListingRepo *repository.ListingRepository
 	// NotificationRepo is the notification outbox devices read from; nil leaves the routes off.
 	NotificationRepo repository.NotificationRepository
 	// ReportRepo enables the scorecard and per-task audit trail; nil leaves those routes off.
@@ -373,15 +375,25 @@ func NewServer(deps ServerDependencies) *Server {
 		}
 		hostHandler := handlers.NewHostHandler(hostSvc, deps.Engine, policySvc)
 		if deps.StorageService != nil {
-			hostHandler.WithTrackerLists(&service.TrackerLists{Store: deps.StorageService, Tasks: deps.TaskRepo, Logger: deps.Logger, ApprovedDrafts: deps.Engine.ApprovedDraftTasks,
+			lists := &service.TrackerLists{Store: deps.StorageService, Tasks: deps.TaskRepo, Logger: deps.Logger, ApprovedDrafts: deps.Engine.ApprovedDraftTasks,
 				CheckPosting: func(ctx context.Context, link string) service.PostingState {
 					return service.CheckPosting(ctx, nil, link)
-				}})
+				}}
+			if deps.ListingRepo != nil {
+				lists.Sync = &service.ListingSync{Listings: deps.ListingRepo}
+			}
+			hostHandler.WithTrackerLists(lists)
 		}
 		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))
 		mux.Handle("GET /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.ListHosts)))
 		mux.Handle("PATCH /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.UpdateHost)))
 		mux.Handle("DELETE /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.RevokeHost)))
+
+		if deps.ListingRepo != nil {
+			listingHandler := handlers.NewListingsHandler(deps.ListingRepo)
+			mux.Handle("GET /api/v1/listings", userAuth(http.HandlerFunc(listingHandler.List)))
+			mux.Handle("POST /api/v1/listings/{id}/close", userAuth(http.HandlerFunc(listingHandler.Close)))
+		}
 
 		if deps.NotificationRepo != nil {
 			notifHandler := handlers.NewNotificationsHandler(deps.NotificationRepo)

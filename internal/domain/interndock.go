@@ -25,6 +25,8 @@ func IsInternDockSync(title string) bool {
 type Posting struct {
 	Title, Company, Location, Pay, Link string
 	Posted                              time.Time
+	// Source is the site the posting was read from (internshala, unstop, interndock).
+	Source string
 }
 
 var (
@@ -46,7 +48,7 @@ func ParseInternDock(page string) []Posting {
 		if len(nodes) < 3 {
 			continue
 		}
-		p := Posting{Title: nodes[0], Company: nodes[1], Location: nodes[2], Link: InternDockBase + m[1]}
+		p := Posting{Title: nodes[0], Company: nodes[1], Location: nodes[2], Link: InternDockBase + m[1], Source: "interndock"}
 		for _, n := range nodes[3:] {
 			switch {
 			case strings.HasPrefix(n, "Posted "):
@@ -64,7 +66,7 @@ func ParseInternDock(page string) []Posting {
 
 var (
 	fitRole  = regexp.MustCompile(`(?i)software|backend|back-end|full[- ]?stack|platform|infrastructure|distributed|machine learning|\bml\b|\bai\b|artificial intelligence|\bllm|generative|data scien|deep learning|computer vision|\bnlp\b|developer|\bsde\b|\bswe\b|engineer`)
-	notMyJob = regexp.MustCompile(`(?i)test|\bqa\b|quality|support|sales|marketing|analyst|account|\bhr\b|recruit|design|mechanical|civil|electrical|hardware|embedded|manufactur|supply|operations|finance|legal|apprentice|founder'?s office|content|business`)
+	notMyJob = regexp.MustCompile(`(?i)trainer|subject matter|\bsme\b|tutor|mentor|teach|front[- ]?end|angular|ui/ux|\bui\b|game|wordpress|shopify|test|\bqa\b|quality|support|sales|marketing|analyst|account|\bhr\b|recruit|design|mechanical|civil|electrical|hardware|embedded|manufactur|supply|operations|finance|legal|apprentice|founder'?s office|content|business`)
 )
 
 // FitsOwner reports whether a posting is a role the owner takes (software, backend, AI of any sort) in a place the
@@ -73,11 +75,22 @@ func FitsOwner(p Posting) bool {
 	if !fitRole.MatchString(p.Title) || notMyJob.MatchString(p.Title) {
 		return false
 	}
-	loc := strings.ToLower(p.Location)
-	if strings.Contains(loc, "india") {
+	return InIndiaOrWorldwide(p.Location)
+}
+
+var (
+	indiaPlace     = regexp.MustCompile(`(?i)\b(india|bengaluru|bangalore|mumbai|delhi|new delhi|ncr|gurgaon|gurugram|noida|hyderabad|pune|chennai|kolkata|ahmedabad|vellore|jaipur|kochi|chandigarh|indore|coimbatore)\b`)
+	anywhereRemote = regexp.MustCompile(`(?i)\b(anywhere|worldwide|global|globally|apac|asia)\b`)
+)
+
+// InIndiaOrWorldwide reports whether the owner can take a job in this location: somewhere in India, or remote
+// open to anyone. Remote roles tied to another country ("New York (Remote)", "Remote - US") need local work
+// authorization, so they do not count.
+func InIndiaOrWorldwide(loc string) bool {
+	if indiaPlace.MatchString(loc) {
 		return true
 	}
-	return strings.Contains(loc, "remote") && !strings.Contains(loc, "united states") && !strings.Contains(loc, "united kingdom")
+	return strings.Contains(strings.ToLower(loc), "remote") && anywhereRemote.MatchString(loc)
 }
 
 // ListingRow writes a posting as a row of a list with the given header, filling the columns it knows.
