@@ -61,6 +61,7 @@ type JJChatHandler struct {
 	// deviceCheck says whether one of the owner's live devices covers these capabilities; nil skips the check.
 	deviceCheck func(ctx context.Context, userID uuid.UUID, caps []string) bool
 	commands    *service.VoiceCommands
+	self        *service.SelfCommands
 	brain       VoiceBrain
 	classifier  *service.SmartClassifier
 }
@@ -68,6 +69,13 @@ type JJChatHandler struct {
 // WithCommands lets chat handle task listings, approvals, and steering directly.
 func (h *JJChatHandler) WithCommands(c *service.VoiceCommands) *JJChatHandler {
 	h.commands = c
+	return h
+}
+
+// WithSelfCommands lets the owner change Griffin from chat ("approve all pending", "cancel the Coy task"); the
+// commands are read by fixed rules before any task is queued for a model.
+func (h *JJChatHandler) WithSelfCommands(c *service.SelfCommands) *JJChatHandler {
+	h.self = c
 	return h
 }
 
@@ -236,6 +244,9 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 
 	managerName := ResolveManagerName(r.Context(), h.profiles, userID)
 	var respExtra map[string]any
+	if h.self != nil && !req.NewTask && h.runSelfCommand(w, r, userID, conversationID, message, managerName) {
+		return
+	}
 	// "Go ahead" after a discussion submits what the owner said in it as one objective.
 	if h.objectives != nil && !req.NewTask && service.GoAhead(message) {
 		roles, texts := make([]string, len(history)), make([]string, len(history))
@@ -329,6 +340,38 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		extra = map[string]any{"images": req.Images}
 	}
 	h.postConversationIn(w, r, userID, conversationID, message, history, req.IdempotencyKey, managerName, extra, "Chat: ", respExtra)
+}
+
+// runSelfCommand answers a self command ("approve all pending") at once and reports whether it did. It runs
+// before the classifier and before any task is queued, so no model is involved in changing Griffin.
+func (h *JJChatHandler) runSelfCommand(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message, managerName string) bool {
+	text := message
+	if stripped := service.StripLeadingName(message, managerName); stripped != "" {
+		text = stripped
+	}
+	cmd := service.ParseSelfCommand(text)
+	if cmd.Kind == service.SelfNone {
+		return false
+	}
+	res, err := h.self.Run(r.Context(), userID, cmd)
+	if err != nil {
+		slog.Error("jj chat: self command failed", "user_id", userID, "command", string(cmd.Kind), "error", err)
+		res = service.SelfResult{Handled: true, Reply: "I could not do that just now, so nothing was changed. Try again in a moment."}
+	}
+	if !res.Handled {
+		return false
+	}
+	if res.Wake && h.wakeup != nil {
+		wakeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		_ = h.wakeup.TriggerWakeup(wakeCtx) // best-effort: the work is durably queued and the scheduler tick retries
+		cancel()
+	}
+	httputil.JSON(w, http.StatusOK, map[string]any{
+		"kind":            string(service.MessageKindConversation),
+		"conversation_id": conversationID.String(),
+		"response":        res.Reply,
+	})
+	return true
 }
 
 func normalizeHistory(in []chatTurn) ([]chatTurn, error) {

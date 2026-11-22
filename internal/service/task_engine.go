@@ -368,6 +368,16 @@ func (e *TaskEngine) CancelTask(ctx context.Context, taskID uuid.UUID, reason st
 	return nil
 }
 
+// RecordOwnerCommand writes one line to the task's event log saying the owner changed it by a chat command.
+func (e *TaskEngine) RecordOwnerCommand(ctx context.Context, taskID uuid.UUID, message string) {
+	_ = e.taskRepo.RecordEvent(ctx, &domain.TaskEvent{
+		TaskID:    taskID,
+		EventType: "LOG",
+		Message:   message,
+		Metadata:  json.RawMessage("{}"),
+	})
+}
+
 // ResumeTask re-queues a failed or cancelled standalone task and records the event.
 func (e *TaskEngine) ResumeTask(ctx context.Context, taskID uuid.UUID) error {
 	if err := e.taskRepo.ResumeTask(ctx, taskID); err != nil {

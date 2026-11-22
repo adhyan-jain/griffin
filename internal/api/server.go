@@ -283,12 +283,27 @@ func NewServer(deps ServerDependencies) *Server {
 		}
 	}
 
+	var selfCmds *service.SelfCommands
+	if deps.Engine != nil && deps.ApprovalRepo != nil {
+		selfCmds = &service.SelfCommands{
+			Tasks:     deps.Engine,
+			Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine},
+			Audit:     deps.Engine.RecordOwnerCommand,
+		}
+		if deps.ScheduleRepo != nil {
+			selfCmds.Routines = deps.ScheduleRepo
+		}
+	}
+
 	jjChatHandler := handlers.NewJJChatHandler(deps.Engine, objectives, deps.Wakeup, scaleToZero).
 		WithProfiles(profiles).
 		WithThreads(deps.Engine).
 		WithBrain(deps.VoiceBrain)
 	if voiceCmds != nil {
 		jjChatHandler.WithCommands(voiceCmds)
+	}
+	if selfCmds != nil {
+		jjChatHandler.WithSelfCommands(selfCmds)
 	}
 	if hostSvc != nil {
 		jjChatHandler.WithDeviceCheck(hostSvc.CanCover)
