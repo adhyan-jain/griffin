@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -76,13 +77,16 @@ func parseReply(raw string) (string, bool) {
 func draftCommunityReply(ctx context.Context, model OutreachChatter, s sources.Scored, threadText, facts string) string {
 	raw, err := model.Chat(ctx, communityReplySystem, []gemini.Turn{{Role: "user", Text: communityReplyPrompt(s, threadText, facts)}})
 	if err != nil {
+		slog.Warn("community reply: model call failed", "thread", s.Thread.URL, "error", err)
 		return ""
 	}
 	reply, ok := parseReply(raw)
 	if !ok {
+		slog.Warn("community reply: unreadable model answer", "thread", s.Thread.URL, "chars", len(raw))
 		return ""
 	}
-	if len(domain.CheckCommunityReply(reply, threadText, facts)) > 0 || len(domain.CheckCommunityMention(reply, s.Mention != "")) > 0 {
+	if problems := append(domain.CheckCommunityReply(reply, threadText, facts), domain.CheckCommunityMention(reply, s.Mention != "")...); len(problems) > 0 {
+		slog.Info("community reply: draft dropped by the fact check", "thread", s.Thread.URL, "problems", strings.Join(problems, "; "))
 		return ""
 	}
 	return reply
@@ -128,6 +132,7 @@ func (r *replyRun) fill(ctx context.Context, threads []sources.Scored) (replies 
 	for i, s := range threads {
 		if r.calls >= communityReplyCap || budget.Short(ctx) {
 			untried = len(threads) - i
+			slog.Info("community reply: stopping", "calls", r.calls, "short_on_time", budget.Short(ctx), "untried", untried)
 			break
 		}
 		r.calls++
