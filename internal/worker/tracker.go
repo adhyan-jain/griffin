@@ -22,7 +22,8 @@ func (w *Worker) trackers() *service.TrackerLists {
 		t.ReplyModel, t.OwnerFacts = w.communityReplies, w.engine.OwnerFacts
 	}
 	if w.listings != nil {
-		t.Sync = &service.ListingSync{Listings: w.listings}
+		t.Details = service.DetailsFor(w.listings)
+		t.Sync = &service.ListingSync{Listings: w.listings, Details: t.Details}
 		if st, ok := w.listings.(service.OpportunityStore); ok {
 			t.Opportunities = &service.OpportunityScan{Store: st}
 		}

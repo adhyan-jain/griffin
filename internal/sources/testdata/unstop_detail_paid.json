@@ -1,0 +1,54 @@
+{
+ "data": {
+  "status": true,
+  "competition": {
+   "id": 1818776,
+   "title": "Software Internship",
+   "details": "<p><strong>The Entrepreneurship Network is hiring for Software Internship</strong></p>\n<p><strong>About the Company</strong></p>\n<p>The Entrepreneurship Network supports an environment where entrepreneurial ideas, collaboration, and practical learning can grow. The team is seeking a Software Intern to contribute to technology work while developing hands-on experience in an innovation-focused setting. This remote internship is intended for freshers interested in beginning their journey in the Information Technology industry.</p>\n<p><strong>Responsibilities</strong></p>\n<ul>\n<li>Assist with software development tasks and contribute to assigned technical projects.</li>\n<li>Work with team members to understand requirements, discuss solutions, and deliver updates.</li>\n<li>Write clear, maintainable code and help review or improve existing implementations.</li>\n<li>Test features, investigate issues, and document findings and progress.</li>\n<li>Stay engaged with feedback and apply it to improve the quality of project work.</li>\n</ul>\n<p><strong>Requirements</strong></p>\n<ul>\n<li>Suitable for fresher candidates starting their careers in software and information technology.</li>\n<li>Interest in software development and a willingness to learn new tools and practices.</li>\n<li>Good communication, problem-solving, and collaboration skills.</li>\n<li>Ability to work responsibly in a remote team environment and manage assigned tasks.</li>\n</ul>\n<p>This is a three-month, paid internship with a stipend of ₹1,000. The position is remote and offers freshers an opportunity to build practical experience through assigned software work.</p>",
+   "end_date": "2026-12-03T00:00:00+05:30",
+   "status": "LIVE",
+   "regn_open": 1,
+   "type": "jobs",
+   "subtype": "internships",
+   "organisation": {
+    "name": "The Entrepreneurship Network"
+   },
+   "jobDetail": {
+    "type": "wfh",
+    "timing": "part_time",
+    "paid_unpaid": "paid",
+    "pay_in": "monthly",
+    "min_salary": 1000,
+    "max_salary": 1000,
+    "not_disclosed": false
+   },
+   "required_skills": [
+    {
+     "skill": "Software Development Life Cycle (SDLC)",
+     "skill_name": "Software Development Life Cycle (SDLC)"
+    },
+    {
+     "skill": "Software Testing Life Cycle (STLC)",
+     "skill_name": "Software Testing Life Cycle (STLC)"
+    },
+    {
+     "skill": "Problem Solving",
+     "skill_name": "Problem Solving"
+    },
+    {
+     "skill": "Collaboration Skills",
+     "skill_name": "Collaboration Skills"
+    },
+    {
+     "skill": "Communication Skills",
+     "skill_name": "Communication Skills"
+    }
+   ],
+   "regnRequirements": {
+    "start_regn_dt": "2026-11-19T00:00:00+05:30",
+    "end_regn_dt": "2026-12-03T00:00:00+05:30",
+    "eligibility": null
+   }
+  }
+ }
+}

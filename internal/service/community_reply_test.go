@@ -259,8 +259,8 @@ func TestAnOldListGetsTheColumnWithEmptyCellsAndKeepsEverythingElse(t *testing.T
 	model := goodModel()
 	var asked []string
 	scanWith(t, store, model, ownerFactsFixture, replyGet(false, &asked))
-	if model.calls != 0 {
-		t.Fatalf("both threads were already listed: %d calls", model.calls)
+	if model.calls != 1 {
+		t.Fatalf("both threads were already listed; only the one still marked new gets the reply it lacks: %d calls", model.calls)
 	}
 	got := tableRows(store.text)
 	if len(got) != 2 || !strings.Contains(store.text, CommunityHeader) || !strings.Contains(store.text, "my notes") {
@@ -268,7 +268,8 @@ func TestAnOldListGetsTheColumnWithEmptyCellsAndKeepsEverythingElse(t *testing.T
 	}
 	for i, r := range got {
 		c := cells(r)
-		if len(c) != 9 || c[6] != noReply || !strings.HasPrefix(c[7], "https://") {
+		// The owner's "replied" row keeps its empty cell; the thread still marked new is backfilled.
+		if len(c) != 9 || (i == 0) != (c[6] == noReply) || !strings.HasPrefix(c[7], "https://") {
 			t.Fatalf("row %d: %v", i, c)
 		}
 	}

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/griffin/core/internal/budget"
 )
 
 // OpenSourceRepos are the projects the owner's interests point at (Go infrastructure and observability, LLM serving,
@@ -120,7 +122,12 @@ func ReadIssues(ctx context.Context, get Get, now time.Time) (issues []Issue, pr
 		get = HTTPGet
 	}
 	seen := map[string]bool{}
-	for _, u := range IssueQueries(OpenSourceRepos, now) {
+	queries := IssueQueries(OpenSourceRepos, now)
+	for i, u := range queries {
+		if budget.Short(ctx) {
+			problems = append(problems, fmt.Sprintf("%d of %d GitHub searches left for the next run (out of time)", len(queries)-i, len(queries)))
+			break
+		}
 		body, err := get(ctx, u)
 		if err != nil {
 			if strings.Contains(err.Error(), "HTTP 403") || strings.Contains(err.Error(), "HTTP 429") {

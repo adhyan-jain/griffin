@@ -21,6 +21,9 @@ const OpportunityAssessTitle = "OPPORTUNITY ASSESS"
 // OpportunityScanTitle is the routine that reads every active employer board for internships, in code.
 const OpportunityScanTitle = "OPPORTUNITY SCAN"
 
+// ListingDetailsTitle is the routine that reads the detail pages of listings that have no description, in code.
+const ListingDetailsTitle = "LISTING DETAILS"
+
 // junkMaxChars is how short a finished answer must be to count as junk.
 const junkMaxChars = 200
 
@@ -55,7 +58,7 @@ func IsRoutine(t *Task) bool {
 		return true
 	}
 	upper := strings.ToUpper(t.Title)
-	return strings.Contains(upper, "TRACKER") || IsAlumniDMBatch(t.Title) || strings.Contains(upper, ListingsSyncTitle) || strings.Contains(upper, OpportunityAssessTitle) || strings.Contains(upper, OpportunityScanTitle)
+	return strings.Contains(upper, "TRACKER") || IsAlumniDMBatch(t.Title) || strings.Contains(upper, ListingsSyncTitle) || strings.Contains(upper, OpportunityAssessTitle) || strings.Contains(upper, OpportunityScanTitle) || strings.Contains(upper, ListingDetailsTitle)
 }
 
 // isTrackerCard mirrors the web Trackers page: the tasks it builds cards from.

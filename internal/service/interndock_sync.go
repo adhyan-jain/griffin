@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/griffin/core/internal/budget"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/storage"
 )
@@ -46,8 +47,14 @@ func (w *TrackerLists) SyncInternDock(ctx context.Context, task *domain.Task, fe
 	}
 	var found []domain.Posting
 	var failed []string
-	for _, p := range domain.InternDockPages {
-		page, err := fetch(ctx, domain.InternDockBase+p)
+	work, cancel := budget.Work(ctx)
+	defer cancel()
+	for i, p := range domain.InternDockPages {
+		if budget.Short(work) {
+			failed = append(failed, fmt.Sprintf("%d pages left for the next run (out of time)", len(domain.InternDockPages)-i))
+			break
+		}
+		page, err := fetch(work, domain.InternDockBase+p)
 		if err != nil {
 			failed = append(failed, p)
 			continue

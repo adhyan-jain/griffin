@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/griffin/core/internal/budget"
 )
 
 const (
@@ -135,6 +137,9 @@ func ReadRepos(ctx context.Context, get Get, login string) (repos []Repo, proble
 	limited := func(err error) bool {
 		return strings.Contains(err.Error(), "HTTP 403") || strings.Contains(err.Error(), "HTTP 429")
 	}
+	if budget.Short(ctx) {
+		return nil, []string{"out of time, so the repository list waits for the next run"}
+	}
 	body, err := fetch(githubAPI + "/users/" + url.PathEscape(login) + "/repos?per_page=100&type=owner&sort=pushed")
 	if err != nil {
 		return nil, []string{"the GitHub repository list"}
@@ -148,6 +153,10 @@ func ReadRepos(ctx context.Context, get Get, login string) (repos []Repo, proble
 		r := &repos[i]
 		root := githubAPI + "/repos/" + url.PathEscape(login) + "/" + url.PathEscape(r.Name) + "/contents/"
 		if used >= HygieneRequestCap {
+			break
+		}
+		if budget.Short(ctx) {
+			problems = append(problems, "out of time, so the remaining repos wait for the next run")
 			break
 		}
 		body, err := fetch(root)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/griffin/core/internal/budget"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/jobs"
 	"github.com/griffin/core/internal/sources"
@@ -44,7 +45,16 @@ type ListingSync struct {
 	Get   sources.Get
 	Check func(ctx context.Context, link string) PostingState
 	Now   func() time.Time
+	// Details reads the detail pages of a few listings that have no description once the pages are read; nil skips it.
+	Details *ListingDetails
 }
+
+// syncDetailCap is the most detail pages one sync reads itself: the LISTING DETAILS routine reads the rest.
+const syncDetailCap = 4
+
+// syncPagesShare is the part of the time a sync may spend on reading the listing pages; the rest is for the
+// details of new listings and for re-checking open ones.
+const syncPagesShare = 0.6
 
 func (s *ListingSync) ingester() (*Ingester, error) {
 	if s.Ingest != nil {
@@ -73,6 +83,9 @@ type ListingSyncResult struct {
 	Added, Seen, Closed int
 	AddedNames          []string
 	Problems            []string
+	// What the time budget left for the next run: pages not read, re-checks not made, listings without a description.
+	PagesLeft, RecheckLeft, DetailsLeft int
+	DetailsSaved                        int
 }
 
 // Summary is the owner-facing line for a sync.
@@ -87,6 +100,22 @@ func (r ListingSyncResult) Summary() string {
 	}
 	if len(r.Problems) > 0 {
 		b.WriteString("\n\nCould not read: " + strings.Join(r.Problems, "; ") + ".")
+	}
+	if r.DetailsSaved > 0 {
+		fmt.Fprintf(&b, "\n\nRead the detail pages of %d listings for their descriptions.", r.DetailsSaved)
+	}
+	var left []string
+	if r.PagesLeft > 0 {
+		left = append(left, fmt.Sprintf("%d pages not read", r.PagesLeft))
+	}
+	if r.RecheckLeft > 0 {
+		left = append(left, fmt.Sprintf("%d link re-checks", r.RecheckLeft))
+	}
+	if r.DetailsLeft > 0 {
+		left = append(left, fmt.Sprintf("%d listings still without a description", r.DetailsLeft))
+	}
+	if len(left) > 0 {
+		b.WriteString("\n\nLeft for the next run (out of time): " + strings.Join(left, ", ") + ".")
 	}
 	return b.String()
 }
@@ -108,9 +137,21 @@ func (s *ListingSync) Run(ctx context.Context, userID uuid.UUID) (ListingSyncRes
 	if err != nil {
 		return res, err
 	}
-	// Each page is one scan. A role listed on several pages is counted once.
+	// Each page is one scan. A role listed on several pages is counted once. Fetches stop before the deadline so the
+	// writes after them fit, and under a deadline the first page read rotates, so the pages a short run never
+	// reaches are not always the same ones.
+	work, cancelWork := budget.Work(ctx)
+	defer cancelWork()
+	pagesCtx, cancelPages := budget.Share(work, syncPagesShare)
+	defer cancelPages()
+	start := 0
+	if _, timed := ctx.Deadline(); timed {
+		start = int(now().Unix() / 3600)
+	}
 	seen := map[string]bool{}
-	for _, scan := range sources.ReadScans(ctx, s.Get) {
+	scans, skipped := sources.ReadScans(pagesCtx, s.Get, start)
+	res.PagesLeft = skipped
+	for _, scan := range scans {
 		if scan.Status == jobs.ScanFailed {
 			res.Problems = append(res.Problems, pageLabel(scan))
 		}
@@ -141,16 +182,31 @@ func (s *ListingSync) Run(ctx context.Context, userID uuid.UUID) (ListingSyncRes
 		}
 	}
 
+	// A few listings that have no description get one from their own page; the LISTING DETAILS routine does the rest.
+	if s.Details != nil && !budget.Short(work) {
+		if dr, err := s.Details.Run(ctx, userID, syncDetailCap); err == nil {
+			res.DetailsSaved, res.DetailsLeft = dr.Saved, dr.Left
+		}
+	}
+
 	// Re-check open listings once a day: a posting that is gone closes its listing, and nothing more is done for it.
 	open, err := s.Listings.List(ctx, userID, []string{domain.StageVerified, domain.StageDrafted, domain.StageNeedsYou}, 500)
 	if err != nil {
 		return res, err
 	}
-	for _, l := range open {
+	for i, l := range open {
 		if l.LastCheckedAt != nil && now().Sub(*l.LastCheckedAt) < 20*time.Hour {
 			continue
 		}
-		switch check(ctx, l.URL) {
+		if budget.Short(work) {
+			for _, rest := range open[i:] {
+				if rest.LastCheckedAt == nil || now().Sub(*rest.LastCheckedAt) >= 20*time.Hour {
+					res.RecheckLeft++
+				}
+			}
+			break
+		}
+		switch check(work, l.URL) {
 		case PostingMissing:
 			if s.Listings.Move(ctx, userID, l.ID, l.Stage, domain.StageClosed, "the posting is no longer at its link", nil) == nil {
 				res.Closed++

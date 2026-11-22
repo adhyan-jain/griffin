@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/assess"
+	budgetpkg "github.com/griffin/core/internal/budget"
 	"github.com/griffin/core/internal/domain"
 )
 
@@ -33,9 +34,14 @@ type AssessStore interface {
 const (
 	// DefaultMaxModelCalls bounds the model calls in one run. A listing is asked about at most once per description.
 	DefaultMaxModelCalls = 40
-	// DefaultAssessBudget bounds how long one run works; the rest is left for the next run.
+	// DefaultAssessBudget bounds how long a run works when its context has no deadline (the cloud worker). A run
+	// inside a host claim works to that request's deadline instead: see internal/budget.
 	DefaultAssessBudget = 4 * time.Minute
 )
+
+// modelCallTime is the least time left for a run to start a model call, which takes a few seconds (a variable so a
+// test can shrink it).
+var modelCallTime = 8 * time.Second
 
 // OpportunityAssess assesses the owner's open listings: those with no assessment, whose description or facts have
 // changed, or that predate the current rules. Code decides what it can; a model is asked (at most MaxModelCalls
@@ -47,8 +53,9 @@ type OpportunityAssess struct {
 	Model         assess.ModelFunc
 	ModelName     string
 	MaxModelCalls int
-	Budget        time.Duration
-	Now           func() time.Time
+	// Budget bounds a run whose context has no deadline; with a deadline, the run works to it.
+	Budget time.Duration
+	Now    func() time.Time
 }
 
 // AssessResult counts what one run did.
@@ -103,7 +110,18 @@ func (o *OpportunityAssess) Run(ctx context.Context, userID uuid.UUID, ownerText
 	if maxCalls <= 0 {
 		maxCalls = DefaultMaxModelCalls
 	}
+	// The run works to its context's deadline when it has one (a claim request, which the host platform kills at a
+	// fixed time): it stops starting listings before it, and cuts model calls off before it so the writes still fit.
+	work, cancel := budgetpkg.Work(ctx)
+	defer cancel()
+	_, timed := ctx.Deadline()
 	deadline := now().Add(budget)
+	timeUp := func(needed time.Duration) bool {
+		if timed {
+			return budgetpkg.Left(work) < needed
+		}
+		return ctx.Err() != nil || now().After(deadline)
+	}
 
 	subjects, err := o.Store.AssessmentSubjects(ctx, userID)
 	if err != nil {
@@ -114,7 +132,11 @@ func (o *OpportunityAssess) Run(ctx context.Context, userID uuid.UUID, ownerText
 		if !s.Stale() {
 			continue
 		}
-		if ctx.Err() != nil || now().After(deadline) {
+		needed := budgetpkg.Reserve
+		if modelUp && res.ModelCalls < maxCalls {
+			needed = modelCallTime
+		}
+		if timeUp(needed) {
 			for _, rest := range subjects[i:] {
 				if rest.Stale() {
 					res.Remaining++
@@ -140,7 +162,18 @@ func (o *OpportunityAssess) Run(ctx context.Context, userID uuid.UUID, ownerText
 			SourceKind: l.SourceKind, Verification: l.Verification, CompanyKind: s.CompanyKind,
 			Key: domain.AssessmentKey(l), OwnerText: ownerText,
 		}
-		r := assess.Assess(ctx, in, prev, assess.Options{Model: o.Model, ModelName: o.ModelName, AllowModel: modelUp && res.ModelCalls < maxCalls, Now: o.Now})
+		r := assess.Assess(work, in, prev, assess.Options{Model: o.Model, ModelName: o.ModelName, AllowModel: modelUp && res.ModelCalls < maxCalls, Now: o.Now})
+		if r.CallFailed && timed && work.Err() != nil {
+			// The model was cut off by the deadline, not unreachable: leave the listing for the next run, which asks
+			// again, rather than save an assessment made without the answer.
+			for _, rest := range subjects[i:] {
+				if rest.Stale() {
+					res.Remaining++
+				}
+			}
+			res.ModelCalls++
+			break
+		}
 		if r.ModelCalled {
 			res.ModelCalls++
 		}

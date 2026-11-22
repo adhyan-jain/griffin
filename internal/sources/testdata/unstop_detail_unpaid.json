@@ -1,0 +1,68 @@
+{
+ "data": {
+  "status": true,
+  "competition": {
+   "id": 1803844,
+   "title": "Software Internship",
+   "details": "<p><strong>Tringflow Private Limited is hiring for Software Intern</strong></p>\n<p><strong>About the Company</strong></p>\n<p>Tringflow Private Limited is offering a remote, learning-focused Software Intern opportunity for people eager to build practical software development experience. Interns will work on meaningful engineering tasks, learn how software moves from requirements to delivery, and receive guidance from experienced team members. The program is designed to support both aspiring developers and people expanding their technical capabilities.</p>\n<p><strong>Responsibilities</strong></p>\n<ul>\n<li>Write, test, and maintain clear, reliable code with guidance from the engineering team.</li>\n<li>Help investigate bugs, troubleshoot issues, and implement fixes.</li>\n<li>Collaborate with engineering and product colleagues on software features and improvements.</li>\n<li>Take part in code reviews and team check-ins, applying feedback and learning development practices.</li>\n<li>Use the provided development environment and tools to complete assigned work.</li>\n</ul>\n<p><strong>Requirements</strong></p>\n<ul>\n<li>A genuine interest in software development, programming, and solving technical problems.</li>\n<li>Basic familiarity with at least one programming language such as Python, JavaScript, Java, or C++, and an introductory understanding of software or web architecture.</li>\n<li>Personal, academic, bootcamp, or other coding experience is helpful, but not essential.</li>\n<li>Ability to communicate clearly, work independently in a remote setting, and commit to the full three-month program.</li>\n<li>Open to students, fresh graduates, and working professionals interested in developing or transitioning into a software career.</li>\n</ul>\n<p>This is an unpaid internship focused on practical learning and mentorship. Successful completion includes an internship certificate and a letter of recommendation. The opportunity is in the Information Technology industry and does not require prior years of professional experience.</p>",
+   "end_date": "2026-11-24T00:00:00+05:30",
+   "status": "LIVE",
+   "regn_open": 1,
+   "type": "jobs",
+   "subtype": "internships",
+   "organisation": {
+    "name": "Tringflow Private Limited"
+   },
+   "job_detail": {
+    "type": "wfh",
+    "timing": "full_time",
+    "paid_unpaid": "unpaid",
+    "pay_in": "monthly",
+    "not_disclosed": false,
+    "openings": 1,
+    "internship_duration": "3 months",
+    "perks": [
+     {
+      "label": "certificate",
+      "value": true,
+      "text": "Certificate of Completion"
+     },
+     {
+      "label": "letter_of_recommendation",
+      "value": true,
+      "text": "Letter of Recommendation"
+     }
+    ],
+    "pre_placement_internship": null,
+    "pre_placement_opportunity": null
+   },
+   "skills": [
+    {
+     "skill": "Debugging",
+     "skill_name": "Debugging"
+    },
+    {
+     "skill": "Software Testing Life Cycle (STLC)",
+     "skill_name": "Software Testing Life Cycle (STLC)"
+    },
+    {
+     "skill": "Teamwork and Collaboration",
+     "skill_name": "Teamwork and Collaboration"
+    },
+    {
+     "skill": "Python",
+     "skill_name": "Python"
+    },
+    {
+     "skill": "Communication Skills",
+     "skill_name": "Communication Skills"
+    }
+   ],
+   "regnRequirements": {
+    "start_regn_dt": "2026-11-10T00:00:00+05:30",
+    "end_regn_dt": "2026-11-24T00:00:00+05:30",
+    "eligibility": "{\"sector\":[\"fresher\",\"students\"],\"experience\":[\"all\"],\"fresherEligibility\":null,\"professionalEligibility\":null,\"engineering\":[\"allCourses\",{\"course\":\"btech\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":4},{\"course\":\"mtech\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":2},{\"course\":\"integrated\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":5},{\"course\":\"engOthers\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":3},{\"course\":\"bca\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":3},{\"course\":\"mca\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":2},{\"course\":\"mca1\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":3},{\"course\":\"mcm\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":2},{\"course\":\"phdEng\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":5},{\"course\":\"diploma\",\"type\":\"engineering\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":null}],\"bSchools\":[],\"arts\":[{\"course\":\"bsc\",\"type\":\"arts\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":3},{\"course\":\"msc\",\"type\":\"arts\",\"programme\":[\"all\"],\"passoutYear\":[\"all\"],\"specialization\":[\"all\"],\"duration\":2}],\"medicine\":[],\"law\":[],\"fresherPassoutYearsSelected\":[2025,2026],\"studentPassoutYearsSelected\":[\"all\"],\"undefined\":[\"allCourses\"]}"
+   }
+  }
+ }
+}

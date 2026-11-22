@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/griffin/core/internal/budget"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/sources"
 	"github.com/griffin/core/internal/storage"
@@ -35,6 +36,7 @@ const (
 type CommunityScanResult struct {
 	Read, Added, Mentions, Seen int
 	Replies, NoReply            int // replies written for new threads, and new threads left without one
+	Backfilled, ReplyLeft       int // replies written for older threads that had none, and threads still without one
 	Names                       []string
 	Problems                    []string
 	SaveError                   string
@@ -67,6 +69,12 @@ func (r CommunityScanResult) Summary() string {
 		}
 		b.WriteString(".")
 	}
+	if r.Backfilled > 0 {
+		fmt.Fprintf(&b, "\n\nWrote %d more replies for older threads that had none.", r.Backfilled)
+	}
+	if r.ReplyLeft > 0 {
+		fmt.Fprintf(&b, "\n\n%d more threads have no reply yet; the next run tries them (at most %d replies a run, and only while there is time).", r.ReplyLeft, communityReplyCap)
+	}
 	b.WriteString("\n\nTap a thread and ask Griffin to draft a reply: it writes one for your approval and nothing is posted until you approve it.")
 	return b.String()
 }
@@ -82,7 +90,13 @@ func (w *TrackerLists) ScanCommunities(ctx context.Context, task *domain.Task, g
 		now = time.Now
 	}
 	at := now()
-	threads, problems := sources.ReadCommunities(ctx, get, at)
+	// Reading the threads may use only part of the time, so some is left for the replies; fetches and model calls
+	// end before the deadline so the list can still be saved.
+	work, cancelWork := budget.Work(ctx)
+	defer cancelWork()
+	readCtx, cancelRead := budget.Share(work, 0.6)
+	defer cancelRead()
+	threads, problems := sources.ReadCommunities(readCtx, get, at)
 	res := CommunityScanResult{Read: len(threads), Problems: problems}
 
 	list := w.list(ctx, task.UserID, storage.ListKind, "community")
@@ -108,10 +122,21 @@ func (w *TrackerLists) ScanCommunities(ctx context.Context, task *domain.Task, g
 			res.Seen++
 		}
 	}
-	replies, _ := w.communityReplies(ctx, task.UserID, picked, get)
-	res.Replies, res.NoReply = len(replies), len(picked)-len(replies)
+	var replies, fills map[string]string
+	if run := w.newReplyRun(work, task.UserID, get); run != nil {
+		var rejected, untried int
+		replies, rejected, untried = run.fill(work, picked)
+		res.Replies, res.NoReply, res.ReplyLeft = len(replies), rejected, untried
+		// Threads listed on an earlier run that never got a reply are written now, newest first, while the run's
+		// cap and the time allow.
+		var rejectedOld, untriedOld int
+		fills, rejectedOld, untriedOld = run.fill(work, replyBackfill(text, at))
+		res.Backfilled, res.ReplyLeft = len(fills), res.ReplyLeft+rejectedOld+untriedOld
+	} else {
+		res.NoReply = len(picked)
+	}
 	// A list from before the reply column is rewritten with it even on a day with nothing new.
-	if body := communityList(text, picked, replies); len(picked) > 0 || (list != nil && !hasReplyColumn(text)) {
+	if body := communityList(text, picked, replies, fills); len(picked) > 0 || len(fills) > 0 || (list != nil && !hasReplyColumn(text)) {
 		var err error
 		if list == nil {
 			_, err = w.Store.SaveArtifact(ctx, storage.SaveArtifactInput{
@@ -143,13 +168,13 @@ func listedLinks(text string) map[string]bool {
 
 // communityList is the list with the new rows on top (newest first) and at most communityMaxRow rows. Whatever
 // the owner wrote above the table, and the rows he has edited, are kept as they are.
-func communityList(current string, picked []sources.Scored, replies map[string]string) string {
+func communityList(current string, picked []sources.Scored, replies, fills map[string]string) string {
 	prefix, rows := "# Communities tracker\n\n", []string(nil)
 	if tbl, ok := domain.FirstTable(current); ok {
 		lines := strings.Split(tbl, "\n")
 		rows = make([]string, 0, len(lines)-2)
 		for _, r := range lines[2:] {
-			rows = append(rows, withReplyCell(r))
+			rows = append(rows, withReply(withReplyCell(r), fills))
 		}
 		if i := strings.Index(current, lines[0]); i > 0 {
 			prefix = current[:i]

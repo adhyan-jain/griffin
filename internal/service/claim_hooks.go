@@ -38,6 +38,9 @@ func (w *TrackerLists) RunInCode(ctx context.Context, task *domain.Task,
 	if answer, ok := w.SyncListings(ctx, task); ok {
 		return answer, Answered
 	}
+	if answer, ok := w.RunListingDetails(ctx, task); ok {
+		return answer, Answered
+	}
 	if answer, ok := w.AssessOpportunities(ctx, task); ok {
 		return answer, Answered
 	}

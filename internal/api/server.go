@@ -411,7 +411,8 @@ func NewServer(deps ServerDependencies) *Server {
 				lists.ReplyModel, lists.OwnerFacts = deps.CommunityReplies, deps.Engine.OwnerFacts
 			}
 			if deps.ListingRepo != nil {
-				lists.Sync = &service.ListingSync{Listings: deps.ListingRepo}
+				lists.Details = service.DetailsFor(deps.ListingRepo)
+				lists.Sync = &service.ListingSync{Listings: deps.ListingRepo, Details: lists.Details}
 				lists.Opportunities = &service.OpportunityScan{Store: deps.ListingRepo}
 			}
 			lists.Assess = deps.Assess

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/griffin/core/internal/budget"
 )
 
 // Hackathon site names, recorded in each row's Source.
@@ -101,7 +103,12 @@ func ReadHackathons(ctx context.Context, get Get, post Post, now time.Time) (hs 
 	if post == nil {
 		post = HTTPPost
 	}
+	left := 0 // requests not sent because the time budget ran out
 	for p := 1; p <= devpostPages; p++ {
+		if budget.Short(ctx) {
+			left++
+			continue
+		}
 		body, err := get(ctx, devpostAPI+"&page="+strconv.Itoa(p))
 		if err != nil {
 			problems = append(problems, "Devpost page "+strconv.Itoa(p))
@@ -118,6 +125,10 @@ func ReadHackathons(ctx context.Context, get Get, post Post, now time.Time) (hs 
 		}
 	}
 	for p := 1; p <= unstopPages; p++ {
+		if budget.Short(ctx) {
+			left++
+			continue
+		}
 		body, err := get(ctx, unstopHacks+strconv.Itoa(p))
 		if err != nil {
 			problems = append(problems, "Unstop page "+strconv.Itoa(p))
@@ -130,15 +141,22 @@ func ReadHackathons(ctx context.Context, get Get, post Post, now time.Time) (hs 
 		}
 		hs = append(hs, page...)
 	}
-	body, err := post(ctx, devfolioAPI, []byte(`{"type":"application_open","from":0,"size":30}`))
-	if err == nil {
-		var page []Hackathon
-		if page, err = ParseDevfolio(body, now); err == nil {
-			hs = append(hs, page...)
+	if budget.Short(ctx) {
+		left++
+	} else {
+		body, err := post(ctx, devfolioAPI, []byte(`{"type":"application_open","from":0,"size":30}`))
+		if err == nil {
+			var page []Hackathon
+			if page, err = ParseDevfolio(body, now); err == nil {
+				hs = append(hs, page...)
+			}
+		}
+		if err != nil {
+			problems = append(problems, "Devfolio")
 		}
 	}
-	if err != nil {
-		problems = append(problems, "Devfolio")
+	if left > 0 {
+		problems = append(problems, fmt.Sprintf("%d hackathon pages left for the next run (out of time)", left))
 	}
 	return hs, problems
 }

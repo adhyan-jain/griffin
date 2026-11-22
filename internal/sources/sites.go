@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/griffin/core/internal/budget"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/jobs"
 )
@@ -66,45 +67,65 @@ func HTTPGet(ctx context.Context, u string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 }
 
-// pageRead is one page or search of one site, read or failed.
+// pageRead is one page or search of one site, read or failed. A page the time budget did not reach is skipped: it
+// was not read, so it is neither a scan nor a failure.
 type pageRead struct {
 	source, target, label string
 	posts                 []domain.Posting
 	err                   error
+	skipped               bool
 }
 
-// readPages reads every page of every site. A page that fails carries its error; the rest still count.
-func readPages(ctx context.Context, get Get) []pageRead {
+// readPages reads every page of every site, beginning at page number start (the others follow, wrapping round), so
+// that a run which runs out of time does not always leave the same pages unread. A page that fails carries its
+// error; the rest still count. With little time left on ctx (see budget.Short) the remaining pages are skipped.
+func readPages(ctx context.Context, get Get, start int) []pageRead {
 	if get == nil {
 		get = HTTPGet
 	}
-	var out []pageRead
+	type page struct {
+		source, target, label string
+		read                  func() ([]domain.Posting, error)
+	}
+	var all []page
 	for _, p := range InternshalaPages {
-		pr := pageRead{source: Internshala, target: p, label: "Internshala " + p}
-		body, err := get(ctx, internshalaBase+p)
-		if err != nil {
-			pr.err = err
-		} else {
-			pr.posts = ParseInternshala(string(body))
-		}
-		out = append(out, pr)
+		p := p
+		all = append(all, page{Internshala, p, "Internshala " + p, func() ([]domain.Posting, error) {
+			body, err := get(ctx, internshalaBase+p)
+			if err != nil {
+				return nil, err
+			}
+			return ParseInternshala(string(body)), nil
+		}})
 	}
 	for _, q := range UnstopSearches {
-		pr := pageRead{source: Unstop, target: q, label: "Unstop \"" + q + "\""}
-		body, err := get(ctx, unstopSearch+url.QueryEscape(q))
-		if err == nil {
-			pr.posts, err = ParseUnstop(body, time.Now())
-		}
-		pr.err = err
-		out = append(out, pr)
+		q := q
+		all = append(all, page{Unstop, q, "Unstop \"" + q + "\"", func() ([]domain.Posting, error) {
+			body, err := get(ctx, unstopSearch+url.QueryEscape(q))
+			if err != nil {
+				return nil, err
+			}
+			return ParseUnstop(body, time.Now())
+		}})
 	}
 	for _, p := range domain.InternDockPages {
-		pr := pageRead{source: InternDock, target: p, label: "InternDock " + p}
-		body, err := get(ctx, domain.InternDockBase+p)
-		if err != nil {
-			pr.err = err
+		p := p
+		all = append(all, page{InternDock, p, "InternDock " + p, func() ([]domain.Posting, error) {
+			body, err := get(ctx, domain.InternDockBase+p)
+			if err != nil {
+				return nil, err
+			}
+			return domain.ParseInternDock(string(body)), nil
+		}})
+	}
+	out := make([]pageRead, 0, len(all))
+	for i := range all {
+		pg := all[((i+start)%len(all)+len(all))%len(all)]
+		pr := pageRead{source: pg.source, target: pg.target, label: pg.label}
+		if budget.Short(ctx) {
+			pr.skipped = true
 		} else {
-			pr.posts = domain.ParseInternDock(string(body))
+			pr.posts, pr.err = pg.read()
 		}
 		out = append(out, pr)
 	}
@@ -114,7 +135,10 @@ func readPages(ctx context.Context, get Get) []pageRead {
 // Read collects the postings from every page of every site. A page that fails is named in problems; the rest
 // still count.
 func Read(ctx context.Context, get Get) (posts []domain.Posting, problems []string) {
-	for _, pr := range readPages(ctx, get) {
+	for _, pr := range readPages(ctx, get, 0) {
+		if pr.skipped {
+			continue
+		}
 		if pr.err != nil {
 			problems = append(problems, pr.label)
 			continue
@@ -151,10 +175,14 @@ func PostingFromRawJob(j jobs.RawJob) domain.Posting {
 }
 
 // ReadScans reads every page of every site as one canonical scan per page, so each page's success or failure is
-// recorded on its own. A page that could not be read is a failed scan, never an empty one.
-func ReadScans(ctx context.Context, get Get) []jobs.Scan {
-	var out []jobs.Scan
-	for _, pr := range readPages(ctx, get) {
+// recorded on its own. A page that could not be read is a failed scan, never an empty one. start picks the page the
+// reading begins at (see readPages); skipped is how many pages the time budget did not reach, which are not scans.
+func ReadScans(ctx context.Context, get Get, start int) (scans []jobs.Scan, skipped int) {
+	for _, pr := range readPages(ctx, get, start) {
+		if pr.skipped {
+			skipped++
+			continue
+		}
 		started := time.Now()
 		sc := jobs.Scan{Source: pr.source, Target: pr.target, Status: jobs.ScanOK, Pages: 1, StartedAt: started}
 		if pr.err != nil {
@@ -164,9 +192,9 @@ func ReadScans(ctx context.Context, get Get) []jobs.Scan {
 			sc.Jobs = append(sc.Jobs, RawJobFromPosting(p, started))
 		}
 		sc.FinishedAt = time.Now()
-		out = append(out, sc)
+		scans = append(scans, sc)
 	}
-	return out
+	return scans, skipped
 }
 
 var (

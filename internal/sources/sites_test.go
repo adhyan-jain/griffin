@@ -57,12 +57,12 @@ func TestAnUnpaidOrUndisclosedPayResearchInternshipIsKept(t *testing.T) {
 
 func TestEachPageIsOneScanAndAFailedPageIsAFailedScanNotAnEmptyOne(t *testing.T) {
 	unstop, _ := os.ReadFile("testdata/unstop.json")
-	scans := ReadScans(context.Background(), func(_ context.Context, u string) ([]byte, error) {
+	scans, _ := ReadScans(context.Background(), func(_ context.Context, u string) ([]byte, error) {
 		if strings.Contains(u, "unstop.com") {
 			return unstop, nil
 		}
 		return nil, errors.New("down")
-	})
+	}, 0)
 	if len(scans) != len(InternshalaPages)+len(UnstopSearches)+len(domain.InternDockPages) {
 		t.Fatalf("one scan per page: %d", len(scans))
 	}
@@ -193,5 +193,28 @@ func TestRolesOutsideBackendAIAndSDEAreLeftOut(t *testing.T) {
 		if !Fits(domain.Posting{Title: title, Location: "Remote (India)", Pay: "₹ 30,000 /month"}) {
 			t.Errorf("%q fits", title)
 		}
+	}
+}
+
+func TestReadScansWithLittleTimeSkipsPagesAndStartsWhereAsked(t *testing.T) {
+	total := len(InternshalaPages) + len(UnstopSearches) + len(domain.InternDockPages)
+	// No time left: nothing is requested, every page is skipped, none is recorded as a failure.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	called := 0
+	scans, skipped := ReadScans(ctx, func(context.Context, string) ([]byte, error) { called++; return nil, errors.New("down") }, 0)
+	if called != 0 || len(scans) != 0 || skipped != total {
+		t.Fatalf("called %d, scans %d, skipped %d", called, len(scans), skipped)
+	}
+	// With time, the page read first is the one asked for.
+	var first string
+	ReadScans(context.Background(), func(_ context.Context, u string) ([]byte, error) {
+		if first == "" {
+			first = u
+		}
+		return nil, errors.New("down")
+	}, len(InternshalaPages))
+	if !strings.Contains(first, "unstop.com") {
+		t.Fatalf("reading must begin at the requested page, began at %s", first)
 	}
 }

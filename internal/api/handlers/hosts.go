@@ -26,6 +26,8 @@ type HostHandler struct {
 	trackers *service.TrackerLists
 	// archiver tidies the owner's old finished tasks while hosts poll for work; optional.
 	archiver *service.AutoArchiver
+	// codeBudget replaces RunInCodeBudget when set (tests).
+	codeBudget time.Duration
 }
 
 // WithAutoArchive makes a host's claim also archive the owner's old, finished, minor tasks (at most hourly).
@@ -223,8 +225,29 @@ func (h *HostHandler) autoArchive(ctx context.Context, userID uuid.UUID) {
 	}
 }
 
+// RunInCodeBudget is how long, from the start of a claim request, work done in code may run. The API runs on AWS
+// Lambda, which kills a request at 29 seconds and would leave the task RUNNING; routines read this deadline from their
+// context and finish with what they did and what is left for the next run, with the rest of the time for the
+// answer to be saved and the response sent.
+const RunInCodeBudget = 22 * time.Second
+
+// runInCode runs a claimed task's code-only routine under a deadline RunInCodeBudget after the request began.
+func (h *HostHandler) runInCode(ctx context.Context, start time.Time, task *domain.Task) (string, service.CodeOutcome) {
+	budget := RunInCodeBudget
+	if h.codeBudget > 0 {
+		budget = h.codeBudget
+	}
+	ctx, cancel := context.WithDeadline(ctx, start.Add(budget))
+	defer cancel()
+	return h.trackers.RunInCode(ctx, task, h.engine.CancelTask, func(c context.Context, t *domain.Task) error {
+		_, err := h.engine.CreateTask(c, t, nil)
+		return err
+	})
+}
+
 // Claim leases the next task this host can do (204 when there is none).
 func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	host := middleware.GetHost(r.Context())
 	// Hosts ask for work every few seconds, so this is where abandoned tasks (a host that crashed or was restarted
 	// mid-task) are put back in the queue; the cloud worker that used to do it is usually asleep.
@@ -249,10 +272,7 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	// Work that plain code can do (a closed listing dropped, the InternDock sync, the alumni message batch, a batch of
 	// applications split into one task each) is done here, so the device has nothing to run.
 	if h.trackers != nil && res.Task != nil {
-		answer, how := h.trackers.RunInCode(r.Context(), res.Task, h.engine.CancelTask, func(c context.Context, t *domain.Task) error {
-			_, err := h.engine.CreateTask(c, t, nil)
-			return err
-		})
+		answer, how := h.runInCode(r.Context(), start, res.Task)
 		switch how {
 		case service.Dropped:
 			w.WriteHeader(http.StatusNoContent)

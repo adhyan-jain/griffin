@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/griffin/core/internal/budget"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/provider/gemini"
 	"github.com/griffin/core/internal/sources"
@@ -95,38 +97,126 @@ func (w *TrackerLists) ownerFacts(ctx context.Context, userID uuid.UUID) string 
 	return w.ProfileText(ctx, userID)
 }
 
-// communityReplies writes a reply for each new thread, best first, at most communityReplyCap and one model call
-// each. It returns the replies by thread link; a thread whose reply failed a check or whose call failed has none.
-// With no model or no owner profile it writes nothing. Reading a thread's text never blocks a reply: with the full
-// text unavailable (Reddit refuses), the title and the listing's snippet are used.
-func (w *TrackerLists) communityReplies(ctx context.Context, userID uuid.UUID, picked []sources.Scored, get sources.Get) (replies map[string]string, rejected int) {
-	if w.ReplyModel == nil || len(picked) == 0 {
-		return nil, 0
+// replyRun writes the replies of one scan: one model call per thread, at most communityReplyCap in the run, new
+// threads first and then older ones that have none yet. It stops starting calls when little time is left.
+type replyRun struct {
+	model         OutreachChatter
+	facts         string
+	get           sources.Get
+	calls         int
+	redditBlocked bool
+}
+
+// newReplyRun is nil when there is no model or no owner profile: then nothing is written and nothing is asked.
+func (w *TrackerLists) newReplyRun(ctx context.Context, userID uuid.UUID, get sources.Get) *replyRun {
+	if w.ReplyModel == nil {
+		return nil
 	}
 	facts := w.ownerFacts(ctx, userID)
 	if facts == "" {
-		return nil, 0
+		return nil
 	}
+	return &replyRun{model: w.ReplyModel, facts: facts, get: get}
+}
+
+// fill writes a reply for each thread in order, until the run's cap or the time is used. It returns the replies by
+// thread link, how many drafts failed a check or the call, and how many threads were not tried at all. Reading a
+// thread's text never blocks a reply: with the full text unavailable (Reddit refuses), the title and the listing's
+// snippet are used.
+func (r *replyRun) fill(ctx context.Context, threads []sources.Scored) (replies map[string]string, rejected, untried int) {
 	replies = map[string]string{}
-	redditBlocked := false
-	for i, s := range picked {
-		if i == communityReplyCap {
+	for i, s := range threads {
+		if r.calls >= communityReplyCap || budget.Short(ctx) {
+			untried = len(threads) - i
 			break
 		}
-		read := get
-		if s.Thread.Platform == sources.Reddit && redditBlocked {
+		r.calls++
+		read := r.get
+		if s.Thread.Platform == sources.Reddit && r.redditBlocked {
 			// Reddit already refused this run: use the title and the listing's snippet, and do not ask again.
 			read = func(context.Context, string) ([]byte, error) { return nil, errors.New("skipped") }
 		}
 		text, err := sources.ReadThreadText(ctx, read, s.Thread)
 		if err != nil && s.Thread.Platform == sources.Reddit {
-			redditBlocked = true
+			r.redditBlocked = true
 		}
-		if reply := draftCommunityReply(ctx, w.ReplyModel, s, text, facts); reply != "" {
+		if reply := draftCommunityReply(ctx, r.model, s, text, r.facts); reply != "" {
 			replies[strings.ToLower(s.Thread.URL)] = reply
 		} else {
 			rejected++
 		}
 	}
+	return replies, rejected, untried
+}
+
+// communityReplies writes a reply for each new thread, best first, at most communityReplyCap and one model call
+// each. It returns the replies by thread link; a thread whose reply failed a check or whose call failed has none.
+// With no model or no owner profile it writes nothing.
+func (w *TrackerLists) communityReplies(ctx context.Context, userID uuid.UUID, picked []sources.Scored, get sources.Get) (replies map[string]string, rejected int) {
+	run := w.newReplyRun(ctx, userID, get)
+	if run == nil || len(picked) == 0 {
+		return nil, 0
+	}
+	replies, rejected, _ = run.fill(ctx, picked)
 	return replies, rejected
+}
+
+// backfillWindow is how old a thread may be to still get a reply written for it on a later run.
+const backfillWindow = 7 * 24 * time.Hour
+
+// communityCells is how many cells a row has now.
+const communityCells = 9
+
+// replyBackfill is the threads already on the list that have no reply (the cell is "—") and are still worth one:
+// still marked "new" (the owner has not acted on them) and posted within backfillWindow. They are in list order,
+// which is newest first.
+func replyBackfill(text string, now time.Time) []sources.Scored {
+	tbl, ok := domain.FirstTable(text)
+	if !ok {
+		return nil
+	}
+	var out []sources.Scored
+	for _, row := range strings.Split(tbl, "\n")[2:] {
+		c := rowCells(withReplyCell(row)) // a list from before the reply column counts too
+		if len(c) != communityCells || c[6] != noReply || c[8] != "new" || !strings.HasPrefix(c[7], "http") {
+			continue
+		}
+		posted, err := time.Parse("2006-01-02 15:04 MST", c[5])
+		if err != nil || now.Sub(posted) > backfillWindow {
+			continue
+		}
+		s := sources.Scored{Thread: sources.Thread{Platform: c[0], Community: c[1], Title: c[2], URL: c[7], Posted: posted}, Why: c[3]}
+		if strings.HasPrefix(c[4], "Yes: ") {
+			s.Mention = strings.TrimPrefix(c[4], "Yes: ")
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// rowCells splits one table row into its trimmed cells; nil for a line that is not a row.
+func rowCells(row string) []string {
+	t := strings.TrimSpace(row)
+	if !strings.HasPrefix(t, "|") || !strings.HasSuffix(t, "|") {
+		return nil
+	}
+	c := strings.Split(strings.TrimSuffix(strings.TrimPrefix(t, "|"), "|"), "|")
+	for i := range c {
+		c[i] = strings.TrimSpace(c[i])
+	}
+	return c
+}
+
+// withReply gives a row that has no reply the one written for its link, and leaves every other row as it is.
+func withReply(row string, fills map[string]string) string {
+	c := rowCells(row)
+	if len(c) != communityCells || c[6] != noReply {
+		return row
+	}
+	reply, ok := fills[strings.ToLower(c[7])]
+	if !ok {
+		return row
+	}
+	c[6] = reply
+	return "| " + strings.Join(c, " | ") + " |"
 }

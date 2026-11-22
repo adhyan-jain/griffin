@@ -42,6 +42,9 @@ type TrackerLists struct {
 	Assess *OpportunityAssess
 	// Opportunities reads the employers' own boards for internships; nil leaves the OPPORTUNITY SCAN routine unhandled.
 	Opportunities *OpportunityScan
+	// Details reads the detail pages of listings that have no description (the LISTING DETAILS routine, and a
+	// few at the end of LISTINGS SYNC); nil leaves both off.
+	Details *ListingDetails
 	// CommunityGet fetches the community pages for the daily scan; nil means the network.
 	CommunityGet sources.Get
 	// ReplyModel writes the "Reply you can send" for each new community thread (at most one call per thread);

@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/griffin/core/internal/budget"
 )
 
 // Community platforms, recorded on each thread.
@@ -108,12 +110,16 @@ func ReadCommunities(ctx context.Context, get Get, now time.Time) (threads []Thr
 	if get == nil {
 		get = CommunityGet
 	}
-	skipped := 0
+	skipped, timeLeft := 0, 0 // pages skipped after a refusal, and pages the time budget did not reach
 	blocked := ""
 	for _, sub := range RedditSubs {
 		for _, page := range []string{"new.json?limit=50", "top.json?t=day&limit=50"} {
 			if blocked != "" {
 				skipped++
+				continue
+			}
+			if budget.Short(ctx) {
+				timeLeft++
 				continue
 			}
 			u := redditBase + "/r/" + sub.Name + "/" + page
@@ -133,6 +139,10 @@ func ReadCommunities(ctx context.Context, get Get, now time.Time) (threads []Thr
 	}
 	since := now.Add(-48 * time.Hour).Unix()
 	for _, s := range HNSearches {
+		if budget.Short(ctx) {
+			timeLeft++
+			continue
+		}
 		u := fmt.Sprintf("%s?tags=%s&query=%s&hitsPerPage=30&numericFilters=%s", hnBase,
 			s.Tag, url.QueryEscape(s.Query), url.QueryEscape("created_at_i>"+strconv.FormatInt(since, 10)))
 		body, err := get(ctx, u)
@@ -146,6 +156,9 @@ func ReadCommunities(ctx context.Context, get Get, now time.Time) (threads []Thr
 			continue
 		}
 		threads = append(threads, ts...)
+	}
+	if timeLeft > 0 {
+		problems = append(problems, fmt.Sprintf("%d pages left for the next run (out of time)", timeLeft))
 	}
 	return threads, problems
 }

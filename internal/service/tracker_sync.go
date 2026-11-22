@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/griffin/core/internal/budget"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/sources"
 	"github.com/griffin/core/internal/storage"
@@ -116,7 +117,9 @@ func (w *TrackerLists) SyncHackathons(ctx context.Context, task *domain.Task) (s
 	if w == nil || w.Store == nil || w.Hackathons == nil || task == nil || !IsHackathonTracker(task.Title) {
 		return "", false
 	}
-	res := w.Hackathons.Run(ctx)
+	work, cancel := budget.Work(ctx)
+	defer cancel()
+	res := w.Hackathons.Run(work)
 	if len(res.Rows) == 0 && len(res.Problems) > 0 {
 		// Nothing was read and something failed: keep the list as it was rather than empty it.
 		return "The hackathon sites did not answer this run, so the Hackathons list is unchanged." + problemsLine(res.Problems), true
@@ -182,7 +185,9 @@ func (w *TrackerLists) SyncOpenSource(ctx context.Context, task *domain.Task) (s
 	if w == nil || w.Store == nil || w.OpenSource == nil || task == nil || !IsOpenSourceWatch(task.Title) {
 		return "", false
 	}
-	res := w.OpenSource.Run(ctx)
+	work, cancel := budget.Work(ctx)
+	defer cancel()
+	res := w.OpenSource.Run(work)
 	if len(res.Issues) == 0 && len(res.Problems) > 0 {
 		return "GitHub did not answer this run, so the Open Source list is unchanged." + problemsLine(res.Problems), true
 	}
@@ -265,7 +270,9 @@ func (w *TrackerLists) SyncHygiene(ctx context.Context, task *domain.Task) (stri
 	if w.Hygiene == nil || strings.TrimSpace(w.Hygiene.Login) == "" {
 		return "Repo hygiene needs GITHUB_LOGIN (your GitHub username) set on the server before it can check your repos. The Repo Hygiene list is unchanged.", true
 	}
-	res := w.Hygiene.Run(ctx)
+	work, cancel := budget.Work(ctx)
+	defer cancel()
+	res := w.Hygiene.Run(work)
 	if res.checked() == 0 && len(res.Problems) > 0 {
 		return "GitHub did not answer this run, so the Repo Hygiene list is unchanged." + problemsLine(res.Problems), true
 	}
