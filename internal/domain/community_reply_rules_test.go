@@ -21,7 +21,7 @@ func TestCommunityReplyPassesWhenEveryNumberAndNameIsFromTheThreadOrProfile(t *t
 func TestCommunityReplyRejectsInventedNumbersNamesLinksAndNoise(t *testing.T) {
 	cases := map[string]string{
 		"an invented number":  strings.Replace(goodReply, "With 3 nodes", "With 12 nodes", 1),
-		"an invented product": strings.Replace(goodReply, "a Redis list", "a Kafka topic", 1),
+		"an invented product": strings.Replace(goodReply, "a Redis list", "a Pulsarix stream", 1), // a niche or unknown product; well-known tools (Kafka) are vocabulary
 		"a link":              goodReply + " See https://example.com/queues for more.",
 		"a hashtag":           goodReply + " #golang",
 		"an emoji":            goodReply + " 🚀",

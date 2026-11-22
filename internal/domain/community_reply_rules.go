@@ -22,6 +22,23 @@ var (
 	replySentenceSplit = regexp.MustCompile(`[.!?]+\s+|\n`)
 )
 
+// techTerms are words any engineer uses in an answer without claiming anything about themselves: acronyms,
+// languages and widely used open tools. A company, person or niche product still has to come from the thread or the
+// owner's profile, and claims of experience are caught separately (experienceClaim, CheckCommunityMention).
+var techTerms = map[string]bool{}
+
+func init() {
+	for _, w := range strings.Fields(`api apis llm llms gpu gpus cpu cpus tpu sql nosql json yaml xml http https rest grpc rpc tcp udp dns
+	rag ml ai nlp cv sdk cli ui ux os ci cd db dbs ram ssd io i/o vm vms jit gc oom url urls html css csv
+	ide orm etl sla slo sre devops mlops llmops gpt bert lora qlora rlhf sft dpo moe kv vram fp16 bf16 int8 int4
+	python go golang rust java javascript typescript c c++ bash linux unix macos windows git github docker kubernetes k8s
+	postgres postgresql mysql sqlite redis kafka rabbitmq nginx aws gcp azure s3 lambda terraform react node nodejs
+	pytorch tensorflow jax numpy pandas cuda onnx vllm langchain openai anthropic claude gemini llama mistral hugging face
+	huggingface transformers faiss embedding embeddings markdown regex oauth jwt ssh tls ssl`) {
+		techTerms[w] = true
+	}
+}
+
 // CheckCommunityReply returns every reason a drafted reply to a public thread must not be written into the
 // tracker; none means it may. threadText is everything the model was shown of the thread (title, body, comments)
 // and ownerFacts the owner's verified profile: every number and every name or product in the reply must come from
@@ -63,6 +80,9 @@ func CheckCommunityReply(reply, threadText, ownerFacts string) []string {
 		problems = append(problems, "number not in the thread or your profile: \""+num+"\"")
 	}
 	for _, w := range unknownNames(reply, known) {
+		if techTerms[strings.ToLower(w)] {
+			continue // ordinary technical vocabulary is advice, not a claim
+		}
 		problems = append(problems, "name not in the thread or your profile: \""+w+"\"")
 	}
 	return problems
