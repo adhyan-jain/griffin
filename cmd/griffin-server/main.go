@@ -662,7 +662,8 @@ func communityReplier(cfg *config.Config) service.OutreachChatter {
 	if cfg.GeminiAPIKey == "" {
 		return nil
 	}
-	return &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 600}
+	// The lighter model: quick enough for several replies inside one 22s run, and less often overloaded.
+	return &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: gemini.DefaultFallbackModel, MaxOutputTokens: 600, Fallback: "gemini-flash-latest"}
 }
 
 // deviceDecider chooses phone screen steps with the server's Gemini key, so the key never reaches the phone.
