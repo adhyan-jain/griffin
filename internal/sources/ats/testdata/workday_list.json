@@ -1,0 +1,33 @@
+{
+ "total": 1108,
+ "jobPostings": [
+  {
+   "title": "DFT Intern - 2027",
+   "externalPath": "/job/China-Shanghai/DFT-Intern---2027_JR2027176",
+   "locationsText": "China, Shanghai",
+   "postedOn": "Posted 30+ Days Ago",
+   "bulletFields": [
+    "JR2027176"
+   ]
+  },
+  {
+   "title": "GPU Compiler Intern",
+   "externalPath": "/job/Switzerland-Zurich/GPU-Compiler-Intern_JR2029779",
+   "locationsText": "Switzerland, Zurich",
+   "postedOn": "Posted 11 Days Ago",
+   "bulletFields": [
+    "JR2029779"
+   ]
+  },
+  {
+   "title": "Director, International Tax Planning",
+   "externalPath": "/job/US-CA-Santa-Clara/Director--International-Tax-Planning_JR2026240",
+   "locationsText": "US, CA, Santa Clara",
+   "postedOn": "Posted 3 Days Ago",
+   "bulletFields": [
+    "JR2026240"
+   ]
+  }
+ ],
+ "userAuthenticated": false
+}

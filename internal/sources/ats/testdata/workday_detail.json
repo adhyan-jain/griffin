@@ -1,0 +1,36 @@
+{
+ "jobPostingInfo": {
+  "id": "066fc72170ae104ea7e85951bae30000",
+  "title": "GPU Compiler Intern",
+  "jobDescription": "<p><span style=\"color:#000000\">As GPU Compiler Intern, you will develop compiler infrastructure for Python-based GPU programming, including CUTLASS CuTeDSL. You will work on DSL design, MLIR IR design, and compiler optimizations that translate expressive Python programs into high-performance NVIDIA GPU kernels.</span></p><br /><p><span style=\"color:#000000\"><b>What you will be doing:</b></span></p><ul><li style=\"color:#000000 !important\"><span style=\"color:#000000\">Design and implement Python DSL features for GPU kernel authoring, including metaprogramming and IR generation.</span></li><li style=\"color:#000000 !important\"><span style=\"color:#000000\">Develop MLIR dialects, transformation passes, and lowering pipelines that preserve the information needed for effective GPU optimization.</span></li><li style=\"color:#000000 !important\"><span style=\"color:#000000\">Design and optimize GPU kernels, exploring how IR design and compiler transformations affect generated code and performance.</span></li><li style=\"color:#000000 !important\"><span style=\"color:#000000\">Profile, benchmark, and validate compiler and kernel improvements across representative workloads.</span></li></ul>",
+  "location": "Switzerland, Zurich",
+  "postedOn": "Posted 11 Days Ago",
+  "startDate": "2026-11-11",
+  "timeType": "Full time",
+  "jobReqId": "JR2029779",
+  "jobPostingId": "GPU-Compiler-Intern_JR2029779",
+  "jobPostingSiteId": "NVIDIAExternalCareerSite",
+  "country": {
+   "descriptor": "Switzerland",
+   "id": "187134fccb084a0ea9b4b95f23890dbe"
+  },
+  "canApply": true,
+  "posted": true,
+  "includeResumeParsing": true,
+  "jobRequisitionLocation": {
+   "descriptor": "Switzerland, Zurich",
+   "country": {
+    "descriptor": "Switzerland",
+    "id": "187134fccb084a0ea9b4b95f23890dbe",
+    "alpha2Code": "CH"
+   }
+  },
+  "externalUrl": "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite/job/Switzerland-Zurich/GPU-Compiler-Intern_JR2029779",
+  "questionnaireId": "2f2764b3a82910064296831695150000"
+ },
+ "hiringOrganization": {
+  "name": "CH01 NVIDIA Switzerland AG",
+  "url": ""
+ },
+ "userAuthenticated": false
+}

@@ -1,0 +1,36 @@
+{
+ "id": 6285741,
+ "shortcode": "2F83B48969",
+ "title": "Senior Software Engineer, Bot Detection (Client-Side & Signals) - EMEA Remote",
+ "remote": true,
+ "location": {
+  "city": "",
+  "country": "France",
+  "countryCode": "FR",
+  "region": null
+ },
+ "locations": [
+  {
+   "city": "",
+   "country": "France",
+   "countryCode": "FR",
+   "hidden": true,
+   "region": null
+  }
+ ],
+ "state": "published",
+ "isInternal": false,
+ "code": "",
+ "published": "2026-11-20T00:00:00.000Z",
+ "type": "full",
+ "language": "en",
+ "department": [
+  "Product"
+ ],
+ "accountUid": "940cf17f-c078-40ac-95e8-07704e754048",
+ "approvalStatus": "approved",
+ "workplace": "remote",
+ "description": "<p>At Hugging Face, we're on a journey to democratize good AI. We are building the fastest growing platform for AI builders with over 20 million users who collectively shared over 4 million models, 1 million datasets &amp; 1.5 million apps. Our open-source libraries have more than 700,000 stars on Github.</p><p></p><p><strong>About the Role</strong></p><p>Hugging Face hosts millions of models, datasets and Spaces, and serves a very large community of developers. That scale also brings automated abuse: fake accounts, scraping, spam, credential stuffing, and bots gaming downloads, likes and trending signals. We're building a small, dedicated bot-detection effort inside our Trust &amp; Safety team, and we're looking for an engineer to own the signal-collection side of it.</p>",
+ "requirements": "<p></p><ul><li>You have solid hands-on experience in bot detection, anti-fraud, browser fingerprinting, web security or a closely related field, and you've shipped things that ran in production</li><li>You understand browser internals and the web platform deeply (JavaScript, DOM and rendering APIs, WebGL/Canvas/Audio, extensions), as well as networking protocols (HTTP/2/3, TLS)</li><li>You know the attacker's toolbox from the inside (Puppeteer/Playwright/Selenium, stealth plugins, automation frameworks) and you like taking it apart</li>",
+ "benefits": "<p><strong>More about Hugging Face</strong></p><p><strong>We are actively working to build a culture that values diversity, equity, and inclusivity</strong>. We are intentionally building a workplace where people feel respected and supported—regardless of who you are or where you come from. We believe this is foundational to building a great company and community. Hugging Face is an equal opportunity employer and we do not discriminate on the basis of race, religion, color, national origin, gender, sexual orientation, age, marital status, veteran status, or disability status.</p>"
+}

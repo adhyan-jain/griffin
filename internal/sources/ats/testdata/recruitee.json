@@ -1,0 +1,214 @@
+{
+ "offers": [
+  {
+   "slug": "copywriter-3",
+   "state_code": "NH",
+   "position": 1663,
+   "mailbox_email": "job.16oc8@bunq.recruitee.com",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": null,
+    "currency": null
+   },
+   "options_cv": "off",
+   "max_hours": 40,
+   "close_at": null,
+   "education_code": "professional",
+   "min_hours": 40,
+   "options_cover_letter": "off",
+   "sharing_title": "Copywriter",
+   "company_name": "bunq",
+   "sharing_image": null,
+   "category_code": "banking",
+   "created_at": "2026-11-18 16:12:44 UTC",
+   "options_photo": "off",
+   "options_salutation": "off",
+   "tags": [],
+   "title": "Copywriter",
+   "requirements": "<ul><li><p>Your English is fluent at a professional level, and your grammar and spelling are spotless. Native or near-native is a plus.</p></li><li><p>You’ve built or improved AI agents or prompts that produce copy, and you know how to fix them when the output drifts.</p></li><li><p>You write creative, user-first copy that gets people to open, click and act.</p></li><li><p>You’ve turned briefs into finished copy across multiple channels, on time. Lifecycle or CRM experience is a bonus.</p></li><li><p>You’re reachable outside working hours when an incident needs copy fast.</p><p style=\"min-height: 1.7em;\"></p></li>",
+   "min_hours_per_week": "40",
+   "postal_code": null,
+   "locations_question_required": true,
+   "employment_type_code": "fulltime_permanent",
+   "cover_image": null,
+   "hybrid": true,
+   "location_question_visible": true,
+   "country": "Netherlands",
+   "sharing_description": "At bunq, we’re on a mission to Make Life Easy for our users by creating the most user-centric banking experience out there. Every email, push notification and in-app message we send should feel like i",
+   "state_name": "Noord-Holland",
+   "options_phone": "required",
+   "country_code": "NL",
+   "description": "<p>At bunq, we’re on a mission to Make Life Easy for our users by creating the most user-centric banking experience out there. Every email, push notification and in-app message we send should feel like it was written for the person reading it, not for us. Right now, nobody owns that.</p><p>That’s where you come in. As our Copywriter, you will own every message our users get across email, push and in-app, plus the updates they read when something goes wrong. AI will write most of the first drafts. You’ll build the system that writes them, judge what it gets wrong, and add the creative edge AI always misses.</p><p style=\"min-height: 1.7em;\"></p><p><strong>Take Ownership 🚀</strong></p><p>You’ll own the words our users read every day. Here’s how you’ll do it:</p>",
+   "department": "Content & Design",
+   "updated_at": "2026-11-18 17:10:12 UTC",
+   "remote": false,
+   "highlight": null,
+   "published_at": "2026-11-18 16:23:32 UTC",
+   "on_site": false,
+   "max_hours_per_week": "40",
+   "guid": "16oc8",
+   "id": 2832667,
+   "location": "Amsterdam, Noord-Holland, Netherlands",
+   "locations_question_type": "single_choice",
+   "careers_apply_url": "https://careers.bunq.com/o/copywriter-3/c/new",
+   "careers_url": "https://careers.bunq.com/o/copywriter-3",
+   "status": "published",
+   "experience_code": "experienced",
+   "locations": [
+    {
+     "id": 39979,
+     "name": "Amsterdam",
+     "state": "Noord-Holland",
+     "country": "Netherlands",
+     "city": "Amsterdam",
+     "translations": {
+      "en": {
+       "name": "Amsterdam",
+       "city": "Amsterdam",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "NL",
+     "postal_code": null,
+     "state_code": "NH",
+     "street": null,
+     "note": null
+    },
+    {
+     "id": 39977,
+     "name": "Istanbul",
+     "state": "İstanbul",
+     "country": "Türkiye",
+     "city": "İstanbul",
+     "translations": {
+      "en": {
+       "name": "Istanbul",
+       "city": "İstanbul",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "TR",
+     "postal_code": null,
+     "state_code": "34",
+     "street": null,
+     "note": null
+    },
+    {
+     "id": 39967,
+     "name": "Sofia",
+     "state": "Sofia (stolitsa)",
+     "country": "Bulgaria",
+     "city": "Sofia",
+     "translations": {
+      "en": {
+       "name": "Sofia",
+       "city": "Sofia",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "BG",
+     "postal_code": null,
+     "state_code": "22",
+     "street": null,
+     "note": null
+    }
+   ],
+   "options_title": "off",
+   "locations_question": "What is your preferred work location?",
+   "city": "Amsterdam"
+  },
+  {
+   "slug": "security-engineer-3",
+   "state_code": "NH",
+   "position": 1657,
+   "mailbox_email": "job.t979p@bunq.recruitee.com",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": null,
+    "currency": null
+   },
+   "options_cv": "off",
+   "max_hours": 40,
+   "close_at": null,
+   "education_code": "professional",
+   "min_hours": 40,
+   "options_cover_letter": "off",
+   "sharing_title": "Security Engineer",
+   "company_name": "bunq",
+   "sharing_image": null,
+   "category_code": "banking",
+   "created_at": "2026-11-11 13:06:54 UTC",
+   "options_photo": "off",
+   "options_salutation": "off",
+   "tags": [
+    "E2",
+    "E3",
+    "Enablers"
+   ],
+   "title": "Security Engineer",
+   "requirements": "<ul><li><p>You’ve worked hands-on as a security engineer, investigating and triaging security incidents.</p></li><li><p>You write code to automate security work, not just to run scripts.</p></li><li><p>You’ve worked with identity governance and know how to build secure login and access solutions.</p></li><li><p>You communicate clearly with stakeholders, especially under pressure when someone is locked out or an incident hits.</p></li><li><p>You bring engineering experience. Consultancy experience alone isn’t the right fit.</p></li>",
+   "min_hours_per_week": "40",
+   "postal_code": null,
+   "locations_question_required": true,
+   "employment_type_code": "fulltime_permanent",
+   "cover_image": null,
+   "hybrid": true,
+   "location_question_visible": false,
+   "country": "Netherlands",
+   "sharing_description": "At bunq, we’re on a mission to Make Life Easy for our users by creating the most user-centric banking experience out there. That starts with keeping their data safe. As AI makes attackers faster, we’r",
+   "state_name": "Noord-Holland",
+   "options_phone": "required",
+   "country_code": "NL",
+   "description": "<p style=\"text-align:start;\">At bunq, we’re on a mission to Make Life Easy for our users by creating the most user-centric banking experience out there. That starts with keeping their data safe. As AI makes attackers faster, we’re seeing more critical zero-day vulnerabilities than ever, and we need to stay ahead of them.</p><p style=\"text-align:start;\">That’s where you come in. As our&nbsp;<strong>Security Engineer</strong>, you’ll own how 700 colleagues get secure access to our systems, and you’ll help defend bunq against attacks as they happen. You’ll design and build security processes that AI can’t run on its own, and automate everything that it can.</p><p style=\"min-height: 1.7em;\"></p><p style=\"text-align:start;\"><strong>Take Ownership 🚀</strong></p>",
+   "department": "Technology",
+   "updated_at": "2026-11-19 10:47:03 UTC",
+   "remote": false,
+   "highlight": null,
+   "published_at": "2026-11-11 13:21:40 UTC",
+   "on_site": false,
+   "max_hours_per_week": "40",
+   "guid": "t979p",
+   "id": 2823928,
+   "location": "Amsterdam, Noord-Holland, Netherlands",
+   "locations_question_type": "single_choice",
+   "careers_apply_url": "https://careers.bunq.com/o/security-engineer-3/c/new",
+   "careers_url": "https://careers.bunq.com/o/security-engineer-3",
+   "status": "published",
+   "experience_code": "experienced",
+   "locations": [
+    {
+     "id": 39979,
+     "name": "Amsterdam",
+     "state": "Noord-Holland",
+     "country": "Netherlands",
+     "city": "Amsterdam",
+     "translations": {
+      "en": {
+       "name": "Amsterdam",
+       "city": "Amsterdam",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "NL",
+     "postal_code": null,
+     "state_code": "NH",
+     "street": null,
+     "note": null
+    }
+   ],
+   "options_title": "off",
+   "locations_question": "What is your preferred work location?",
+   "city": "Amsterdam"
+  }
+ ]
+}
