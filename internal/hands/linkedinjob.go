@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -49,8 +50,15 @@ func (e *Executor) runLinkedIn(ctx context.Context, task *domain.Task, ls *domai
 			}
 		}
 	}
-	answer, err := e.LinkedIn.Scan.Run(ctx, task.Goal, ls.Minutes, ls.Workspace)
+	// The scan's minutes are a hard limit: scrolling gets them, reading the posts gets ten more, and then the
+	// browser is stopped. Without this a hung page held the host (and every task behind it) for hours.
+	runCtx, cancel := context.WithTimeout(ctx, LinkedInDeadline(ls.Minutes))
+	defer cancel()
+	answer, err := e.LinkedIn.Scan.Run(runCtx, task.Goal, ls.Minutes, ls.Workspace)
 	if err != nil {
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return fail(fmt.Errorf("the LinkedIn scan ran past its %v limit and was stopped", LinkedInDeadline(ls.Minutes)), false)
+		}
 		return fail(err, true)
 	}
 	out, _ := json.Marshal(map[string]string{"response": answer})
@@ -58,4 +66,13 @@ func (e *Executor) runLinkedIn(ctx context.Context, task *domain.Task, ls *domai
 		ExecutionID: uuid.New(), ProviderName: "hands/linkedin", Status: "SUCCESS",
 		Output: out, TextOutput: answer,
 	}, nil
+}
+
+// LinkedInDeadline is the longest a LinkedIn scan may run: its scrolling minutes (10 when unset) plus ten for
+// reading what it found.
+func LinkedInDeadline(minutes int) time.Duration {
+	if minutes <= 0 {
+		minutes = 10
+	}
+	return time.Duration(minutes+10) * time.Minute
 }
