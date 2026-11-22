@@ -553,6 +553,14 @@ func (e *TaskEngine) SetOwnerFacts(f func(ctx context.Context, userID uuid.UUID)
 	e.ownerFacts = f
 }
 
+// OwnerFacts is the owner's verified profile as outreach is checked against it, or "" when none is wired.
+func (e *TaskEngine) OwnerFacts(ctx context.Context, userID uuid.UUID) string {
+	if e == nil || e.ownerFacts == nil {
+		return ""
+	}
+	return e.ownerFacts(ctx, userID)
+}
+
 // checkOutreach applies the outreach rules to one proposal. Without the owner's verified profile nothing can be
 // checked, so nothing is proposed.
 func (e *TaskEngine) checkOutreach(ctx context.Context, userID uuid.UUID, p domain.Proposal) []string {

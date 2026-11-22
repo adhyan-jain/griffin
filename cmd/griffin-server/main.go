@@ -349,6 +349,7 @@ func main() {
 				Playbooks:         storageService,
 				Listings:          listingRepo,
 				GitHubLogin:       cfg.GitHubLogin,
+				CommunityReplies:  communityReplier(cfg),
 				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
 					if err := jjOrchestrator.ReconcileByChildTask(hookCtx, taskID); err != nil {
 						logger.Warn("Orchestration reconcile after task finish failed", "task_id", taskID, "error", err)
@@ -506,6 +507,7 @@ func main() {
 			NotificationRepo: notificationRepo,
 			ListingRepo:      listingRepo,
 			GitHubLogin:      cfg.GitHubLogin,
+			CommunityReplies: communityReplier(cfg),
 			OutreachRepo:     outreachRepo,
 			ReportRepo:       repository.NewReportRepository(repoDB),
 			Dsa:              dsaCoach,
@@ -632,6 +634,15 @@ func outreachDrafter(cfg *config.Config) *service.OutreachDrafter {
 		return nil
 	}
 	return &service.OutreachDrafter{Model: &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 500}}
+}
+
+// communityReplier writes the reply for each new community thread with Gemini Flash; nil (an untyped nil
+// interface, so the scan leaves the cells empty) when there is no key.
+func communityReplier(cfg *config.Config) service.OutreachChatter {
+	if cfg.GeminiAPIKey == "" {
+		return nil
+	}
+	return &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 600}
 }
 
 // deviceDecider chooses phone screen steps with the server's Gemini key, so the key never reaches the phone.

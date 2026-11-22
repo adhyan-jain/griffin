@@ -40,6 +40,11 @@ type TrackerLists struct {
 	Sync *ListingSync
 	// CommunityGet fetches the community pages for the daily scan; nil means the network.
 	CommunityGet sources.Get
+	// ReplyModel writes the "Reply you can send" for each new community thread (at most one call per thread);
+	// nil, or no owner profile, leaves those cells at "—".
+	ReplyModel OutreachChatter
+	// OwnerFacts is the owner's verified profile that replies are checked against; nil uses the Library profile.
+	OwnerFacts func(ctx context.Context, userID uuid.UUID) string
 	// Hackathons, OpenSource and Hygiene write their trackers from the sites' own data; nil leaves a routine to the model path.
 	Hackathons *HackathonSync
 	OpenSource *OpenSourceSync

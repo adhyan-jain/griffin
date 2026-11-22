@@ -21,7 +21,10 @@ func IsCommunityScan(title string) bool {
 }
 
 // CommunityHeader is the columns of the Communities list.
-const CommunityHeader = "| Platform | Community | Thread | Why it fits | Mention a project? | Posted | Link | Status |\n|---|---|---|---|---|---|---|---|"
+const CommunityHeader = "| Platform | Community | Thread | Why it fits | Mention a project? | Posted | Reply you can send | Link | Status |\n|---|---|---|---|---|---|---|---|---|"
+
+// communityOldCells is how many cells a row had before the reply column existed.
+const communityOldCells = 8
 
 const (
 	communityPerDay = 15
@@ -31,6 +34,7 @@ const (
 // CommunityScanResult counts what one scan did.
 type CommunityScanResult struct {
 	Read, Added, Mentions, Seen int
+	Replies, NoReply            int // replies written for new threads, and new threads left without one
 	Names                       []string
 	Problems                    []string
 	SaveError                   string
@@ -55,6 +59,13 @@ func (r CommunityScanResult) Summary() string {
 	}
 	if len(r.Problems) > 0 {
 		b.WriteString("\n\nCould not read: " + strings.Join(r.Problems, "; ") + ".")
+	}
+	if r.Replies > 0 {
+		fmt.Fprintf(&b, "\n\nWrote %d ready-to-send replies in the list", r.Replies)
+		if r.NoReply > 0 {
+			fmt.Fprintf(&b, " (%d threads have none: the draft failed a fact check or could not be written)", r.NoReply)
+		}
+		b.WriteString(".")
 	}
 	b.WriteString("\n\nTap a thread and ask Griffin to draft a reply: it writes one for your approval and nothing is posted until you approve it.")
 	return b.String()
@@ -97,8 +108,10 @@ func (w *TrackerLists) ScanCommunities(ctx context.Context, task *domain.Task, g
 			res.Seen++
 		}
 	}
-	if len(picked) > 0 {
-		body := communityList(text, picked)
+	replies, _ := w.communityReplies(ctx, task.UserID, picked, get)
+	res.Replies, res.NoReply = len(replies), len(picked)-len(replies)
+	// A list from before the reply column is rewritten with it even on a day with nothing new.
+	if body := communityList(text, picked, replies); len(picked) > 0 || (list != nil && !hasReplyColumn(text)) {
 		var err error
 		if list == nil {
 			_, err = w.Store.SaveArtifact(ctx, storage.SaveArtifactInput{
@@ -130,11 +143,14 @@ func listedLinks(text string) map[string]bool {
 
 // communityList is the list with the new rows on top (newest first) and at most communityMaxRow rows. Whatever
 // the owner wrote above the table, and the rows he has edited, are kept as they are.
-func communityList(current string, picked []sources.Scored) string {
+func communityList(current string, picked []sources.Scored, replies map[string]string) string {
 	prefix, rows := "# Communities tracker\n\n", []string(nil)
 	if tbl, ok := domain.FirstTable(current); ok {
 		lines := strings.Split(tbl, "\n")
-		rows = lines[2:]
+		rows = make([]string, 0, len(lines)-2)
+		for _, r := range lines[2:] {
+			rows = append(rows, withReplyCell(r))
+		}
 		if i := strings.Index(current, lines[0]); i > 0 {
 			prefix = current[:i]
 		} else if i == 0 {
@@ -143,7 +159,7 @@ func communityList(current string, picked []sources.Scored) string {
 	}
 	fresh := make([]string, 0, len(picked)+len(rows))
 	for _, s := range picked {
-		fresh = append(fresh, communityRow(s))
+		fresh = append(fresh, communityRow(s, replies[strings.ToLower(s.Thread.URL)]))
 	}
 	all := append(fresh, rows...)
 	if len(all) > communityMaxRow {
@@ -152,15 +168,42 @@ func communityList(current string, picked []sources.Scored) string {
 	return prefix + CommunityHeader + "\n" + strings.Join(all, "\n") + "\n"
 }
 
-func communityRow(s sources.Scored) string {
+func communityRow(s sources.Scored, reply string) string {
+	if reply = replyCell(reply); reply == "" {
+		reply = noReply
+	}
 	mention := "No"
 	if s.Mention != "" {
 		mention = "Yes: " + s.Mention
 	}
 	return "| " + strings.Join([]string{
 		cell(s.Thread.Platform), cell(s.Thread.Community), cell(shortTitle(s.Thread.Title)), cell(s.Why), cell(mention),
-		s.Thread.Posted.UTC().Format("2006-01-02 15:04 UTC"), s.Thread.URL, "new",
+		s.Thread.Posted.UTC().Format("2006-01-02 15:04 UTC"), reply, s.Thread.URL, "new",
 	}, " | ") + " |"
+}
+
+// hasReplyColumn reports whether the list's table already has the reply column (or there is no table to migrate).
+func hasReplyColumn(text string) bool {
+	tbl, ok := domain.FirstTable(text)
+	return !ok || strings.Contains(strings.SplitN(tbl, "\n", 2)[0], "Reply you can send")
+}
+
+// withReplyCell gives a row written before the reply column existed a "—" there, before its Link. Rows that
+// already have the column, and any row of another shape, are left as they are.
+func withReplyCell(row string) string {
+	t := strings.TrimSpace(row)
+	if !strings.HasPrefix(t, "|") || !strings.HasSuffix(t, "|") {
+		return row
+	}
+	cells := strings.Split(strings.TrimSuffix(strings.TrimPrefix(t, "|"), "|"), "|")
+	if len(cells) != communityOldCells {
+		return row
+	}
+	for i := range cells {
+		cells[i] = strings.TrimSpace(cells[i])
+	}
+	cells = append(cells[:6], append([]string{noReply}, cells[6:]...)...)
+	return "| " + strings.Join(cells, " | ") + " |"
 }
 
 // cell makes text safe inside one table cell.

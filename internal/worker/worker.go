@@ -64,6 +64,7 @@ type Worker struct {
 	playbooks         PlaybookStore
 	listings          service.ListingStore
 	githubLogin       string
+	communityReplies  service.OutreachChatter
 
 	paused   atomic.Bool
 	inFlight atomic.Int32
@@ -95,6 +96,8 @@ type Config struct {
 	Listings service.ListingStore
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine.
 	GitHubLogin string
+	// CommunityReplies, if set, writes the reply for each new thread of the daily community scan (one call per thread).
+	CommunityReplies service.OutreachChatter
 }
 
 // NewWorker initializes a Worker.
@@ -133,6 +136,7 @@ func NewWorker(cfg Config) *Worker {
 		playbooks:         cfg.Playbooks,
 		listings:          cfg.Listings,
 		githubLogin:       cfg.GitHubLogin,
+		communityReplies:  cfg.CommunityReplies,
 	}
 }
 

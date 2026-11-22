@@ -56,6 +56,8 @@ type ServerDependencies struct {
 	ListingRepo *repository.OpportunityRepository
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine on a host claim.
 	GitHubLogin string
+	// CommunityReplies writes the reply for each new thread of the daily community scan on a host claim; nil leaves those cells empty.
+	CommunityReplies service.OutreachChatter
 	// NotificationRepo is the notification outbox devices read from; nil leaves the routes off.
 	NotificationRepo repository.NotificationRepository
 	// ReportRepo enables the scorecard and per-task audit trail; nil leaves those routes off.
@@ -403,6 +405,9 @@ func NewServer(deps ServerDependencies) *Server {
 					return service.CheckPosting(ctx, nil, link)
 				},
 				Hackathons: &service.HackathonSync{}, OpenSource: &service.OpenSourceSync{}, Hygiene: &service.HygieneSync{Login: deps.GitHubLogin}}
+			if deps.CommunityReplies != nil {
+				lists.ReplyModel, lists.OwnerFacts = deps.CommunityReplies, deps.Engine.OwnerFacts
+			}
 			if deps.ListingRepo != nil {
 				lists.Sync = &service.ListingSync{Listings: deps.ListingRepo}
 			}

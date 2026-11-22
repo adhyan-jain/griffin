@@ -18,6 +18,9 @@ func (w *Worker) trackers() *service.TrackerLists {
 			return service.CheckPosting(ctx, nil, link)
 		},
 		Hackathons: &service.HackathonSync{}, OpenSource: &service.OpenSourceSync{}, Hygiene: &service.HygieneSync{Login: w.githubLogin}}
+	if w.communityReplies != nil {
+		t.ReplyModel, t.OwnerFacts = w.communityReplies, w.engine.OwnerFacts
+	}
 	if w.listings != nil {
 		t.Sync = &service.ListingSync{Listings: w.listings}
 	}
