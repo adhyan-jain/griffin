@@ -40,6 +40,8 @@ type TrackerLists struct {
 	Sync *ListingSync
 	// Assess assesses open listings (value, eligibility, pay, skills); nil leaves the routine to the model path.
 	Assess *OpportunityAssess
+	// Opportunities reads the employers' own boards for internships; nil leaves the OPPORTUNITY SCAN routine unhandled.
+	Opportunities *OpportunityScan
 	// CommunityGet fetches the community pages for the daily scan; nil means the network.
 	CommunityGet sources.Get
 	// ReplyModel writes the "Reply you can send" for each new community thread (at most one call per thread);

@@ -51,7 +51,7 @@ const (
 )
 
 // BoardBrokenAfter is how many failed scans in a row mark a board broken. One bad night is not a dead board.
-const BoardBrokenAfter = 3
+const BoardBrokenAfter = 5
 
 // ATSBoard is one employer board Griffin reads (a Greenhouse token, a Lever slug, a careers page URL).
 type ATSBoard struct {

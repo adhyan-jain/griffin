@@ -412,6 +412,7 @@ func NewServer(deps ServerDependencies) *Server {
 			}
 			if deps.ListingRepo != nil {
 				lists.Sync = &service.ListingSync{Listings: deps.ListingRepo}
+				lists.Opportunities = &service.OpportunityScan{Store: deps.ListingRepo}
 			}
 			lists.Assess = deps.Assess
 			hostHandler.WithTrackerLists(lists)

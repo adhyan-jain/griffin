@@ -23,6 +23,9 @@ func (w *Worker) trackers() *service.TrackerLists {
 	}
 	if w.listings != nil {
 		t.Sync = &service.ListingSync{Listings: w.listings}
+		if st, ok := w.listings.(service.OpportunityStore); ok {
+			t.Opportunities = &service.OpportunityScan{Store: st}
+		}
 	}
 	t.Assess = w.assess
 	return t

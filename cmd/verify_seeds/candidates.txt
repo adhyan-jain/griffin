@@ -1,0 +1,228 @@
+# Companies that may be seeded. One per line: name | domain | kind | region | provider:token, provider:token, ...
+# kind: startup, enterprise, lab, foundation.  region: india, global, remote.
+# Each provider:token is the provider's usual slug for that company, written from memory. cmd/verify_seeds reads each
+# live, in order, and keeps the first board that reads ok and whose postings name the company. A company with no such
+# board is dropped, never kept on a guess.
+
+# --- Indian product companies and startups ---
+Razorpay | razorpay.com | startup | india | greenhouse:razorpaysoftwareprivatelimited, greenhouse:razorpay, lever:razorpay
+CRED | cred.club | startup | india | lever:cred, greenhouse:cred
+Postman | postman.com | startup | india | greenhouse:postman, lever:postman, ashby:postman, lever:getpostman, smartrecruiters:Postman
+Swiggy | swiggy.com | startup | india | lever:swiggy, greenhouse:swiggy, ashby:swiggy, smartrecruiters:Swiggy, workable:swiggy
+Zomato | zomato.com | startup | india | lever:zomato, greenhouse:zomato, ashby:zomato, lever:eternal, smartrecruiters:Zomato
+Meesho | meesho.com | startup | india | lever:meesho, greenhouse:meesho
+Groww | groww.in | startup | india | lever:groww, greenhouse:groww, ashby:groww
+PhonePe | phonepe.com | startup | india | greenhouse:phonepe, lever:phonepe, ashby:phonepe, smartrecruiters:PhonePe, workable:phonepe
+Atlassian | atlassian.com | enterprise | india | lever:atlassian, smartrecruiters:Atlassian, greenhouse:atlassian
+Rippling | rippling.com | startup | india | ashby:rippling, greenhouse:rippling, lever:rippling
+Sarvam AI | sarvam.ai | lab | india | ashby:sarvam, ashby:sarvamai, lever:sarvam, greenhouse:sarvam
+Krutrim | olakrutrim.com | lab | india | lever:krutrim, greenhouse:krutrim, ashby:krutrim, smartrecruiters:Krutrim, workable:krutrim
+Juspay | juspay.in | startup | india | greenhouse:juspay, lever:juspay, ashby:juspay, workable:juspay, smartrecruiters:Juspay
+Slice | sliceit.com | startup | india | lever:sliceit, greenhouse:slice
+Dream Sports | dreamsports.group | startup | india | greenhouse:dreamsports, lever:dreamsports, smartrecruiters:DreamSports, ashby:dreamsports
+ShareChat | sharechat.com | startup | india | lever:sharechat, greenhouse:sharechat, ashby:sharechat, smartrecruiters:ShareChat
+Cashfree Payments | cashfree.com | startup | india | lever:cashfreepayments, greenhouse:cashfree, smartrecruiters:Cashfree, workable:cashfree, ashby:cashfree
+Zepto | zeptonow.com | startup | india | lever:zepto, ashby:zepto, greenhouse:zepto, smartrecruiters:Zepto, workable:zepto
+Freshworks | freshworks.com | enterprise | india | smartrecruiters:freshworks, greenhouse:freshworks, lever:freshworks
+InMobi | inmobi.com | enterprise | india | greenhouse:inmobi, lever:inmobi
+Urban Company | urbancompany.com | startup | india | lever:urbancompany, greenhouse:urbancompany, ashby:urbancompany, smartrecruiters:UrbanCompany
+Licious | licious.in | startup | india | lever:licious
+Lenskart | lenskart.com | startup | india | greenhouse:lenskart, lever:lenskart, smartrecruiters:Lenskart, workable:lenskart
+BrowserStack | browserstack.com | startup | india | greenhouse:browserstack, lever:browserstack, ashby:browserstack, smartrecruiters:BrowserStack, workable:browserstack
+Chargebee | chargebee.com | startup | india | greenhouse:chargebee, lever:chargebee, ashby:chargebee, smartrecruiters:Chargebee, workable:chargebee
+Hasura | hasura.io | startup | india | lever:hasura, ashby:hasura, greenhouse:hasura, workable:hasura
+Zeta | zeta.tech | startup | india | lever:zeta, greenhouse:zeta | needs=banking;issuer
+Jupiter | jupiter.money | startup | india | lever:jupiter, greenhouse:jupiter
+Pine Labs | pinelabs.com | enterprise | india | greenhouse:pinelabs, lever:pinelabs, smartrecruiters:PineLabs, workable:pinelabs
+Mindtickle | mindtickle.com | startup | india | lever:mindtickle, greenhouse:mindtickle
+CleverTap | clevertap.com | startup | india | lever:clevertap, greenhouse:clevertap, ashby:clevertap, smartrecruiters:CleverTap
+MoEngage | moengage.com | startup | india | greenhouse:moengage, lever:moengage, ashby:moengage, smartrecruiters:MoEngage
+Whatfix | whatfix.com | startup | india | lever:whatfix, greenhouse:whatfix, ashby:whatfix, smartrecruiters:Whatfix
+Gupshup | gupshup.io | startup | india | greenhouse:gupshup, lever:gupshup
+Druva | druva.com | startup | india | greenhouse:druva, lever:druva
+Atlan | atlan.com | startup | india | lever:atlan, ashby:atlan, greenhouse:atlan
+Observe.AI | observe.ai | startup | india | lever:observeai, greenhouse:observeai, ashby:observeai
+Uniphore | uniphore.com | startup | india | greenhouse:uniphore, lever:uniphore, ashby:uniphore, smartrecruiters:Uniphore
+Yellow.ai | yellow.ai | startup | india | lever:yellowai, greenhouse:yellowai, ashby:yellowai, smartrecruiters:Yellowai
+Pocket FM | pocketfm.com | startup | india | lever:pocketfm
+BharatPe | bharatpe.com | startup | india | lever:bharatpe
+Khatabook | khatabook.com | startup | india | lever:khatabook
+Cars24 | cars24.com | startup | india | lever:cars24, greenhouse:cars24, ashby:cars24, smartrecruiters:Cars24
+Smallcase | smallcase.com | startup | india | lever:smallcase, ashby:smallcase, smartrecruiters:Smallcase
+Ather Energy | atherenergy.com | startup | india | greenhouse:atherenergy, lever:atherenergy
+Exotel | exotel.com | startup | india | lever:exotel
+Capillary Technologies | capillarytech.com | enterprise | india | lever:capillarytech
+Navi | navi.com | startup | india | lever:navi, greenhouse:navi, ashby:navi, smartrecruiters:Navi | needs=Bengaluru;Bangalore;India;loan
+Setu | setu.co | startup | india | lever:setu, ashby:setu
+Hevo Data | hevodata.com | startup | india | lever:hevodata
+Scaler | scaler.com | startup | india | lever:scaler
+Rapido | rapido.bike | startup | india | lever:rapido
+Turing | turing.com | startup | india | greenhouse:turing, lever:turing
+Leena AI | leena.ai | startup | india | lever:leenaai, ashby:leenaai
+Sprinklr | sprinklr.com | enterprise | india | greenhouse:sprinklr, lever:sprinklr, smartrecruiters:Sprinklr
+Eightfold AI | eightfold.ai | startup | india | greenhouse:eightfold, lever:eightfold, ashby:eightfold, smartrecruiters:EightfoldAI
+Darwinbox | darwinbox.com | startup | india | lever:darwinbox
+PhysicsWallah | pw.live | startup | india | lever:pw, greenhouse:pw
+upGrad | upgrad.com | startup | india | greenhouse:upgrad, lever:upgrad, smartrecruiters:upGrad, workable:upgrad
+Unacademy | unacademy.com | startup | india | lever:unacademy, greenhouse:unacademy, smartrecruiters:Unacademy
+Ola | olacabs.com | enterprise | india | lever:ola, greenhouse:ola, smartrecruiters:Ola, workable:ola
+Paytm | paytm.com | enterprise | india | lever:paytm
+Sprinto | sprinto.com | startup | india | lever:sprinto, greenhouse:sprinto, ashby:sprinto
+Ultrahuman | ultrahuman.com | startup | india | lever:ultrahuman, greenhouse:ultrahuman, ashby:ultrahuman
+Composio | composio.dev | startup | india | ashby:composio
+Ema | ema.co | startup | india | ashby:ema | needs=agentic;AI employee;enterprise
+Gnani.ai | gnani.ai | startup | india | lever:gnani, greenhouse:gnani
+Rocketlane | rocketlane.com | startup | india | lever:rocketlane, ashby:rocketlane
+CodeRabbit | coderabbit.ai | startup | india | ashby:coderabbit
+Pixxel | pixxel.space | startup | india | lever:pixxel, greenhouse:pixxel
+Jar | myjar.app | startup | india | lever:jar, ashby:jar
+Scapia | scapia.cards | startup | india | lever:scapia, ashby:scapia
+Fampay | fam.family | startup | india | lever:fampay | needs=India;Bengaluru;Bangalore;teen
+Zluri | zluri.com | startup | india | lever:zluri, greenhouse:zluri
+Spyne | spyne.ai | startup | india | lever:spyne, ashby:spyne
+Harness | harness.io | startup | india | greenhouse:harnessinc, lever:harness
+Cohesity | cohesity.com | enterprise | india | greenhouse:cohesity, lever:cohesity, ashby:cohesity
+Zuora | zuora.com | enterprise | india | greenhouse:zuora
+Zendesk | zendesk.com | enterprise | india | greenhouse:zendesk, lever:zendesk, smartrecruiters:Zendesk
+Sumo Logic | sumologic.com | enterprise | india | greenhouse:sumologic
+ThoughtSpot | thoughtspot.com | startup | india | greenhouse:thoughtspot, lever:thoughtspot, ashby:thoughtspot
+Rubrik | rubrik.com | enterprise | india | greenhouse:rubrik, lever:rubrik
+Netskope | netskope.com | enterprise | india | greenhouse:netskope
+Zscaler | zscaler.com | enterprise | india | greenhouse:zscaler
+Databricks | databricks.com | enterprise | india | greenhouse:databricks, lever:databricks
+MongoDB | mongodb.com | enterprise | india | greenhouse:mongodb
+Elastic | elastic.co | enterprise | india | greenhouse:elastic, lever:elastic
+Confluent | confluent.io | enterprise | india | greenhouse:confluent, lever:confluent, ashby:confluent
+Nutanix | nutanix.com | enterprise | india | greenhouse:nutanix, smartrecruiters:Nutanix
+Couchbase | couchbase.com | enterprise | india | greenhouse:couchbase
+ClickHouse | clickhouse.com | startup | india | greenhouse:clickhouse, ashby:clickhouse
+Gojek | gojek.com | enterprise | india | greenhouse:gojek
+Nium | nium.com | startup | india | lever:nium, greenhouse:nium
+Tekion | tekion.com | startup | india | lever:tekion, greenhouse:tekion
+
+# --- Global AI and infrastructure companies (interns in India or remote) ---
+Anthropic | anthropic.com | lab | global | greenhouse:anthropic
+OpenAI | openai.com | lab | global | ashby:openai
+Cloudflare | cloudflare.com | enterprise | global | greenhouse:cloudflare
+Stripe | stripe.com | enterprise | global | greenhouse:stripe
+Coinbase | coinbase.com | enterprise | global | greenhouse:coinbase
+Figma | figma.com | startup | global | greenhouse:figma
+Notion | notion.so | startup | global | ashby:notion, greenhouse:notion | needs=workspace;productivity
+Airtable | airtable.com | startup | global | greenhouse:airtable
+Discord | discord.com | startup | global | greenhouse:discord
+Dropbox | dropbox.com | enterprise | global | greenhouse:dropbox
+Reddit | reddit.com | enterprise | global | greenhouse:reddit
+Pinterest | pinterest.com | enterprise | global | greenhouse:pinterest
+Airbnb | airbnb.com | enterprise | global | greenhouse:airbnb
+Lyft | lyft.com | enterprise | global | greenhouse:lyft
+Instacart | instacart.com | enterprise | global | greenhouse:instacart
+DoorDash | doordash.com | enterprise | global | greenhouse:doordashusa
+Robinhood | robinhood.com | enterprise | global | greenhouse:robinhood
+Plaid | plaid.com | startup | global | lever:plaid, greenhouse:plaid, ashby:plaid
+Ramp | ramp.com | startup | global | ashby:ramp
+Brex | brex.com | startup | global | greenhouse:brex
+Gusto | gusto.com | enterprise | global | greenhouse:gusto
+Asana | asana.com | enterprise | global | greenhouse:asana
+Twilio | twilio.com | enterprise | global | greenhouse:twilio
+Okta | okta.com | enterprise | global | greenhouse:okta
+Datadog | datadoghq.com | enterprise | global | greenhouse:datadog
+PagerDuty | pagerduty.com | enterprise | global | greenhouse:pagerduty
+Fivetran | fivetran.com | startup | global | greenhouse:fivetran
+dbt Labs | getdbt.com | startup | global | greenhouse:dbtlabsinc
+Retool | retool.com | startup | global | ashby:retool, greenhouse:retool, lever:retool
+Linear | linear.app | startup | global | ashby:linear
+Webflow | webflow.com | startup | global | greenhouse:webflow, ashby:webflow, lever:webflow
+Zapier | zapier.com | startup | global | ashby:zapier
+Intercom | intercom.com | enterprise | global | greenhouse:intercom
+Samsara | samsara.com | enterprise | global | greenhouse:samsara
+Etsy | etsy.com | enterprise | global | greenhouse:etsy, lever:etsy
+Roblox | roblox.com | enterprise | global | greenhouse:roblox
+Unity | unity.com | enterprise | global | greenhouse:unity3d
+Epic Games | epicgames.com | enterprise | global | greenhouse:epicgames
+Spotify | spotify.com | enterprise | global | lever:spotify
+Palantir | palantir.com | enterprise | global | lever:palantir
+Block | block.xyz | enterprise | global | greenhouse:block
+Affirm | affirm.com | enterprise | global | greenhouse:affirm
+Chime | chime.com | enterprise | global | greenhouse:chime
+Monzo | monzo.com | enterprise | global | greenhouse:monzo
+Adyen | adyen.com | enterprise | global | greenhouse:adyen
+Docker | docker.com | startup | global | greenhouse:docker, ashby:docker, lever:docker
+Scale AI | scale.com | startup | global | greenhouse:scaleai
+Weights & Biases | wandb.ai | startup | global | greenhouse:wandb, ashby:wandb
+Anyscale | anyscale.com | startup | global | ashby:anyscale, greenhouse:anyscale
+Pinecone | pinecone.io | startup | global | ashby:pinecone
+Weaviate | weaviate.io | startup | global | ashby:weaviate, greenhouse:weaviate
+LangChain | langchain.com | startup | global | ashby:langchain
+Glean | glean.com | startup | global | greenhouse:gleanwork
+Anysphere | cursor.com | startup | global | ashby:anysphere, greenhouse:anysphere, lever:anysphere
+Cognition | cognition.ai | startup | global | ashby:cognition | needs=Devin;agent
+Runway | runwayml.com | startup | global | greenhouse:runwayml
+ElevenLabs | elevenlabs.io | startup | global | ashby:elevenlabs
+xAI | x.ai | lab | global | greenhouse:xai
+Perplexity | perplexity.ai | startup | global | ashby:perplexity
+Mistral AI | mistral.ai | lab | global | lever:mistral, ashby:mistral, greenhouse:mistral
+Cohere | cohere.com | lab | global | ashby:cohere, lever:cohere
+Together AI | together.ai | startup | global | ashby:togetherai, greenhouse:togetherai
+Hugging Face | huggingface.co | startup | remote | workable:huggingface, greenhouse:huggingface
+Fireworks AI | fireworks.ai | startup | global | ashby:fireworksai, greenhouse:fireworksai
+Baseten | baseten.co | startup | global | ashby:baseten
+Modal | modal.com | startup | global | ashby:modal | needs=GPU;serverless;inference
+Replicate | replicate.com | startup | global | ashby:replicate
+Lambda | lambda.ai | startup | global | ashby:lambda, greenhouse:lambda
+CoreWeave | coreweave.com | enterprise | global | greenhouse:coreweave
+Cerebras | cerebras.ai | startup | global | greenhouse:cerebrassystems, ashby:cerebrassystems
+Groq | groq.com | startup | global | ashby:groq, lever:groq, greenhouse:groq
+SambaNova | sambanova.ai | startup | global | greenhouse:sambanova, lever:sambanova
+Snowflake | snowflake.com | enterprise | global | ashby:snowflake
+Vercel | vercel.com | startup | global | greenhouse:vercel
+Netlify | netlify.com | startup | global | greenhouse:netlify
+Cockroach Labs | cockroachlabs.com | startup | global | greenhouse:cockroachlabs
+PlanetScale | planetscale.com | startup | global | greenhouse:planetscale, ashby:planetscale
+Redpanda | redpanda.com | startup | global | greenhouse:redpandadata
+Render | render.com | startup | global | ashby:render | needs=cloud;deploy;hosting
+Railway | railway.com | startup | global | ashby:railway | needs=deploy;infrastructure platform
+Fastly | fastly.com | enterprise | global | greenhouse:fastly
+DigitalOcean | digitalocean.com | enterprise | global | greenhouse:digitalocean
+Neon | neon.tech | startup | global | greenhouse:neon, ashby:neon | needs=postgres;serverless database
+Timescale | timescale.com | startup | global | ashby:timescale, greenhouse:timescaledb
+Replit | replit.com | startup | global | ashby:replit
+Mercor | mercor.com | startup | global | ashby:mercor
+Harvey | harvey.ai | startup | global | ashby:harvey
+Sierra | sierra.ai | startup | global | ashby:sierra | needs=agent;customer
+Decagon | decagon.ai | startup | global | ashby:decagon
+Clay | clay.com | startup | global | ashby:clay
+Vanta | vanta.com | startup | global | ashby:vanta
+Deel | deel.com | startup | remote | ashby:deel, greenhouse:deel, lever:deel
+Remote | remote.com | startup | remote | greenhouse:remotecom
+Oyster | oysterhr.com | startup | remote | greenhouse:oyster, lever:oyster
+
+# --- Open-source and remote-first companies ---
+GitLab | gitlab.com | enterprise | remote | greenhouse:gitlab
+Grafana Labs | grafana.com | startup | remote | greenhouse:grafanalabs
+Canonical | canonical.com | enterprise | remote | greenhouse:canonical
+Mozilla | mozilla.org | foundation | remote | greenhouse:mozilla
+Mozilla Foundation | foundation.mozilla.org | foundation | remote | greenhouse:mozillafoundation, ashby:mozillafoundation, lever:mozillafoundation
+Wikimedia Foundation | wikimediafoundation.org | foundation | remote | greenhouse:wikimedia, greenhouse:wikimediafoundation
+Linux Foundation | linuxfoundation.org | foundation | remote | greenhouse:thelinuxfoundation, lever:linuxfoundation, ashby:linuxfoundation
+HashiCorp | hashicorp.com | enterprise | remote | greenhouse:hashicorp, ashby:hashicorp
+Sentry | sentry.io | startup | remote | ashby:sentry, greenhouse:sentry
+PostHog | posthog.com | startup | remote | ashby:posthog
+Supabase | supabase.com | startup | remote | ashby:supabase
+Redis | redis.io | enterprise | remote | greenhouse:redis, lever:redis, ashby:redis | needs=database;in-memory;cache
+Sourcegraph | sourcegraph.com | startup | remote | greenhouse:sourcegraph91, ashby:sourcegraph
+Mattermost | mattermost.com | startup | remote | lever:mattermost
+n8n | n8n.io | startup | remote | ashby:n8n, greenhouse:n8n
+Appsmith | appsmith.com | startup | remote | lever:appsmith, greenhouse:appsmith
+Prisma | prisma.io | startup | remote | ashby:prisma, greenhouse:prisma
+Deno | deno.com | startup | remote | ashby:deno, greenhouse:deno
+Airbyte | airbyte.com | startup | remote | ashby:airbyte, greenhouse:airbyte
+Zed Industries | zed.dev | startup | remote | ashby:zed | needs=editor;collaborative
+Temporal | temporal.io | startup | remote | greenhouse:temporaltechnologies, ashby:temporal | needs=workflow;durable execution
+Automattic | automattic.com | enterprise | remote | greenhouse:automattic, lever:automattic, ashby:automattic
+Chainguard | chainguard.dev | startup | remote | greenhouse:chainguard
+Cal.com | cal.com | startup | remote | ashby:cal
+Meilisearch | meilisearch.com | startup | remote | ashby:meilisearch
+Qdrant | qdrant.tech | startup | remote | ashby:qdrant, lever:qdrant
+Chroma | trychroma.com | startup | remote | ashby:chroma
+Tigris Data | tigrisdata.com | startup | remote | ashby:tigris
+Tailscale | tailscale.com | startup | remote | greenhouse:tailscale

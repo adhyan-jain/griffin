@@ -241,6 +241,36 @@ func (m *memListings) AddEvidence(_ context.Context, e *domain.ListingEvidence) 
 	return nil
 }
 
+func (m *memListings) ListBoards(_ context.Context, _ uuid.UUID) ([]*domain.ATSBoard, error) {
+	return append([]*domain.ATSBoard(nil), m.boards...), nil
+}
+
+func (m *memListings) ListCompanies(_ context.Context, _ uuid.UUID, statuses []string) ([]*domain.Company, error) {
+	var out []*domain.Company
+	for _, c := range m.companies {
+		keep := len(statuses) == 0
+		for _, s := range statuses {
+			keep = keep || c.Status == s
+		}
+		if keep {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func (m *memListings) SourceHealth(_ context.Context, _ uuid.UUID) ([]domain.SourceHealth, error) {
+	latest := map[string]domain.SourceHealth{}
+	for _, s := range m.scans {
+		latest[s.Source+"|"+s.Target] = domain.SourceHealth{Source: s.Source, Target: s.Target, LastStatus: s.Status, LastError: s.Error, LastScanAt: s.FinishedAt}
+	}
+	var out []domain.SourceHealth
+	for _, h := range latest {
+		out = append(out, h)
+	}
+	return out, nil
+}
+
 func (m *memListings) snapshotsOf(id uuid.UUID) []*domain.JobSnapshot {
 	var out []*domain.JobSnapshot
 	for _, s := range m.snapshots {

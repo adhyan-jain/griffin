@@ -92,3 +92,35 @@ func DetectBoards(page string) []BoardRef {
 	}
 	return out
 }
+
+// PageURL is the public page of a board: where a person reads the employer's postings. It is the evidence link kept
+// with a company found through the board. "" when the board's token is not one the provider's page can be built from.
+func (b BoardRef) PageURL() string {
+	t := strings.TrimSpace(b.Token)
+	if t == "" {
+		return ""
+	}
+	switch b.Provider {
+	case "greenhouse":
+		return "https://boards.greenhouse.io/" + t
+	case "lever":
+		return "https://jobs.lever.co/" + t
+	case "lever_eu":
+		return "https://jobs.eu.lever.co/" + t
+	case "ashby":
+		return "https://jobs.ashbyhq.com/" + t
+	case "smartrecruiters":
+		return "https://careers.smartrecruiters.com/" + t
+	case "workable":
+		return "https://apply.workable.com/" + t
+	case "recruitee":
+		return "https://" + t + ".recruitee.com"
+	case "workday":
+		if m := workdayToken.FindStringSubmatch(t); m != nil {
+			return "https://" + m[1] + "." + m[2] + ".myworkdayjobs.com/" + m[3]
+		}
+	case "careers_jsonld":
+		return t
+	}
+	return ""
+}
