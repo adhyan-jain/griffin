@@ -164,3 +164,8 @@ func (c ChromePage) Eval(ctx context.Context, script string) (json.RawMessage, e
 	err := chromedp.Run(c.Ctx, chromedp.Evaluate(script, &raw, func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }))
 	return raw, err
 }
+
+// Navigate implements Navigator.
+func (c ChromePage) Navigate(_ context.Context, address string) error {
+	return chromedp.Run(c.Ctx, chromedp.Navigate(address))
+}

@@ -83,6 +83,11 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 	} else if ls != nil {
 		return e.runLinkedIn(ctx, task, ls)
 	}
+	if lp, err := domain.ParseLinkedInPeople(task.InputPayload); err != nil {
+		return fail(err, false)
+	} else if lp != nil {
+		return e.runLinkedInPeople(ctx, task, lp)
+	}
 	if wa, err := domain.ParseWebAction(task.InputPayload); err != nil {
 		return fail(err, false)
 	} else if wa != nil {
