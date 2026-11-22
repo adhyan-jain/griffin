@@ -136,11 +136,13 @@ func (s AlumniSearchStats) Report() string {
 }
 
 var (
-	headSplit   = regexp.MustCompile(`\s*[|•·]\s*|\s+[–—-]\s+`)
-	atSign      = regexp.MustCompile(`^(.+?)\s*@\s*(.+)$`)
-	atWord      = regexp.MustCompile(`(?i)^(.+?)\s+at\s+(.+)$`)
-	coCut       = regexp.MustCompile(`(?i)\s*\(|,|\s+(ex|previously|formerly)[-\s]`)
-	notACo      = regexp.MustCompile(`(?i)^(self[- ]?employed|freelanc\w*|stealth.*|looking.*|seeking.*|open to.*|available.*|unemployed|currently.*|building.*|vit\b.*|vellore.*|.*\b(university|college|institute|school)\b.*)$`)
+	headSplit = regexp.MustCompile(`\s*[|•·]\s*|\s+[–—-]\s+`)
+	atSign    = regexp.MustCompile(`^(.+?)\s*@\s*(.+)$`)
+	atWord    = regexp.MustCompile(`(?i)^(.+?)\s+at\s+(.+)$`)
+	coCut     = regexp.MustCompile(`(?i)\s*\(|,|\s+(ex|previously|formerly)[-\s]`)
+	notACo    = regexp.MustCompile(`(?i)^(self[- ]?employed|freelanc\w*|stealth.*|looking.*|seeking.*|open to.*|available.*|unemployed|currently.*|building.*|vit\b.*|vellore.*|.*\b(university|college|institute|school|acm|ieee|club|chapter|society|fest)\b.*)$`)
+	// engRole is a job the owner can ask about a referral for; club posts ("Security Lead", "co-leader") are not.
+	engRole     = regexp.MustCompile(`(?i)\b(engineer\w*|sde\w*|swe|developer|dev|programmer|scientist|architect|devops|sre|mle|ml|ai|data|backend|frontend|full[- ]?stack|software|technical lead|tech lead|member of technical staff|mts)\b`)
 	recruiter   = regexp.MustCompile(`(?i)\b(recruit\w*|talent|hr|human resources|staffing|headhunter|sourcer|campus (hiring|relations)|people (partner|operations|ops))\b`)
 	studentAny  = regexp.MustCompile(`(?i)\b(student|students|pursuing|aspiring|fresher|open to work|seeking|looking for|final[- ]year|pre[- ]final|undergrad\w*)\b`)
 	studentRole = regexp.MustCompile(`(?i)\b(intern|interns|internship|trainee|apprentice)\b`)
@@ -210,6 +212,9 @@ func AlumniFromHit(h PersonHit, today time.Time) (p AlumniPerson, skip string) {
 	}
 	if studentRole.MatchString(role) {
 		return p, "student"
+	}
+	if strings.HasPrefix(role, "@") || !engRole.MatchString(role) {
+		return p, "company" // not an engineering job: a club post, a team name, or a misread headline
 	}
 	evidence := h.Headline + "\n" + h.Snippet
 	if !vitRe.MatchString(evidence) || otherVIT.MatchString(evidence) && !vellore.MatchString(evidence) {

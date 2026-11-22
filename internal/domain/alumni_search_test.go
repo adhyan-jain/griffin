@@ -208,3 +208,19 @@ func TestProfileURL(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyEngineeringJobsAtRealCompaniesAreKept(t *testing.T) {
+	hit := func(headline string) PersonHit {
+		return PersonHit{Name: "A B", URL: "https://www.linkedin.com/in/ab-12/", Headline: headline + " | VIT Vellore"}
+	}
+	for _, h := range []string{"Security Lead @ ACM-VIT", "co-leader @ z0d1ak", "@Microsoft at Amazon", "Core Member at IEEE VIT Chapter", "Head of Events at Gravitas Fest"} {
+		if _, skip := AlumniFromHit(hit(h), searchDay); skip == "" {
+			t.Errorf("%q must be skipped: not an engineering job at a company", h)
+		}
+	}
+	for _, h := range []string{"SDE-1 (Backend) @ Jar", "Senior SDE at Capgemini", "Software Engineer at Gap Inc", "ML Engineer @ Google", "Member of Technical Staff at Adobe"} {
+		if _, skip := AlumniFromHit(hit(h), searchDay); skip != "" {
+			t.Errorf("%q must be kept, skipped as %s", h, skip)
+		}
+	}
+}
