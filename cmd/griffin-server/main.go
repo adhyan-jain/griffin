@@ -397,7 +397,10 @@ func main() {
 	ownerProfiles := repository.NewOwnerProfileRepository(repoDB)
 	antigravity.CandidateContext = newProfileContext(ctx, ownerProfiles)
 	ownerFacts := antigravity.CandidateContext
-	engine.SetOwnerFacts(func(_ context.Context, userID uuid.UUID) string { return ownerFacts(userID) })
+	engine.SetOwnerFacts(func(ctx context.Context, userID uuid.UUID) string {
+		// The structured profile when there is one, plus the profile document in the Library.
+		return strings.TrimSpace(ownerFacts(userID) + "\n" + appliedLists.ProfileText(database.WithSystem(ctx), userID))
+	})
 	inboundRepo := repository.NewInboundEventRepository(repoDB)
 	inboxRepo := repository.NewInboxRepository(repoDB)
 	discoveryRepo := repository.NewDiscoveryRepository(repoDB)

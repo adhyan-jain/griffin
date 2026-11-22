@@ -249,9 +249,23 @@ func (w *TrackerLists) seed(ctx context.Context, task *domain.Task, t string) *d
 // withProfile shows an application task the owner's verified profile, so a draft is grounded in real facts and
 // carries the real name and links instead of placeholders.
 func (w *TrackerLists) withProfile(ctx context.Context, task *domain.Task, prompt func(string) string) *domain.Task {
-	arts, err := w.Store.ListByKind(ctx, task.UserID, domain.ProfileKind)
-	if err != nil || len(arts) == 0 {
+	text := w.ProfileText(ctx, task.UserID)
+	if text == "" {
 		return task
+	}
+	cp := *task
+	cp.Goal = task.Goal + prompt(text)
+	return &cp
+}
+
+// ProfileText is the owner's verified profile from the Library (the newest owner_profile document), or "".
+func (w *TrackerLists) ProfileText(ctx context.Context, userID uuid.UUID) string {
+	if w == nil || w.Store == nil {
+		return ""
+	}
+	arts, err := w.Store.ListByKind(ctx, userID, domain.ProfileKind)
+	if err != nil || len(arts) == 0 {
+		return ""
 	}
 	best := arts[0]
 	for _, a := range arts {
@@ -259,13 +273,11 @@ func (w *TrackerLists) withProfile(ctx context.Context, task *domain.Task, promp
 			best = a
 		}
 	}
-	text, err := w.Store.ReadText(ctx, task.UserID, best.ID, trackerReadLimit)
-	if err != nil || strings.TrimSpace(text) == "" {
-		return task
+	text, err := w.Store.ReadText(ctx, userID, best.ID, trackerReadLimit)
+	if err != nil {
+		return ""
 	}
-	cp := *task
-	cp.Goal = task.Goal + prompt(text)
-	return &cp
+	return strings.TrimSpace(text)
 }
 
 // RecordApplied adds an application the owner approved to the Applied tracker, once. With no Applied list yet,

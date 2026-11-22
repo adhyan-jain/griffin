@@ -117,3 +117,20 @@ func TestTheSendGoalIsBuiltByCodeFromTheCheckedMessage(t *testing.T) {
 		t.Fatalf("goal: %s", goal)
 	}
 }
+
+func TestTheOwnersRealProfileWordingBacksTheTemplate(t *testing.T) {
+	// How the owner's Library profile actually words things.
+	profile := "- Full name: Adhyan Jain\n- Education: B.Tech in Computer Science and Engineering, Vellore Institute of Technology (VIT)\n- Expected graduation: 2028\n" +
+		"- [computehive] ComputeHive: distributed task runner in Go, Redis, Docker\n- [palni] AI Engineer Intern, Palni\n" +
+		"- [acm-recruitment] ACM - VIT Student Chapter (Senior Core Member)"
+	for _, acm := range []bool{false, true} {
+		c := engineer()
+		c.Message = AlumniMessageFor("Riya", "Razorpay", "backend", acm)
+		if acm {
+			c.Club = "ACM VIT"
+		}
+		if p := CheckOutreach(c, profile); len(p) != 0 {
+			t.Errorf("acm=%v: the template must pass against the real profile wording: %v", acm, p)
+		}
+	}
+}

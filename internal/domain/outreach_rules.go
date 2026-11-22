@@ -45,6 +45,12 @@ var commonWords = map[string]bool{
 	"sde": true, "sde-1": true, "role": true, "summer": true, "team": true, "resume": true, "cv": true,
 }
 
+// shortForms are abbreviations a message may use when the profile spells them out.
+var shortForms = map[string]string{
+	"cse": "computer science", "cs": "computer science", "vit": "vellore institute of technology",
+	"b.tech": "b.tech", "btech": "b.tech",
+}
+
 // IsSeniorTitle reports whether a job title belongs to a founder, executive, director, professor or principal:
 // people the owner writes to only at a startup.
 func IsSeniorTitle(title string) bool { return seniorTitle.MatchString(title) }
@@ -104,6 +110,9 @@ func unknownNames(msg, known string) []string {
 			continue // a sentence or line starts with a capital anyway
 		}
 		lw := strings.ToLower(w)
+		if full, ok := shortForms[lw]; ok && strings.Contains(known, full) {
+			continue
+		}
 		if commonWords[lw] || strings.Contains(known, lw) || seen[lw] {
 			continue
 		}
