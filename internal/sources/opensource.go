@@ -11,17 +11,20 @@ import (
 	"time"
 )
 
-// OpenSourceRepos are the projects the owner's interests point at (LLM serving and tooling, vector stores,
-// Go infrastructure). Each was checked to exist and to carry a "good first issue" or "help wanted" label; go-redis
-// (neither label) and langchain-ai/langchaingo (moved) were dropped.
+// OpenSourceRepos are the projects the owner's interests point at (Go infrastructure and observability, LLM serving,
+// AI tooling, vector stores). Checked live on 2026-11-22 for open, unassigned "good first issue" / "help wanted"
+// issues from the last year: projects with none (grpc-go, etcd, temporal, asynq, go-redis, ...) are left out.
 var OpenSourceRepos = []string{
+	"open-telemetry/opentelemetry-go",
+	"open-telemetry/opentelemetry-collector-contrib",
+	"jaegertracing/jaeger",
+	"prometheus/prometheus",
+	"vllm-project/vllm",
+	"sgl-project/sglang",
+	"ray-project/ray",
+	"run-llama/llama_index",
 	"ollama/ollama",
 	"qdrant/qdrant",
-	"chroma-core/chroma",
-	"hibiken/asynq",
-	"temporalio/temporal",
-	"vllm-project/vllm",
-	"huggingface/text-generation-inference",
 	"langfuse/langfuse",
 }
 

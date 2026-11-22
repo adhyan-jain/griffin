@@ -14,8 +14,8 @@ var issueNow = time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
 
 func TestIssueQueriesStayShortAndAskForUnassignedUnlinkedLabelledIssues(t *testing.T) {
 	qs := IssueQueries(OpenSourceRepos, issueNow)
-	if len(qs) != 3 {
-		t.Fatalf("eight repos, three to a query: %d", len(qs))
+	if len(qs) != 4 {
+		t.Fatalf("eleven repos, three to a query: %d", len(qs))
 	}
 	for _, u := range qs {
 		raw, _ := url.Parse(u)
