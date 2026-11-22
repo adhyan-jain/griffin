@@ -268,8 +268,8 @@ func TestInternshipsListRulesCheckThePostingAndTheRole(t *testing.T) {
 	}
 }
 
-func TestAlumniMessageUsesTheOwnersRealFactsAndRoleFocus(t *testing.T) {
-	for _, want := range []string{"{FirstName}", "{Company}", "{RoleFocus}", "ACM VIT", "ComputeHive", "Palni"} {
+func TestAlumniMessageUsesTheOwnersRealFacts(t *testing.T) {
+	for _, want := range []string{"{FirstName}", "{Company}", "SDE or AI/ML", "ACM VIT", "ComputeHive", "Palni"} {
 		if !strings.Contains(AlumniGoal, want) {
 			t.Errorf("message missing %q", want)
 		}

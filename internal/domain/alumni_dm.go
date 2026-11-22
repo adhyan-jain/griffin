@@ -159,7 +159,7 @@ func AlumniDMProposals(list string, limit int) []Proposal {
 		}
 		focus := RoleFocus(r.role)
 		c := r.c
-		c.Message = AlumniMessageFor(strings.Fields(c.Name)[0], c.Company, focus, r.rank == 0)
+		c.Message = AlumniMessageFor(strings.Fields(c.Name)[0], c.Company, r.rank == 0)
 		why := strings.TrimSpace(strings.Join([]string{c.Club, c.Title + " at " + c.Company}, ", "))
 		out = append(out, Proposal{Title: AlumniDMPrefix + c.Name + " - " + c.Company, Why: strings.TrimLeft(why, ", "), Act: true, Contact: &c, Resume: ResumeFiles[focus]})
 	}

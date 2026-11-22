@@ -139,22 +139,22 @@ func OutreachSendGoal(c OutreachContact, resume string) string {
 	if resume != "" {
 		b.WriteString("If you can message them directly, attach the file " + resume + " with the attach button. ")
 	}
-	b.WriteString("If only a connection request is possible, send one with the first two sentences of the message as the note (at most 280 characters) and attach nothing. ")
+	b.WriteString("If only a connection request is possible, send one with the first three sentences of the message as the note (at most 280 characters) and attach nothing. ")
 	b.WriteString("Send nothing else, change nothing, and message nobody else. ")
 	b.WriteString("Finish with two lines: DM: sent | requested | blocked, then PROOF: what the page showed, or the exact reason it is blocked. ")
 	b.WriteString("Limits: about 12 tool calls, under 4 minutes.\n\nThe message:\n" + c.Message)
 	return b.String()
 }
 
-// AlumniMessageFor is the owner's short note to one VIT alum. ACM is mentioned only to an ACM VIT alum.
-func AlumniMessageFor(firstName, company, focus string, acm bool) string {
+// AlumniMessageFor is the owner's short, polite note to one VIT alum. ACM is mentioned only to an ACM VIT alum.
+func AlumniMessageFor(firstName, company string, acm bool) string {
 	who := "I'm Adhyan, a pre-final-year CSE student at VIT"
 	if acm {
 		who += " and a senior core member of ACM VIT, like you were"
 	}
-	return "Hi " + firstName + ", " + who + ". I saw you're at " + company + ", and I'm looking for a summer 2027 " + focus + " internship. " +
-		"I built ComputeHive, a distributed task runner in Go with Redis and Docker, and interned as an AI Engineer at Palni. " +
-		"Would you be open to a quick chat or a referral? Happy to share my resume.\n\nThanks,\nAdhyan"
+	return "Hi " + firstName + ", hope you're doing well! " + who + ". I saw you're at " + company + " and I'm looking for a Summer 2027 SDE or AI/ML internship. " +
+		"I built ComputeHive, a distributed task runner in Go, and interned as an AI Engineer at Palni. " +
+		"I'd really appreciate a quick chat or a referral, if you're open to it. Thanks so much!\n\nAdhyan"
 }
 
 // IsOutreachTask reports whether a task proposes messages to people (a referral search or the alumni batch):

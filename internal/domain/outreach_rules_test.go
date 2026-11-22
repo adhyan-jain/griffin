@@ -92,8 +92,8 @@ func TestAContactNeedsAVerifiedProfileLinkAndAClearAsk(t *testing.T) {
 }
 
 func TestTheAlumniMessageNamesACMOnlyForACMPeopleAndIsShort(t *testing.T) {
-	plain := AlumniMessageFor("Riya", "Razorpay", "backend", false)
-	acm := AlumniMessageFor("Riya", "Razorpay", "backend", true)
+	plain := AlumniMessageFor("Riya", "Razorpay", false)
+	acm := AlumniMessageFor("Riya", "Razorpay", true)
 	if strings.Contains(plain, "ACM") || !strings.Contains(acm, "ACM") {
 		t.Fatalf("ACM only for ACM people:\n%s\n---\n%s", plain, acm)
 	}
@@ -125,7 +125,7 @@ func TestTheOwnersRealProfileWordingBacksTheTemplate(t *testing.T) {
 		"- [acm-recruitment] ACM - VIT Student Chapter (Senior Core Member)"
 	for _, acm := range []bool{false, true} {
 		c := engineer()
-		c.Message = AlumniMessageFor("Riya", "Razorpay", "backend", acm)
+		c.Message = AlumniMessageFor("Riya", "Razorpay", acm)
 		if acm {
 			c.Club = "ACM VIT"
 		}

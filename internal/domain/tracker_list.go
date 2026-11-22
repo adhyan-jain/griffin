@@ -487,7 +487,7 @@ var AlumniGoal = "Grow the owner's Alumni outreach list: VIT graduates who can r
 	"Put ONLY the new people in the \"## Tracker\" table (Griffin merges them into the list and drops duplicates), with exactly the columns Name, Batch, Company, Role, Club, LinkedIn, Why this company, Status, Added. Status is \"not contacted\", Added is today's date. " +
 	"Copy the Club column exactly as the profile shows it (\"ACM VIT\", \"ISTE\", ...), or leave it empty: Griffin mentions ACM in a message only to ACM people. " +
 	"After the table, write one line: how many people were added and which clubs you reached. Griffin writes the messages itself from the owner's short template.\n\n" +
-	"The message each person will get (ACM line only for ACM VIT people):\n" + AlumniMessageFor("{FirstName}", "{Company}", "{RoleFocus}", true)
+	"The message each person will get (ACM line only for ACM VIT people):\n" + AlumniMessageFor("{FirstName}", "{Company}", true)
 
 func alumniPrompt(current string, today time.Time) string {
 	var b strings.Builder
