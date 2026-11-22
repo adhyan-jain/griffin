@@ -201,3 +201,13 @@ func TestEngineAnnouncesOnlyFinishedTopLevelTasks(t *testing.T) {
 		t.Fatalf("a permanent failure is announced with its reason: %+v", s.msgs)
 	}
 }
+
+func TestAFinishedRoutineIsNotPushed(t *testing.T) {
+	sender := &captureSender{}
+	n := &TaskNotifier{Sender: sender}
+	routine := &domain.Task{ID: uuid.New(), UserID: uuid.New(), Title: "COMMUNITY REPLIES (hourly)", Status: domain.TaskStatusCompleted, InputPayload: []byte(`{"cadence":"every 1 hours"}`)}
+	n.TaskFinished(context.Background(), routine)
+	if len(sender.msgs) != 0 {
+		t.Fatalf("a routine that finished is not news: %d pushes", len(sender.msgs))
+	}
+}

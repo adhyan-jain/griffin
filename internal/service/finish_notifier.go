@@ -42,6 +42,11 @@ func (n *TaskNotifier) TaskFinished(ctx context.Context, t *domain.Task) {
 	if t.Status == domain.TaskStatusCancelled {
 		return
 	}
+	// A routine finishing (a sync, a scan, a ranking pass) is not news: its results are on the Trackers page, and
+	// anything that needs the owner arrives as an approval. Only a routine that failed is worth a push.
+	if t.Status == domain.TaskStatusCompleted && domain.IsRoutine(t) {
+		return
+	}
 	name := domain.DefaultManagerName
 	if n.ManagerName != nil {
 		if v := n.ManagerName(ctx, t.UserID); v != "" {
