@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "@/lib/api";
-import { appliedKeys, applyTaskInput, classifyTask, groupTrackerTasks, internshipActionMessage, trackerPeers } from "@/lib/trackers";
+import { TRACKER_TYPES, appliedKeys, applyTaskInput, classifyTask, groupTrackerTasks, internshipActionMessage, trackerPeers } from "@/lib/trackers";
 
 const task = (id: string, over: Partial<Task> = {}, payload: unknown = {}): Task =>
   ({ id, title: id, goal: id, status: "COMPLETED", manager_domain: "research", priority: "NORMAL", created_at: "2026-11-19T10:00:00Z", updated_at: "2026-11-19T10:00:00Z", input_payload: payload, ...over }) as Task;
@@ -98,5 +98,17 @@ describe("apply tasks", () => {
     const input = applyTaskInput("Acme", "SDE Intern", "https://a/1");
     expect(input.goal).toMatch(/Do not submit anything until I approve/);
     expect(input.goal).toContain("https://a/1");
+  });
+});
+
+describe("the Communities tracker", () => {
+  it("is a tracker type, and the daily community scan lands on it", () => {
+    expect(TRACKER_TYPES.find((t) => t.id === "community")?.label).toBe("Communities");
+    expect(classifyTask(task("c", { title: "COMMUNITY SCAN (daily 09:00)" }))).toBe("community");
+  });
+  it("shares one card across its runs", () => {
+    const a = task("a", { title: "COMMUNITY SCAN", completed_at: "2026-11-21T09:00:00Z" });
+    const b = task("b", { title: "COMMUNITY SCAN", completed_at: "2026-11-22T09:00:00Z" });
+    expect(groupTrackerTasks([a, b], (t) => classifyTask(t) === "community").map((c) => c.id)).toEqual(["b"]);
   });
 });

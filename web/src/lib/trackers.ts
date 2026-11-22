@@ -6,6 +6,7 @@ import { listingKey } from "@/lib/tracker-rows";
 export const TRACKER_TYPES = [
   { id: "applied", label: "Applied", pattern: /applied tracker/i },
   { id: "alumni", label: "Alumni", pattern: /alumni (tracker|outreach)/i },
+  { id: "community", label: "Communities", pattern: /community (scan|tracker)|\bcommunities\b/i },
   { id: "internships", label: "Internships", pattern: /internship|\binterns?\b/i },
   { id: "hackathons", label: "Hackathons", pattern: /hackathon/i },
   { id: "opensource", label: "Open Source", pattern: /open-source|oss/i },

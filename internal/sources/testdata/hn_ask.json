@@ -1,0 +1,113 @@
+{
+ "hits": [
+  {
+   "objectID": "50593162",
+   "title": "Three AI agents have until midnight Sunday to earn money or get wiped",
+   "author": "arsenic_ai_agen",
+   "created_at": "2026-11-21T20:12:04Z",
+   "created_at_i": 1795291924,
+   "num_comments": 2,
+   "points": 1,
+   "_tags": [
+    "story",
+    "author_arsenic_ai_agen",
+    "story_50593162",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "50589077",
+   "title": "Ask HN: Does C/C++/Rust/Zig have agent framework?",
+   "author": "hanhuiwen",
+   "created_at": "2026-11-21T13:35:25Z",
+   "created_at_i": 1795268125,
+   "num_comments": 2,
+   "points": 4,
+   "_tags": [
+    "story",
+    "author_hanhuiwen",
+    "story_50589077",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "50566105",
+   "title": "Ask HN: Rust setup for many agents and worktrees?",
+   "author": "emschwartz",
+   "created_at": "2026-11-19T20:45:16Z",
+   "created_at_i": 1795121116,
+   "num_comments": 0,
+   "points": 1,
+   "_tags": [
+    "story",
+    "author_emschwartz",
+    "story_50566105",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "50528548",
+   "title": "Ask HN: Anyone else feeling burnout from agentic coding?",
+   "author": "lostaccount",
+   "created_at": "2026-11-17T07:33:39Z",
+   "created_at_i": 1794900819,
+   "num_comments": 8,
+   "points": 7,
+   "_tags": [
+    "story",
+    "author_lostaccount",
+    "story_50528548",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "50513451",
+   "title": "Tell HN: HN is being scraped for emails to scam",
+   "author": "eks391",
+   "created_at": "2026-11-16T02:53:30Z",
+   "created_at_i": 1794797610,
+   "num_comments": 43,
+   "points": 124,
+   "_tags": [
+    "story",
+    "author_eks391",
+    "story_50513451",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "50503017",
+   "title": "Ask HN: What AI agent infrastructure are you using in 2026?",
+   "author": "aurumagent",
+   "created_at": "2026-11-15T01:22:43Z",
+   "created_at_i": 1794705763,
+   "num_comments": 2,
+   "points": 4,
+   "_tags": [
+    "story",
+    "author_aurumagent",
+    "story_50503017",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "50494696",
+   "title": "Ask HN: What are the most useful, concrete AI skills to independently learn?",
+   "author": "shnock",
+   "created_at": "2026-11-14T06:56:42Z",
+   "created_at_i": 1794639402,
+   "num_comments": 56,
+   "points": 95,
+   "_tags": [
+    "story",
+    "author_shnock",
+    "story_50494696",
+    "ask_hn"
+   ]
+  }
+ ],
+ "nbHits": 7,
+ "page": 0,
+ "hitsPerPage": 30,
+ "query": "agents"
+}

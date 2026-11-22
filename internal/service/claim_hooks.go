@@ -41,6 +41,9 @@ func (w *TrackerLists) RunInCode(ctx context.Context, task *domain.Task,
 	if answer, ok := w.SyncInternDock(ctx, task, nil); ok {
 		return answer, Answered
 	}
+	if answer, ok := w.ScanCommunities(ctx, task, w.CommunityGet, nil); ok {
+		return answer, Answered
+	}
 	if answer, ok := w.AlumniDMBatch(ctx, task); ok {
 		return answer, Answered
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/sources"
 	"github.com/griffin/core/internal/storage"
 )
 
@@ -37,6 +38,8 @@ type TrackerLists struct {
 	CheckPosting func(ctx context.Context, link string) PostingState
 	// Sync refreshes the verified listings table from the companies' boards; nil leaves the routine to the model path.
 	Sync *ListingSync
+	// CommunityGet fetches the community pages for the daily scan; nil means the network.
+	CommunityGet sources.Get
 }
 
 const trackerReadLimit = 200 << 10

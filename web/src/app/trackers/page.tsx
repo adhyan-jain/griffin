@@ -42,7 +42,7 @@ import { MarkdownText } from "@/components/result-view";
 
 export type ViewMode = "auto" | "table" | "cards";
 
-type TrackerCategory = "all" | "applied" | "alumni" | "internships" | "hackathons" | "opensource" | "hygiene" | "dsa" | "reports";
+type TrackerCategory = "all" | "applied" | "alumni" | "community" | "internships" | "hackathons" | "opensource" | "hygiene" | "dsa" | "reports";
 
 const CATEGORIES: { id: TrackerCategory; label: string; pattern: RegExp }[] = [
   { id: "all", label: "All Trackers", pattern: /.*/ },
@@ -54,6 +54,7 @@ function isTrackerTask(task: Task): boolean {
   const t = task.title.toLowerCase();
   const type = classifyTask(task);
   return (
+    type === "community" ||
     type === "internships" ||
     type === "hackathons" ||
     type === "opensource" ||

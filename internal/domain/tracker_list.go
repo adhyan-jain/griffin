@@ -26,6 +26,7 @@ var TrackerTypes = map[string]string{
 	"hackathons":  "Hackathons",
 	"opensource":  "Open Source",
 	"alumni":      "Alumni",
+	"community":   "Communities",
 }
 
 var trackerPatterns = []struct {
@@ -34,6 +35,7 @@ var trackerPatterns = []struct {
 }{
 	{"applied", regexp.MustCompile(`(?i)\bapplied tracker\b`)},
 	{"alumni", regexp.MustCompile(`(?i)\balumni (tracker|outreach)\b`)},
+	{"community", regexp.MustCompile(`(?i)\bcommunity (scan|tracker)\b|\bcommunities (tracker|list)\b`)},
 	{"internships", regexp.MustCompile(`(?i)internship|\bintern(s)?\b`)},
 	{"hackathons", regexp.MustCompile(`(?i)hackathon`)},
 	{"opensource", regexp.MustCompile(`(?i)open[- ]source|\boss\b`)},
