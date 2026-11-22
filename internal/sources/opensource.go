@@ -34,6 +34,8 @@ const (
 	IssueMaxAge = 365 * 24 * time.Hour
 	// IssueRows is how many issues the tracker lists.
 	IssueRows = 25
+	// IssuesPerRepo keeps one busy project from filling the whole list.
+	IssuesPerRepo = 5
 	// reposPerQuery keeps a search query under GitHub's 256-character limit.
 	reposPerQuery = 3
 )
@@ -67,7 +69,7 @@ func IssueQueries(repos []string, now time.Time) []string {
 }
 
 // metaIssue is a planning thread (an RFC, roadmap or tracking issue), not a piece of work a newcomer can pick up.
-var metaIssue = regexp.MustCompile(`(?i)^\s*\[(rfc|roadmap|tracker|tracking|meta|discussion)\]|\b(roadmap|tracking issue|tracking .* (feature )?requests)\b|\(tracker\)`)
+var metaIssue = regexp.MustCompile(`(?i)^\s*\[(rfc|roadmap|tracker|tracking|meta|discussion)\]|\b(roadmap|tracking issue|tracking .* (feature )?requests|unmaintained component|deprecat\w*)\b|\(tracker\)`)
 
 // ParseIssueSearch reads a GitHub issue search result. Pull requests, assigned issues and ones past the age
 // limit are skipped.
@@ -141,6 +143,15 @@ func ReadIssues(ctx context.Context, get Get, now time.Time) (issues []Issue, pr
 		}
 	}
 	sort.SliceStable(issues, func(i, j int) bool { return issues[i].Opened.After(issues[j].Opened) })
+	perRepo := map[string]int{}
+	kept := issues[:0]
+	for _, is := range issues {
+		if perRepo[is.Repo] < IssuesPerRepo {
+			perRepo[is.Repo]++
+			kept = append(kept, is)
+		}
+	}
+	issues = kept
 	if len(issues) > IssueRows {
 		issues = issues[:IssueRows]
 	}

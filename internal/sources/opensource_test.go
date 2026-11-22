@@ -3,6 +3,7 @@ package sources
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -61,7 +62,7 @@ func TestIssuesAreNewestFirstAndCapped(t *testing.T) {
 	var items []string
 	for i := 1; i <= 40; i++ {
 		day := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i%28)
-		items = append(items, `{"title":"t`+strconv.Itoa(i)+`","number":`+strconv.Itoa(i)+`,"html_url":"https://github.com/a/b/issues/`+strconv.Itoa(i)+`","repository_url":"https://api.github.com/repos/a/b","created_at":"`+day.Format(time.RFC3339)+`","state":"open","labels":[]}`)
+		items = append(items, `{"title":"t`+strconv.Itoa(i)+`","number":`+strconv.Itoa(i)+`,"html_url":"https://github.com/a/b`+strconv.Itoa(i%10)+`/issues/`+strconv.Itoa(i)+`","repository_url":"https://api.github.com/repos/a/b`+strconv.Itoa(i%10)+`","created_at":"`+day.Format(time.RFC3339)+`","state":"open","labels":[]}`)
 	}
 	get := func(context.Context, string) ([]byte, error) {
 		return []byte(`{"items":[` + strings.Join(items, ",") + `]}`), nil
@@ -95,5 +96,31 @@ func TestIssuesListIsATable(t *testing.T) {
 	if !strings.Contains(text, "| Repo | Issue | Labels | Comments | Opened | Link | Status |") ||
 		!strings.Contains(text, "| vllm-project/vllm | #39001 [Bug]: Streaming usage stats report the wrong completion token count | bug, good first issue | 2 | 2026-03-20 | https://github.com/vllm-project/vllm/issues/39001 | open, unassigned |") {
 		t.Fatalf("\n%s", text)
+	}
+}
+
+func TestOneBusyProjectDoesNotFillTheList(t *testing.T) {
+	item := func(n int) string {
+		return fmt.Sprintf(`{"title":"Fix flaky exporter test %d","number":%d,"html_url":"https://github.com/o/busy/issues/%d","repository_url":"https://api.github.com/repos/o/busy","comments":0,"created_at":"2026-04-01T00:00:00Z","state":"open","assignee":null,"assignees":[],"labels":[]}`, n, n, n)
+	}
+	var items []string
+	for n := 1; n <= 9; n++ {
+		items = append(items, item(n))
+	}
+	items = append(items, `{"title":"[receiver/x] Unmaintained component","number":99,"html_url":"https://github.com/o/busy/issues/99","repository_url":"https://api.github.com/repos/o/busy","comments":0,"created_at":"2026-04-02T00:00:00Z","state":"open","assignee":null,"assignees":[],"labels":[]}`)
+	body := `{"items":[` + strings.Join(items, ",") + `]}`
+	get := func(context.Context, string) ([]byte, error) { return []byte(body), nil }
+	is, _ := ReadIssues(context.Background(), get, issueNow)
+	n := 0
+	for _, i := range is {
+		if i.Repo == "o/busy" {
+			n++
+		}
+		if strings.Contains(i.Title, "Unmaintained") {
+			t.Fatal("an unmaintained-component notice is not work to pick up")
+		}
+	}
+	if n != IssuesPerRepo {
+		t.Fatalf("at most %d per project, got %d", IssuesPerRepo, n)
 	}
 }
