@@ -60,6 +60,7 @@ class AssistantService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        PaymentGuard.resume(this)
         actions = Actions(this)
         val nm = getSystemService(NotificationManager::class.java)
         try { nm.deleteNotificationChannel("assistant") } catch (_: Exception) {}

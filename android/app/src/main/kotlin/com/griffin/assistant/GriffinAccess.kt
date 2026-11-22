@@ -19,12 +19,24 @@ import com.griffin.assistant.core.PStep
 class GriffinAccess : AccessibilityService(), PScreenDriver {
     private var ball: FloatingBall? = null
     private var onPaymentApp = false
+    /** The last real app in front (system dialogs and the keyboard skipped), to tell how a bank app was opened. */
+    private var lastFront: String? = null
 
     override fun onServiceConnected() {
         instance = this
         val currentPkg = rootInActiveWindow?.packageName?.toString()
-        onPaymentApp = PaymentApps.isPaymentApp(this, currentPkg)
+        if (currentPkg != null && PaymentApps.isPaymentApp(this, currentPkg)) {
+            stepAside(currentPkg, fromHome = false)
+            return
+        }
         syncBall()
+    }
+
+    /** Bank apps refuse to run while Griffin can see the screen, so Griffin switches itself off (see [PaymentGuard]). */
+    private fun stepAside(pkg: String, fromHome: Boolean) {
+        ball?.hide()
+        PaymentGuard.stepAside(this, pkg, fromHome)
+        disableSelf()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -72,13 +84,11 @@ class GriffinAccess : AccessibilityService(), PScreenDriver {
                 return
             }
             if (PaymentApps.isPaymentApp(this, pkg)) {
-                if (!onPaymentApp) {
-                    onPaymentApp = true
-                    if (FloatingBall.hideOnPaymentApps(this)) {
-                        ball?.setPausedByPayment(true)
-                    }
-                }
+                onPaymentApp = true
+                stepAside(pkg, fromHome = lastFront == null || lastFront == PaymentGuard.homePackage(this))
+                return
             } else if (!PaymentApps.isTransientSystemPackage(pkg)) {
+                lastFront = pkg
                 if (onPaymentApp) {
                     onPaymentApp = false
                     ball?.setPausedByPayment(false)
