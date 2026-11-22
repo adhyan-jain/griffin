@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { listingKey, mergeTables, removeListing, splitRows } from "@/lib/tracker-rows";
+import { findListing, listingKey, listingsTable, mergeTables, removeListing, splitRows } from "@/lib/tracker-rows";
+import type { Listing } from "@/lib/api";
 
 const H = ["Company", "Role", "Deadline", "Application Link"];
 const t = (rows: string[][], headers = H) => ({ title: "t", headers, rows });
@@ -52,5 +53,26 @@ describe("removeListing", () => {
     const r = removeListing(md, "Nobody", "Intern");
     expect(r.removed).toBe(0);
     expect(r.text).toBe(md);
+  });
+});
+
+describe("listingsTable", () => {
+  const base = { id: "1", source: "unstop", url: "https://u/1", location: "Bengaluru", pay: "₹45,000 /month", tier: "B", stage: "verified", stage_note: "", created_at: "", updated_at: "" };
+  const ls = [
+    { ...base, id: "1", company: "Acme", role: "SDE Intern", tier: "B" },
+    { ...base, id: "2", company: "Coy", role: "AI Intern", tier: "A" },
+    { ...base, id: "3", company: "Gone", role: "ML Intern", tier: "A", stage: "closed" },
+  ] as unknown as Listing[];
+
+  it("lists only open verified listings, best tier first", () => {
+    const md = listingsTable(ls);
+    expect(md).toContain("| Tier A | Coy | AI Intern |");
+    expect(md.indexOf("Coy")).toBeLessThan(md.indexOf("Acme"));
+    expect(md).not.toContain("Gone");
+  });
+
+  it("finds the listing behind a row so removing it closes the listing", () => {
+    expect(findListing(ls, "acme", "SDE  intern")?.id).toBe("1");
+    expect(findListing(ls, "Gone", "ML Intern")).toBeUndefined();
   });
 });

@@ -3,7 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TRACKER_TYPES, appliedKeys, applyTaskInput, classifyTask, groupTrackerTasks, internshipActionMessage, isApplyTask, trackerPeers, trackerTypeOf, type InternshipAction } from "@/lib/trackers";
-import { mergeTables, removeListing, splitRows } from "@/lib/tracker-rows";
+import { LISTINGS_LIST_ID, findListing, listingsTable, mergeTables, removeListing, splitRows } from "@/lib/tracker-rows";
+import type { Listing } from "@/lib/api";
 import {
   ArrowDown,
   ArrowUp,
@@ -1031,10 +1032,12 @@ export default function TrackersPage() {
 
   // The shared list of each tracker type, kept by the server. Tasks of a type read and rewrite it.
   const [sharedLists, setSharedLists] = useState<Record<string, { id: string; text: string }>>({});
+  const [listings, setListings] = useState<Listing[]>([]);
 
   const { refresh } = usePolling(
     async (signal) => {
-      const all = await api.listTasks(undefined, { signal });
+      // Tracker cards come from task rows, so ask for enough of them: the default page (50) dropped older trackers.
+      const all = await api.listTasks({ limit: 500 }, { signal });
       setTasks(all);
       setError(null);
       try {
@@ -1044,7 +1047,12 @@ export default function TrackersPage() {
         const entries = await Promise.all(
           arts.map(async (a) => [String(a.metadata?.tracker), { id: a.id, text: await api.getArtifactText(a.id, { signal }) }] as const),
         );
-        setSharedLists(Object.fromEntries(entries));
+        const lists: Record<string, { id: string; text: string }> = Object.fromEntries(entries);
+        // Internships show only the verified listings read from the internship sites, never the old text list.
+        const found = await api.listListings({ signal });
+        setListings(found);
+        lists.internships = { id: LISTINGS_LIST_ID, text: listingsTable(found) };
+        setSharedLists(lists);
       } catch {
         // The list is an enhancement: without it the cards fall back to the task outputs.
       }
@@ -1137,6 +1145,19 @@ export default function TrackersPage() {
           manager_domain: "career",
         });
         toast.success("Removal task created");
+        return;
+      }
+      if (list.id === LISTINGS_LIST_ID) {
+        const l = findListing(listings, company, role);
+        if (!l) {
+          toast.info("That listing is not open any more");
+          return;
+        }
+        await api.closeListing(l.id);
+        const rest = listings.map((x) => (x.id === l.id ? { ...x, stage: "closed" as const } : x));
+        setListings(rest);
+        setSharedLists((prev) => ({ ...prev, internships: { id: LISTINGS_LIST_ID, text: listingsTable(rest) } }));
+        toast.success(`Removed ${company}`);
         return;
       }
       const { text, removed } = removeListing(list.text, company, role);

@@ -1,4 +1,5 @@
 import type { ParsedTable } from "@/lib/excel-export";
+import type { Listing } from "@/lib/api";
 
 /** One listing is identified by its company and role, so the same posting found twice is one row. */
 export const listingKey = (company: string, role: string) =>
@@ -89,3 +90,25 @@ export function removeListing(markdown: string, company: string, role: string): 
   }
   return { text: kept.join("\n"), removed };
 }
+
+/** The id the Internships card uses for its list: the verified listings, not a stored text list. */
+export const LISTINGS_LIST_ID = "listings";
+
+const OPEN_STAGES = new Set(["verified", "drafted", "approved", "submitting", "needs_you"]);
+
+/**
+ * The Internships card's table, built from the verified listings (read from the internship sites by code),
+ * best tier first. Closed and confirmed listings are left out.
+ */
+export function listingsTable(listings: Listing[]): string {
+  const cell = (s: string) => (s || "").replace(/\|/g, "/").replace(/\s+/g, " ").trim();
+  const rows = listings
+    .filter((l) => OPEN_STAGES.has(l.stage))
+    .sort((a, b) => (a.tier || "Z").localeCompare(b.tier || "Z"))
+    .map((l) => `| Tier ${cell(l.tier)} | ${cell(l.company)} | ${cell(l.role)} | ${cell(l.location)} | ${cell(l.pay)} | ${cell(l.source)} | ${cell(l.url)} |`);
+  return ["| Tier | Company | Role | Mode & Location | Stipend | Source | Link |", "| --- | --- | --- | --- | --- | --- | --- |", ...rows].join("\n");
+}
+
+/** The open listing with this company and role, if any. */
+export const findListing = (listings: Listing[], company: string, role: string) =>
+  listings.find((l) => OPEN_STAGES.has(l.stage) && listingKey(l.company, l.role) === listingKey(company, role));
