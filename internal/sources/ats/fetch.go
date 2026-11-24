@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/griffin/core/internal/hands/web"
 )
 
 const (
@@ -55,7 +57,7 @@ type Fetcher struct {
 // NewFetcher returns a Fetcher with the production settings.
 func NewFetcher() *Fetcher {
 	return &Fetcher{
-		Client:      &http.Client{Timeout: 45 * time.Second},
+		Client:      web.SafeHTTPClient(45 * time.Second),
 		UserAgent:   UserAgent,
 		MinInterval: time.Second,
 		MaxRetries:  2,
@@ -108,7 +110,7 @@ func (f *Fetcher) throttle(ctx context.Context, host string) error {
 func (f *Fetcher) Do(ctx context.Context, method, rawURL string, body []byte, header map[string]string) ([]byte, error) {
 	client := f.Client
 	if client == nil {
-		client = &http.Client{Timeout: 45 * time.Second}
+		client = web.SafeHTTPClient(45 * time.Second)
 	}
 	ua := f.UserAgent
 	if ua == "" {

@@ -38,6 +38,7 @@ func TestInternshipWatchPlaybook(t *testing.T) {
 				SourceURL:      "https://boards.greenhouse.io/razorpay/jobs/123",
 				ExtractedValue: "₹45,000 / month",
 				Confidence:     95,
+				Status:         domain.EvidenceSupported,
 			},
 			{
 				Topic:          "StartupX",
@@ -45,6 +46,7 @@ func TestInternshipWatchPlaybook(t *testing.T) {
 				SourceURL:      "https://example.com/blog/hiring",
 				ExtractedValue: "Undisclosed",
 				Confidence:     70,
+				Status:         domain.EvidenceSupported,
 			},
 		},
 		ReportMarkdown: "# Internship Shortlist",
@@ -72,5 +74,24 @@ func TestInternshipWatchPlaybook(t *testing.T) {
 	}
 	if leads[0].Company != "StartupX" || leads[0].Verification != "lead" {
 		t.Fatalf("unexpected lead item: %+v", leads[0])
+	}
+}
+
+func TestProcessResultsIgnoresUnverifiedAndConflictingFindings(t *testing.T) {
+	pb := NewPlaybook(nil)
+	run := &domain.ResearchRun{ID: uuid.New(), Findings: []domain.ResearchFinding{
+		{Topic: "Razorpay", Claim: "SWE Intern", SourceURL: "https://boards.greenhouse.io/razorpay/jobs/1", Status: domain.EvidenceUnverified},
+		{Topic: "Other", Claim: "SWE Intern", SourceURL: "https://boards.greenhouse.io/other/jobs/2", Status: domain.EvidenceConflicting},
+		{Topic: "Real", Claim: "SWE Intern", SourceURL: "https://boards.greenhouse.io/real/jobs/3", Status: domain.EvidenceSupported},
+	}}
+	res, err := pb.ProcessResults(context.Background(), run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ItemsCount != 1 {
+		t.Fatalf("only the supported finding counts, got %d", res.ItemsCount)
+	}
+	if got := res.Data["verified_opportunities"].([]OpportunityItem); got[0].Company != "Real" {
+		t.Fatalf("unexpected item %+v", got[0])
 	}
 }

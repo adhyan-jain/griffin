@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/griffin/core/internal/hands/web"
 )
 
 // PostingState is what a plain fetch of a listing's link shows.
@@ -32,7 +34,7 @@ func CheckPosting(ctx context.Context, client *http.Client, link string) Posting
 		return PostingUnknown
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = web.SafeHTTPClient(10 * time.Second)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
 	if err != nil {

@@ -53,7 +53,7 @@ func Deterministic(in Input) Findings {
 	f.Role, f.RoleQuote = ClassifyRole(in.Title, in.Description)
 	f.Loc = AssessLocation(in.Location, in.Description)
 	f.Grad = AssessGrad(in.Description)
-	f.Comp = ParseCompensation(in.Pay, in.Title, in.Description)
+	f.Comp = ParseCompensationAt(in.Pay, in.Title, in.Description, in.Location)
 	f.Duration, f.DurationQuote = ParseDuration(in.Title, in.Description)
 	f.Skills = MatchSkills(in.Title, in.Description, OwnerSkills(in.OwnerText))
 	f.Depth = DepthSignal(in.Description)
@@ -222,7 +222,7 @@ func Assess(ctx context.Context, in Input, prev *domain.Assessment, opt Options)
 	if a.SkillsMatched == nil {
 		a.SkillsMatched = []domain.SkillMatch{}
 	}
-	if f.Comp != nil {
+	if f.Comp != nil && !f.Comp.Annual { // an annual salary is not a monthly stipend: its pay stays unknown here
 		v := f.Comp.MonthlyINR
 		a.CompensationMonthlyINR, a.CompensationQuote = &v, f.Comp.Quote
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
+	"github.com/griffin/core/internal/sources/ats"
 )
 
 // DiscoveryHandler provides endpoints for running job discovery and viewing staged listings.
@@ -58,15 +59,7 @@ func (h *DiscoveryHandler) Run(w http.ResponseWriter, r *http.Request) {
 			}{Source: domain.DiscoverySource(t.Source), Company: t.Company})
 		}
 	} else {
-		// Default authorized discovery targets
-		targets = []struct {
-			Source  domain.DiscoverySource
-			Company string
-		}{
-			{Source: domain.SourceGreenhouse, Company: "modal"},
-			{Source: domain.SourceLever, Company: "postman"},
-			{Source: domain.SourceAshby, Company: "inkeep"},
-		}
+		targets = defaultDiscoveryTargets()
 	}
 
 	staged, err := h.discovery.SweepAndStage(r.Context(), userID, targets)
@@ -106,4 +99,26 @@ func (h *DiscoveryHandler) Jobs(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"jobs": jobs,
 	})
+}
+
+// defaultDiscoveryTargets is every verified seed board on a provider the discovery service reads (Greenhouse, Lever,
+// Ashby), from the seed list in internal/sources/ats.
+func defaultDiscoveryTargets() []struct {
+	Source  domain.DiscoverySource
+	Company string
+} {
+	var out []struct {
+		Source  domain.DiscoverySource
+		Company string
+	}
+	for _, s := range ats.Seeds().Seeds {
+		switch src := domain.DiscoverySource(s.Provider); src {
+		case domain.SourceGreenhouse, domain.SourceLever, domain.SourceAshby:
+			out = append(out, struct {
+				Source  domain.DiscoverySource
+				Company string
+			}{Source: src, Company: s.Token})
+		}
+	}
+	return out
 }

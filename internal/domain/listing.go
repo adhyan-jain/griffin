@@ -2,7 +2,9 @@ package domain
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +13,50 @@ import (
 
 // MinInternStipendINR is the owner's bar for a top listing: about ₹40,000 a month.
 const MinInternStipendINR = 40000
+
+// monthlyPay is a pay text with a monthly period: "/month" (Internshala, Unstop), "per month" (InternDock).
+var monthlyPay = regexp.MustCompile(`(?i)/\s*(?:month|mo)\b|\bper\s+month\b|\ba\s+month\b`)
+
+var payNumber = regexp.MustCompile(`\d[\d,]*`)
+
+// MonthlyStipend is the highest monthly stipend a pay text shows ("₹ 15,000 - 30,000 /month" is 30000), or 0 when
+// it shows none (unpaid, hidden, a lump sum or weekly pay).
+func MonthlyStipend(pay string) int {
+	if !monthlyPay.MatchString(pay) {
+		return 0
+	}
+	best := 0
+	for _, n := range payNumber.FindAllString(pay, -1) {
+		if v, err := strconv.Atoi(strings.ReplaceAll(n, ",", "")); err == nil && v > best {
+			best = v
+		}
+	}
+	return best
+}
+
+func lowestStipend(pay string) int {
+	low := 0
+	for _, n := range payNumber.FindAllString(pay, -1) {
+		if v, err := strconv.Atoi(strings.ReplaceAll(n, ",", "")); err == nil && (low == 0 || v < low) {
+			low = v
+		}
+	}
+	return low
+}
+
+// TierForPay ranks a listing by its stipend: A reaches the owner's bar (MinInternStipendINR a month) and starts at
+// ₹15,000 or more (so "₹ 4,000 - 40,000" is not A), B reaches ₹15,000, C the rest. Pay that is unknown, unpaid or
+// not monthly is C: it ranks last until the pay is known.
+func TierForPay(pay string) string {
+	switch s := MonthlyStipend(pay); {
+	case s >= MinInternStipendINR && lowestStipend(pay) >= 15000:
+		return "A"
+	case s >= 15000:
+		return "B"
+	default:
+		return "C"
+	}
+}
 
 // Listing is one verified internship posting. It is created only by code that fetched the posting from the
 // company's board (or InternDock) and saw the role there.

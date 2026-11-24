@@ -184,12 +184,12 @@ func TestOneBrokenSiteDoesNotStopTheOthers(t *testing.T) {
 }
 
 func TestRolesOutsideBackendAIAndSDEAreLeftOut(t *testing.T) {
-	for _, title := range []string{"Generative AI Trainer Intern", "Subject Matter Expert (SME) - AI/ML Intern", "Angular Developer Intern", "Front End Development Intern", "Godot Game Developer Intern", "Software Testing Internship"} {
+	for _, title := range []string{"Generative AI Trainer Intern", "Subject Matter Expert (SME) - AI/ML Intern", "Godot Game Developer Intern", "Software Testing Internship"} {
 		if Fits(domain.Posting{Title: title, Location: "Remote (India)", Pay: "₹ 30,000 /month"}) {
 			t.Errorf("%q is not a backend, AI or SDE role", title)
 		}
 	}
-	for _, title := range []string{"Backend Development Intern", "Machine Learning Intern", "Software Engineer Intern", "Full Stack Development Intern", "AI Agent Development Intern"} {
+	for _, title := range []string{"Backend Development Intern", "Machine Learning Intern", "Software Engineer Intern", "Full Stack Development Intern", "Angular Developer Intern", "Front End Development Intern", "UI Engineer Intern (React)", "AI Agent Development Intern"} {
 		if !Fits(domain.Posting{Title: title, Location: "Remote (India)", Pay: "₹ 30,000 /month"}) {
 			t.Errorf("%q fits", title)
 		}

@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -13,7 +11,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/jobs"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/sources/ats"
 )
 
 var (
@@ -58,111 +58,51 @@ func (s *JobDiscoveryService) log() *slog.Logger {
 	return slog.Default()
 }
 
-func (s *JobDiscoveryService) client() *http.Client {
-	if s.Client != nil {
-		return s.Client
+// adapter returns the ats adapter for a discovery source. The adapters own the parsing (Ashby's {"jobs":[...]}
+// object, Greenhouse pagination and secondary locations, Lever's array), so none of it is repeated here.
+func (s *JobDiscoveryService) adapter(source domain.DiscoverySource) (ats.Adapter, error) {
+	switch source {
+	case domain.SourceGreenhouse, domain.SourceLever, domain.SourceAshby:
+	default:
+		return nil, fmt.Errorf("unsupported discovery source: %s", source)
 	}
-	return &http.Client{Timeout: 10 * time.Second}
+	f := ats.NewFetcher()
+	if s.Client != nil {
+		f.Client = s.Client
+	}
+	a, ok := ats.Adapters(f)[string(source)]
+	if !ok {
+		return nil, fmt.Errorf("unsupported discovery source: %s", source)
+	}
+	return a, nil
 }
 
-// DiscoverCompanyJobs queries a target company board on an authorized ATS platform.
+// DiscoverCompanyJobs queries a target company board on an authorized ATS platform. A board that could not be read
+// at all is an error; a partly read one returns what was read.
 func (s *JobDiscoveryService) DiscoverCompanyJobs(ctx context.Context, source domain.DiscoverySource, company string) ([]ATSJobPosting, error) {
 	if s.CustomFetcher != nil {
 		return s.CustomFetcher(ctx, source, company)
 	}
-
-	var fetchURL string
-	switch source {
-	case domain.SourceGreenhouse:
-		fetchURL = fmt.Sprintf("https://boards-api.greenhouse.io/v1/boards/%s/jobs", strings.ToLower(company))
-	case domain.SourceLever:
-		fetchURL = fmt.Sprintf("https://api.lever.co/v0/postings/%s?mode=json", strings.ToLower(company))
-	case domain.SourceAshby:
-		fetchURL = fmt.Sprintf("https://api.ashbyhq.com/posting-api/job-board/%s", strings.ToLower(company))
-	default:
-		return nil, fmt.Errorf("unsupported discovery source: %s", source)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
+	a, err := s.adapter(source)
 	if err != nil {
-		return nil, fmt.Errorf("create discovery request: %w", err)
+		return nil, err
 	}
-
-	resp, err := s.client().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch %s postings for %s: %w", source, company, err)
+	scan := a.Read(ctx, strings.ToLower(company))
+	if scan.Status == jobs.ScanFailed {
+		return nil, fmt.Errorf("fetch %s postings for %s: %s", source, company, scan.Error)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("upstream discovery returned status: %d", resp.StatusCode)
+	out := make([]ATSJobPosting, 0, len(scan.Jobs))
+	for _, j := range scan.Jobs {
+		out = append(out, ATSJobPosting{
+			ID:          j.ExternalID,
+			Title:       j.Title,
+			Company:     company,
+			URL:         j.URL,
+			Description: j.Description,
+			Location:    strings.Join(j.Locations, "; "),
+			Source:      source,
+		})
 	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("read discovery response: %w", err)
-	}
-
-	return s.parsePostings(source, company, body)
-}
-
-func (s *JobDiscoveryService) parsePostings(source domain.DiscoverySource, company string, data []byte) ([]ATSJobPosting, error) {
-	var out []ATSJobPosting
-
-	switch source {
-	case domain.SourceGreenhouse:
-		var gh struct {
-			Jobs []struct {
-				ID          int    `json:"id"`
-				Title       string `json:"title"`
-				AbsoluteURL string `json:"absolute_url"`
-				Location    struct {
-					Name string `json:"name"`
-				} `json:"location"`
-			} `json:"jobs"`
-		}
-		if err := json.Unmarshal(data, &gh); err == nil {
-			for _, j := range gh.Jobs {
-				out = append(out, ATSJobPosting{
-					ID:       fmt.Sprintf("%d", j.ID),
-					Title:    j.Title,
-					Company:  company,
-					URL:      j.AbsoluteURL,
-					Location: j.Location.Name,
-					Source:   source,
-				})
-			}
-		}
-
-	case domain.SourceLever:
-		var lev []struct {
-			ID          string `json:"id"`
-			Text        string `json:"text"`
-			HostedURL   string `json:"hostedUrl"`
-			Description string `json:"description"`
-			Categories  struct {
-				Location string `json:"location"`
-			} `json:"categories"`
-		}
-		if err := json.Unmarshal(data, &lev); err == nil {
-			for _, j := range lev {
-				out = append(out, ATSJobPosting{
-					ID:          j.ID,
-					Title:       j.Text,
-					Company:     company,
-					URL:         j.HostedURL,
-					Description: j.Description,
-					Location:    j.Categories.Location,
-					Source:      source,
-				})
-			}
-		}
-
-	default:
-		// Generic or mock array
-		_ = json.Unmarshal(data, &out)
-	}
-
 	return out, nil
 }
 

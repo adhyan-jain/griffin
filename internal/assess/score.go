@@ -220,6 +220,9 @@ func compensationComponent(f Findings) domain.ValueComponent {
 	case c.Unpaid:
 		return component(CompCompensation, 15, 0, "Unpaid", c.Quote, false)
 	}
+	if c.Annual {
+		return component(CompCompensation, 15, 7.5, fmt.Sprintf("The listing states a yearly figure (about ₹%s a month if divided by 12): an employee salary, not an internship stipend, so scored neutral", thousands(c.MonthlyINR)), c.Quote, true)
+	}
 	var pts float64
 	switch m := c.MonthlyINR; {
 	case m >= 60000:

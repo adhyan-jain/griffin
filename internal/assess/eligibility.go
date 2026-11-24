@@ -17,7 +17,7 @@ const OwnerGradYear = 2028
 
 var (
 	indiaPlace = regexp.MustCompile(`(?i)\b(india|bengaluru|bangalore|mumbai|navi mumbai|delhi|new delhi|ncr|gurgaon|gurugram|noida|greater noida|hyderabad|pune|chennai|kolkata|ahmedabad|vellore|jaipur|kochi|cochin|chandigarh|indore|coimbatore|thiruvananthapuram|trivandrum|nagpur|bhubaneswar|lucknow|vadodara|surat|mysuru|mysore|visakhapatnam|mohali|ghaziabad|faridabad|patna|bhopal|nashik)\b`)
-	anywhere   = regexp.MustCompile(`(?i)\b(anywhere|worldwide|global|globally|apac|asia|asia[- ]pacific)\b`)
+	anywhere   = regexp.MustCompile(`(?i)\b(anywhere|worldwide|global|globally)\b`)
 	remoteWord = regexp.MustCompile(`(?i)\b(remote|work from home|wfh|work-from-home)\b`)
 	// remoteOpenText is wording in a description that makes a remote role open to the owner's country.
 	remoteOpenText = regexp.MustCompile(`(?i)\bwork(?:ing)? from anywhere\b|\banywhere in the world\b|\bworldwide\b|\bglobally remote\b|\bremote[^.]{0,30}\bindia\b|\bindia[^.]{0,30}\bremote\b`)
@@ -92,6 +92,10 @@ func AssessLocation(location, description string) LocationResult {
 				res.Fit = domain.LocationUnknown
 			}
 		}
+	case namesNoPlace(loc):
+		// "Hybrid", "Multiple locations", "APAC": a label that names no country says nothing about whether the owner
+		// can work there, so it needs evidence from elsewhere.
+		res.Fit = domain.LocationUnknown
 	default:
 		if q, ok := snip(relocationText, text, 20); ok && !noSponsorText.MatchString(text) {
 			res.Fit, res.Quote = domain.LocationRelocation, q
@@ -107,6 +111,15 @@ func AssessLocation(location, description string) LocationResult {
 		}
 	}
 	return res
+}
+
+// placeless is wording that stands in for a location without naming one: a work mode, a count of offices, or a region
+// too wide to say whether the owner may work there (APAC, Asia).
+var placeless = regexp.MustCompile(`(?i)\b(?:hybrid|on-?site|in[- ]office|office|offices|multiple|various|several|many|flexible|locations?|tbd|tba|n/a|apac|asia|asia[- ]pacific|and|or)\b`)
+
+// namesNoPlace reports whether loc is only placeless wording, so it names no country at all.
+func namesNoPlace(loc string) bool {
+	return strings.Trim(placeless.ReplaceAllString(loc, ""), " ,;/()-–|·") == ""
 }
 
 var otherCountry = regexp.MustCompile(`\b(?:U\.S\.A?\.?|USA?|U\.K\.|UK|EU)\b|(?i:\b(?:united states|america|canada|united kingdom|england|europe|european union|germany|france|netherlands|ireland|australia|new zealand|singapore|uae|japan|switzerland|spain|sweden|brazil|mexico|north america|emea|latam)\b)`)

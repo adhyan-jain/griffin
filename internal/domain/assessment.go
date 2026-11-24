@@ -12,7 +12,7 @@ import (
 
 // AssessorVersion changes whenever the assessment rules change, so listings are re-assessed by the new rules (the
 // verified model conclusions kept with each assessment are reused, so a rule change costs no model call).
-const AssessorVersion = 1
+const AssessorVersion = 2
 
 // Employment classes.
 const (

@@ -83,8 +83,8 @@ func isLogoInitials(mark, company string) bool {
 }
 
 var (
-	fitRole  = regexp.MustCompile(`(?i)software|backend|back-end|full[- ]?stack|platform|infrastructure|distributed|machine learning|\bml\b|\bai\b|artificial intelligence|\bllm|generative|data scien|deep learning|computer vision|\bnlp\b|developer|\bsde\b|\bswe\b|engineer|\bpython|\bnode\.?js|\bdjango|\bjava\b|\bgolang|\bjavascript|\btypescript|\bflask|\bfastapi|spring boot`)
-	notMyJob = regexp.MustCompile(`(?i)trainer|subject matter|\bsme\b|tutor|mentor|teach|front[- ]?end|angular|ui/ux|\bui\b|game|wordpress|shopify|test|\bqa\b|quality|support|sales|marketing|analyst|account|\bhr\b|recruit|design|mechanical|civil|electrical|hardware|embedded|manufactur|supply|operations|finance|legal|apprentice|founder'?s office|content|business`)
+	fitRole  = regexp.MustCompile(`(?i)software|backend|back-end|front[- ]?end|full[- ]?stack|platform|infrastructure|distributed|machine learning|\bml\b|\bai\b|artificial intelligence|\bllm|generative|data scien|deep learning|computer vision|\bnlp\b|developer|\bsde\b|\bswe\b|engineer|\bpython|\bnode\.?js|\bdjango|\bjava\b|\bgolang|\bjavascript|\btypescript|\bflask|\bfastapi|spring boot`)
+	notMyJob = regexp.MustCompile(`(?i)trainer|subject matter|\bsme\b|tutor|mentor|teach|game|wordpress|shopify|\btest(?:er|ers|ing)?\b|\bqa\b|quality|support|sales|marketing|analyst|account|\bhr\b|recruit|\bdesigners?\b|graphic design|\b(?:product|visual|interior|fashion|ux|ui|ui/ux)\s+design|mechanical|civil|electrical|hardware|embedded|manufactur|supply|operations|finance|legal|apprentice|founder'?s office|content|business`)
 )
 
 // FitsOwner reports whether a posting is a role the owner takes (software, backend, AI of any sort) in a place the
@@ -98,7 +98,7 @@ func FitsOwner(p Posting) bool {
 
 var (
 	indiaPlace     = regexp.MustCompile(`(?i)\b(india|bengaluru|bangalore|mumbai|delhi|new delhi|ncr|gurgaon|gurugram|noida|hyderabad|pune|chennai|kolkata|ahmedabad|vellore|jaipur|kochi|chandigarh|indore|coimbatore)\b`)
-	anywhereRemote = regexp.MustCompile(`(?i)\b(anywhere|worldwide|global|globally|apac|asia)\b`)
+	anywhereRemote = regexp.MustCompile(`(?i)\b(anywhere|worldwide|global|globally)\b`)
 )
 
 // InIndiaOrWorldwide reports whether the owner can take a job in this location: somewhere in India, or remote
@@ -118,7 +118,7 @@ func ListingRow(header string, p Posting) string {
 		v := "-"
 		switch hl := strings.ToLower(h); {
 		case strings.Contains(hl, "tier"):
-			v = "Tier A"
+			v = "Tier " + TierForPay(p.Pay)
 		case strings.Contains(hl, "company"):
 			v = p.Company
 		case strings.Contains(hl, "role") || strings.Contains(hl, "title"):

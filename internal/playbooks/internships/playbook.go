@@ -64,6 +64,26 @@ func NewPlaybook(profile *CandidateProfile) *Playbook {
 }
 
 func (p *Playbook) Name() string { return "internship_watch" }
+
+// QueryTemplates are the angles an employer's internships are searched from.
+func (p *Playbook) QueryTemplates() []string {
+	return []string{
+		"%s software engineering internship",
+		"%s internship stipend",
+		"%s careers internships apply",
+	}
+}
+
+// Subject is the employer the run is about.
+func (p *Playbook) Subject(ctx map[string]any) string { return playbooks.StringIn(ctx, "company") }
+
+// DefaultQuestions are asked when the request names none.
+func (p *Playbook) DefaultQuestions() []string { return p.questions() }
+
+// PlanGuidance is the internship wording of the planning prompt.
+func (p *Playbook) PlanGuidance() string {
+	return "This is internship discovery. Prefer the employer's own careers page or ATS over aggregators, and record the disclosed stipend and the eligibility (graduation year, location) exactly as the page states them."
+}
 func (p *Playbook) Description() string {
 	return "Company-first discovery and verification of high-quality engineering internships across India and global remote markets."
 }
@@ -88,22 +108,24 @@ func (p *Playbook) BuildRequest(input map[string]any) (domain.ResearchRequest, e
 		"Undisclosed stipend must be reported as unknown, not filtered out",
 	}
 
-	questions := []string{
+	return domain.ResearchRequest{
+		Playbook:          p.Name(),
+		Objective:         objective,
+		Context:           map[string]any{"profile": p.profile},
+		Constraints:       constraints,
+		ResearchQuestions: p.questions(),
+		Depth:             depth,
+	}, nil
+}
+
+func (p *Playbook) questions() []string {
+	return []string{
 		"What companies are actively hiring software engineering interns eligible for India candidates?",
 		"What are the specific graduation year requirements (e.g. 2027, 2028)?",
 		"What is the official application URL on Greenhouse, Lever, Ashby, or the employer career site?",
 		"What is the disclosed compensation or stipend (in INR or USD)?",
 		"What engineering technologies and technical responsibilities are required?",
 	}
-
-	return domain.ResearchRequest{
-		Playbook:          p.Name(),
-		Objective:         objective,
-		Context:           map[string]any{"profile": p.profile},
-		Constraints:       constraints,
-		ResearchQuestions: questions,
-		Depth:             depth,
-	}, nil
 }
 
 // OpportunityItem represents a classified internship finding.
@@ -111,12 +133,9 @@ type OpportunityItem struct {
 	Company          string `json:"company"`
 	Role             string `json:"role"`
 	ApplicationURL   string `json:"application_url"`
-	LocationMode     string `json:"location_mode"`
-	IndiaEligible    bool   `json:"india_eligible"`
 	CompensationText string `json:"compensation_text,omitempty"`
-	EligibilityScore int    `json:"eligibility_score"` // 0-100
-	QualityScore     int    `json:"quality_score"`     // 0-100
-	Verification     string `json:"verification"`      // verified, lead, unverified
+	QualityScore     int    `json:"quality_score"` // the finding's confidence, 0-100
+	Verification     string `json:"verification"`  // verified (supported, on the employer's own page) or lead
 	ReasonsToApply   string `json:"reasons_to_apply"`
 }
 
@@ -126,15 +145,12 @@ func (p *Playbook) ProcessResults(_ context.Context, run *domain.ResearchRun) (*
 	var leads []OpportunityItem
 	var watchlist []string
 
-	for _, f := range run.Findings {
+	for _, f := range playbooks.Supported(run.Findings) {
 		item := OpportunityItem{
 			Company:          f.Topic,
 			Role:             f.Claim,
 			ApplicationURL:   f.SourceURL,
-			LocationMode:     "Remote / India",
-			IndiaEligible:    true,
 			CompensationText: f.ExtractedValue,
-			EligibilityScore: 85,
 			QualityScore:     f.Confidence,
 			Verification:     "verified",
 			ReasonsToApply:   f.Claim,
@@ -149,7 +165,7 @@ func (p *Playbook) ProcessResults(_ context.Context, run *domain.ResearchRun) (*
 		}
 	}
 
-	summary := fmt.Sprintf("Internship Watch identified %d verified opportunities and %d potential leads.",
+	summary := fmt.Sprintf("Internship Watch identified %d verified opportunities and %d potential leads from supported findings.",
 		len(verified), len(leads))
 
 	data := map[string]any{

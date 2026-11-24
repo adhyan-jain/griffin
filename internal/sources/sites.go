@@ -345,41 +345,10 @@ var number = regexp.MustCompile(`\d[\d,]*`)
 
 // MonthlyStipend is the highest monthly stipend a pay text shows ("₹ 15,000 - 30,000 /month" is 30000), or 0 when
 // it shows none (unpaid, hidden, a lump sum or weekly pay).
-func MonthlyStipend(pay string) int {
-	if !strings.Contains(strings.ToLower(pay), "/month") {
-		return 0
-	}
-	best := 0
-	for _, n := range number.FindAllString(pay, -1) {
-		if v, err := strconv.Atoi(strings.ReplaceAll(n, ",", "")); err == nil && v > best {
-			best = v
-		}
-	}
-	return best
-}
+func MonthlyStipend(pay string) int { return domain.MonthlyStipend(pay) }
 
-func lowestStipend(pay string) int {
-	low := 0
-	for _, n := range number.FindAllString(pay, -1) {
-		if v, err := strconv.Atoi(strings.ReplaceAll(n, ",", "")); err == nil && (low == 0 || v < low) {
-			low = v
-		}
-	}
-	return low
-}
-
-// Tier ranks a listing by its stipend: A reaches the owner's bar (₹40,000 a month) and starts at ₹15,000 or more
-// (so "₹ 4,000 - 40,000" is not A), B reaches ₹15,000, C the rest.
-func Tier(pay string) string {
-	switch s := MonthlyStipend(pay); {
-	case s >= domain.MinInternStipendINR && lowestStipend(pay) >= 15000:
-		return "A"
-	case s >= 15000:
-		return "B"
-	default:
-		return "C"
-	}
-}
+// Tier ranks a listing by its stipend (see domain.TierForPay); unpaid or unstated pay is C.
+func Tier(pay string) string { return domain.TierForPay(pay) }
 
 var internship = regexp.MustCompile(`(?i)\b(intern|interns|internship|trainee)\b`)
 

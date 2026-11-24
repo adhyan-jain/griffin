@@ -13,6 +13,10 @@ import (
 const (
 	// UsdToInr is the fixed rupee value of one US dollar used for every foreign-currency pay figure. Not live.
 	UsdToInr = 85.0
+	// EurToInr and GbpToInr are the fixed rupee values of one euro and one pound, held next to the dollar rate for the
+	// same reason: not live, so old assessments do not move without new information.
+	EurToInr = 92.0
+	GbpToInr = 108.0
 	// HoursPerMonth turns an hourly rate into a monthly one: 40 hours a week for four weeks.
 	HoursPerMonth = 160.0
 	// DaysPerMonth turns a daily rate into a monthly one: 22 working days.
@@ -27,14 +31,21 @@ type Comp struct {
 	Unpaid     bool
 	// Quote is the exact text it was read from.
 	Quote string
+	// Annual is true when the text states the figure per year (a salary, "6 LPA"): MonthlyINR is then only that figure
+	// divided by 12, an employee-salary equivalent, and is never presented as an internship stipend.
+	Annual bool
 	// Range is the high end of a stated range in monthly rupees, 0 when the text gave one figure.
 	High float64
 }
 
 var (
-	amountRe = regexp.MustCompile(`(?i)(?:\b(?:rs\.?|inr|usd)|₹|us\$|\$)\s*([\d][\d,]*(?:\.\d+)?)\s*(k|lakhs?|lacs?|lpa)?(?:\s*(?:-|–|—|to)\s*(?:(?:\b(?:rs\.?|inr|usd)|₹|us\$|\$)\s*)?([\d][\d,]*(?:\.\d+)?)\s*(k|lakhs?|lacs?|lpa)?)?`)
+	amountRe = regexp.MustCompile(`(?i)(?:\b(?:rs\.?|inr|usd|eur|gbp)|₹|€|£|us\$|\$)\s*([\d][\d,]*(?:\.\d+)?)\s*(k|lakhs?|lacs?|lpa)?(?:\s*(?:-|–|—|to)\s*(?:(?:\b(?:rs\.?|inr|usd|eur|gbp)|₹|€|£|us\$|\$)\s*)?([\d][\d,]*(?:\.\d+)?)\s*(k|lakhs?|lacs?|lpa)?)?`)
 	// amountFirstRe is "10,000 INR per month".
-	amountFirstRe = regexp.MustCompile(`(?i)\b([\d][\d,]*(?:\.\d+)?)\s*(k)?\s*(?:inr|rupees|rs\.?|usd|dollars)\b`)
+	amountFirstRe = regexp.MustCompile(`(?i)\b([\d][\d,]*(?:\.\d+)?)\s*(k)?\s*(?:inr|rupees|rs\.?|usd|dollars|eur|euros|gbp|pounds)\b`)
+	// foreignDollarPrefix is a letter prefix that makes "$" another country's dollar (CA$, A$, S$, CAD $).
+	foreignDollarPrefix = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:ca|au|nz|hk|sg|c|a|s|cad|aud|sgd|nzd|hkd)\s?$`)
+	// dollarCountry is a place where a bare "$" is not the US dollar: Canada, Australia, Singapore, New Zealand, Hong Kong.
+	dollarCountry = regexp.MustCompile(`(?i)\b(?:canada|canadian|toronto|vancouver|montreal|ottawa|calgary|waterloo|australia|australian|sydney|melbourne|brisbane|perth|singapore|new zealand|auckland|hong kong|mexico)\b|\b(?:cad|aud|sgd|nzd|hkd)\b`)
 	periodRe      = regexp.MustCompile(`(?i)^[\s,()]*(?:/|per\s+|a\s+|each\s+|p\.\s*)?\s*(month|months|mo|monthly|year|years|yr|yearly|annum|annual|annually|week|weekly|wk|hour|hourly|hr|day|daily|lpa)\b`)
 	payContext    = regexp.MustCompile(`(?i)\b(stipend|salary|compensation|pay|paid|rate|earn\w*|hourly|wage|remuneration|base|ctc)\b`)
 	unpaidRe      = regexp.MustCompile(`(?i)\b(unpaid|non[- ]?paid|no stipend|without (?:a )?stipend|stipend:?\s*(?:nil|none|0)\b)`)
@@ -56,11 +67,35 @@ func scale(v float64, unit string) float64 {
 	return v
 }
 
-// monthly converts an amount per period into monthly rupees. ok is false for a period it cannot place.
-func monthly(amount float64, period string, usd bool) (float64, bool) {
-	if usd {
-		amount *= UsdToInr
+// rateOf is the rupee value of one unit of the currency a figure's lead ("$", "€", "EUR", "₹") names.
+func rateOf(lead string) float64 {
+	switch {
+	case strings.Contains(lead, "$") || strings.Contains(lead, "usd") || strings.Contains(lead, "dollar"):
+		return UsdToInr
+	case strings.Contains(lead, "€") || strings.Contains(lead, "eur"):
+		return EurToInr
+	case strings.Contains(lead, "£") || strings.Contains(lead, "gbp") || strings.Contains(lead, "pound"):
+		return GbpToInr
 	}
+	return 1
+}
+
+// ambiguousDollar reports whether the figure at text[start:end], led by lead, is a bare "$" that may not be the US
+// dollar: a CA$/A$/S$ prefix, or a place near the figure or in the listing's location that uses another dollar. An
+// explicit "US$" or "USD" is never ambiguous.
+func ambiguousDollar(text string, start, end int, lead, location string) bool {
+	if !strings.Contains(lead, "$") || strings.Contains(lead, "us") {
+		return false
+	}
+	if foreignDollarPrefix.MatchString(text[max(0, start-5):start]) {
+		return true
+	}
+	return dollarCountry.MatchString(location) || dollarCountry.MatchString(text[max(0, start-60):min(len(text), end+60)])
+}
+
+// monthly converts an amount per period into monthly rupees (amount is already in rupees). ok is false for a period it
+// cannot place.
+func monthly(amount float64, period string) (float64, bool) {
 	switch strings.ToLower(period) {
 	case "month", "months", "mo", "monthly":
 		return amount, true
@@ -76,14 +111,25 @@ func monthly(amount float64, period string, usd bool) (float64, bool) {
 	return 0, false
 }
 
+func isAnnual(period string) bool {
+	switch strings.ToLower(period) {
+	case "year", "years", "yr", "yearly", "annum", "annual", "annually", "lpa":
+		return true
+	}
+	return false
+}
+
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // amountIn finds the first stated pay with a period in text. needContext asks for a pay word near the figure, which
 // a free-text description needs ("raised $50 million" is not pay) and a pay field does not.
-func amountIn(text string, needContext bool) (*Comp, bool) {
+func amountIn(text string, needContext bool, location string) (*Comp, bool) {
 	for _, m := range amountRe.FindAllStringSubmatchIndex(text, -1) {
 		lead := strings.ToLower(text[m[0]:m[2]])
-		usd := strings.Contains(lead, "$") || strings.Contains(lead, "usd")
+		rate := rateOf(lead)
+		if ambiguousDollar(text, m[0], m[1], lead, location) {
+			continue
+		}
 		unit1 := ""
 		if m[5] >= 0 {
 			unit1 = text[m[4]:m[5]]
@@ -114,13 +160,13 @@ func amountIn(text string, needContext bool) (*Comp, bool) {
 				continue
 			}
 		}
-		mo, ok := monthly(low, period, usd)
+		mo, ok := monthly(low*rate, period)
 		if !ok || mo <= 0 {
 			continue
 		}
-		c := &Comp{MonthlyINR: round2(mo), Quote: around(text, m[0], m[1], 12)}
+		c := &Comp{MonthlyINR: round2(mo), Quote: around(text, m[0], m[1], 12), Annual: isAnnual(period)}
 		if high > low {
-			if h, ok := monthly(high, period, usd); ok {
+			if h, ok := monthly(high*rate, period); ok {
 				c.High = round2(h)
 			}
 		}
@@ -134,13 +180,16 @@ func amountIn(text string, needContext bool) (*Comp, bool) {
 				unit = text[m[4]:m[5]]
 			}
 			cur := strings.ToLower(text[max(0, m[1]-6):m[1]])
-			usd := strings.Contains(cur, "usd") || strings.Contains(cur, "dollar")
+			rate := rateOf(cur)
+			if rate == UsdToInr && dollarCountry.MatchString(location) {
+				continue
+			}
 			pm := periodRe.FindStringSubmatch(text[m[1]:min(len(text), m[1]+30)])
 			if pm == nil {
 				continue
 			}
-			if mo, ok := monthly(scale(parseNumber(text[m[2]:m[3]]), unit), pm[1], usd); ok && mo > 0 {
-				return &Comp{MonthlyINR: round2(mo), Quote: around(text, m[0], m[1], 12)}, true
+			if mo, ok := monthly(scale(parseNumber(text[m[2]:m[3]]), unit)*rate, pm[1]); ok && mo > 0 {
+				return &Comp{MonthlyINR: round2(mo), Quote: around(text, m[0], m[1], 12), Annual: isAnnual(pm[1])}, true
 			}
 		}
 	}
@@ -162,8 +211,17 @@ func unpaidIn(text string) (*Comp, bool) {
 // description. A figure is converted to monthly rupees at the fixed rates above and, for a range, is its low end.
 // Pay the text does not state, or states without a period ("a stipend of 10,000"), is nil: unknown, never guessed.
 func ParseCompensation(pay, title, description string) *Comp {
+	return ParseCompensationAt(pay, title, description, "")
+}
+
+// ParseCompensationAt is ParseCompensation with the listing's location: a bare "$" in a listing placed in Canada,
+// Australia, Singapore and the like may be that country's dollar, so it is unknown rather than read as US dollars.
+// A figure stated per year is marked Annual: it is an employee salary, and its monthly value is only that figure
+// divided by twelve. Euro and pound figures are converted at the fixed rates above.
+func ParseCompensationAt(pay, title, description, location string) *Comp {
 	pay, title, desc := norm(pay), norm(title), norm(description)
-	if c, ok := amountIn(pay, false); ok {
+	loc := norm(location)
+	if c, ok := amountIn(pay, false, loc); ok {
 		return c
 	}
 	if c, ok := unpaidIn(pay); ok {
@@ -172,10 +230,10 @@ func ParseCompensation(pay, title, description string) *Comp {
 	if c, ok := unpaidIn(title); ok {
 		return c
 	}
-	if c, ok := amountIn(title, true); ok {
+	if c, ok := amountIn(title, true, loc); ok {
 		return c
 	}
-	if c, ok := amountIn(desc, true); ok {
+	if c, ok := amountIn(desc, true, loc); ok {
 		return c
 	}
 	if c, ok := unpaidIn(desc); ok {

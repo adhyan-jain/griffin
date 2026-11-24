@@ -41,7 +41,8 @@ func exerciseListingDetails(t *testing.T, ctx context.Context, pool database.Que
 	t.Helper()
 	repo := repository.NewOpportunityRepository(pool)
 	var _ service.DetailStore = repo
-	at := time.Date(2026, 11, 22, 9, 0, 0, 0, time.UTC)
+	// The repository's one-day retry window is measured against the wall clock, so the scans are dated just before it.
+	at := time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Minute)
 	in := &service.Ingester{Store: repo, Now: func() time.Time { return at }}
 	lead := func(source, company, url string) jobs.RawJob {
 		return jobs.RawJob{Source: source, SourceKind: jobs.Aggregator, EmployerName: company, Title: "Software Intern", URL: url, Locations: []string{"Remote (India)"}, Compensation: "Unpaid", FetchedAt: at}
