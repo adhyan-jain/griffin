@@ -106,6 +106,15 @@ func (b *Brave) client() *http.Client {
 	if b.HTTP != nil {
 		return b.HTTP
 	}
+	return defaultSearchClient(b.BaseURL)
+}
+
+// defaultSearchClient is the client a provider uses when none is given: the address-checked one for the provider's
+// own public host, and a plain one only when the operator (or a test) has pointed BaseURL somewhere else.
+func defaultSearchClient(baseURL string) *http.Client {
+	if baseURL == "" {
+		return SafeHTTPClient(15 * time.Second)
+	}
 	return &http.Client{Timeout: 15 * time.Second}
 }
 
@@ -129,7 +138,7 @@ func (s *SearXNG) Search(ctx context.Context, q string, limit int) ([]Result, er
 	}
 	hc := s.HTTP
 	if hc == nil {
-		hc = &http.Client{Timeout: 15 * time.Second}
+		hc = &http.Client{Timeout: 15 * time.Second} // SEARXNG_URL is the operator's own instance, often on localhost
 	}
 	u := fmt.Sprintf("%s/search?q=%s&format=json", strings.TrimRight(s.BaseURL, "/"), url.QueryEscape(q))
 	if err := getJSON(ctx, hc, u, nil, &out); err != nil {
@@ -160,7 +169,7 @@ func (d *DuckDuckGo) Search(ctx context.Context, q string, limit int) ([]Result,
 	}
 	hc := d.HTTP
 	if hc == nil {
-		hc = &http.Client{Timeout: 15 * time.Second}
+		hc = defaultSearchClient(d.BaseURL)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/html/?q="+url.QueryEscape(q), nil)
 	if err != nil {

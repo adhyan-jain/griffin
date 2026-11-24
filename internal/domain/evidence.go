@@ -85,4 +85,6 @@ type EvidenceItem struct {
 	ExtractionMethod string          `json:"extraction_method"` // rule, model, deterministic
 	ModelUsed        string          `json:"model_used,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
+	// DedupeKey makes the same claim from the same page one row per run; it is not shown to clients.
+	DedupeKey string `json:"-"`
 }

@@ -58,6 +58,12 @@ type TrackerLists struct {
 	Hackathons *HackathonSync
 	OpenSource *OpenSourceSync
 	Hygiene    *HygieneSync
+	// ResearchRunner advances research runs (the RESEARCH RUN routine); nil leaves that routine answering that
+	// research is not set up, rather than handing its task to a model.
+	ResearchRunner ResearchRunner
+	// Alumni imports the Alumni list into person records and says who must never be proposed; nil leaves the
+	// ALUMNI DM BATCH as it was, without the do-not-contact check.
+	Alumni *AlumniPeople
 }
 
 const trackerReadLimit = 200 << 10

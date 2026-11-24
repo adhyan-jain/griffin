@@ -80,12 +80,21 @@ func NewFetcher(cfg FetcherConfig) *Fetcher {
 	if cfg.MaxText <= 0 {
 		cfg.MaxText = 20000
 	}
+	return &Fetcher{cfg: cfg, client: newClient(cfg.Timeout, cfg.AllowPrivate)}
+}
+
+// SafeHTTPClient returns an HTTP client that cannot be led to a private, loopback, link-local, metadata, CGNAT or
+// ULA address: every connection is checked after DNS (redirects included) and every redirect target is revalidated.
+// Use it for any URL that is stored data or comes from a third party.
+func SafeHTTPClient(timeout time.Duration) *http.Client { return newClient(timeout, false) }
+
+func newClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	dialer := &net.Dialer{
 		Timeout: 10 * time.Second,
 		// Control runs with the address actually about to be connected to (after DNS), for every
 		// connection including redirects, which is what makes this check hard to get around.
 		Control: func(network, address string, _ syscall.RawConn) error {
-			if cfg.AllowPrivate {
+			if allowPrivate {
 				return nil
 			}
 			host, _, err := net.SplitHostPort(address)
@@ -105,8 +114,8 @@ func NewFetcher(cfg FetcherConfig) *Fetcher {
 		ResponseHeaderTimeout: 15 * time.Second,
 		DisableKeepAlives:     true,
 	}
-	return &Fetcher{cfg: cfg, client: &http.Client{
-		Timeout:   cfg.Timeout,
+	return &http.Client{
+		Timeout:   timeout,
 		Transport: tr,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
@@ -114,7 +123,7 @@ func NewFetcher(cfg FetcherConfig) *Fetcher {
 			}
 			return domain.ValidateWebURL(req.URL.String())
 		},
-	}}
+	}
 }
 
 // Page is a fetched page reduced to readable text.

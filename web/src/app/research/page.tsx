@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Compass,
   Search,
   Sparkles,
   Play,
   Pause,
+  XCircle,
+  Loader2,
   ExternalLink,
   ShieldCheck,
   AlertTriangle,
@@ -23,8 +25,19 @@ import {
   api,
   type ResearchRun,
   type ResearchDepth,
+  type ResearchPlaybook,
   type EvidenceItem,
 } from "@/lib/api";
+import {
+  budgetRows,
+  claimStatusView,
+  depthDescription,
+  reportExtras,
+  runControls,
+  runStatusView,
+  type ClaimTone,
+  type StatusTone,
+} from "@/lib/research";
 import { usePolling } from "@/lib/use-polling";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,27 +46,64 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/components/page";
 
-const DEPTH_OPTIONS: { id: ResearchDepth; label: string; desc: string }[] = [
-  { id: "quick", label: "Quick", desc: "1-2 cycles, ~5 pages" },
-  { id: "standard", label: "Standard", desc: "3-4 cycles, ~15 pages" },
-  { id: "deep", label: "Deep", desc: "Iterative query expansion, ~30 pages" },
-  { id: "comprehensive", label: "Comprehensive", desc: "Exhaustive multi-source validation" },
-];
+const DEPTH_OPTIONS: { id: ResearchDepth; label: string; desc: string }[] = (
+  [
+    ["quick", "Quick"],
+    ["standard", "Standard"],
+    ["deep", "Deep"],
+    ["comprehensive", "Comprehensive"],
+  ] as const
+).map(([id, label]) => ({ id, label, desc: depthDescription(id) }));
 
-const PLAYBOOK_OPTIONS = [
-  { id: "general_research", label: "General Research", desc: "Open-ended exploratory investigation" },
+const PLAYBOOK_OPTIONS: { id: ResearchPlaybook; label: string; desc: string }[] = [
+  { id: "generic", label: "General Research", desc: "Open-ended exploratory investigation" },
   { id: "internship_watch", label: "Internship Watch", desc: "Multi-market role discovery & ATS verification" },
   { id: "company_intelligence", label: "Company Intelligence", desc: "Tech stacks, funding, traction & headcount" },
   { id: "alumni_intelligence", label: "Alumni Intelligence", desc: "Graduation year <= 2022, leadership & outreach" },
 ];
 
+const STATUS_TONE: Record<StatusTone, string> = {
+  ok: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  active: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+  paused: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  partial: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  failed: "bg-destructive/15 text-destructive",
+  cancelled: "bg-muted text-muted-foreground",
+};
+
+const CLAIM_TONE: Record<ClaimTone, string> = {
+  supported: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  unverified: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  conflicting: "bg-destructive/15 text-destructive",
+  other: "bg-muted text-muted-foreground",
+};
+
+function ClaimBadge({ status }: { status: string }) {
+  const v = claimStatusView(status);
+  return (
+    <Badge className={cn("text-[10px]", CLAIM_TONE[v.tone])}>
+      {v.verified ? <ShieldCheck className="mr-1 size-3" /> : <AlertTriangle className="mr-1 size-3" />}
+      {v.label}
+    </Badge>
+  );
+}
+
+// Every phase the backend can report (domain.ResearchPhase), in lifecycle order. PAUSED, CANCELLED and FAILED
+// are not steps; they are shown by the status badge.
 const PHASES = [
+  "REQUEST_RECEIVED",
+  "CONTEXT_LOADING",
+  "OBJECTIVE_ANALYSIS",
   "RESEARCH_PLANNING",
   "SOURCE_DISCOVERY",
   "INFORMATION_RETRIEVAL",
+  "CONTENT_INSPECTION",
   "EXTRACTION",
   "EVIDENCE_VALIDATION",
+  "GAP_ANALYSIS",
+  "FOLLOW_UP_RESEARCH",
   "SYNTHESIS",
+  "PERSISTENCE",
   "COMPLETED",
 ];
 
@@ -63,25 +113,35 @@ export default function ResearchWorkspacePage() {
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
   const [objective, setObjective] = useState("");
   const [depth, setDepth] = useState<ResearchDepth>("standard");
-  const [playbook, setPlaybook] = useState("general_research");
+  const [playbook, setPlaybook] = useState<ResearchPlaybook>("generic");
   const [starting, setStarting] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runsLoaded, setRunsLoaded] = useState(false);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
 
-  // Poll research runs and active evidence
-  usePolling(
+  // The run whose evidence is on screen; a response for any other run is stale and dropped.
+  const activeIdRef = useRef<string | null>(null);
+
+  const { refresh } = usePolling(
     async (signal) => {
       try {
         const list = await api.listResearchRuns({ signal });
         setRuns(list);
-        if (!selectedRunId && list.length > 0) {
-          setSelectedRunId(list[0].id);
-        }
-        if (selectedRunId) {
-          const ev = await api.getResearchEvidence(selectedRunId, { signal });
-          setEvidence(ev);
-        }
+        setRunsLoaded(true);
+        setSelectedRunId((cur) => cur ?? list[0]?.id ?? null);
         setError(null);
+        const id = activeIdRef.current;
+        const current = list.find((r) => r.id === id);
+        // Keep evidence fresh while the run can still gather more.
+        if (id && current && runControls(current.status).cancel) {
+          const ev = await api.getResearchEvidence(id, { signal });
+          if (activeIdRef.current === id) {
+            setEvidence(ev);
+            setEvidenceError(null);
+          }
+        }
       } catch (e) {
         if (!signal.aborted) {
           setError(e instanceof Error ? e.message : "Failed to load research runs");
@@ -92,6 +152,34 @@ export default function ResearchWorkspacePage() {
   );
 
   const selectedRun = runs.find((r) => r.id === selectedRunId) ?? runs[0] ?? null;
+  const effectiveId = selectedRun?.id ?? null;
+
+  // Fetch evidence as soon as a run is selected, and clear the previous run's evidence.
+  useEffect(() => {
+    activeIdRef.current = effectiveId;
+    setEvidence([]);
+    setEvidenceError(null);
+    if (!effectiveId) {
+      setEvidenceLoading(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    setEvidenceLoading(true);
+    api
+      .getResearchEvidence(effectiveId, { signal: ctrl.signal })
+      .then((ev) => {
+        if (activeIdRef.current === effectiveId) setEvidence(ev);
+      })
+      .catch((e) => {
+        if (!ctrl.signal.aborted && activeIdRef.current === effectiveId) {
+          setEvidenceError(e instanceof Error ? e.message : "Failed to load evidence");
+        }
+      })
+      .finally(() => {
+        if (activeIdRef.current === effectiveId) setEvidenceLoading(false);
+      });
+    return () => ctrl.abort();
+  }, [effectiveId]);
 
   async function handleStart() {
     if (!objective.trim()) {
@@ -121,6 +209,7 @@ export default function ResearchWorkspacePage() {
     try {
       await api.pauseResearchRun(id);
       toast.info("Research run paused");
+      refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to pause run");
     } finally {
@@ -133,12 +222,31 @@ export default function ResearchWorkspacePage() {
     try {
       await api.resumeResearchRun(id);
       toast.success("Research run resumed");
+      refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to resume run");
     } finally {
       setActionBusy(false);
     }
   }
+
+  async function handleCancel(id: string) {
+    if (!window.confirm("Cancel this research run? It cannot be resumed.")) return;
+    setActionBusy(true);
+    try {
+      await api.cancelResearchRun(id);
+      toast.info("Research run cancelled");
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to cancel run");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  const status = selectedRun ? runStatusView(selectedRun) : null;
+  const controls = selectedRun ? runControls(selectedRun.status) : null;
+  const extras = selectedRun ? reportExtras(selectedRun) : null;
 
   return (
     <PageContainer className="max-w-7xl">
@@ -228,7 +336,11 @@ export default function ResearchWorkspacePage() {
       </section>
 
       {/* Main Workspace Layout */}
-      {runs.length === 0 ? (
+      {!runsLoaded && !error ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading research runs...
+        </p>
+      ) : runs.length === 0 ? (
         <EmptyState
           icon={<Compass className="size-5" />}
           title="No research runs yet"
@@ -247,20 +359,11 @@ export default function ResearchWorkspacePage() {
                       <Badge variant="outline" className="font-mono uppercase text-[11px]">
                         {selectedRun.playbook}
                       </Badge>
-                      <Badge
-                        className={cn(
-                          "capitalize text-[11px]",
-                          selectedRun.status === "COMPLETED"
-                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                            : selectedRun.status === "PAUSED"
-                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                            : "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-                        )}
-                      >
-                        {selectedRun.status.replace(/_/g, " ").toLowerCase()}
+                      <Badge className={cn("text-[11px]", STATUS_TONE[status!.tone])}>
+                        {status!.label}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {timeAgo(selectedRun.started_at)}
+                        {timeAgo(selectedRun.created_at)}
                       </span>
                     </div>
                     <h3 className="mt-2 text-xl font-bold tracking-tight text-foreground">
@@ -269,26 +372,64 @@ export default function ResearchWorkspacePage() {
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    {selectedRun.status === "PAUSED" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleResume(selectedRun.id)}
-                        disabled={actionBusy}
-                      >
+                    {controls!.resume && (
+                      <Button size="sm" variant="outline" onClick={() => handleResume(selectedRun.id)} disabled={actionBusy}>
                         <Play className="mr-1.5 size-3.5" /> Resume
                       </Button>
-                    ) : selectedRun.status !== "COMPLETED" && selectedRun.status !== "CANCELLED" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handlePause(selectedRun.id)}
-                        disabled={actionBusy}
-                      >
+                    )}
+                    {controls!.pause && (
+                      <Button size="sm" variant="outline" onClick={() => handlePause(selectedRun.id)} disabled={actionBusy}>
                         <Pause className="mr-1.5 size-3.5" /> Pause
                       </Button>
-                    ) : null}
+                    )}
+                    {controls!.cancel && (
+                      <Button size="sm" variant="outline" onClick={() => handleCancel(selectedRun.id)} disabled={actionBusy}>
+                        <XCircle className="mr-1.5 size-3.5" /> Cancel
+                      </Button>
+                    )}
                   </div>
+                </div>
+
+                {(status!.partial || status!.tone === "failed" || selectedRun.error_message) && (
+                  <div
+                    role="status"
+                    className={cn(
+                      "mt-4 rounded-lg border p-3 text-sm",
+                      status!.tone === "failed"
+                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+                    )}
+                  >
+                    <p className="flex items-center gap-2 font-semibold">
+                      <AlertTriangle className="size-4" /> {status!.label}
+                    </p>
+                    {status!.detail && <p className="mt-1 text-xs">{status!.detail}</p>}
+                    {selectedRun.error_message && status!.detail !== selectedRun.error_message && (
+                      <p className="mt-1 text-xs">Error: {selectedRun.error_message}</p>
+                    )}
+                  </div>
+                )}
+                {selectedRun.stop_reason && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Stop reason: <span className="font-mono">{selectedRun.stop_reason}</span>
+                  </p>
+                )}
+
+                {/* Budgets */}
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {budgetRows(selectedRun).map((b) => (
+                    <div
+                      key={b.key}
+                      className={cn("rounded-lg border p-2.5 text-xs", b.exhausted && "border-amber-500/50 bg-amber-500/10")}
+                    >
+                      <p className="text-muted-foreground">{b.label}</p>
+                      <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                        {b.used}
+                        {b.unit} / {b.max || "?"}
+                        {b.max ? b.unit : ""}
+                      </p>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Stepper Progress */}
@@ -296,9 +437,7 @@ export default function ResearchWorkspacePage() {
                   <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
                     <span className="font-medium">Lifecycle Stepper</span>
                     <span>
-                      {selectedRun.progress_metrics?.searches_done ?? 0} searches ·{" "}
-                      {selectedRun.progress_metrics?.pages_inspected ?? 0} pages ·{" "}
-                      {selectedRun.findings?.length ?? 0} verified claims
+                      round {selectedRun.round ?? 0} · {selectedRun.findings?.length ?? 0} findings
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-2">
@@ -334,7 +473,7 @@ export default function ResearchWorkspacePage() {
                 {/* Findings Table */}
                 <div className="mt-6 border-t pt-5">
                   <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-tight">
-                    <ShieldCheck className="size-4 text-emerald-500" /> Grounded Findings & Verified Claims
+                    <ShieldCheck className="size-4 text-primary" /> Findings (check each status)
                   </h4>
                   {selectedRun.findings && selectedRun.findings.length > 0 ? (
                     <div className="space-y-3">
@@ -346,11 +485,7 @@ export default function ResearchWorkspacePage() {
                           <div className="flex items-start justify-between gap-2">
                             <span className="font-semibold text-foreground">{f.topic}</span>
                             <div className="flex items-center gap-1.5">
-                              {f.is_contradiction && (
-                                <Badge variant="destructive" className="text-[10px]">
-                                  Contradiction Flagged
-                                </Badge>
-                              )}
+                              <ClaimBadge status={f.status} />
                               <Badge variant="secondary" className="font-mono text-[10px]">
                                 {f.confidence}% conf
                               </Badge>
@@ -382,6 +517,49 @@ export default function ResearchWorkspacePage() {
                   )}
                 </div>
 
+                {/* Open questions and conflicts from the report */}
+                {extras!.openQuestions.length > 0 && (
+                  <div className="mt-6 border-t pt-5">
+                    <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold tracking-tight">
+                      <ListOrdered className="size-4 text-primary" /> Open questions
+                    </h4>
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-foreground/90">
+                      {extras!.openQuestions.map((q) => (
+                        <li key={q}>{q}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {extras!.conflicts.length > 0 && (
+                  <div className="mt-6 border-t pt-5">
+                    <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold tracking-tight">
+                      <AlertTriangle className="size-4 text-destructive" /> Conflicting evidence
+                    </h4>
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Sources disagree. No value has been chosen.
+                    </p>
+                    <div className="space-y-2">
+                      {extras!.conflicts.map((c) => (
+                        <div key={`${c.subject}/${c.property}`} className="rounded-lg border border-destructive/30 p-3 text-xs">
+                          <p className="font-semibold text-foreground">
+                            {c.subject} / {c.property}
+                          </p>
+                          <ul className="mt-1 space-y-1">
+                            {(c.values ?? []).map((v) => (
+                              <li key={v.finding_id} className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-foreground">{v.value}</span>
+                                <a href={v.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
+                                  source <ExternalLink className="size-2.5" />
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Synthesis Report */}
                 {selectedRun.report_markdown && (
                   <div className="mt-6 border-t pt-5">
@@ -405,32 +583,39 @@ export default function ResearchWorkspacePage() {
             <div className="rounded-2xl border bg-card p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-                  <Database className="size-4 text-primary" /> Atomic Evidence Vault
+                  <Database className="size-4 text-primary" /> Evidence
                 </h3>
                 <span className="text-xs text-muted-foreground">{evidence.length} items</span>
               </div>
               <p className="mb-3 text-xs text-muted-foreground">
-                All claims are grounded in verifiable source excerpts stored with temporal metadata.
+                Source excerpts gathered for this run. Only items marked Supported had their quote found in the page.
               </p>
 
-              {evidence.length > 0 ? (
+              {evidenceError ? (
+                <ErrorNote message={evidenceError} />
+              ) : evidenceLoading ? (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" /> Loading evidence...
+                </p>
+              ) : evidence.length > 0 ? (
                 <div className="max-h-[500px] space-y-3 overflow-y-auto pr-1">
                   {evidence.map((ev) => (
                     <div key={ev.id} className="rounded-lg border p-3 text-xs">
                       <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
                         <span className="truncate">{ev.source_domain}</span>
-                        <Badge variant="outline" className="text-[10px]">
-                          {ev.status}
-                        </Badge>
+                        <ClaimBadge status={ev.status} />
                       </div>
                       <p className="mt-1 font-medium text-foreground">{ev.claim}</p>
                       {ev.excerpt_quote && (
                         <p className="mt-1.5 border-l border-muted-foreground/30 pl-2 text-muted-foreground italic">
-                          "{ev.excerpt_quote}"
+                          &ldquo;{ev.excerpt_quote}&rdquo;
                         </p>
                       )}
                       <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                        <span>Confidence: {ev.confidence}%</span>
+                        <span>
+                          Confidence: {ev.confidence}%
+                          {ev.retrieved_at && <> · retrieved {timeAgo(ev.retrieved_at)}</>}
+                        </span>
                         <a
                           href={ev.source_url}
                           target="_blank"
@@ -472,7 +657,7 @@ export default function ResearchWorkspacePage() {
                       <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                         <span>{r.depth}</span>
                         <span>·</span>
-                        <span>{timeAgo(r.started_at)}</span>
+                        <span>{timeAgo(r.created_at)}</span>
                       </div>
                     </div>
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground" />

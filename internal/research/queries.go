@@ -1,11 +1,14 @@
 package research
 
 import (
-	"fmt"
 	"strings"
+
+	"github.com/griffin/core/internal/playbooks"
 )
 
-// QueryExpander generates targeted, multi-angle search queries.
+// QueryExpander generates targeted, multi-angle search queries. Its history is per run: the engine builds one from
+// the run's own persisted executed queries (NewQueryExpanderFrom), so no state is shared between runs or users and
+// nothing here needs a lock.
 type QueryExpander struct {
 	history map[string]bool
 }
@@ -13,6 +16,17 @@ type QueryExpander struct {
 // NewQueryExpander creates a QueryExpander with an empty history set.
 func NewQueryExpander() *QueryExpander {
 	return &QueryExpander{history: make(map[string]bool)}
+}
+
+// NewQueryExpanderFrom creates a QueryExpander whose history is the given queries.
+func NewQueryExpanderFrom(queries ...[]string) *QueryExpander {
+	q := NewQueryExpander()
+	for _, list := range queries {
+		for _, s := range list {
+			q.MarkExecuted(s)
+		}
+	}
+	return q
 }
 
 // MarkExecuted adds a query to the history to prevent duplicate searches.
@@ -25,26 +39,12 @@ func (q *QueryExpander) HasExecuted(query string) bool {
 	return q.history[strings.ToLower(strings.TrimSpace(query))]
 }
 
-// ExpandLead generates follow-up queries for a newly discovered entity or lead.
-func (q *QueryExpander) ExpandLead(lead, contextObjective string) []string {
-	lead = strings.TrimSpace(lead)
-	if lead == "" {
-		return nil
-	}
-
-	var candidates []string
-	candidates = append(candidates,
-		fmt.Sprintf("%s business model product", lead),
-		fmt.Sprintf("%s funding investors valuation", lead),
-		fmt.Sprintf("%s engineering tech stack", lead),
-		fmt.Sprintf("%s competitors alternatives", lead),
-		fmt.Sprintf("%s careers jobs hiring", lead),
-	)
-
+// ExpandTemplates fills a playbook's query templates (each with one %s) with the subject, leaving out queries
+// already run. The generic engine has no templates.
+func (q *QueryExpander) ExpandTemplates(templates []string, subject string) []string {
 	var filtered []string
-	for _, c := range candidates {
-		norm := strings.ToLower(strings.TrimSpace(c))
-		if !q.history[norm] {
+	for _, c := range playbooks.ExpandTemplates(templates, subject) {
+		if !q.HasExecuted(c) {
 			filtered = append(filtered, c)
 		}
 	}

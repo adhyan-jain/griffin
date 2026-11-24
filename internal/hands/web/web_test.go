@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -184,4 +185,33 @@ func TestSearcherFallsBackAndExplainsWhenNothingWorks(t *testing.T) {
 	_, _, err = (&Searcher{Providers: []Provider{failingProvider{ErrSearchBlocked}}}).Search(context.Background(), "q", 3)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "BRAVE_SEARCH_API_KEY", "the error says how to fix it")
+}
+
+func TestSafeHTTPClientRefusesInternalAddresses(t *testing.T) {
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("secret")) }))
+	defer local.Close()
+	c := SafeHTTPClient(2 * time.Second)
+	for _, u := range []string{local.URL, "http://127.0.0.1:1/", "http://169.254.169.254/latest/meta-data/", "http://[::1]:1/"} {
+		resp, err := c.Get(u)
+		if err == nil {
+			resp.Body.Close()
+			t.Fatalf("%s: expected the connection to be refused", u)
+		}
+		if !errors.Is(err, ErrBlockedAddress) {
+			t.Fatalf("%s: want ErrBlockedAddress, got %v", u, err)
+		}
+	}
+}
+
+func TestSafeHTTPClientRevalidatesRedirects(t *testing.T) {
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("secret")) }))
+	defer local.Close()
+	// The redirecting server is itself local, so the first hop is refused too: either way nothing local is read.
+	hop := httptest.NewServer(http.RedirectHandler(local.URL, http.StatusFound))
+	defer hop.Close()
+	resp, err := SafeHTTPClient(2 * time.Second).Get(hop.URL)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("expected refusal")
+	}
 }

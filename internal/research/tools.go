@@ -2,6 +2,7 @@ package research
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 
@@ -29,6 +30,16 @@ type FetchedContent struct {
 	Truncated   bool   `json:"truncated"`
 }
 
+// ErrNoTools is returned when a search or fetch is asked of a gateway that has no backend configured.
+var ErrNoTools = errors.New("research tools are not configured")
+
+// ToolBackend is what the engine needs from the outside world: web search and page fetching. ToolGateway is the
+// real one; tests supply fakes that return fixed pages.
+type ToolBackend interface {
+	Search(ctx context.Context, query string, limit int) ([]SearchHit, error)
+	Fetch(ctx context.Context, rawURL string) (*FetchedContent, error)
+}
+
 // ToolGateway interfaces with external search and page inspection capabilities.
 type ToolGateway struct {
 	Searcher *web.Searcher
@@ -49,7 +60,7 @@ func NewToolGateway(s *web.Searcher, f *web.Fetcher) *ToolGateway {
 // Search executes a search query across configured providers.
 func (g *ToolGateway) Search(ctx context.Context, query string, limit int) ([]SearchHit, error) {
 	if g == nil || g.Searcher == nil {
-		return nil, nil
+		return nil, ErrNoTools
 	}
 	results, srcName, err := g.Searcher.Search(ctx, query, limit)
 	if err != nil {
@@ -73,11 +84,14 @@ func (g *ToolGateway) Search(ctx context.Context, query string, limit int) ([]Se
 // Fetch opens and extracts readable text from an arbitrary URL with security controls.
 func (g *ToolGateway) Fetch(ctx context.Context, rawURL string) (*FetchedContent, error) {
 	if g == nil || g.Fetcher == nil {
-		return nil, nil
+		return nil, ErrNoTools
 	}
 	p, err := g.Fetcher.Fetch(ctx, rawURL)
 	if err != nil {
 		return nil, err
+	}
+	if p == nil {
+		return nil, errors.New("fetch returned no page")
 	}
 
 	h := domain.DescriptionHash(p.Text)
@@ -90,6 +104,46 @@ func (g *ToolGateway) Fetch(ctx context.Context, rawURL string) (*FetchedContent
 		ContentHash: h,
 		Truncated:   p.Truncated,
 	}, nil
+}
+
+// trackingParams are query parameters that identify a visit, not a page.
+var trackingParams = map[string]bool{
+	"fbclid": true, "gclid": true, "dclid": true, "msclkid": true, "mc_cid": true, "mc_eid": true,
+	"igshid": true, "ref": true, "ref_src": true, "_hsenc": true, "_hsmi": true, "yclid": true,
+}
+
+// CanonicalURL normalises a page address so the same page is recognised twice: the scheme and host are lower-cased,
+// the fragment and tracking parameters (utm_*, fbclid, gclid, ...) are dropped, the remaining parameters are
+// sorted, and a trailing slash on a non-root path is removed. It returns "" for anything that is not http(s).
+func CanonicalURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	u.Scheme = scheme
+	u.Host = strings.ToLower(u.Host)
+	u.Fragment = ""
+	u.RawFragment = ""
+	u.User = nil
+	if len(u.Path) > 1 {
+		u.Path = strings.TrimRight(u.Path, "/")
+		if u.Path == "" {
+			u.Path = "/"
+		}
+		u.RawPath = ""
+	}
+	q := u.Query()
+	for k := range q {
+		if lk := strings.ToLower(k); strings.HasPrefix(lk, "utm_") || trackingParams[lk] {
+			q.Del(k)
+		}
+	}
+	u.RawQuery = q.Encode() // sorted by key
+	return u.String()
 }
 
 func extractDomain(rawURL string) string {
