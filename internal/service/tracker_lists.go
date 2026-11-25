@@ -40,6 +40,8 @@ type TrackerLists struct {
 	Sync *ListingSync
 	// Assess assesses open listings (value, eligibility, pay, skills); nil leaves the routine to the model path.
 	Assess *OpportunityAssess
+	// Prep prepares application packages for the best eligible listings; nil leaves the APPLICATION PREP routine unhandled.
+	Prep *ApplicationPrep
 	// Opportunities reads the employers' own boards for internships; nil leaves the OPPORTUNITY SCAN routine unhandled.
 	Opportunities *OpportunityScan
 	// Details reads the detail pages of listings that have no description (the LISTING DETAILS routine, and a

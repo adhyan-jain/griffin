@@ -12,6 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RiskBadge, StatusBadge } from "@/components/StatusBadge";
+import { PackageDialog } from "@/components/application-package";
+import { packageApprovalInfo, packageIdOfApproval, resumeName } from "@/lib/application-package";
 import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/components/page";
 
 interface ReferralDraftInfo {
@@ -29,7 +31,7 @@ interface ReferralDraftInfo {
 
 /** The message a send approval is about, when it has one (other approvals carry no draft). */
 function draftOf(a: Approval): ReferralDraftInfo | null {
-  if (a.action_type === "apply_draft" || isProposalApproval(a.action_type)) return null; // shown by their own blocks
+  if (a.action_type === "apply_draft" || a.action_type === PACKAGE_ACTION || isProposalApproval(a.action_type)) return null; // shown by their own blocks
   const p = a.action_payload;
   if (!p || typeof p !== "object") return null;
   const raw = p as Record<string, unknown>;
@@ -49,9 +51,12 @@ function draftOf(a: Approval): ReferralDraftInfo | null {
   };
 }
 
-/** A finished application package ("apply_draft") or a job application the team wants to submit ("JOB_APPLY"). */
+/** An application package Griffin prepared for a listing: approving it accepts it as written and sends nothing. */
+const PACKAGE_ACTION = "application_package";
+
+/** A finished application draft ("apply_draft"), a prepared package, or a job application the team wants to submit ("JOB_APPLY"). */
 function isApplicationApproval(actionType: string): boolean {
-  return actionType === "JOB_APPLY" || actionType === "apply_draft";
+  return actionType === "JOB_APPLY" || actionType === "apply_draft" || actionType === PACKAGE_ACTION;
 }
 
 /** A task Griffin proposed on its own ("task_proposal"): the owner approves it to let it run. */
@@ -63,6 +68,7 @@ function isProposalApproval(actionType: string): boolean {
 function approvalKind(actionType: string): { badge: string; approve: string } {
   if (actionType === "JOB_APPLY") return { badge: "Phase 1: Apply to Portal First", approve: "Approve & Auto-Apply" };
   if (actionType === "apply_draft") return { badge: "Application draft", approve: "Approve and submit" };
+  if (actionType === PACKAGE_ACTION) return { badge: "Application package", approve: "Approve package" };
   if (isProposalApproval(actionType)) return { badge: "Proposed by JJ", approve: "Approve & run" };
   return { badge: "Phase 2: Referral Follow-Up", approve: "Approve & Send" };
 }
@@ -82,6 +88,7 @@ interface TailoringInfo {
 }
 
 function tailoringOf(a: Approval): TailoringInfo | null {
+  if (a.action_type === PACKAGE_ACTION) return null; // shown by its own block
   const p = a.action_payload;
   if (!p || typeof p !== "object") return null;
   const payload = (p as { payload?: unknown }).payload || p;
@@ -125,6 +132,8 @@ export default function ApprovalsPage() {
   // A notification opens /approvals?id=<id>: scroll to that approval and mark it.
   const [focusId, setFocusId] = useState<string | null>(null);
   const focused = useRef(false);
+  // The application package whose full view is open.
+  const [packageOpen, setPackageOpen] = useState<{ id: string; title: string } | null>(null);
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -452,6 +461,38 @@ export default function ApprovalsPage() {
                     </div>
                   );
                 })()}
+                {(() => {
+                  const info = a.action_type === PACKAGE_ACTION ? packageApprovalInfo(a.action_payload) : null;
+                  const pid = a.action_type === PACKAGE_ACTION ? packageIdOfApproval(a.action_payload) : null;
+                  if (!info || !pid) return null;
+                  return (
+                    <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3.5" data-testid="package-approval">
+                      <p className="text-sm">
+                        <strong>{info.role}</strong> at <strong>{info.company}</strong>
+                      </p>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        {info.resume && (
+                          <span className="inline-flex items-center gap-1 font-mono">
+                            <FileText className="size-3" />
+                            {resumeName(info.resume)}
+                          </span>
+                        )}
+                        {info.projects.length > 0 && <span>Projects: {info.projects.join(", ")}</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setPackageOpen({ id: pid, title: `${info.role} at ${info.company}` })}>
+                          <FileText className="size-3.5" /> Review the whole package
+                        </Button>
+                        {info.url && (
+                          <a href={info.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 self-center text-xs font-medium text-primary hover:underline">
+                            <ExternalLink className="size-3" /> Open posting
+                          </a>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Approving accepts the package as written. It does not send anything.</p>
+                    </div>
+                  );
+                })()}
                 {isProposalApproval(a.action_type) && typeof (a.action_payload as { text?: unknown } | null)?.text === "string" && (
                   <div className="whitespace-pre-wrap rounded-lg border bg-muted/40 p-3.5 text-sm leading-relaxed text-foreground">
                     {(a.action_payload as { text: string }).text}
@@ -552,6 +593,7 @@ export default function ApprovalsPage() {
                 })()}
                 {pending && (
                   <>
+                    {a.action_type !== PACKAGE_ACTION && (
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <Button
                         size="sm"
@@ -563,6 +605,7 @@ export default function ApprovalsPage() {
                         {reviseOpen[a.id] ? "Close Revision Chat" : "Revise with JJ"}
                       </Button>
                     </div>
+                    )}
 
                     {reviseOpen[a.id] && (
                       <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3.5 shadow-xs">
@@ -627,6 +670,13 @@ export default function ApprovalsPage() {
         </ul>
       </div>
     )}
+    <PackageDialog
+      open={packageOpen !== null}
+      onOpenChange={(o) => !o && setPackageOpen(null)}
+      title={packageOpen?.title ?? "Application package"}
+      packageId={packageOpen?.id}
+      onChanged={refresh}
+    />
   </PageContainer>
 );
 }

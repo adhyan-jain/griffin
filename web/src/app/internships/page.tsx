@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BadgeCheck, Briefcase, ExternalLink, Link2, Loader2, X } from "lucide-react";
+import { BadgeCheck, Briefcase, ExternalLink, FilePenLine, Link2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Listing } from "@/lib/api";
 import { usePolling } from "@/lib/use-polling";
+import { packageAction, type PackageAction } from "@/lib/application-package";
 import { cn } from "@/lib/utils";
 import {
   BUCKETS,
@@ -25,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, ErrorNote, PageContainer, PageHeader, timeAgo } from "@/components/page";
+import { PackageBadge, PackageDialog } from "@/components/application-package";
 
 const STAGE_LABEL: Record<Listing["stage"], string> = {
   verified: "Open",
@@ -79,7 +81,22 @@ function ScoreBadge({ score, tone }: { score: number; tone: BucketId }) {
   );
 }
 
-function ListingCard({ l, bucket, busy, onClose }: { l: Listing; bucket: BucketId; busy: boolean; onClose: (l: Listing) => void }) {
+function ListingCard({
+  l,
+  bucket,
+  busy,
+  preparing,
+  onClose,
+  onPackage,
+}: {
+  l: Listing;
+  bucket: BucketId;
+  busy: boolean;
+  preparing: boolean;
+  onClose: (l: Listing) => void;
+  onPackage: (l: Listing, action: PackageAction) => void;
+}) {
+  const action = packageAction(l);
   const a = l.assessment;
   const verified = isEmployerVerified(l);
   const why = a ? whyLines(a, 3) : [];
@@ -101,6 +118,7 @@ function ListingCard({ l, bucket, busy, onClose }: { l: Listing; bucket: BucketI
               <span className="text-xs text-muted-foreground">{SOURCE_LABEL[l.source] ?? l.source}</span>
               {a && a.role_class !== "unknown" && <span className="text-xs text-muted-foreground">· {ROLE_LABEL[a.role_class] ?? a.role_class}</span>}
               {l.stage !== "verified" && <Badge variant="outline">{STAGE_LABEL[l.stage] ?? l.stage}</Badge>}
+              {l.package && <PackageBadge brief={l.package} />}
             </div>
             <h2 className="mt-1.5 font-medium leading-snug">{l.role}</h2>
             <p className="text-sm text-muted-foreground">
@@ -110,7 +128,12 @@ function ListingCard({ l, bucket, busy, onClose }: { l: Listing; bucket: BucketI
             <p className="mt-1 text-sm tabular-nums">{pay ?? "Stipend not shown"}</p>
           </div>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {action && (
+            <Button size="sm" variant={action.kind === "prepare" ? "default" : "secondary"} onClick={() => onPackage(l, action)} disabled={preparing}>
+              {preparing ? <Loader2 className="size-4 animate-spin" /> : <FilePenLine className="size-4" />} {preparing ? "Preparing" : action.label}
+            </Button>
+          )}
           <Button asChild size="sm" variant="outline">
             <a href={l.url} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="size-4" /> Open posting
@@ -161,6 +184,8 @@ export default function InternshipsPage() {
   const [query, setQuery] = useState("");
   const [showClosed, setShowClosed] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [preparingId, setPreparingId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<Listing | null>(null);
 
   const { refresh } = usePolling(
     async (signal) => {
@@ -204,6 +229,28 @@ export default function InternshipsPage() {
     }
   };
 
+  const onPackage = async (l: Listing, action: PackageAction) => {
+    if (action.kind === "view") {
+      setViewing(l);
+      return;
+    }
+    setPreparingId(l.id);
+    try {
+      const pkg = await api.prepareListing(l.id);
+      toast.success(
+        pkg.status === "needs_owner"
+          ? `Package for ${l.company} is ready, but ${pkg.missing_information.length} things need you`
+          : `Package for ${l.company} is waiting for your approval`,
+      );
+      refresh();
+      setViewing(l);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not prepare the application.");
+    } finally {
+      setPreparingId(null);
+    }
+  };
+
   return (
     <PageContainer>
       <PageHeader
@@ -241,10 +288,17 @@ export default function InternshipsPage() {
       ) : (
         <ul className="space-y-3">
           {shown.map((l) => (
-            <ListingCard key={l.id} l={l} bucket={tab} busy={busyId === l.id} onClose={close} />
+            <ListingCard key={l.id} l={l} bucket={tab} busy={busyId === l.id} preparing={preparingId === l.id} onClose={close} onPackage={onPackage} />
           ))}
         </ul>
       )}
+      <PackageDialog
+        open={viewing !== null}
+        onOpenChange={(o) => !o && setViewing(null)}
+        title={viewing ? `${viewing.role} at ${viewing.company}` : "Application package"}
+        listingId={viewing?.id}
+        onChanged={refresh}
+      />
     </PageContainer>
   );
 }

@@ -35,8 +35,15 @@ type TaskEngine struct {
 	onSubmitFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
 	// onDMFinished is told when a LinkedIn message task completes, so the Alumni list shows what really happened.
 	onDMFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
+	// onPackageDecided is told when the owner approves or rejects an application package.
+	onPackageDecided func(ctx context.Context, a *domain.Approval, approved bool)
 	// onPostingMissing is told when an application draft says its posting does not exist, so the listing is closed.
 	onPostingMissing func(ctx context.Context, userID uuid.UUID, company, role string)
+}
+
+// OnPackageDecided sets what happens when the owner decides on an application package.
+func (e *TaskEngine) OnPackageDecided(f func(ctx context.Context, a *domain.Approval, approved bool)) {
+	e.onPackageDecided = f
 }
 
 // OnPostingMissing sets what happens when an application finds no posting.
@@ -708,6 +715,9 @@ func (e *TaskEngine) RespondApproval(ctx context.Context, approvalID uuid.UUID, 
 	if approved && app.ActionType == domain.ApplyDraftApprovalAction && e.onApplicationApproved != nil {
 		e.onApplicationApproved(ctx, app)
 	}
+	if app.ActionType == domain.PackageApprovalAction && e.onPackageDecided != nil {
+		e.onPackageDecided(ctx, app, approved)
+	}
 
 	eventType := "STATUS_CHANGE"
 	msg := fmt.Sprintf("Approval granted by user: %s", reason)
@@ -796,4 +806,35 @@ func calculateBackoff(retryCount int, reason string) time.Duration {
 	// Add 10-20% jitter
 	jitter := sec * (0.1 + rand.Float64()*0.1)
 	return time.Duration(sec+jitter) * time.Second
+}
+
+// HoldApplicationPackage puts a finished application package on the owner's approvals page. The approvals table
+// needs a task, so one is made that only carries the approval: it is paused at once, has no tools, and does nothing
+// when the owner decides. Nothing is sent. It returns the approval's and the task's ids.
+func (e *TaskEngine) HoldApplicationPackage(ctx context.Context, l *domain.Listing, p *domain.ApplicationPackage) (approvalID, taskID uuid.UUID, err error) {
+	title := domain.ApplicationPackageTaskPrefix + strings.TrimSpace(l.Company+" - "+l.Role)
+	if r := []rune(title); len(r) > 100 {
+		title = string(r[:100])
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"application_package": map[string]any{"package_id": p.ID, "listing_id": l.ID},
+		domain.ToolModeKey:    domain.ToolNone,
+	})
+	task, err := e.CreateTask(ctx, &domain.Task{
+		ID: uuid.New(), UserID: l.UserID, Title: title, ManagerDomain: "career", Status: domain.TaskStatusRunning,
+		Goal:         "Hold the application package for " + strings.TrimSpace(l.Role+" at "+l.Company) + " until the owner approves or rejects it. This task sends nothing.",
+		InputPayload: payload, MaxRetries: 0,
+	}, nil)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	approval := &domain.Approval{
+		ID: uuid.New(), UserID: l.UserID, TaskID: task.ID, ActionType: domain.PackageApprovalAction, RiskLevel: domain.ApprovalRiskLow,
+		Summary: domain.PackageApprovalSummary(l), ActionPayload: domain.PackageApprovalPayload(l, p),
+	}
+	if err := e.RequestApproval(ctx, task.ID, approval); err != nil {
+		_ = e.taskRepo.CancelTask(ctx, task.ID, "the approval could not be requested")
+		return uuid.Nil, uuid.Nil, err
+	}
+	return approval.ID, task.ID, nil
 }

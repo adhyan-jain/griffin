@@ -28,19 +28,22 @@ export function ResponsiveDialog({
   onOpenChange,
   title,
   description,
+  contentClassName,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
+  /** Replaces the desktop dialog's width (default sm:max-w-lg). */
+  contentClassName?: string;
   children: ReactNode;
 }) {
   const desktop = useIsDesktop();
   if (desktop) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className={contentClassName ?? "sm:max-w-lg"}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{description ?? "Dialog"}</DialogDescription>

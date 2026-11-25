@@ -58,7 +58,7 @@ func IsRoutine(t *Task) bool {
 		return true
 	}
 	upper := strings.ToUpper(t.Title)
-	return strings.Contains(upper, "TRACKER") || IsAlumniDMBatch(t.Title) || strings.Contains(upper, ListingsSyncTitle) || strings.Contains(upper, OpportunityAssessTitle) || strings.Contains(upper, OpportunityScanTitle) || strings.Contains(upper, ListingDetailsTitle)
+	return strings.Contains(upper, "TRACKER") || IsAlumniDMBatch(t.Title) || strings.Contains(upper, ListingsSyncTitle) || strings.Contains(upper, OpportunityAssessTitle) || strings.Contains(upper, OpportunityScanTitle) || strings.Contains(upper, ListingDetailsTitle) || strings.Contains(upper, ApplicationPrepTitle)
 }
 
 // isTrackerCard mirrors the web Trackers page: the tasks it builds cards from.

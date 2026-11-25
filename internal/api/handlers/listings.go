@@ -21,10 +21,20 @@ type ListingStore interface {
 }
 
 // ListingsHandler serves the verified internship listings.
-type ListingsHandler struct{ repo ListingStore }
+type ListingsHandler struct {
+	repo ListingStore
+	// packages, when set, adds each listing's application package status to the list.
+	packages PackageStore
+}
 
 // NewListingsHandler builds a ListingsHandler.
 func NewListingsHandler(repo ListingStore) *ListingsHandler { return &ListingsHandler{repo: repo} }
+
+// WithPackages makes the list carry each listing's application package status.
+func (h *ListingsHandler) WithPackages(p PackageStore) *ListingsHandler {
+	h.packages = p
+	return h
+}
 
 // AssessedLister is the store read that adds each listing's assessment and filters by it. The real repository
 // implements it; a store that does not still serves the plain list.
@@ -90,6 +100,14 @@ func (h *ListingsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if rows == nil {
 		rows = []*domain.Listing{}
+	}
+	if h.packages != nil {
+		// A failed read leaves the packages off the list; the list itself is still right.
+		if briefs, perr := h.packages.PackageBriefs(r.Context(), userID); perr == nil {
+			for _, l := range rows {
+				l.Package = briefs[l.ID]
+			}
+		}
 	}
 	httputil.JSON(w, http.StatusOK, rows)
 }

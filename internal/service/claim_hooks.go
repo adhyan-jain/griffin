@@ -47,6 +47,12 @@ func (w *TrackerLists) RunInCode(ctx context.Context, task *domain.Task,
 	if answer, ok := w.ScanOpportunities(ctx, task); ok {
 		return answer, Answered
 	}
+	if answer, ok := w.PrepareApplications(ctx, task); ok {
+		return answer, Answered
+	}
+	if answer, ok := w.HoldPackageTask(task); ok {
+		return answer, Answered
+	}
 	if answer, ok := w.SyncInternDock(ctx, task, nil); ok {
 		return answer, Answered
 	}

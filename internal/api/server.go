@@ -56,6 +56,8 @@ type ServerDependencies struct {
 	ListingRepo *repository.OpportunityRepository
 	// Assess runs the opportunity assessment routine on a host claim; nil leaves it to the model path.
 	Assess *service.OpportunityAssess
+	// Prep prepares application packages (the APPLICATION PREP routine and the Prepare application button); nil turns both off.
+	Prep *service.ApplicationPrep
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine on a host claim.
 	GitHubLogin string
 	// CommunityReplies writes the reply for each new thread of the daily community scan on a host claim; nil leaves those cells empty.
@@ -416,6 +418,7 @@ func NewServer(deps ServerDependencies) *Server {
 				lists.Opportunities = &service.OpportunityScan{Store: deps.ListingRepo}
 			}
 			lists.Assess = deps.Assess
+			lists.Prep = deps.Prep
 			hostHandler.WithTrackerLists(lists)
 		}
 		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))
@@ -424,9 +427,17 @@ func NewServer(deps ServerDependencies) *Server {
 		mux.Handle("DELETE /api/v1/hosts/{id}", userAuth(http.HandlerFunc(hostHandler.RevokeHost)))
 
 		if deps.ListingRepo != nil {
-			listingHandler := handlers.NewListingsHandler(deps.ListingRepo)
+			listingHandler := handlers.NewListingsHandler(deps.ListingRepo).WithPackages(deps.ListingRepo)
 			mux.Handle("GET /api/v1/listings", userAuth(http.HandlerFunc(listingHandler.List)))
 			mux.Handle("POST /api/v1/listings/{id}/close", userAuth(http.HandlerFunc(listingHandler.Close)))
+			var preparer handlers.PackagePreparer
+			if deps.Prep != nil {
+				preparer = deps.Prep
+			}
+			packagesHandler := handlers.NewPackagesHandler(preparer, deps.ListingRepo)
+			mux.Handle("POST /api/v1/listings/{id}/prepare", userAuth(http.HandlerFunc(packagesHandler.Prepare)))
+			mux.Handle("GET /api/v1/listings/{id}/package", userAuth(http.HandlerFunc(packagesHandler.ForListing)))
+			mux.Handle("GET /api/v1/packages/{id}", userAuth(http.HandlerFunc(packagesHandler.Get)))
 			sourcesHandler := handlers.NewSourcesHandler(deps.ListingRepo)
 			mux.Handle("GET /api/v1/sources/health", userAuth(http.HandlerFunc(sourcesHandler.Health)))
 		}

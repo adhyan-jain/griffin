@@ -172,3 +172,22 @@ func PPOSignal(description string) Signal {
 	}
 	return Signal{Level: "unknown", Reason: "The posting does not say"}
 }
+
+// SkillsIn returns every vocabulary skill a text names, each with the words that show it. Unlike MatchSkills it does
+// not ask whose skill it is: it reads a posting's requirements or a profile fact alike.
+func SkillsIn(text string) []domain.SkillMatch {
+	all := map[string]bool{}
+	for _, v := range vocab {
+		all[v.Name] = true
+	}
+	return MatchSkills("", text, all)
+}
+
+// SkillNames lists every technology Griffin recognises, in vocabulary order.
+func SkillNames() []string {
+	out := make([]string, len(vocab))
+	for i, v := range vocab {
+		out[i] = v.Name
+	}
+	return out
+}

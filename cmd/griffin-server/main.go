@@ -184,6 +184,26 @@ func main() {
 			return err
 		})
 	})
+	// Application packages: the routine and the Prepare button write them; the owner's decision on one moves its listing.
+	prepRoutine := applicationPrep(cfg, listingRepo, engine, logger)
+	engine.OnPackageDecided(func(ctx context.Context, a *domain.Approval, approved bool) {
+		prepRoutine.Decided(ctx, a, approved, func(c context.Context, sub *domain.Approval) {
+			var p struct {
+				Company    string `json:"company"`
+				Role       string `json:"role"`
+				PortalURL  string `json:"portal_url"`
+				ResumePath string `json:"resume_path"`
+			}
+			if json.Unmarshal(sub.ActionPayload, &p) == nil {
+				appliedLists.RecordApplied(c, sub.UserID, p.Company, p.Role, p.PortalURL, p.ResumePath)
+			}
+			// The package is approved, not sent: this makes the existing submit task, which asks again before it sends.
+			appliedLists.StartSubmit(c, sub, func(c2 context.Context, t *domain.Task) error {
+				_, err := engine.CreateTask(c2, t, nil)
+				return err
+			})
+		})
+	})
 	engine.OnSubmitFinished(appliedLists.RecordSubmitted)
 	engine.OnDMFinished(appliedLists.RecordDM)
 	engine.OnPostingMissing(appliedLists.CloseListing)
@@ -350,6 +370,7 @@ func main() {
 				Playbooks:         storageService,
 				Listings:          listingRepo,
 				Assess:            assessRoutine,
+				Prep:              prepRoutine,
 				GitHubLogin:       cfg.GitHubLogin,
 				CommunityReplies:  communityReplier(cfg),
 				OnTaskFinished: func(hookCtx context.Context, taskID uuid.UUID) {
@@ -509,6 +530,7 @@ func main() {
 			NotificationRepo: notificationRepo,
 			ListingRepo:      listingRepo,
 			Assess:           assessRoutine,
+			Prep:             prepRoutine,
 			GitHubLogin:      cfg.GitHubLogin,
 			CommunityReplies: communityReplier(cfg),
 			OutreachRepo:     outreachRepo,
@@ -640,6 +662,24 @@ func opportunityAssess(cfg *config.Config, store service.AssessStore) *service.O
 	}
 	zero := 0.0
 	c := &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 2500, Temperature: &zero, JSONOutput: true,
+		HTTP: &http.Client{Timeout: 60 * time.Second}}
+	o.ModelName = c.Model
+	o.Model = func(ctx context.Context, system, user string) (string, error) {
+		return c.Chat(ctx, system, []gemini.Turn{{Role: "user", Text: user}})
+	}
+	return o
+}
+
+// applicationPrep builds the routine that prepares application packages. With a Gemini key it asks Gemini Flash, at
+// most twice per listing (one to write the letter, one to rewrite what failed the fact check); without one it prepares
+// what code can and lists the letter as missing. Facts are the owner's profile as the engine holds it.
+func applicationPrep(cfg *config.Config, store *repository.OpportunityRepository, engine *service.TaskEngine, logger *slog.Logger) *service.ApplicationPrep {
+	o := &service.ApplicationPrep{Store: store, Holder: engine, Facts: engine.OwnerFacts, Logger: logger}
+	if cfg.GeminiAPIKey == "" {
+		return o
+	}
+	temp := 0.3
+	c := &gemini.Client{APIKey: cfg.GeminiAPIKey, Model: "gemini-flash-latest", MaxOutputTokens: 1500, Temperature: &temp, JSONOutput: true,
 		HTTP: &http.Client{Timeout: 60 * time.Second}}
 	o.ModelName = c.Model
 	o.Model = func(ctx context.Context, system, user string) (string, error) {

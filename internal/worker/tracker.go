@@ -29,6 +29,7 @@ func (w *Worker) trackers() *service.TrackerLists {
 		}
 	}
 	t.Assess = w.assess
+	t.Prep = w.prep
 	return t
 }
 

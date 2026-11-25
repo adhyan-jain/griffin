@@ -54,6 +54,8 @@ type Listing struct {
 	// Assessment is what Griffin concluded about the listing's text; nil until it has been assessed. Only the
 	// assessed listing reads fill it in.
 	Assessment *Assessment `json:"assessment"`
+	// Package is the listing's application package in brief; nil when none was prepared. Only the listings route fills it.
+	Package *PackageBrief `json:"package"`
 	// Description is the posting's text. It is stored, but list reads do not load it.
 	Description string `json:"-"`
 	// EmployerKey, RoleKey and SourceTarget are the identity keys and the scan target the listing was last read

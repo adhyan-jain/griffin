@@ -639,6 +639,51 @@ export type Listing = {
   verification?: "lead" | "employer_verified";
   /** What Griffin concluded from the listing's text; null until it has been assessed. */
   assessment?: ListingAssessment | null;
+  /** The listing's application package in brief; null when none was prepared. */
+  package?: PackageBrief | null;
+};
+
+export type PackageStatus = "draft" | "needs_owner" | "ready_for_approval" | "approved" | "rejected";
+
+export type PackageBrief = {
+  id: string;
+  status: PackageStatus;
+  /** The approval that decides this package; set once it is waiting on the approvals page. */
+  approval_id: string | null;
+  missing_count: number;
+};
+
+/** One of the owner's projects chosen for a posting, with the exact posting words that matched. */
+export type PackageProject = {
+  project: string;
+  facts: { id?: string; text: string }[];
+  skills: string[];
+  quote: string;
+};
+
+export type PackageAnswer = { question: string; answer: string; source: string; quote?: string };
+
+export type PackageDocument = { name: string; status: "ready" | "written" | "missing"; note?: string; quote?: string };
+
+/** Everything prepared for one application. Nothing in it has been sent. */
+export type ApplicationPackage = {
+  id: string;
+  listing_id: string;
+  resume_file: string;
+  role_class: string;
+  selected_projects: PackageProject[];
+  cover_letter: string;
+  answers: PackageAnswer[];
+  required_documents: PackageDocument[];
+  deadline: string | null;
+  missing_information: string[];
+  evidence: { reason: string; quote: string }[];
+  status: PackageStatus;
+  approval_id: string | null;
+  model_used?: string | null;
+  model_calls: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ValueClass = "exceptional" | "strong" | "good" | "exploratory" | "low";
@@ -824,6 +869,10 @@ export const api = {
   // Verified internship listings (read by code from Internshala, Unstop and InternDock)
   listListings: (opts?: ReqOpts) => fetchList<Listing>(`/api/v1/listings`, opts),
   closeListing: (id: string) => fetchWithAuth<unknown>(`/api/v1/listings/${id}/close`, { method: "POST" }),
+  /** Prepares (or, for a package that still needs you, prepares again) the application package for one listing. Sends nothing. */
+  prepareListing: (id: string) => fetchWithAuth<ApplicationPackage>(`/api/v1/listings/${id}/prepare`, { method: "POST" }),
+  getListingPackage: (listingId: string) => fetchWithAuth<ApplicationPackage>(`/api/v1/listings/${listingId}/package`),
+  getPackage: (id: string) => fetchWithAuth<ApplicationPackage>(`/api/v1/packages/${id}`),
 
   // Approvals
   listApprovals: (status?: ApprovalStatus, opts?: ReqOpts) =>
