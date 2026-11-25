@@ -14,7 +14,7 @@ func TestAlumniDMTitleAndResult(t *testing.T) {
 	if _, _, ok := AlumniDMOf("APPLY - Google - Intern"); ok {
 		t.Fatal("not a message task")
 	}
-	for in, want := range map[string]string{"DM: sent\nPROOF: Message delivered": "sent", "dm: Requested": "requested", "done!": "blocked"} {
+	for in, want := range map[string]string{"DM: sent\nPROOF: Message delivered": "sent", "dm: Requested": "requested", "done!": "blocked", "DM: by hand\nPROOF: nothing was sent": AlumniStatusByHand} {
 		if got := AlumniDMResult(in); got != want {
 			t.Errorf("%q -> %q", in, got)
 		}

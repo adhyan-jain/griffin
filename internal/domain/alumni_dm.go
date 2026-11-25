@@ -38,13 +38,21 @@ func AlumniDMOf(title string) (name, company string, ok bool) {
 	return name, company, name != "" && company != ""
 }
 
-var dmRe = regexp.MustCompile(`(?mi)^DM:\s*(sent|requested|blocked)\b`)
+var dmRe = regexp.MustCompile(`(?mi)^DM:\s*(sent|requested|blocked|by hand)\b`)
+
+// AlumniStatusByHand is the Status of a person whose approved message was handed to the owner to send. It is not
+// "not contacted", so the batch never proposes them again.
+const AlumniStatusByHand = "to send by hand"
 
 // AlumniDMResult reads a message task's answer: "sent", "requested" (a connection request was all LinkedIn
-// allowed) or "blocked". An answer in no recognised shape is "blocked", because nothing proves it went out.
+// allowed), "blocked", or AlumniStatusByHand when the message was handed to the owner. An answer in no recognised
+// shape is "blocked", because nothing proves it went out.
 func AlumniDMResult(answer string) string {
 	if m := dmRe.FindStringSubmatch(answer); m != nil {
-		return strings.ToLower(m[1])
+		if r := strings.ToLower(m[1]); r != "by hand" {
+			return r
+		}
+		return AlumniStatusByHand
 	}
 	return "blocked"
 }
@@ -87,7 +95,7 @@ func WithAlumniStatus(text, name, company, status string, on time.Time) (out str
 // AlumniDMBatchGoal is the stored goal of the routine that proposes LinkedIn messages. The routine runs as code
 // (AlumniDMProposals): no model picks the people or writes the words.
 const AlumniDMBatchGoal = "Propose the next LinkedIn messages to the owner's alumni: up to 8 people on the Alumni list whose Status is \"not contacted\", ACM people first, " +
-	"each with the owner's short message and the resume that fits their role. Griffin does this in code and asks the owner before anything is sent."
+	"each with the owner's short message and the resume that fits their role. Griffin does this in code; an approved message is handed to the owner to send by hand."
 
 var (
 	focusBackend = regexp.MustCompile(`(?i)\b(backend|back-end|platform|infra|infrastructure|sre|devops|distributed|systems)\b`)
@@ -111,6 +119,12 @@ func RoleFocus(role string) string {
 // proposal carries the person and the owner's message, so the rules (CheckOutreach) run on exactly what will be
 // sent, and the send goal is written by code.
 func AlumniDMProposals(list string, limit int) []Proposal {
+	return AlumniDMProposalsExcluding(list, limit, nil)
+}
+
+// AlumniDMProposalsExcluding is AlumniDMProposals that never proposes a person whose LinkedIn link skip says is
+// do-not-contact. The people are skipped before the limit is applied, so a skipped person never costs a place.
+func AlumniDMProposalsExcluding(list string, limit int, skip func(link string) bool) []Proposal {
 	var header []string
 	type row struct {
 		c    OutreachContact
@@ -137,6 +151,12 @@ func AlumniDMProposals(list string, limit int) []Proposal {
 		}
 		link := get("LinkedIn")
 		if !strings.Contains(strings.ToLower(get("Status")), "not contacted") || !strings.Contains(link, "linkedin.com/in/") {
+			continue
+		}
+		if st, dnc := AlumniStatusState(get("Status")); dnc || st == ContactOptedOut {
+			continue
+		}
+		if skip != nil && skip(link) {
 			continue
 		}
 		club := get("Club")
