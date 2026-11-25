@@ -12,139 +12,129 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/repository"
 )
 
-type mockKnowledgeStore struct {
-	entities      map[uuid.UUID]*domain.CanonicalEntity
-	relationships []*domain.EntityRelationship
-	observations  []*domain.EntityObservation
-	aliases       []*domain.EntityAlias
+// mockCompanyStore stands in for the companies table with its research attached.
+type mockCompanyStore struct {
+	summaries []*repository.CompanySummary
+	details   map[uuid.UUID]*repository.CompanyDetail
+	owner     uuid.UUID
+	gotLimit  int
+	err       error
 }
 
-func newMockKnowledgeStore() *mockKnowledgeStore {
-	return &mockKnowledgeStore{
-		entities: make(map[uuid.UUID]*domain.CanonicalEntity),
+func (m *mockCompanyStore) ListCompanySummaries(_ context.Context, userID uuid.UUID, limit int) ([]*repository.CompanySummary, error) {
+	m.gotLimit = limit
+	if m.err != nil {
+		return nil, m.err
 	}
-}
-
-func (m *mockKnowledgeStore) UpsertEntity(_ context.Context, e *domain.CanonicalEntity) error {
-	if e.ID == uuid.Nil {
-		e.ID = uuid.New()
+	if userID != m.owner {
+		return nil, nil // a nil slice: the handler must still answer []
 	}
-	e.UpdatedAt = time.Now()
-	m.entities[e.ID] = e
-	return nil
+	return m.summaries, nil
 }
 
-func (m *mockKnowledgeStore) GetEntity(_ context.Context, userID, id uuid.UUID) (*domain.CanonicalEntity, error) {
-	e, ok := m.entities[id]
-	if !ok || e.UserID != userID {
-		return nil, domain.ErrNotFound
-	}
-	return e, nil
-}
-
-func (m *mockKnowledgeStore) FindEntityByKey(_ context.Context, userID uuid.UUID, kind domain.EntityKind, key string) (*domain.CanonicalEntity, error) {
-	for _, e := range m.entities {
-		if e.UserID == userID && e.Kind == kind && e.CanonicalKey == key {
-			return e, nil
-		}
+func (m *mockCompanyStore) GetCompanyDetail(_ context.Context, userID, id uuid.UUID) (*repository.CompanyDetail, error) {
+	if d, ok := m.details[id]; ok && userID == m.owner {
+		return d, nil
 	}
 	return nil, domain.ErrNotFound
-}
-
-func (m *mockKnowledgeStore) ListEntities(_ context.Context, userID uuid.UUID, kind domain.EntityKind, limit int) ([]*domain.CanonicalEntity, error) {
-	var list []*domain.CanonicalEntity
-	for _, e := range m.entities {
-		if e.UserID == userID && e.Kind == kind {
-			list = append(list, e)
-			if len(list) >= limit {
-				break
-			}
-		}
-	}
-	return list, nil
-}
-
-func (m *mockKnowledgeStore) AddAlias(_ context.Context, a *domain.EntityAlias) error {
-	m.aliases = append(m.aliases, a)
-	return nil
-}
-
-func (m *mockKnowledgeStore) FindEntityByAlias(_ context.Context, userID uuid.UUID, alias string) (*domain.CanonicalEntity, error) {
-	return nil, domain.ErrNotFound
-}
-
-func (m *mockKnowledgeStore) UpsertRelationship(_ context.Context, rel *domain.EntityRelationship) error {
-	m.relationships = append(m.relationships, rel)
-	return nil
-}
-
-func (m *mockKnowledgeStore) ListRelationships(_ context.Context, userID, entityID uuid.UUID) ([]*domain.EntityRelationship, error) {
-	var list []*domain.EntityRelationship
-	for _, r := range m.relationships {
-		if r.UserID == userID && (r.SubjectID == entityID || r.ObjectID == entityID) {
-			list = append(list, r)
-		}
-	}
-	return list, nil
-}
-
-func (m *mockKnowledgeStore) RecordObservation(_ context.Context, obs *domain.EntityObservation) error {
-	m.observations = append(m.observations, obs)
-	return nil
-}
-
-func (m *mockKnowledgeStore) ListObservations(_ context.Context, userID, entityID uuid.UUID) ([]*domain.EntityObservation, error) {
-	var list []*domain.EntityObservation
-	for _, o := range m.observations {
-		if o.UserID == userID && o.EntityID == entityID {
-			list = append(list, o)
-		}
-	}
-	return list, nil
 }
 
 func TestCompaniesHandler(t *testing.T) {
 	userID := uuid.New()
-	store := newMockKnowledgeStore()
-	handler := NewCompaniesHandler(store, nil)
-
-	// Seed a company
-	company := &domain.CanonicalEntity{
-		ID:           uuid.New(),
-		UserID:       userID,
-		Kind:         domain.EntityCompany,
-		Name:         "Databricks",
-		CanonicalKey: "databricks.com",
-		Summary:      "Unified data and AI platform",
-		Metadata:     map[string]any{"funding": "Series I"},
-		UpdatedAt:    time.Now(),
+	id := uuid.New()
+	obsAt := time.Now().Add(-48 * time.Hour)
+	c := domain.Company{ID: id, Name: "Databricks", NormalizedName: "databricks", Kind: "enterprise", Status: domain.CompanyActive}
+	store := &mockCompanyStore{
+		owner: userID,
+		summaries: []*repository.CompanySummary{{
+			Company: c, OpenListings: 3,
+			Latest: []*domain.CompanyObservation{{Property: domain.PropFunding, Value: "Series I", ClaimOrigin: domain.OriginCompanyReported, ObservedAt: obsAt, AgeDays: 2}},
+		}},
+		details: map[uuid.UUID]*repository.CompanyDetail{id: {
+			Company: &c, OpenListings: 1,
+			Listings:     []*repository.CompanyListing{{ID: uuid.New(), Role: "Intern", Open: true}},
+			Observations: []*domain.CompanyObservation{{Property: domain.PropFunding, Value: "Series I", AgeDays: 2}},
+			Evidence:     []*repository.CompanyEvidence{},
+		}},
 	}
-	require.NoError(t, store.UpsertEntity(context.Background(), company))
+	handler := NewCompaniesHandler(store)
 
-	// 1. Explorer list
-	req := withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies/explorer", nil), userID)
+	// 1. List: companies with open listings and the latest observation per property
 	w := httptest.NewRecorder()
-	handler.Explorer(w, req)
+	handler.List(w, withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies", nil), userID))
 	require.Equal(t, http.StatusOK, w.Code)
-
 	var listResp struct {
 		Success bool `json:"success"`
 		Data    []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			OpenListings int    `json:"open_listings"`
+			Latest       []struct {
+				Property    string `json:"property"`
+				ClaimOrigin string `json:"claim_origin"`
+			} `json:"latest_observations"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &listResp))
 	require.True(t, listResp.Success)
 	require.Len(t, listResp.Data, 1)
 	require.Equal(t, "Databricks", listResp.Data[0].Name)
+	require.Equal(t, 3, listResp.Data[0].OpenListings)
+	require.Equal(t, "funding", listResp.Data[0].Latest[0].Property)
+	require.Equal(t, "company_reported", listResp.Data[0].Latest[0].ClaimOrigin)
+	require.Equal(t, defaultListLimit, store.gotLimit)
 
-	// 2. Get detail
-	getReq := withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies/"+company.ID.String(), nil), userID)
-	getReq.SetPathValue("id", company.ID.String())
-	getW := httptest.NewRecorder()
-	handler.Get(getW, getReq)
-	require.Equal(t, http.StatusOK, getW.Code)
+	// 2. The limit is capped at 200, and a bad one is refused
+	w = httptest.NewRecorder()
+	handler.List(w, withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies?limit=100000", nil), userID))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 200, store.gotLimit)
+	w = httptest.NewRecorder()
+	handler.List(w, withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies?limit=abc", nil), userID))
+	require.Equal(t, http.StatusBadRequest, w.Code)
+
+	// 3. Another owner has none: an empty array, never null
+	w = httptest.NewRecorder()
+	handler.List(w, withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies", nil), uuid.New()))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"data":[]`)
+
+	// 4. A store error is an error, not an empty list
+	store.err = context.DeadlineExceeded
+	w = httptest.NewRecorder()
+	handler.List(w, withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies", nil), userID))
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	store.err = nil
+
+	// 5. Detail: the company, listings, observations with age, and evidence
+	get := func(user uuid.UUID, id string) *httptest.ResponseRecorder {
+		req := withUserContext(httptest.NewRequest(http.MethodGet, "/api/v1/companies/"+id, nil), user)
+		req.SetPathValue("id", id)
+		rec := httptest.NewRecorder()
+		handler.Get(rec, req)
+		return rec
+	}
+	rec := get(userID, id.String())
+	require.Equal(t, http.StatusOK, rec.Code)
+	var detail struct {
+		Data struct {
+			Company      struct{ Name string } `json:"company"`
+			Listings     []json.RawMessage     `json:"listings"`
+			Observations []struct {
+				AgeDays int `json:"age_days"`
+			} `json:"observations"`
+			Evidence []json.RawMessage `json:"evidence"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &detail))
+	require.Equal(t, "Databricks", detail.Data.Company.Name)
+	require.Len(t, detail.Data.Listings, 1)
+	require.Equal(t, 2, detail.Data.Observations[0].AgeDays)
+	require.NotNil(t, detail.Data.Evidence)
+
+	require.Equal(t, http.StatusNotFound, get(uuid.New(), id.String()).Code, "another owner's company")
+	require.Equal(t, http.StatusBadRequest, get(userID, "not-a-uuid").Code)
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -10,92 +11,82 @@ import (
 	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/repository"
-	"github.com/griffin/core/internal/research"
 )
 
-// CompaniesHandler serves Company Explorer endpoints.
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)
+
+// listLimit reads ?limit=, defaulting to 50 and capping at 200. A value that is not a positive number is a
+// validation error, not a silent default.
+func listLimit(r *http.Request) (int, error) {
+	s := r.URL.Query().Get("limit")
+	if s == "" {
+		return defaultListLimit, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return 0, domain.ErrValidation
+	}
+	return min(n, maxListLimit), nil
+}
+
+// CompanyStore reads the companies table with the research attached to it.
+type CompanyStore interface {
+	ListCompanySummaries(ctx context.Context, userID uuid.UUID, limit int) ([]*repository.CompanySummary, error)
+	GetCompanyDetail(ctx context.Context, userID, id uuid.UUID) (*repository.CompanyDetail, error)
+}
+
+// CompaniesHandler serves the Companies page: the companies the opportunity scan found, with research attached.
 type CompaniesHandler struct {
-	Knowledge research.KnowledgeStore
-	Listings  *repository.OpportunityRepository
+	Companies CompanyStore
 }
 
 // NewCompaniesHandler creates a CompaniesHandler.
-func NewCompaniesHandler(k research.KnowledgeStore, l *repository.OpportunityRepository) *CompaniesHandler {
-	return &CompaniesHandler{Knowledge: k, Listings: l}
-}
+func NewCompaniesHandler(c CompanyStore) *CompaniesHandler { return &CompaniesHandler{Companies: c} }
 
-// Explorer returns discovered companies for the Company Explorer view.
-func (h *CompaniesHandler) Explorer(w http.ResponseWriter, r *http.Request) {
+// List returns the owner's companies with their open-listing count and the latest observation of each property.
+// It always returns an array, never null.
+func (h *CompaniesHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r.Context())
 	if err != nil {
 		httputil.ErrorJSON(w, domain.ErrUnauthorized)
 		return
 	}
-
-	limit := 50
-	if lStr := r.URL.Query().Get("limit"); lStr != "" {
-		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
-			limit = l
-		}
-	}
-
-	entities, err := h.Knowledge.ListEntities(r.Context(), userID, domain.EntityCompany, limit)
+	limit, err := listLimit(r)
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return
 	}
-
-	type CompanyCard struct {
-		ID        string         `json:"id"`
-		Name      string         `json:"name"`
-		Domain    string         `json:"domain"`
-		Summary   string         `json:"summary"`
-		Metadata  map[string]any `json:"metadata"`
-		UpdatedAt string         `json:"updated_at"`
+	list, err := h.Companies.ListCompanySummaries(r.Context(), userID, limit)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
 	}
-
-	var cards []CompanyCard
-	for _, e := range entities {
-		cards = append(cards, CompanyCard{
-			ID:        e.ID.String(),
-			Name:      e.Name,
-			Domain:    e.CanonicalKey,
-			Summary:   e.Summary,
-			Metadata:  e.Metadata,
-			UpdatedAt: e.UpdatedAt.Format("2006-01-02"),
-		})
+	if list == nil {
+		list = []*repository.CompanySummary{}
 	}
-
-	httputil.JSON(w, http.StatusOK, cards)
+	httputil.JSON(w, http.StatusOK, list)
 }
 
-// Get returns full profile, relationships, and observations for one company.
+// Get returns one company with its listings (linked to the employer's own posting), its observations with their
+// source and age, and the research evidence behind them.
 func (h *CompaniesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r.Context())
 	if err != nil {
 		httputil.ErrorJSON(w, domain.ErrUnauthorized)
 		return
 	}
-
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		httputil.ErrorJSON(w, domain.ErrValidation)
 		return
 	}
-
-	entity, err := h.Knowledge.GetEntity(r.Context(), userID, id)
+	d, err := h.Companies.GetCompanyDetail(r.Context(), userID, id)
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return
 	}
-
-	rels, _ := h.Knowledge.ListRelationships(r.Context(), userID, id)
-	obs, _ := h.Knowledge.ListObservations(r.Context(), userID, id)
-
-	payload := map[string]any{
-		"company":       entity,
-		"relationships": rels,
-		"observations":  obs,
-	}
-	httputil.JSON(w, http.StatusOK, payload)
+	httputil.JSON(w, http.StatusOK, d)
 }
