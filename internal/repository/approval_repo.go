@@ -26,6 +26,8 @@ type ApprovalRepository interface {
 	EditPendingApproval(ctx context.Context, id uuid.UUID, userID uuid.UUID, text string) (*domain.Approval, error)
 	// UpdateApprovalPayload updates the action payload and summary of a pending approval (e.g. following AI revision).
 	UpdateApprovalPayload(ctx context.Context, id uuid.UUID, userID uuid.UUID, newPayload json.RawMessage, newSummary string) (*domain.Approval, error)
+	// CreateApproval records an approval request.
+	CreateApproval(ctx context.Context, app *domain.Approval) error
 }
 
 // PostgresApprovalRepository implements ApprovalRepository.
@@ -276,4 +278,35 @@ func (r *PostgresApprovalRepository) UpdateApprovalPayload(ctx context.Context, 
 	a.ActionPayload = newPayload
 	a.UpdatedAt = now
 	return &a, nil
+}
+
+// CreateApproval inserts a new approval row.
+func (r *PostgresApprovalRepository) CreateApproval(ctx context.Context, app *domain.Approval) error {
+	now := time.Now().UTC()
+	if app.ID == uuid.Nil {
+		app.ID = uuid.New()
+	}
+	if app.CreatedAt.IsZero() {
+		app.CreatedAt = now
+	}
+	app.UpdatedAt = now
+	if app.Status == "" {
+		app.Status = domain.ApprovalStatusPending
+	}
+	query := `
+		INSERT INTO approvals (
+			id, user_id, task_id, action_type, risk_level, summary,
+			action_payload, status, expires_at, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+		)
+	`
+	_, err := r.pool.Exec(ctx, query,
+		app.ID, app.UserID, app.TaskID, app.ActionType, app.RiskLevel, app.Summary,
+		app.ActionPayload, app.Status, app.ExpiresAt, app.CreatedAt, app.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create approval: %w", err)
+	}
+	return nil
 }

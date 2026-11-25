@@ -16,6 +16,7 @@ import (
 	"github.com/griffin/core/internal/database"
 	"github.com/griffin/core/internal/manager"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/research"
 	"github.com/griffin/core/internal/runner"
 	"github.com/griffin/core/internal/service"
 	"github.com/griffin/core/internal/storage"
@@ -101,6 +102,12 @@ type ServerDependencies struct {
 	JobDiscovery *service.JobDiscoveryService
 	// ProactiveOps run on every scheduler tick (briefs, watchdog, sync, discovery) in API mode.
 	ProactiveOps []handlers.ProactiveOp
+	// ResearchRepo enables research runs, steps, and evidence; nil leaves the routes off.
+	ResearchRepo *repository.ResearchRepository
+	// KnowledgeRepo enables canonical entities, relationships, and observations; nil leaves the routes off.
+	KnowledgeRepo *repository.KnowledgeRepository
+	// ResearchEngine runs iterative research; nil leaves it off.
+	ResearchEngine *research.Engine
 	// UserTx opens RLS-enforced per-request transactions. Required in production; when nil outside
 	// production, repositories use whatever connection they were built with (tests/dev).
 	UserTx *database.UserTxManager
@@ -514,6 +521,27 @@ func NewServer(deps ServerDependencies) *Server {
 		}
 	}
 
+	// Research Engine & Knowledge Graph routes
+	if deps.ResearchRepo != nil || deps.ResearchEngine != nil {
+		rh := handlers.NewResearchHandler(deps.ResearchEngine, deps.ResearchRepo)
+		mux.Handle("POST /api/v1/research", userAuth(http.HandlerFunc(rh.Create)))
+		mux.Handle("GET /api/v1/research", userAuth(http.HandlerFunc(rh.List)))
+		mux.Handle("GET /api/v1/research/{id}", userAuth(http.HandlerFunc(rh.Get)))
+		mux.Handle("POST /api/v1/research/{id}/pause", userAuth(http.HandlerFunc(rh.Pause)))
+		mux.Handle("POST /api/v1/research/{id}/resume", userAuth(http.HandlerFunc(rh.Resume)))
+		mux.Handle("GET /api/v1/research/{id}/evidence", userAuth(http.HandlerFunc(rh.Evidence)))
+	}
+
+	if deps.KnowledgeRepo != nil {
+		ch := handlers.NewCompaniesHandler(deps.KnowledgeRepo, deps.ListingRepo)
+		mux.Handle("GET /api/v1/companies/explorer", userAuth(http.HandlerFunc(ch.Explorer)))
+		mux.Handle("GET /api/v1/companies/{id}", userAuth(http.HandlerFunc(ch.Get)))
+
+		ah := handlers.NewAlumniHandler(deps.KnowledgeRepo, deps.ApprovalRepo)
+		mux.Handle("GET /api/v1/alumni/explorer", userAuth(http.HandlerFunc(ah.Explorer)))
+		mux.Handle("POST /api/v1/alumni/{id}/outreach", userAuth(http.HandlerFunc(ah.Outreach)))
+	}
+
 	// Runner management endpoints
 	runnerHandler := handlers.NewRunnerHandler(deps.InstanceMgr, rawWakeup, scaleToZero)
 	mux.Handle("GET /api/v1/runner/status", userAuth(http.HandlerFunc(runnerHandler.GetStatus)))
@@ -549,6 +577,8 @@ func NewServer(deps ServerDependencies) *Server {
 		"calls":           deps.Calls != nil,
 		"hosts":           deps.HostRepo != nil,
 		"push_configured": deps.Config != nil && deps.Config.NtfyTopic != "",
+		"research":        deps.ResearchEngine != nil && deps.ResearchRepo != nil,
+		"knowledge":       deps.KnowledgeRepo != nil,
 	})))
 
 	// Stopping the shared runner affects every tenant, so it is operator-only: worker key (constant-time

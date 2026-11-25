@@ -29,6 +29,7 @@ import (
 	"github.com/griffin/core/internal/provider/claudecli"
 	"github.com/griffin/core/internal/provider/router"
 	"github.com/griffin/core/internal/repository"
+	"github.com/griffin/core/internal/research"
 	"github.com/griffin/core/internal/runner"
 	"github.com/griffin/core/internal/service"
 	"github.com/griffin/core/internal/storage"
@@ -136,6 +137,12 @@ func main() {
 	listingRepo := repository.NewOpportunityRepository(repoDB)
 	assessRoutine := opportunityAssess(cfg, listingRepo)
 	outreachRepo := repository.NewOutreachRepository(repoDB)
+	researchRepo := repository.NewResearchRepository(repoDB)
+	knowledgeRepo := repository.NewKnowledgeRepository(repoDB)
+	researchBrain := voiceBrain(cfg)
+	researchRouter := research.NewRouter(researchBrain, researchBrain)
+	researchTools := research.NewToolGateway(nil, nil)
+	researchEngine := research.NewEngine(researchRepo, knowledgeRepo, researchTools, researchRouter, logger)
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
 	var storageProvider storage.Provider
@@ -553,6 +560,9 @@ func main() {
 			DeviceDecider:   deviceDecider(cfg),
 			VoiceBrain:      voiceBrain(cfg),
 			InstanceMgr:     instanceMgr,
+			ResearchRepo:    researchRepo,
+			KnowledgeRepo:   knowledgeRepo,
+			ResearchEngine:  researchEngine,
 			UserTx:          userTx,
 		})
 

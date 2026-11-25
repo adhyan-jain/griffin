@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS entity_observations CASCADE;
+DROP TABLE IF EXISTS entity_relationships CASCADE;
+DROP TABLE IF EXISTS evidence_items CASCADE;
+DROP TABLE IF EXISTS entity_aliases CASCADE;
+DROP TABLE IF EXISTS canonical_entities CASCADE;
+DROP TABLE IF EXISTS research_sources CASCADE;
+DROP TABLE IF EXISTS research_steps CASCADE;
+DROP TABLE IF EXISTS research_runs CASCADE;

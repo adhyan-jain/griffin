@@ -8,7 +8,10 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
   Briefcase,
+  Building2,
+  Compass,
   FolderOpen,
+  GraduationCap,
   LockKeyhole,
   LayoutDashboard,
   Laptop,
@@ -44,6 +47,7 @@ type NavItem = { href: string; label: string; icon: LucideIcon };
 const PRIMARY: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/chat", label: "Ask JJ", icon: MessageSquare },
+  { href: "/research", label: "Research", icon: Compass },
   { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/trackers", label: "Trackers", icon: Table2 },
   { href: "/internships", label: "Internships", icon: Briefcase },
@@ -51,6 +55,8 @@ const PRIMARY: NavItem[] = [
 ];
 const SECONDARY: NavItem[] = [
   { href: "/welcome", label: "Get started", icon: Rocket },
+  { href: "/companies", label: "Companies", icon: Building2 },
+  { href: "/alumni", label: "Alumni", icon: GraduationCap },
   { href: "/outreach", label: "Outreach", icon: Send },
   { href: "/lists", label: "Lists", icon: Notebook },
   { href: "/vault", label: "Library", icon: FolderOpen },

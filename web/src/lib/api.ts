@@ -437,6 +437,144 @@ export interface UserProfile {
 }
 
 // ---------------------------------------------------------------------------
+// Research Engine, Company Intelligence & Alumni Knowledge Graph
+// ---------------------------------------------------------------------------
+
+export type ResearchDepth = "quick" | "standard" | "deep" | "comprehensive";
+
+export type ResearchPhase =
+  | "REQUEST_RECEIVED"
+  | "CONTEXT_LOADING"
+  | "OBJECTIVE_ANALYSIS"
+  | "RESEARCH_PLANNING"
+  | "SOURCE_DISCOVERY"
+  | "INFORMATION_RETRIEVAL"
+  | "CONTENT_INSPECTION"
+  | "EXTRACTION"
+  | "EVIDENCE_VALIDATION"
+  | "GAP_ANALYSIS"
+  | "FOLLOW_UP_RESEARCH"
+  | "SYNTHESIS"
+  | "PERSISTENCE"
+  | "COMPLETED"
+  | "PAUSED"
+  | "CANCELLED"
+  | "FAILED";
+
+export interface ResearchFinding {
+  id: string;
+  topic: string;
+  claim: string;
+  extracted_value?: string;
+  quote?: string;
+  evidence_id?: string;
+  source_url: string;
+  confidence: number;
+  is_contradiction?: boolean;
+}
+
+export interface ResearchQuestion {
+  id: string;
+  question: string;
+  category?: string;
+  status: string;
+  answer?: string;
+  supporting_evidence_ids?: string[];
+}
+
+export interface ResearchPlan {
+  questions: ResearchQuestion[];
+  initial_queries: string[];
+}
+
+export interface ResearchRun {
+  id: string;
+  user_id: string;
+  playbook: string;
+  objective: string;
+  depth: ResearchDepth;
+  status: ResearchPhase;
+  plan?: ResearchPlan;
+  context_data?: Record<string, unknown>;
+  constraints_list?: string[];
+  budget_config?: Record<string, number>;
+  progress_metrics?: Record<string, number>;
+  findings?: ResearchFinding[];
+  unresolved_questions?: string[];
+  report_markdown?: string;
+  report_structured?: Record<string, unknown>;
+  started_at: string;
+  completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvidenceItem {
+  id: string;
+  user_id: string;
+  run_id?: string | null;
+  source_id?: string | null;
+  claim: string;
+  extracted_value?: string;
+  excerpt_quote?: string;
+  source_url: string;
+  source_domain: string;
+  source_type?: string;
+  reliability?: string;
+  confidence: number;
+  status: string;
+  contradicted_by?: string | null;
+  extraction_method?: string;
+  observed_at: string;
+  created_at: string;
+}
+
+export interface CompanyCard {
+  id: string;
+  name: string;
+  domain: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface CompanyDetail {
+  company: {
+    id: string;
+    name: string;
+    canonical_key: string;
+    summary: string;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+  };
+  relationships: Array<{
+    id: string;
+    subject_id: string;
+    predicate: string;
+    object_id: string;
+    confidence: number;
+    metadata?: Record<string, unknown>;
+  }>;
+  observations: Array<{
+    id: string;
+    property: string;
+    value: string;
+    observed_at: string;
+  }>;
+}
+
+export interface AlumniCard {
+  id: string;
+  name: string;
+  title: string;
+  company: string;
+  function: string;
+  graduation_year?: number;
+  metadata: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
 // Auth/token plumbing
 // ---------------------------------------------------------------------------
 
@@ -956,4 +1094,22 @@ export const api = {
     form.append("file", file);
     return fetchWithAuth<Artifact>("/api/v1/artifacts/upload", { method: "POST", body: form });
   },
+
+  // Research Engine
+  createResearchRun: (body: { objective: string; playbook?: string; depth?: ResearchDepth; constraints?: string[]; questions?: string[] }) =>
+    fetchWithAuth<ResearchRun>("/api/v1/research", { method: "POST", body: JSON.stringify(body) }),
+  listResearchRuns: (opts?: ReqOpts) => fetchList<ResearchRun>("/api/v1/research", opts),
+  getResearchRun: (id: string, opts?: ReqOpts) => fetchWithAuth<ResearchRun>(`/api/v1/research/${id}`, opts),
+  pauseResearchRun: (id: string) => fetchWithAuth<{ status: string }>(`/api/v1/research/${id}/pause`, { method: "POST" }),
+  resumeResearchRun: (id: string) => fetchWithAuth<ResearchRun>(`/api/v1/research/${id}/resume`, { method: "POST" }),
+  getResearchEvidence: (id: string, opts?: ReqOpts) => fetchList<EvidenceItem>(`/api/v1/research/${id}/evidence`, opts),
+
+  // Company Intelligence
+  listCompanies: (opts?: ReqOpts) => fetchList<CompanyCard>("/api/v1/companies/explorer", opts),
+  getCompany: (id: string, opts?: ReqOpts) => fetchWithAuth<CompanyDetail>(`/api/v1/companies/${id}`, opts),
+
+  // Alumni Explorer
+  listAlumni: (opts?: ReqOpts) => fetchList<AlumniCard>("/api/v1/alumni/explorer", opts),
+  proposeAlumniOutreach: (id: string, body: { draft_text?: string; channel?: string }) =>
+    fetchWithAuth<Approval>(`/api/v1/alumni/${id}/outreach`, { method: "POST", body: JSON.stringify(body) }),
 };

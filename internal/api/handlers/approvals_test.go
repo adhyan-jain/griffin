@@ -70,6 +70,14 @@ func (f *fakeApprovalRepo) UpdateApprovalPayload(_ context.Context, id, _ uuid.U
 	return a, nil
 }
 
+func (f *fakeApprovalRepo) CreateApproval(_ context.Context, app *domain.Approval) error {
+	if f.approvals == nil {
+		f.approvals = make(map[uuid.UUID]*domain.Approval)
+	}
+	f.approvals[app.ID] = app
+	return nil
+}
+
 type fakeTaskRepoForApprovals struct {
 	repository.TaskRepository
 }

@@ -220,3 +220,61 @@ describe("sendJJMessage", () => {
     expect(err.message).toBe("boom");
   });
 });
+
+describe("Research & Intelligence API", () => {
+  it("creates a research run", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ id: "run-1", objective: "Investigate AI" }), 202));
+    const run = await mod.api.createResearchRun({ objective: "Investigate AI", depth: "standard" });
+    const { url, init, body } = lastCall();
+    expect(url).toBe("http://api.test/api/v1/research");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(body as string).objective).toBe("Investigate AI");
+    expect(run.id).toBe("run-1");
+  });
+
+  it("lists research runs and gets evidence", async () => {
+    fetchMock.mockResolvedValue(json(envelope([{ id: "run-1" }])));
+    const list = await mod.api.listResearchRuns();
+    expect(lastCall().url).toBe("http://api.test/api/v1/research");
+    expect(list).toHaveLength(1);
+
+    fetchMock.mockResolvedValue(json(envelope([{ id: "ev-1", claim: "Fact" }])));
+    const ev = await mod.api.getResearchEvidence("run-1");
+    expect(lastCall().url).toBe("http://api.test/api/v1/research/run-1/evidence");
+    expect(ev).toHaveLength(1);
+  });
+
+  it("pauses and resumes research runs", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ status: "paused" })));
+    await mod.api.pauseResearchRun("run-1");
+    expect(lastCall().url).toBe("http://api.test/api/v1/research/run-1/pause");
+
+    fetchMock.mockResolvedValue(json(envelope({ id: "run-1", status: "INFORMATION_RETRIEVAL" })));
+    await mod.api.resumeResearchRun("run-1");
+    expect(lastCall().url).toBe("http://api.test/api/v1/research/run-1/resume");
+  });
+
+  it("lists companies and gets company detail", async () => {
+    fetchMock.mockResolvedValue(json(envelope([{ id: "c1", name: "Acme" }])));
+    const list = await mod.api.listCompanies();
+    expect(lastCall().url).toBe("http://api.test/api/v1/companies/explorer");
+    expect(list).toHaveLength(1);
+
+    fetchMock.mockResolvedValue(json(envelope({ company: { id: "c1", name: "Acme" }, relationships: [], observations: [] })));
+    const detail = await mod.api.getCompany("c1");
+    expect(lastCall().url).toBe("http://api.test/api/v1/companies/c1");
+    expect(detail.company.name).toBe("Acme");
+  });
+
+  it("lists alumni and proposes outreach for approval", async () => {
+    fetchMock.mockResolvedValue(json(envelope([{ id: "a1", name: "Alum" }])));
+    const list = await mod.api.listAlumni();
+    expect(lastCall().url).toBe("http://api.test/api/v1/alumni/explorer");
+    expect(list).toHaveLength(1);
+
+    fetchMock.mockResolvedValue(json(envelope({ id: "app-1", action_type: "alumni_outreach" }), 201));
+    const app = await mod.api.proposeAlumniOutreach("a1", { draft_text: "Hi", channel: "linkedin_dm" });
+    expect(lastCall().url).toBe("http://api.test/api/v1/alumni/a1/outreach");
+    expect(app.id).toBe("app-1");
+  });
+});

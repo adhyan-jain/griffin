@@ -32,3 +32,5 @@ android/local.properties
 # Generated testing matrix spreadsheets (regenerate with scripts/generate_matrix.py --out PATH)
 griffin_feature_testing_matrix.xlsx
 docs/griffin_feature_testing_matrix.xlsx
+
+.playwright-mcp/
