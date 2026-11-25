@@ -166,7 +166,28 @@ func Score(in Input, f Findings, eligibility string) (int, []domain.ValueCompone
 		class = domain.ValueLow
 		comps = append(comps, component(CompCap, 0, 0, "The owner is not eligible: the class is low whatever the role is worth", "", false))
 	}
+	// A listing is ranked by its score, so a cap that lowers the class must lower the score too: otherwise an ineligible
+	// role, or one abroad with no visa support, keeps a high score and sits above roles the owner can take. The
+	// breakdown still shows every component as read.
+	if ceiling := classCeiling(class); score > ceiling {
+		score = ceiling
+	}
 	return score, comps, class
+}
+
+// classCeiling is the highest score a class holds: one below the next class's lowest score (domain.ValueClassFor).
+func classCeiling(class string) int {
+	switch class {
+	case domain.ValueExceptional:
+		return 100
+	case domain.ValueStrong:
+		return 79
+	case domain.ValueGood:
+		return 64
+	case domain.ValueExploratory:
+		return 49
+	}
+	return 34
 }
 
 func employerComponent(in Input, f Findings) domain.ValueComponent {

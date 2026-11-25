@@ -119,6 +119,14 @@ func TestEarlyCareerFromEmploymentTypeAndDescription(t *testing.T) {
 		{"finance department", jobs.RawJob{Title: "Intern", Department: "Finance & Accounting"}, false},
 		{"engineering department", jobs.RawJob{Title: "Intern", Department: "Engineering"}, true},
 		{"research department", jobs.RawJob{Title: "Research Intern", Department: "Research"}, true},
+		// Real Databricks postings (benchmark capture, 2026-11-22): the intern is filed under a university-recruiting programme.
+		{"engineering intern in a university recruiting programme", jobs.RawJob{Title: "Software Engineering Intern (2027)", Department: "University Recruiting - Engineering"}, true},
+		{"gen ai research intern in a university recruiting programme", jobs.RawJob{Title: "PhD GenAI Research Scientist Intern", Department: "University Recruiting - Research"}, true},
+		// Real Datadog posting: a staff role that mentions the new graduates its team is made of.
+		{"staff engineer whose text mentions university graduates", jobs.RawJob{Title: "Staff Software Engineer - Frontend", Department: "Dev Eng", Description: "We hire at various levels, from new university graduates to senior engineers with years of industry experience."}, false},
+		{"a senior title that names new grads is still early-career by its title", jobs.RawJob{Title: "Senior New Grad Program Engineer"}, true},
+		{"a university recruiter is still a recruiter", jobs.RawJob{Title: "University Recruiter", Department: "University Recruiting"}, false},
+		{"recruiting coordinator intern in a university programme", jobs.RawJob{Title: "Recruiting Coordinator Intern", Department: "University Recruiting"}, false},
 	}
 	for _, c := range cases {
 		if got := IsEarlyCareer(c.job); got != c.want {

@@ -48,6 +48,10 @@ func ParseInternDock(page string) []Posting {
 		if len(nodes) < 3 {
 			continue
 		}
+		// Cards that carry a company-logo placeholder start with its initials ("H" for HP): they are not the title.
+		if len(nodes) >= 4 && isLogoInitials(nodes[0], nodes[2]) {
+			nodes = nodes[1:]
+		}
 		p := Posting{Title: nodes[0], Company: nodes[1], Location: nodes[2], Link: InternDockBase + m[1], Source: "interndock"}
 		for _, n := range nodes[3:] {
 			switch {
@@ -64,8 +68,22 @@ func ParseInternDock(page string) []Posting {
 	return out
 }
 
+// isLogoInitials reports whether mark is the placeholder InternDock draws instead of a logo: the company's first
+// letter or the first letters of its words ("H" or "LM" for "Lockheed Martin"), never a title.
+func isLogoInitials(mark, company string) bool {
+	if len(mark) == 0 || len(mark) > 3 || mark != strings.ToUpper(mark) {
+		return false
+	}
+	company = strings.ToUpper(company)
+	initials := ""
+	for _, w := range strings.Fields(company) {
+		initials += w[:1]
+	}
+	return strings.HasPrefix(company, mark) || strings.HasPrefix(initials, mark)
+}
+
 var (
-	fitRole  = regexp.MustCompile(`(?i)software|backend|back-end|full[- ]?stack|platform|infrastructure|distributed|machine learning|\bml\b|\bai\b|artificial intelligence|\bllm|generative|data scien|deep learning|computer vision|\bnlp\b|developer|\bsde\b|\bswe\b|engineer`)
+	fitRole  = regexp.MustCompile(`(?i)software|backend|back-end|full[- ]?stack|platform|infrastructure|distributed|machine learning|\bml\b|\bai\b|artificial intelligence|\bllm|generative|data scien|deep learning|computer vision|\bnlp\b|developer|\bsde\b|\bswe\b|engineer|\bpython|\bnode\.?js|\bdjango|\bjava\b|\bgolang|\bjavascript|\btypescript|\bflask|\bfastapi|spring boot`)
 	notMyJob = regexp.MustCompile(`(?i)trainer|subject matter|\bsme\b|tutor|mentor|teach|front[- ]?end|angular|ui/ux|\bui\b|game|wordpress|shopify|test|\bqa\b|quality|support|sales|marketing|analyst|account|\bhr\b|recruit|design|mechanical|civil|electrical|hardware|embedded|manufactur|supply|operations|finance|legal|apprentice|founder'?s office|content|business`)
 )
 

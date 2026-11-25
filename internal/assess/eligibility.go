@@ -39,6 +39,7 @@ var blockers = []struct {
 	{"The posting requires authorisation to work in a country other than India", regexp.MustCompile(`(?i:\b(?:must|need to|required to|should)\s+(?:be\s+|have\s+)?(?:legally |currently |lawfully )?(?:authori[sz]ed|eligible|permitted|entitled|able|allowed|have the right)\s+(?:to\s+)?(?:work|live and work)\s+(?:in|within)\s+)` + country)},
 	{"The posting requires authorisation to work in a country other than India", regexp.MustCompile(`(?i:\b(?:work authori[sz]ation|legal right to work|right to work)\s+(?:in|for)\s+)` + country)},
 	{"The posting requires authorisation to work in a country other than India", regexp.MustCompile(`(?i:\bauthori[sz]ed to work (?:legally )?in )` + country)},
+	{"The posting requires authorisation to work in a country other than India", regexp.MustCompile(`(?i:\bauthori[sz]ation to work (?:legally )?(?:in|within)\s+)` + country + `(?i:[^.]{0,40}\b(?:required|needed|necessary|mandatory)\b)`)},
 	{"The posting requires citizenship of a country other than India", regexp.MustCompile(`\b(?:U\.S\.|US|USA)\s+(?i:citizens?(?:hip)?|persons?)\b|(?i:\bcitizens? of )` + country)},
 	{"The posting requires a security clearance", regexp.MustCompile(`(?i)\b(?:must (?:have|hold|obtain)|requires?|required)\b[^.]{0,40}\b(?:security|secret|top secret|ts/sci) clearance\b|\bactive (?:secret|top secret|ts/sci)\b`)},
 	{"The posting requires residence in a country other than India", regexp.MustCompile(`(?i:\bmust (?:be )?(?:located|based|reside|residing|living|resident)\s+(?:in|within|of)\s+)` + country)},
@@ -115,7 +116,9 @@ func namesOtherCountry(loc string) bool { return otherCountry.MatchString(loc) }
 // ---- graduation year and degree -----------------------------------------------------------------------------------
 
 const (
-	yearList = `20[2-3]\d(?:\s*(?:,|/|-|–|to|and|&|or)\s*(?:and\s+)?20[2-3]\d)*`
+	// yearList is one year or several joined by a separator; a season or month before the later year is part of the
+	// list ("Fall 2027 or Spring 2028", "December 2027 or spring/summer 2028"), not the end of it.
+	yearList = `20[2-3]\d(?:\s*(?:,|/|-|–|to|and|&|or)\s*(?:and\s+)?(?:(?:spring|summer|fall|autumn|winter|early|late|mid|january|february|march|april|may|june|july|august|september|october|november|december)[\s/,-]*)*20[2-3]\d)*`
 	gradWord = `(?:graduat\w*|batch(?:es)?|pass(?:ing)?[- ]?outs?|class of|cohorts?|expected (?:to )?(?:graduate|complete)|degree completion|year of (?:graduation|passing))`
 )
 
@@ -127,8 +130,10 @@ var (
 	prefinalYear    = regexp.MustCompile(`(?i)\bpre-?final[- ]year\b|\bpenultimate[- ]year\b|\b(?:third|3rd)[- ]year\b|\brising junior\b`)
 	finalYear       = regexp.MustCompile(`(?i)\bfinal[- ]year\b|\brising senior\b|\bgraduating this year\b`)
 
-	degreeOnly  = regexp.MustCompile(`(?i)\b(?:pursuing|enrolled in|currently (?:in|pursuing)|students? (?:of|in)|candidates? (?:with|holding))\s+(?:an?\s+)?(?:master'?s|masters|m\.?tech|m\.?s|mba|ph\.?d|m\.?sc|postgraduate|post-graduate)\b|\b(?:ph\.?d|doctoral|master'?s|mba)\s+(?:students?|candidates?)\s+only\b`)
-	bachelorHit = regexp.MustCompile(`(?i)\b(bachelor\w*|b\.?tech|b\.?e|b\.?s|b\.?sc|undergrad\w*|bca)\b`)
+	degreeOnly = regexp.MustCompile(`(?i)\b(?:pursuing|enrolled in|currently (?:in|pursuing)|students? (?:of|in)|candidates? (?:with|holding))\s+(?:an?\s+)?(?:master'?s|masters|m\.?tech|m\.?s|mba|ph\.?d|m\.?sc|postgraduate|post-graduate)\b|\b(?:ph\.?d|doctoral|master'?s|mba)\s+(?:students?|candidates?)\s+only\b`)
+	// bachelorHit is a bachelor's-level degree named in the text. "BE" and "BS" are matched in capitals only (a lower-case
+	// "be" is the verb, which made every posting look like it welcomed bachelors).
+	bachelorHit = regexp.MustCompile(`(?i:\b(?:bachelor\w*|b\.?tech|b\.?sc|undergrad\w*|bca)\b)|\bB\.E\b\.?|\bB\.S\b\.?|\b(?:BE|BS)\b`)
 )
 
 // GradResult is the graduation-year and degree reading of a posting.

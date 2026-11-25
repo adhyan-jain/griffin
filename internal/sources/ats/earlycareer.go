@@ -23,8 +23,16 @@ var (
 	// in full-time senior postings.
 	descriptionSignals = regexp.MustCompile(`(?i)\b(?:(?:this|our|the) (?:summer |fall |winter |spring )?intern(?:ship)?|internship (?:program|programme|role|position|opportunity)s?|(?:summer|fall|winter|spring) 20\d\d (?:intern|internship|co-?op)|class of 20\d\d|20\d\d (?:grads?|graduates?|new grads?)|graduat(?:e|ing) in 20\d\d|new[- ]grads?|recent graduates?|currently (?:enrolled|pursuing)|enrolled in (?:a|an) (?:bachelor|undergraduate|master|university|degree|phd|college)|pursuing (?:a|an) (?:bachelor|undergraduate|master|degree|phd)|co-?op (?:program|programme|term|role|position)|university (?:grad|graduate|hire)s?)\b`)
 
+	// seniorTitle is a seniority word in a title; such a posting can only be early-career by its title.
+	seniorTitle = regexp.MustCompile(`(?i)\b(?:senior|sr\.?|staff|principal|lead|manager|director|head of|vp|vice president|architect)\b`)
+
 	// hardExcluded departments and titles are never engineering, whatever else the title says ("Technical Recruiter").
 	hardExcluded = regexp.MustCompile(`(?i)\b(?:recruit(?:er|ers|ing|ment)|talent acquisition|sourcer|legal|counsel|paralegal|attorney|payroll|accountant|human resources|hr|executive assistant|office manager|procurement)\b`)
+
+	// programDepartment is a department that is the employer's student or early-career programme, not a recruiting team:
+	// Databricks files its engineering interns under "University Recruiting - Engineering", and the word "recruiting"
+	// there must not drop them. The title is still checked, so a "University Recruiter" stays out.
+	programDepartment = regexp.MustCompile(`(?i)\b(?:university|campus|early[- ]career|new grads?|interns?|internships?)\b`)
 
 	// softExcluded are non-engineering functions: excluded unless the title itself says engineering work.
 	softExcluded = regexp.MustCompile(`(?i)\b(?:sales|account executive|account manager|business development|sdr|bdr|finance|financial|accounting|tax|audit|treasury|people (?:partner|operations|ops|team|and culture)|people|g&a|general (?:and|&) administrative|marketing|brand|public relations|communications|customer success|customer support|support specialist|content writer)\b`)
@@ -41,7 +49,7 @@ func EarlyCareerReason(j jobs.RawJob) string {
 	if title == "" {
 		return ""
 	}
-	if hardExcluded.MatchString(title) || hardExcluded.MatchString(j.Department) {
+	if hardExcluded.MatchString(title) || (!programDepartment.MatchString(j.Department) && hardExcluded.MatchString(j.Department)) {
 		return ""
 	}
 	if !engineeringTitle.MatchString(title) && (softExcluded.MatchString(title) || softExcluded.MatchString(j.Department)) {
@@ -52,6 +60,11 @@ func EarlyCareerReason(j jobs.RawJob) string {
 	}
 	if m := titleSignals.FindString(j.EmploymentType); m != "" {
 		return "employment type: " + m
+	}
+	// A senior title is never early-career, whatever its description says about the team it leads or hires from
+	// ("from new university graduates to senior engineers" is in a Datadog staff-engineer posting).
+	if seniorTitle.MatchString(title) {
+		return ""
 	}
 	if m := descriptionSignals.FindString(j.Description); m != "" {
 		return "description: " + m
