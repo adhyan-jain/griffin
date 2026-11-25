@@ -388,7 +388,7 @@ func TestRunPreparesOnlyTheTopEligibleListingsUpToFive(t *testing.T) {
 }
 
 func TestRunStopsStartingPackagesWhenLessThanSixSecondsRemain(t *testing.T) {
-	clock := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+	clock := time.Now()
 	store, holder := newMemPrep(), &fakeHolder{}
 	model := &countingModel{cost: 10 * time.Second, clock: &clock} // each package costs 10s of a 24s budget
 	for i := 0; i < 5; i++ {
