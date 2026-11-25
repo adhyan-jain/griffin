@@ -130,3 +130,26 @@ document.querySelector('textarea').addEventListener('keydown', e => {
 		t.Fatal(err)
 	}
 }
+
+func TestChromeRefusesToTypeIntoPasswordField(t *testing.T) {
+	if _, err := whatsapp.FindBrowser(""); err != nil {
+		t.Skip("no Chrome or Chromium on this machine")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(formPage)) }))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	ch, err := NewChrome(ctx, ChromeConfig{ProfileDir: t.TempDir(), NoSandbox: os.Getenv("CI") != "" || os.Geteuid() == 0})
+	if err != nil {
+		t.Skipf("cannot start the browser here: %v", err)
+	}
+	defer ch.Close()
+
+	if err := ch.Do(ctx, domain.BrowserStep{Kind: domain.StepGoto, URL: srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Do(ctx, domain.BrowserStep{Kind: domain.StepType, Ref: "3", Text: "secret"}); err == nil {
+		t.Fatal("typing into a password input must be refused")
+	}
+}

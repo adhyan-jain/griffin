@@ -97,6 +97,11 @@ func browserLogin(ctx context.Context, logger *slog.Logger) error {
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-blink-features=AutomationControlled",
+		"--disable-save-password-bubble",
+		"--disable-features=AutofillServerCommunication,PasswordManager,PasswordGeneration",
+		"--disable-autofill",
+		"--disable-single-click-autofill",
+		"--password-store=basic",
 		"https://accounts.google.com",
 		"https://www.linkedin.com/login",
 	}

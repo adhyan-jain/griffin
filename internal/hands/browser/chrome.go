@@ -56,6 +56,11 @@ func NewChrome(ctx context.Context, cfg ChromeConfig) (*Chrome, error) {
 		chromedp.Flag("mute-audio", true),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("excludeSwitches", "enable-automation"),
+		chromedp.Flag("disable-save-password-bubble", true),
+		chromedp.Flag("disable-features", "AutofillServerCommunication,PasswordManager,PasswordGeneration"),
+		chromedp.Flag("disable-autofill", true),
+		chromedp.Flag("disable-single-click-autofill", true),
+		chromedp.Flag("password-store", "basic"),
 		chromedp.WindowSize(1280, 900),
 	)
 	if cfg.NoSandbox {
@@ -166,6 +171,11 @@ func (c *Chrome) Do(ctx context.Context, s domain.BrowserStep) error {
 // Shift+Enter (a soft line break) joins them. A single-line <input> cannot hold a line break, so text with one is
 // refused rather than typed.
 func (c *Chrome) typeText(ctx context.Context, sel, text string) error {
+	var isPassword bool
+	checkPwd := fmt.Sprintf(`(() => { const el = document.querySelector(%q); return el && (el.type === 'password' || el.getAttribute('type') === 'password'); })()`, sel)
+	if err := c.run(ctx, chromedp.Evaluate(checkPwd, &isPassword)); err == nil && isPassword {
+		return fmt.Errorf("Griffin does not type into password fields")
+	}
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 	lines := strings.Split(text, "\n")
 	if len(lines) > 1 {
