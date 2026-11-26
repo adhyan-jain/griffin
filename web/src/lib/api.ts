@@ -466,11 +466,42 @@ export interface ResearchFinding {
   topic: string;
   claim: string;
   extracted_value?: string;
-  quote?: string;
+  quote: string;
   evidence_id?: string;
-  source_url: string;
+  source_url?: string;
   confidence: number;
   is_contradiction?: boolean;
+  status: EvidenceStatus;
+  question_id?: string;
+  subject?: string;
+  property?: string;
+}
+
+export type EvidenceStatus =
+  | "discovered"
+  | "inspected"
+  | "supported"
+  | "cross_verified"
+  | "conflicting"
+  | "outdated"
+  | "unverified"
+  | "rejected";
+
+export type ResearchPlaybook = "generic" | "internship_watch" | "company_intelligence" | "alumni_intelligence";
+
+export interface ResearchRequest {
+  playbook?: ResearchPlaybook;
+  objective: string;
+  context?: Record<string, unknown>;
+  constraints?: string[];
+  research_questions?: string[];
+  source_preferences?: string[];
+  source_exclusions?: string[];
+  depth: ResearchDepth;
+  max_searches?: number;
+  max_pages?: number;
+  max_model_calls?: number;
+  max_time_seconds?: number;
 }
 
 export interface ResearchQuestion {
@@ -480,11 +511,14 @@ export interface ResearchQuestion {
   status: string;
   answer?: string;
   supporting_evidence_ids?: string[];
+  finding_ids?: string[];
 }
 
 export interface ResearchPlan {
   questions: ResearchQuestion[];
   initial_queries: string[];
+  target_source_types?: string[];
+  estimated_rounds?: number;
 }
 
 export interface ResearchRun {
@@ -503,7 +537,15 @@ export interface ResearchRun {
   unresolved_questions?: string[];
   report_markdown?: string;
   report_structured?: Record<string, unknown>;
-  started_at: string;
+  error_message?: string;
+  round: number;
+  pending_queries?: string[];
+  executed_queries?: string[];
+  pending_urls?: string[];
+  seen_urls?: string[];
+  stop_reason: string;
+  next_step_index?: number;
+  revision?: number;
   completed_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -514,64 +556,251 @@ export interface EvidenceItem {
   user_id: string;
   run_id?: string | null;
   source_id?: string | null;
+  entity_id?: string | null;
   claim: string;
   extracted_value?: string;
-  excerpt_quote?: string;
+  excerpt_quote: string;
   source_url: string;
   source_domain: string;
   source_type?: string;
+  publication_date?: string | null;
+  retrieved_at: string;
+  verified_at?: string | null;
   reliability?: string;
   confidence: number;
-  status: string;
-  contradicted_by?: string | null;
+  status: EvidenceStatus;
   extraction_method?: string;
-  observed_at: string;
+  model_used?: string;
   created_at: string;
 }
 
+/** Who a company observation's claim comes from (domain.OriginCompanyReported / OriginIndependent / OriginUnknown). */
+export type ClaimOrigin = "company_reported" | "independent" | "unknown";
+
+/** One dated, sourced value of one company property (domain.CompanyObservation). */
+export interface CompanyObservation {
+  id?: string;
+  company_id?: string;
+  property: string;
+  value: string;
+  source_url: string;
+  claim_origin: ClaimOrigin | string;
+  evidence_id: string | null;
+  observed_at: string;
+  age_days: number;
+}
+
+/** GET /companies row (repository.CompanySummary). `domain` is omitted by the server when unknown. */
 export interface CompanyCard {
   id: string;
   name: string;
-  domain: string;
-  summary: string;
-  metadata: Record<string, unknown>;
+  normalized_name: string;
+  domain?: string | null;
+  kind: string;
+  status: string;
+  discovered_via: string;
+  evidence_url?: string | null;
+  created_at: string;
   updated_at: string;
+  open_listings: number;
+  latest_observations: CompanyObservation[];
 }
 
+export interface CompanyListing {
+  id: string;
+  role: string;
+  stage: string;
+  location: string;
+  pay: string;
+  url: string;
+  official_url: string | null;
+  source_kind: string;
+  verification: string;
+  open: boolean;
+  last_seen_at: string | null;
+}
+
+export interface CompanyEvidence {
+  id: string;
+  claim: string;
+  value: string;
+  quote: string;
+  source_url: string;
+  status: string;
+  confidence: number;
+  retrieved_at: string;
+}
+
+/** GET /companies/{id} (repository.CompanyDetail). */
 export interface CompanyDetail {
-  company: {
-    id: string;
-    name: string;
-    canonical_key: string;
-    summary: string;
-    metadata: Record<string, unknown>;
-    created_at: string;
-    updated_at: string;
-  };
-  relationships: Array<{
-    id: string;
-    subject_id: string;
-    predicate: string;
-    object_id: string;
-    confidence: number;
-    metadata?: Record<string, unknown>;
-  }>;
-  observations: Array<{
-    id: string;
-    property: string;
-    value: string;
-    observed_at: string;
-  }>;
+  company: Omit<CompanyCard, "open_listings" | "latest_observations">;
+  open_listings: number;
+  listings: CompanyListing[];
+  observations: CompanyObservation[];
+  evidence: CompanyEvidence[];
 }
 
+export type ContactState = "not_contacted" | "drafted" | "approved" | "sent_manually" | "replied" | "opted_out";
+export type RoleFamily = "tech" | "operations";
+export type OutreachChannel = "linkedin" | "email" | "other";
+
+/** GET /alumni row (domain.Person plus the server's meets_cutoff). */
 export interface AlumniCard {
   id: string;
   name: string;
-  title: string;
+  profile_url: string | null;
   company: string;
-  function: string;
+  title: string;
+  club?: string;
+  country?: string;
+  graduation_year: number | null;
+  graduation_year_evidence_id: string | null;
+  /** "tracker_batch" (from the tracker's batch cell), "evidence", or absent. */
+  graduation_year_source?: string;
+  role_family?: string;
+  role_family_inferred: boolean;
+  do_not_contact: boolean;
+  contact_state: ContactState;
+  last_verified_at: string | null;
+  /** True only for a known year at or before the server's cutoff. */
+  meets_cutoff: boolean;
+  campus?: string;
+  vit_affiliation?: string;
+  branch?: string;
+  degree?: string;
+  graduation_date?: string | null;
+  graduation_eligibility?: "eligible" | "borderline_2022" | "ineligible" | "unknown";
+  acm_vit_affiliation?: "confirmed" | "likely" | "unknown" | "not_confirmed";
+  acm_role?: string;
+  acm_tenure?: string;
+  acm_source?: string;
+  acm_evidence_excerpt?: string;
+  normalized_title?: string;
+  professional_function?: string;
+  seniority?: string;
+  priority_tier?: "P1" | "P2" | "P3" | "P4" | "REVIEW";
+  priority_score?: number;
+  priority_rationale?: string;
+  metadata: Record<string, unknown> | null;
+}
+
+/** PATCH /alumni/{id}/verification body: every claim carries its evidence (source URL and excerpt). */
+export interface AlumniVerification {
+  campus?: { value: "vellore" | "chennai" | "ap" | "bhopal" | "other"; source_url: string; excerpt: string };
+  graduation?: { year: number; date?: string; source_url: string; excerpt: string };
+  acm?: { status: "confirmed" | "likely" | "not_confirmed"; role?: string; tenure?: string; source_url: string; excerpt: string };
+  contact_route?: { value: string; source_url: string };
+}
+
+export interface AlumniFilters {
+  grad_year_max?: number;
+  role_family?: RoleFamily;
+  company?: string;
+  country?: string;
+  campus?: string;
+  acm_vit_affiliation?: string;
+  priority_tier?: string;
+  seniority?: string;
+  graduation_eligibility?: string;
+  professional_function?: string;
+  contactability_status?: string;
+  min_classification_confidence?: number;
+  search?: string;
+  sort_by_priority?: boolean;
+  do_not_contact?: boolean;
+  limit?: number;
+}
+
+export interface AlumniImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
+export interface VITCampaignStats {
+  total_people: number;
+  confirmed_vellore: number;
+  eligible_cohort: number;
+  borderline_2022: number;
+  confirmed_acm: number;
+  likely_acm: number;
+  tech_roles: number;
+  ops_roles: number;
+  with_pay_evidence: number;
+  publicly_contactable: number;
+  unverified: number;
+  do_not_contact_count: number;
+  tier_p1_count: number;
+  tier_p2_count: number;
+  tier_p3_count: number;
+  tier_p4_count: number;
+  tier_review_count: number;
+  drafts_ready: number;
+  needs_user_review: number;
+  approved: number;
+  messages_sent_manually: number;
+  replies_received: number;
+  last_refreshed_at: string;
+}
+
+export interface VITQueueBuild {
+  considered: number;
+  queued: number;
+  needs_user_review: number;
+  skipped_do_not_contact: number;
+  skipped_excluded_employer: number;
+  skipped_unverified: number;
+  skipped_no_profile_url: number;
+  stats: VITCampaignStats;
+}
+
+export interface VITCampaignTarget {
+  id: string;
+  campaign_id: string;
+  person_id: string;
+  name: string;
+  profile_url: string;
+  company: string;
+  title: string;
+  campus: string;
   graduation_year?: number;
-  metadata: Record<string, unknown>;
+  graduation_eligibility: string;
+  acm_vit_affiliation: string;
+  acm_role?: string;
+  priority_tier: string;
+  priority_score: number;
+  priority_rationale?: string;
+  pay_potential: string;
+  funding_stage?: string;
+  industry?: string;
+  extended_status: string;
+  short_note?: string;
+  alternative_draft?: string;
+  selection_reason?: string;
+  personalisation_evidence?: Record<string, unknown>;
+  do_not_contact: boolean;
+  sent_at?: string | null;
+  replied_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LinkedInSearchQuery {
+  category: string;
+  query: string;
+  target_audience: string;
+  url: string;
+  instructions: string;
+}
+
+export interface DraftProposal {
+  short_note: string;
+  warm_draft: string;
+  selection_reason: string;
+  verified_facts: string[];
+  excluded_facts: string[];
+  preferred_route: string;
+  contact_handle: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1096,20 +1325,68 @@ export const api = {
   },
 
   // Research Engine
-  createResearchRun: (body: { objective: string; playbook?: string; depth?: ResearchDepth; constraints?: string[]; questions?: string[] }) =>
+  createResearchRun: (body: ResearchRequest) =>
     fetchWithAuth<ResearchRun>("/api/v1/research", { method: "POST", body: JSON.stringify(body) }),
   listResearchRuns: (opts?: ReqOpts) => fetchList<ResearchRun>("/api/v1/research", opts),
   getResearchRun: (id: string, opts?: ReqOpts) => fetchWithAuth<ResearchRun>(`/api/v1/research/${id}`, opts),
   pauseResearchRun: (id: string) => fetchWithAuth<{ status: string }>(`/api/v1/research/${id}/pause`, { method: "POST" }),
   resumeResearchRun: (id: string) => fetchWithAuth<ResearchRun>(`/api/v1/research/${id}/resume`, { method: "POST" }),
+  cancelResearchRun: (id: string) => fetchWithAuth<{ status: string }>(`/api/v1/research/${id}/cancel`, { method: "POST" }),
   getResearchEvidence: (id: string, opts?: ReqOpts) => fetchList<EvidenceItem>(`/api/v1/research/${id}/evidence`, opts),
 
   // Company Intelligence
-  listCompanies: (opts?: ReqOpts) => fetchList<CompanyCard>("/api/v1/companies/explorer", opts),
-  getCompany: (id: string, opts?: ReqOpts) => fetchWithAuth<CompanyDetail>(`/api/v1/companies/${id}`, opts),
+  listCompanies: (params?: { limit?: number }, opts?: ReqOpts) =>
+    fetchList<CompanyCard>(`/api/v1/companies${params?.limit ? `?limit=${params.limit}` : ""}`, opts),
+  getCompany: (id: string, opts?: ReqOpts) =>
+    fetchWithAuth<CompanyDetail>(`/api/v1/companies/${encodeURIComponent(id)}`, opts),
 
-  // Alumni Explorer
-  listAlumni: (opts?: ReqOpts) => fetchList<AlumniCard>("/api/v1/alumni/explorer", opts),
-  proposeAlumniOutreach: (id: string, body: { draft_text?: string; channel?: string }) =>
-    fetchWithAuth<Approval>(`/api/v1/alumni/${id}/outreach`, { method: "POST", body: JSON.stringify(body) }),
+  // Alumni (filters are server-side; meets_cutoff comes from the server)
+  listAlumni(params?: AlumniFilters, opts?: ReqOpts) {
+    const q = new URLSearchParams();
+    if (params?.grad_year_max != null) q.set("grad_year_max", String(params.grad_year_max));
+    if (params?.role_family) q.set("role_family", params.role_family);
+    if (params?.company?.trim()) q.set("company", params.company.trim());
+    if (params?.country?.trim()) q.set("country", params.country.trim());
+    if (params?.campus?.trim()) q.set("campus", params.campus.trim());
+    if (params?.acm_vit_affiliation?.trim()) q.set("acm_vit_affiliation", params.acm_vit_affiliation.trim());
+    if (params?.priority_tier?.trim()) q.set("priority_tier", params.priority_tier.trim());
+    if (params?.seniority?.trim()) q.set("seniority", params.seniority.trim());
+    if (params?.graduation_eligibility?.trim()) q.set("graduation_eligibility", params.graduation_eligibility.trim());
+    if (params?.professional_function?.trim()) q.set("professional_function", params.professional_function.trim());
+    if (params?.contactability_status?.trim()) q.set("contactability_status", params.contactability_status.trim());
+    if (params?.min_classification_confidence != null) q.set("min_classification_confidence", String(params.min_classification_confidence));
+    if (params?.search?.trim()) q.set("search", params.search.trim());
+    if (params?.sort_by_priority) q.set("sort_by_priority", "true");
+    if (params?.do_not_contact != null) q.set("do_not_contact", String(params.do_not_contact));
+    if (params?.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return fetchList<AlumniCard>(`/api/v1/alumni${qs ? `?${qs}` : ""}`, opts);
+  },
+  updateAlumnus: (id: string, body: { contact_state?: ContactState; do_not_contact?: boolean }) =>
+    fetchWithAuth<AlumniCard>(`/api/v1/alumni/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  verifyAlumnus: (id: string, body: AlumniVerification) =>
+    fetchWithAuth<AlumniCard>(`/api/v1/alumni/${encodeURIComponent(id)}/verification`, { method: "PATCH", body: JSON.stringify(body) }),
+  importAlumni: () => fetchWithAuth<AlumniImportResult>("/api/v1/alumni/import", { method: "POST" }),
+  proposeAlumniOutreach: (id: string, body: { draft_text: string; channel: OutreachChannel }) =>
+    fetchWithAuth<{ approval: Approval; person: AlumniCard }>(`/api/v1/alumni/${encodeURIComponent(id)}/outreach`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getAlumniDraft: (id: string) =>
+    fetchWithAuth<DraftProposal>(`/api/v1/alumni/${encodeURIComponent(id)}/draft`),
+
+  // VIT Alumni Campaign & Prospecting
+  getVITCampaignStats: () =>
+    fetchWithAuth<VITCampaignStats>("/api/v1/campaigns/vit-alumni/stats"),
+  getVITCampaignQueue: (limit = 25) =>
+    fetchWithAuth<VITCampaignTarget[]>(`/api/v1/campaigns/vit-alumni/queue?limit=${limit}`),
+  buildVITQueue: () =>
+    fetchWithAuth<VITQueueBuild>("/api/v1/campaigns/vit-alumni/build-queue", { method: "POST" }),
+  updateVITTargetAction: (id: string, action: "approve" | "sent_manually" | "reply" | "dnc") =>
+    fetchWithAuth<{ status: string; action: string }>(`/api/v1/campaigns/vit-alumni/targets/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action }),
+    }),
+  getLinkedInQueries: () =>
+    fetchWithAuth<LinkedInSearchQuery[]>("/api/v1/alumni/search-query"),
 };

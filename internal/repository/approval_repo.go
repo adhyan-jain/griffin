@@ -131,6 +131,11 @@ func (r *PostgresApprovalRepository) RespondToApproval(ctx context.Context, id u
 		return nil, fmt.Errorf("update approval: %w", err)
 	}
 
+	// An outreach draft's task only carries the approval: approving it must never queue it for a worker.
+	if approved && a.ActionType == domain.AlumniOutreachApprovalAction {
+		taskStatus = domain.TaskStatusCompleted
+	}
+
 	// Update associated task status
 	if approved {
 		depCheck := `
@@ -147,10 +152,11 @@ func (r *PostgresApprovalRepository) RespondToApproval(ctx context.Context, id u
 
 	taskUpdate := `
 		UPDATE tasks
-		SET status = $1, updated_at = $2
+		SET status = $1, updated_at = $2,
+		    completed_at = CASE WHEN $4::boolean THEN $2 ELSE completed_at END
 		WHERE id = $3 AND status = 'AWAITING_APPROVAL'
 	`
-	if _, err := tx.Exec(ctx, taskUpdate, taskStatus, now, a.TaskID); err != nil {
+	if _, err := tx.Exec(ctx, taskUpdate, taskStatus, now, a.TaskID, taskStatus == domain.TaskStatusCompleted); err != nil {
 		return nil, fmt.Errorf("update task status from approval: %w", err)
 	}
 

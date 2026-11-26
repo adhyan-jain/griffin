@@ -26,6 +26,77 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
+// Shapes copied from the Go JSON (repository.CompanySummary / CompanyDetail and handlers.personView).
+const companyListFixture = {
+  id: "c1",
+  name: "Acme",
+  normalized_name: "acme",
+  domain: "acme.com",
+  kind: "startup",
+  status: "active",
+  discovered_via: "ats",
+  evidence_url: null,
+  created_at: "2026-11-01T00:00:00Z",
+  updated_at: "2026-11-02T00:00:00Z",
+  open_listings: 3,
+  latest_observations: [
+    {
+      property: "funding",
+      value: "Series A, $10M",
+      source_url: "https://acme.com/blog/series-a",
+      claim_origin: "company_reported",
+      evidence_id: null,
+      observed_at: "2026-07-20T00:00:00Z",
+      age_days: 120,
+    },
+  ],
+};
+const companyDetailFixture = {
+  company: { ...companyListFixture, latest_observations: undefined, open_listings: undefined },
+  open_listings: 1,
+  listings: [
+    {
+      id: "l1",
+      role: "SDE Intern",
+      stage: "found",
+      location: "Remote",
+      pay: "",
+      url: "https://board.example/1",
+      official_url: "https://acme.com/careers/1",
+      source_kind: "employer_ats",
+      verification: "employer_verified",
+      open: true,
+      last_seen_at: "2026-11-20T00:00:00Z",
+    },
+  ],
+  observations: [
+    { ...companyListFixture.latest_observations[0], id: "o1", company_id: "c1" },
+    { id: "o2", company_id: "c1", property: "advertised_pay", value: "INR 40k/mo", source_url: "https://acme.com/careers/1", claim_origin: "company_reported", evidence_id: "e1", observed_at: "2026-11-20T00:00:00Z", age_days: 6 },
+  ],
+  evidence: [
+    { id: "e1", claim: "advertised_pay", value: "INR 40k/mo", quote: "Stipend 40k per month", source_url: "https://acme.com/careers/1", status: "supported", confidence: 90, retrieved_at: "2026-11-20T00:00:00Z" },
+  ],
+};
+const alumniFixture = {
+  id: "a1",
+  name: "Alum One",
+  profile_url: "https://www.linkedin.com/in/alum-one",
+  company: "Acme",
+  title: "Software Engineer",
+  club: "ACM",
+  country: "India",
+  graduation_year: 2021,
+  graduation_year_evidence_id: null,
+  graduation_year_source: "tracker_batch",
+  role_family: "tech",
+  role_family_inferred: true,
+  do_not_contact: false,
+  contact_state: "not_contacted",
+  last_verified_at: null,
+  meets_cutoff: true,
+  metadata: {},
+};
+
 describe("createTask", () => {
   it("serialises priority as the backend string enum and fills title/manager_domain", async () => {
     fetchMock.mockResolvedValue(json(envelope(fixtures.task)));
@@ -222,59 +293,210 @@ describe("sendJJMessage", () => {
 });
 
 describe("Research & Intelligence API", () => {
-  it("creates a research run", async () => {
-    fetchMock.mockResolvedValue(json(envelope({ id: "run-1", objective: "Investigate AI" }), 202));
-    const run = await mod.api.createResearchRun({ objective: "Investigate AI", depth: "standard" });
+  // Fixtures copy the JSON field names of domain.ResearchRun / ResearchFinding / EvidenceItem.
+  const runFixture = {
+    id: "run-1",
+    user_id: "u-1",
+    playbook: "generic",
+    objective: "Investigate AI",
+    depth: "standard",
+    status: "COMPLETED",
+    plan: { questions: [{ id: "q1", question: "Who?", status: "unresolved", finding_ids: [] }], initial_queries: ["ai"] },
+    context_data: {},
+    constraints_list: [],
+    budget_config: { max_searches: 6, max_pages: 10, max_model_calls: 12, max_time_seconds: 120 },
+    progress_metrics: { searches_done: 6, pages_inspected: 4, model_calls: 7, findings_count: 1, time_ms: 31000 },
+    findings: [
+      {
+        id: "f1", topic: "funding", claim: "Raised $5M", extracted_value: "$5M", quote: "raised $5M in seed",
+        evidence_id: "ev-1", source_url: "https://a.example/x", confidence: 80, status: "supported",
+        subject: "Acme", property: "funding",
+      },
+    ],
+    unresolved_questions: ["Who?"],
+    report_markdown: "# Research report",
+    report_structured: { stop_reason: "budget_searches", complete: false, open_questions: ["Who?"], conflicts: [] },
+    round: 3,
+    pending_queries: [],
+    executed_queries: ["ai"],
+    pending_urls: [],
+    seen_urls: [],
+    stop_reason: "budget_searches",
+    next_step_index: 9,
+    revision: 12,
+    created_at: "2026-11-20T10:00:00Z",
+    updated_at: "2026-11-20T10:05:00Z",
+    completed_at: "2026-11-20T10:05:00Z",
+  };
+  const evidenceFixture = {
+    id: "ev-1", user_id: "u-1", run_id: "run-1", claim: "Raised $5M", extracted_value: "$5M",
+    excerpt_quote: "raised $5M in seed", source_url: "https://a.example/x", source_domain: "a.example",
+    source_type: "credible_publication", retrieved_at: "2026-11-20T10:02:00Z", reliability: "secondary_credible",
+    confidence: 80, status: "supported", extraction_method: "model", created_at: "2026-11-20T10:02:00Z",
+  };
+
+  it("creates a research run with the Go request field names", async () => {
+    fetchMock.mockResolvedValue(json(envelope(runFixture), 202));
+    const run = await mod.api.createResearchRun({
+      objective: "Investigate AI",
+      depth: "standard",
+      playbook: "company_intelligence",
+      research_questions: ["Who funds it?"],
+    });
     const { url, init, body } = lastCall();
     expect(url).toBe("http://api.test/api/v1/research");
     expect(init.method).toBe("POST");
-    expect(JSON.parse(body as string).objective).toBe("Investigate AI");
+    const parsed = JSON.parse(body as string);
+    expect(parsed).toEqual({
+      objective: "Investigate AI",
+      depth: "standard",
+      playbook: "company_intelligence",
+      research_questions: ["Who funds it?"],
+    });
+    expect(parsed).not.toHaveProperty("questions");
     expect(run.id).toBe("run-1");
+    expect(run.stop_reason).toBe("budget_searches");
+    expect(run.created_at).toBe("2026-11-20T10:00:00Z");
+    expect(run.findings?.[0].quote).toBe("raised $5M in seed");
   });
 
   it("lists research runs and gets evidence", async () => {
-    fetchMock.mockResolvedValue(json(envelope([{ id: "run-1" }])));
+    fetchMock.mockResolvedValue(json(envelope([runFixture])));
     const list = await mod.api.listResearchRuns();
     expect(lastCall().url).toBe("http://api.test/api/v1/research");
     expect(list).toHaveLength(1);
+    expect(list[0].round).toBe(3);
 
-    fetchMock.mockResolvedValue(json(envelope([{ id: "ev-1", claim: "Fact" }])));
+    fetchMock.mockResolvedValue(json(envelope([evidenceFixture])));
     const ev = await mod.api.getResearchEvidence("run-1");
     expect(lastCall().url).toBe("http://api.test/api/v1/research/run-1/evidence");
     expect(ev).toHaveLength(1);
+    expect(ev[0].excerpt_quote).toBe("raised $5M in seed");
+    expect(ev[0].retrieved_at).toBe("2026-11-20T10:02:00Z");
+    expect(ev[0].status).toBe("supported");
   });
 
-  it("pauses and resumes research runs", async () => {
+  it("pauses, resumes and cancels research runs", async () => {
     fetchMock.mockResolvedValue(json(envelope({ status: "paused" })));
     await mod.api.pauseResearchRun("run-1");
     expect(lastCall().url).toBe("http://api.test/api/v1/research/run-1/pause");
+    expect(lastCall().init.method).toBe("POST");
 
-    fetchMock.mockResolvedValue(json(envelope({ id: "run-1", status: "INFORMATION_RETRIEVAL" })));
+    fetchMock.mockResolvedValue(json(envelope({ ...runFixture, status: "INFORMATION_RETRIEVAL" })));
     await mod.api.resumeResearchRun("run-1");
     expect(lastCall().url).toBe("http://api.test/api/v1/research/run-1/resume");
+
+    fetchMock.mockResolvedValue(json(envelope({ status: "cancelled" })));
+    const res = await mod.api.cancelResearchRun("run-1");
+    expect(lastCall().url).toBe("http://api.test/api/v1/research/run-1/cancel");
+    expect(lastCall().init.method).toBe("POST");
+    expect(res.status).toBe("cancelled");
   });
 
-  it("lists companies and gets company detail", async () => {
-    fetchMock.mockResolvedValue(json(envelope([{ id: "c1", name: "Acme" }])));
-    const list = await mod.api.listCompanies();
-    expect(lastCall().url).toBe("http://api.test/api/v1/companies/explorer");
-    expect(list).toHaveLength(1);
+  it("lists companies from /companies with the Go list shape", async () => {
+    fetchMock.mockResolvedValue(json(envelope([companyListFixture])));
+    const list = await mod.api.listCompanies({ limit: 50 });
+    expect(lastCall().url).toBe("http://api.test/api/v1/companies?limit=50");
+    expect(list[0].open_listings).toBe(3);
+    expect(list[0].latest_observations[0]).toMatchObject({ property: "funding", claim_origin: "company_reported", age_days: 120 });
 
-    fetchMock.mockResolvedValue(json(envelope({ company: { id: "c1", name: "Acme" }, relationships: [], observations: [] })));
-    const detail = await mod.api.getCompany("c1");
+    fetchMock.mockResolvedValue(json(envelope(null)));
+    expect(await mod.api.listCompanies()).toEqual([]);
+    expect(lastCall().url).toBe("http://api.test/api/v1/companies");
+  });
+
+  it("gets company detail with listings, observation history and evidence", async () => {
+    fetchMock.mockResolvedValue(json(envelope(companyDetailFixture)));
+    const d = await mod.api.getCompany("c1");
     expect(lastCall().url).toBe("http://api.test/api/v1/companies/c1");
-    expect(detail.company.name).toBe("Acme");
+    expect(d.listings[0].official_url).toBe("https://acme.com/careers/1");
+    expect(d.observations).toHaveLength(2);
+    expect(d.evidence[0].status).toBe("supported");
   });
 
-  it("lists alumni and proposes outreach for approval", async () => {
-    fetchMock.mockResolvedValue(json(envelope([{ id: "a1", name: "Alum" }])));
-    const list = await mod.api.listAlumni();
-    expect(lastCall().url).toBe("http://api.test/api/v1/alumni/explorer");
-    expect(list).toHaveLength(1);
+  it("maps alumni filters to server query params and sends none client-side", async () => {
+    fetchMock.mockResolvedValue(json(envelope([alumniFixture])));
+    const list = await mod.api.listAlumni({
+      grad_year_max: 2022,
+      role_family: "tech",
+      company: " Acme ",
+      country: "India",
+      graduation_eligibility: "eligible",
+      professional_function: "technology",
+      contactability_status: "public_contact_available",
+      min_classification_confidence: 60,
+      do_not_contact: false,
+      limit: 200,
+    });
+    const u = new URL(lastCall().url);
+    expect(u.pathname).toBe("/api/v1/alumni");
+    expect(Object.fromEntries(u.searchParams)).toEqual({
+      grad_year_max: "2022",
+      role_family: "tech",
+      company: "Acme",
+      country: "India",
+      graduation_eligibility: "eligible",
+      professional_function: "technology",
+      contactability_status: "public_contact_available",
+      min_classification_confidence: "60",
+      do_not_contact: "false",
+      limit: "200",
+    });
+    expect(list[0]).toMatchObject({ meets_cutoff: true, graduation_year_source: "tracker_batch", role_family_inferred: true });
 
-    fetchMock.mockResolvedValue(json(envelope({ id: "app-1", action_type: "alumni_outreach" }), 201));
-    const app = await mod.api.proposeAlumniOutreach("a1", { draft_text: "Hi", channel: "linkedin_dm" });
+    fetchMock.mockResolvedValue(json(envelope([])));
+    await mod.api.listAlumni();
+    expect(lastCall().url).toBe("http://api.test/api/v1/alumni");
+  });
+
+  it("PATCHes contact state and do-not-contact", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ ...alumniFixture, contact_state: "opted_out", do_not_contact: true })));
+    const p = await mod.api.updateAlumnus("a1", { contact_state: "opted_out" });
+    expect(lastCall().url).toBe("http://api.test/api/v1/alumni/a1");
+    expect(lastCall().init.method).toBe("PATCH");
+    expect(JSON.parse(lastCall().body as string)).toEqual({ contact_state: "opted_out" });
+    expect(p.do_not_contact).toBe(true);
+  });
+
+  it("PATCHes owner verification evidence", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ ...alumniFixture, vit_affiliation: "confirmed_vellore" })));
+    const body = { campus: { value: "vellore" as const, source_url: "https://vit.ac.in/a", excerpt: "VIT Vellore" } };
+    const p = await mod.api.verifyAlumnus("a1", body);
+    expect(lastCall().url).toBe("http://api.test/api/v1/alumni/a1/verification");
+    expect(lastCall().init.method).toBe("PATCH");
+    expect(JSON.parse(lastCall().body as string)).toEqual(body);
+    expect(p.vit_affiliation).toBe("confirmed_vellore");
+  });
+
+  it("builds the VIT queue with POST build-queue", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ considered: 0, queued: 0, needs_user_review: 0, skipped_do_not_contact: 0, skipped_excluded_employer: 0, skipped_unverified: 0, skipped_no_profile_url: 0, stats: { total_people: 0 } })));
+    const res = await mod.api.buildVITQueue();
+    expect(lastCall().url).toBe("http://api.test/api/v1/campaigns/vit-alumni/build-queue");
+    expect(lastCall().init?.method).toBe("POST");
+    expect(res.queued).toBe(0);
+  });
+
+  it("imports alumni and returns the counts", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ created: 4, updated: 2, skipped: 1 })));
+    const r = await mod.api.importAlumni();
+    expect(lastCall().url).toBe("http://api.test/api/v1/alumni/import");
+    expect(lastCall().init.method).toBe("POST");
+    expect(r).toEqual({ created: 4, updated: 2, skipped: 1 });
+  });
+
+  it("files outreach as {approval, person} and surfaces a 409 as ApiError", async () => {
+    fetchMock.mockResolvedValue(
+      json(envelope({ approval: { id: "app-1", action_type: "alumni_outreach" }, person: { ...alumniFixture, contact_state: "drafted" } }), 201),
+    );
+    const res = await mod.api.proposeAlumniOutreach("a1", { draft_text: "Hi", channel: "linkedin" });
     expect(lastCall().url).toBe("http://api.test/api/v1/alumni/a1/outreach");
-    expect(app.id).toBe("app-1");
+    expect(JSON.parse(lastCall().body as string)).toEqual({ draft_text: "Hi", channel: "linkedin" });
+    expect(res.approval.id).toBe("app-1");
+    expect(res.person.contact_state).toBe("drafted");
+
+    fetchMock.mockResolvedValue(json({ success: false, error: { message: "conflict: Alum is marked do not contact" } }, 409));
+    await expect(mod.api.proposeAlumniOutreach("a1", { draft_text: "Hi", channel: "email" })).rejects.toMatchObject({
+      status: 409,
+    });
   });
 });

@@ -322,6 +322,13 @@ func (r *OutreachRepository) ClaimNextToSend(ctx context.Context, userID, campai
 	if c.Status != "active" {
 		return &SendClaim{Reason: "campaign is " + c.Status}, nil
 	}
+	var campaignType string
+	if err := tx.QueryRow(ctx, `SELECT campaign_type FROM outreach_campaigns WHERE id = $1 AND user_id = $2`, campaignID, userID).Scan(&campaignType); err != nil {
+		return nil, err
+	}
+	if c.Channel == "linkedin" || campaignType == "vit_alumni" {
+		return &SendClaim{Reason: "LinkedIn messages are sent by hand"}, nil
+	}
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var sentToday int
 	var last *time.Time
@@ -333,8 +340,11 @@ func (r *OutreachRepository) ClaimNextToSend(ctx context.Context, userID, campai
 		return &SendClaim{RetryAt: &at, Reason: why}, nil
 	}
 	t, err := scanTarget(tx.QueryRow(ctx, `UPDATE outreach_targets SET claimed_until = NOW() + interval '5 minutes', updated_at = NOW()
-		WHERE id = (SELECT id FROM outreach_targets WHERE campaign_id = $1 AND status = 'approved' AND (claimed_until IS NULL OR claimed_until < NOW())
-		            ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+		WHERE id = (SELECT t.id FROM outreach_targets t
+		            LEFT JOIN canonical_entities p ON p.id = t.person_id
+		            WHERE t.campaign_id = $1 AND t.status = 'approved' AND (t.claimed_until IS NULL OR t.claimed_until < NOW())
+		              AND (p.id IS NULL OR (NOT coalesce(p.do_not_contact, false) AND p.contact_state <> 'opted_out'))
+		            ORDER BY t.updated_at LIMIT 1 FOR UPDATE OF t SKIP LOCKED)
 		RETURNING `+targetCols, campaignID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &SendClaim{Reason: "nobody is approved to message right now"}, nil
