@@ -131,30 +131,46 @@ func containsString(list []string, s string) bool {
 	return false
 }
 
-// OutreachSendGoal is what an approved outreach task does, written by code around the checked message, so the
-// model that sends it can neither change the words nor pick someone else.
-func OutreachSendGoal(c OutreachContact, resume string) string {
+// ManualSendMarker is in every outreach goal: the owner sends the message by hand, Griffin never does.
+const ManualSendMarker = "Griffin does not send LinkedIn messages."
+
+// OutreachManualGoal is what an approved outreach task hands the owner: the checked message, word for word, and
+// where to send it. It is written by code, and the task is answered in code (HandOverOutreach), so no model or
+// browser ever sends it.
+func OutreachManualGoal(c OutreachContact, resume string) string {
 	var b strings.Builder
-	b.WriteString("Open " + c.Link + " in the owner's signed-in browser and send this message to " + c.Name + ", word for word. ")
+	b.WriteString(ManualSendMarker + " Send this one yourself: open " + c.Link + " and send " + c.Name + " the message below, word for word. ")
 	if resume != "" {
-		b.WriteString("If you can message them directly, attach the file " + resume + " with the attach button. ")
+		b.WriteString("If you can message them directly, attach " + resume + ". ")
 	}
-	b.WriteString("If only a connection request is possible, send one with the first three sentences of the message as the note (at most 280 characters) and attach nothing. ")
-	b.WriteString("Send nothing else, change nothing, and message nobody else. ")
-	b.WriteString("Finish with two lines: DM: sent | requested | blocked, then PROOF: what the page showed, or the exact reason it is blocked. ")
-	b.WriteString("Limits: about 12 tool calls, under 4 minutes.\n\nThe message:\n" + c.Message)
+	b.WriteString("If only a connection request is possible, use the first three sentences as the note (at most 280 characters). ")
+	b.WriteString("Afterwards set their Status to \"sent\" so nobody messages them twice.\n\nThe message:\n" + c.Message)
 	return b.String()
+}
+
+// IsOutreachSendTask reports whether a task would message a person: an alumni DM task, a task holding a manual
+// outreach goal, or one made before messages went manual (its goal told a browser agent to send a message word
+// for word). Such a task is always answered in code and never run.
+func IsOutreachSendTask(t *Task) bool {
+	if t == nil {
+		return false
+	}
+	if _, _, ok := AlumniDMOf(t.Title); ok {
+		return true
+	}
+	g := strings.ToLower(t.Goal)
+	return strings.Contains(t.Goal, ManualSendMarker) || (strings.Contains(g, "word for word") && strings.Contains(g, "send this message to"))
 }
 
 // AlumniMessageFor is the owner's short, polite note to one VIT alum. ACM is mentioned only to an ACM VIT alum.
 func AlumniMessageFor(firstName, company string, acm bool) string {
 	who := "I'm Adhyan, a pre-final-year CSE student at VIT"
 	if acm {
-		who += " and a senior core member of ACM VIT, like you were"
+		who += " and a senior core member of ACM VIT"
 	}
 	return "Hi " + firstName + ", hope you're doing well! " + who + ". I saw you're at " + company + " and I'm looking for a Summer 2027 SDE or AI/ML internship. " +
 		"I built ComputeHive, a distributed task runner in Go, and interned as an AI Engineer at Palni. " +
-		"I'd really appreciate a quick chat or a referral, if you're open to it. Thanks so much!\n\nAdhyan"
+		"Would you be open to a quick chat about your work there? Thanks so much!\n\nAdhyan"
 }
 
 // IsOutreachTask reports whether a task proposes messages to people (a referral search or the alumni batch):

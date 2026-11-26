@@ -37,6 +37,9 @@ type TaskEngine struct {
 	onDMFinished func(ctx context.Context, task *domain.Task, output json.RawMessage)
 	// onPackageDecided is told when the owner approves or rejects an application package.
 	onPackageDecided func(ctx context.Context, a *domain.Approval, approved bool)
+	// onOutreachDecided is told when the owner approves or rejects an alumni outreach draft. Approving only records
+	// the decision; nothing is sent.
+	onOutreachDecided func(ctx context.Context, a *domain.Approval, approved bool)
 	// onPostingMissing is told when an application draft says its posting does not exist, so the listing is closed.
 	onPostingMissing func(ctx context.Context, userID uuid.UUID, company, role string)
 }
@@ -44,6 +47,11 @@ type TaskEngine struct {
 // OnPackageDecided sets what happens when the owner decides on an application package.
 func (e *TaskEngine) OnPackageDecided(f func(ctx context.Context, a *domain.Approval, approved bool)) {
 	e.onPackageDecided = f
+}
+
+// OnOutreachDecided sets what happens when the owner decides on an alumni outreach draft.
+func (e *TaskEngine) OnOutreachDecided(f func(ctx context.Context, a *domain.Approval, approved bool)) {
+	e.onOutreachDecided = f
 }
 
 // OnPostingMissing sets what happens when an application finds no posting.
@@ -510,7 +518,8 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 			if !domain.IsResumeFile(p.Resume) {
 				p.Resume = ""
 			}
-			p.Goal, p.Act = domain.OutreachSendGoal(*p.Contact, p.Resume), true
+			// The owner sends it by hand: no act tier, no agent, and the task is answered in code (HandOverOutreach).
+			p.Goal, p.Act = domain.OutreachManualGoal(*p.Contact, p.Resume), false
 		}
 		child := &domain.Task{
 			ID: uuid.New(), UserID: parent.UserID, ParentID: &parent.ID, Title: p.Title, Goal: p.Goal,
@@ -533,7 +542,11 @@ func (e *TaskEngine) createProposals(ctx context.Context, taskID uuid.UUID, outp
 		if text != "" {
 			text += "\n\n"
 		}
-		text += "What Griffin will do if you approve:\n" + p.Goal
+		if domain.IsOutreachSendTask(child) {
+			text += "If you approve, Griffin hands you this message to send yourself:\n" + p.Goal
+		} else {
+			text += "What Griffin will do if you approve:\n" + p.Goal
+		}
 		payload, _ := json.Marshal(map[string]string{"text": text, "title": p.Title})
 		actionType, risk := domain.ProposalApprovalAction, domain.ApprovalRiskLow
 		if p.Act {
@@ -718,6 +731,9 @@ func (e *TaskEngine) RespondApproval(ctx context.Context, approvalID uuid.UUID, 
 	if app.ActionType == domain.PackageApprovalAction && e.onPackageDecided != nil {
 		e.onPackageDecided(ctx, app, approved)
 	}
+	if app.ActionType == domain.AlumniOutreachApprovalAction && e.onOutreachDecided != nil {
+		e.onOutreachDecided(ctx, app, approved)
+	}
 
 	eventType := "STATUS_CHANGE"
 	msg := fmt.Sprintf("Approval granted by user: %s", reason)
@@ -806,6 +822,34 @@ func calculateBackoff(retryCount int, reason string) time.Duration {
 	// Add 10-20% jitter
 	jitter := sec * (0.1 + rand.Float64()*0.1)
 	return time.Duration(sec+jitter) * time.Second
+}
+
+// HoldAlumniOutreach puts an outreach draft on the owner's approvals page. The approvals table needs a task, so
+// one is made that only carries the approval: it has no tools, and the approval repository finishes it (it never
+// queues) when the owner approves. Nothing is sent, now or later: the owner sends the message by hand.
+func (e *TaskEngine) HoldAlumniOutreach(ctx context.Context, userID uuid.UUID, name string, payload json.RawMessage) (*domain.Approval, error) {
+	title := "ALUMNI OUTREACH DRAFT - " + strings.TrimSpace(name)
+	if r := []rune(title); len(r) > 100 {
+		title = string(r[:100])
+	}
+	taskPayload, _ := json.Marshal(map[string]any{domain.ToolModeKey: domain.ToolNone})
+	task, err := e.CreateTask(ctx, &domain.Task{
+		ID: uuid.New(), UserID: userID, Title: title, ManagerDomain: "career", Status: domain.TaskStatusRunning,
+		Goal:         "Hold an outreach draft to " + strings.TrimSpace(name) + " until the owner approves or rejects it. This task sends nothing; the owner sends the message by hand.",
+		InputPayload: taskPayload, MaxRetries: 0,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	approval := &domain.Approval{
+		ID: uuid.New(), UserID: userID, TaskID: task.ID, ActionType: domain.AlumniOutreachApprovalAction, RiskLevel: domain.ApprovalRiskLow,
+		Summary: "Outreach draft for " + strings.TrimSpace(name) + " (you send it yourself)", ActionPayload: payload, Status: domain.ApprovalStatusPending,
+	}
+	if err := e.RequestApproval(ctx, task.ID, approval); err != nil {
+		_ = e.taskRepo.CancelTask(ctx, task.ID, "the approval could not be requested")
+		return nil, err
+	}
+	return approval, nil
 }
 
 // HoldApplicationPackage puts a finished application package on the owner's approvals page. The approvals table

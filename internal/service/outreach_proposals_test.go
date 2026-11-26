@@ -79,8 +79,14 @@ func TestOnlyOutreachThatPassesTheRulesReachesTheOwner(t *testing.T) {
 	if repo.created[0].MaxRetries != 0 {
 		t.Fatal("a message is never retried: it could reach the same person twice")
 	}
-	if repo.approvals[0].ActionType != domain.ToolApprovalAction {
-		t.Fatalf("sending is an act and needs the owner's yes: %s", repo.approvals[0].ActionType)
+	if repo.approvals[0].ActionType != domain.ProposalApprovalAction || strings.Contains(string(repo.created[0].InputPayload), "act") {
+		t.Fatalf("an approved message is handed to the owner, never given the act tier: %s %s", repo.approvals[0].ActionType, repo.created[0].InputPayload)
+	}
+	if !strings.Contains(goal, domain.ManualSendMarker) {
+		t.Fatalf("the goal says Griffin does not send it:\n%s", goal)
+	}
+	if answer, ok := HandOverOutreach(repo.created[0]); !ok || domain.AlumniDMResult(answer) != domain.AlumniStatusByHand || !strings.Contains(answer, good.Message) {
+		t.Fatalf("the approved task is answered in code with the message for the owner: ok=%v\n%s", ok, answer)
 	}
 	joined := strings.Join(repo.events, "\n")
 	if !strings.Contains(joined, "Kurt Keutzer") || !strings.Contains(joined, "senior") || !strings.Contains(joined, "Message someone") {

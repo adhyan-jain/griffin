@@ -112,9 +112,41 @@ func TestTheAlumniMessageNamesACMOnlyForACMPeopleAndIsShort(t *testing.T) {
 func TestTheSendGoalIsBuiltByCodeFromTheCheckedMessage(t *testing.T) {
 	c := engineer()
 	c.Message = "Hi Riya, would you be open to referring me for the SDE Intern role?"
-	goal := OutreachSendGoal(c, "")
-	if !strings.Contains(goal, c.Link) || !strings.Contains(goal, c.Message) || !strings.Contains(goal, "nobody else") {
+	goal := OutreachManualGoal(c, "")
+	if !strings.Contains(goal, c.Link) || !strings.Contains(goal, c.Message) || !strings.Contains(goal, ManualSendMarker) {
 		t.Fatalf("goal: %s", goal)
+	}
+	if strings.Contains(goal, "browser") || strings.Contains(goal, "tool calls") {
+		t.Fatalf("the goal is for the owner, never an agent: %s", goal)
+	}
+}
+
+func TestOutreachSendTasksAreRecognisedIncludingOldOnes(t *testing.T) {
+	c := engineer()
+	c.Message = "Hi Riya, would you be open to a quick chat?"
+	old := "Open " + c.Link + " in the owner's signed-in browser and send this message to Riya, word for word. The message:\nhi"
+	for _, tk := range []*Task{
+		{Title: AlumniDMPrefix + "Riya Sen - Razorpay", Goal: "x"},
+		{Title: "Message Riya - Acme", Goal: OutreachManualGoal(c, "")},
+		{Title: "Message Riya - Acme", Goal: old},
+	} {
+		if !IsOutreachSendTask(tk) {
+			t.Errorf("not recognised: %q", tk.Title)
+		}
+	}
+	if IsOutreachSendTask(&Task{Title: "Apply to Acme", Goal: "Submit my application"}) || IsOutreachSendTask(nil) {
+		t.Error("an ordinary task is not an outreach send")
+	}
+}
+
+func TestTheAlumniMessageMakesNoClaimAboutTheRecipientAndAsksForNoReferral(t *testing.T) {
+	for _, acm := range []bool{false, true} {
+		m := strings.ToLower(AlumniMessageFor("Riya", "Razorpay", acm))
+		for _, bad := range []string{"like you were", "referral", "refer me"} {
+			if strings.Contains(m, bad) {
+				t.Errorf("acm=%v: message contains %q:\n%s", acm, bad, m)
+			}
+		}
 	}
 }
 
