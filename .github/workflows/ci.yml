@@ -126,4 +126,6 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools # the default also asks for the retired 'tools' package, which sdkmanager 16 rejects
       - run: ./gradlew --no-daemon testDebugUnitTest
