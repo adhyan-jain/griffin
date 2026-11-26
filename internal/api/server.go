@@ -106,6 +106,14 @@ type ServerDependencies struct {
 	ResearchRepo *repository.ResearchRepository
 	// KnowledgeRepo enables canonical entities, relationships, and observations; nil leaves the routes off.
 	KnowledgeRepo *repository.KnowledgeRepository
+	// PeopleRepo holds the person records the Alumni page reads; nil leaves the alumni routes off.
+	PeopleRepo *repository.PeopleRepository
+	// OwnerProfileRepo supplies the sender facts in alumni drafts; nil means drafts carry placeholders.
+	OwnerProfileRepo *repository.OwnerProfileRepository
+	// CampaignRepo enables priority outreach campaigns; nil instantiates default from DB.
+	CampaignRepo *repository.CampaignRepository
+	// CampaignService provides business logic for the VIT alumni campaign.
+	CampaignService *service.VITCampaignService
 	// ResearchEngine runs iterative research; nil leaves it off.
 	ResearchEngine *research.Engine
 	// UserTx opens RLS-enforced per-request transactions. Required in production; when nil outside
@@ -426,6 +434,12 @@ func NewServer(deps ServerDependencies) *Server {
 			}
 			lists.Assess = deps.Assess
 			lists.Prep = deps.Prep
+			if deps.ResearchEngine != nil {
+				lists.ResearchRunner = deps.ResearchEngine
+			}
+			if deps.PeopleRepo != nil {
+				lists.Alumni = &service.AlumniPeople{Lists: deps.StorageService, People: deps.PeopleRepo}
+			}
 			hostHandler.WithTrackerLists(lists)
 		}
 		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))
@@ -522,24 +536,80 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 
 	// Research Engine & Knowledge Graph routes
-	if deps.ResearchRepo != nil || deps.ResearchEngine != nil {
+	if deps.ResearchRepo != nil && deps.ResearchEngine != nil {
 		rh := handlers.NewResearchHandler(deps.ResearchEngine, deps.ResearchRepo)
+		if deps.Engine != nil {
+			// A run is advanced by a task a worker or host claims, never by work left running after the response.
+			rh.WithScheduler(func(ctx context.Context, t *domain.Task) error {
+				_, err := deps.Engine.CreateTask(ctx, t, nil)
+				return err
+			})
+		}
 		mux.Handle("POST /api/v1/research", userAuth(http.HandlerFunc(rh.Create)))
 		mux.Handle("GET /api/v1/research", userAuth(http.HandlerFunc(rh.List)))
 		mux.Handle("GET /api/v1/research/{id}", userAuth(http.HandlerFunc(rh.Get)))
 		mux.Handle("POST /api/v1/research/{id}/pause", userAuth(http.HandlerFunc(rh.Pause)))
 		mux.Handle("POST /api/v1/research/{id}/resume", userAuth(http.HandlerFunc(rh.Resume)))
+		mux.Handle("POST /api/v1/research/{id}/cancel", userAuth(http.HandlerFunc(rh.Cancel)))
 		mux.Handle("GET /api/v1/research/{id}/evidence", userAuth(http.HandlerFunc(rh.Evidence)))
 	}
 
-	if deps.KnowledgeRepo != nil {
-		ch := handlers.NewCompaniesHandler(deps.KnowledgeRepo, deps.ListingRepo)
-		mux.Handle("GET /api/v1/companies/explorer", userAuth(http.HandlerFunc(ch.Explorer)))
+	if deps.ListingRepo != nil {
+		ch := handlers.NewCompaniesHandler(deps.ListingRepo)
+		mux.Handle("GET /api/v1/companies", userAuth(http.HandlerFunc(ch.List)))
+		mux.Handle("GET /api/v1/companies/explorer", userAuth(http.HandlerFunc(ch.List)))
 		mux.Handle("GET /api/v1/companies/{id}", userAuth(http.HandlerFunc(ch.Get)))
+	}
 
-		ah := handlers.NewAlumniHandler(deps.KnowledgeRepo, deps.ApprovalRepo)
-		mux.Handle("GET /api/v1/alumni/explorer", userAuth(http.HandlerFunc(ah.Explorer)))
+	if deps.PeopleRepo != nil {
+		var importer handlers.AlumniImporter
+		if deps.StorageService != nil {
+			importer = &service.AlumniPeople{Lists: deps.StorageService, People: deps.PeopleRepo}
+		}
+		var holder handlers.OutreachHolder
+		if deps.Engine != nil {
+			holder = deps.Engine
+		}
+		ah := handlers.NewAlumniHandler(deps.PeopleRepo, importer, holder, deps.Config.AlumniGraduationCutoff)
+		// Drafts take the sender's facts from the structured profile, else from the Library profile document.
+		var profiles service.OwnerProfileWithLibrary
+		if deps.OwnerProfileRepo != nil {
+			profiles.Structured = deps.OwnerProfileRepo
+		}
+		if deps.StorageService != nil {
+			profiles.Library = (&service.TrackerLists{Store: deps.StorageService}).ProfileText
+		}
+		ah.Profiles = profiles
+		mux.Handle("GET /api/v1/alumni", userAuth(http.HandlerFunc(ah.List)))
+		mux.Handle("GET /api/v1/alumni/explorer", userAuth(http.HandlerFunc(ah.List)))
+		mux.Handle("POST /api/v1/alumni/import", userAuth(http.HandlerFunc(ah.Import)))
+		mux.Handle("PATCH /api/v1/alumni/{id}", userAuth(http.HandlerFunc(ah.Update)))
+		mux.Handle("PATCH /api/v1/alumni/{id}/verification", userAuth(http.HandlerFunc(ah.Verify)))
 		mux.Handle("POST /api/v1/alumni/{id}/outreach", userAuth(http.HandlerFunc(ah.Outreach)))
+		mux.Handle("GET /api/v1/alumni/{id}/draft", userAuth(http.HandlerFunc(ah.GenerateDraft)))
+
+		var campSvc = deps.CampaignService
+		if campSvc == nil && deps.DB != nil {
+			var campDB database.Querier = deps.DB.Pool
+			if deps.UserTx != nil || (deps.Config != nil && deps.Config.IsProduction()) {
+				campDB = database.NewScoped(deps.DB.Pool) // resolves to the request's RLS tx; denied otherwise
+			}
+			campRepo := deps.CampaignRepo
+			if campRepo == nil {
+				campRepo = repository.NewCampaignRepository(campDB)
+			}
+			campSvc = service.NewVITCampaignService(campDB, deps.PeopleRepo, campRepo)
+		}
+		if campSvc != nil {
+			campSvc.SetOwnerProfiles(profiles)
+			ch := handlers.NewCampaignHandler(campSvc)
+			mux.Handle("GET /api/v1/campaigns/vit-alumni/stats", userAuth(http.HandlerFunc(ch.GetStats)))
+			mux.Handle("GET /api/v1/campaigns/vit-alumni/queue", userAuth(http.HandlerFunc(ch.GetQueue)))
+			mux.Handle("POST /api/v1/campaigns/vit-alumni/build-queue", userAuth(http.HandlerFunc(ch.BuildQueue)))
+			mux.Handle("PATCH /api/v1/campaigns/vit-alumni/targets/{id}", userAuth(http.HandlerFunc(ch.UpdateTargetAction)))
+			mux.Handle("GET /api/v1/alumni/search-query", userAuth(http.HandlerFunc(ch.GetLinkedInSearchQueries)))
+			mux.Handle("POST /api/v1/alumni/search-query", userAuth(http.HandlerFunc(ch.GetLinkedInSearchQueries)))
+		}
 	}
 
 	// Runner management endpoints

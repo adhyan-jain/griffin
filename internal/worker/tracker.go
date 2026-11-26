@@ -30,6 +30,8 @@ func (w *Worker) trackers() *service.TrackerLists {
 	}
 	t.Assess = w.assess
 	t.Prep = w.prep
+	t.ResearchRunner = w.researchRunner
+	t.Alumni = w.alumni
 	return t
 }
 

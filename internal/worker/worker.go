@@ -64,6 +64,8 @@ type Worker struct {
 	playbooks         PlaybookStore
 	listings          service.ListingStore
 	assess            *service.OpportunityAssess
+	researchRunner    service.ResearchRunner
+	alumni            *service.AlumniPeople
 	prep              *service.ApplicationPrep
 	githubLogin       string
 	communityReplies  service.OutreachChatter
@@ -98,6 +100,10 @@ type Config struct {
 	Listings service.ListingStore
 	// Assess, if set, lets the opportunity assessment routine run here in code.
 	Assess *service.OpportunityAssess
+	// ResearchRunner, if set, lets the RESEARCH RUN routine run here in code.
+	ResearchRunner service.ResearchRunner
+	// Alumni, if set, imports the Alumni list into person records and keeps do-not-contact people out of the DM batch.
+	Alumni *service.AlumniPeople
 	// Prep, if set, lets the APPLICATION PREP routine run here in code.
 	Prep *service.ApplicationPrep
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine.
@@ -142,6 +148,8 @@ func NewWorker(cfg Config) *Worker {
 		playbooks:         cfg.Playbooks,
 		listings:          cfg.Listings,
 		assess:            cfg.Assess,
+		researchRunner:    cfg.ResearchRunner,
+		alumni:            cfg.Alumni,
 		prep:              cfg.Prep,
 		githubLogin:       cfg.GitHubLogin,
 		communityReplies:  cfg.CommunityReplies,

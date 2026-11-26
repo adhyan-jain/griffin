@@ -24,27 +24,29 @@ type Config struct {
 	MaxConcurrentWorkers     int
 
 	// AI Execution Provider settings (Phase 2)
-	AIProvider                 string // "antigravity" (default) or "mock"
-	ClaudeEnabled              bool   // optional second provider for language-only steps; off by default
-	ClaudeLead                 bool   // the planner hands whole jobs to one Claude lead with its own sub-agents (needs a signed-in claude on a worker)
-	ClaudeLeadModel            string // model alias for lead steps (sonnet by default)
-	ClaudeEffort               string // low, medium, high, xhigh or max
-	ClaudeLeadBudgetUSD        float64
-	ClaudeBudgetCapUSD         float64
-	DynamicPlanner             bool   // the fast model writes a team of workers per request (agy path); falls back to the standard plan
-	NtfyServer                 string // push service for finish notifications (default https://ntfy.sh)
-	NtfyTopic                  string // the private topic the phone subscribes to; empty turns notifications off
-	NtfyToken                  string // optional access token for a protected topic
-	AppURL                     string // the web app's address, used for the tap link
-	CallsAuthToken             string // phone provider webhook auth token; empty turns inbound calls off
-	CallsPublicURL             string // public base address the provider calls, e.g. https://api.example.com
-	CallsOwnerNumber           string // the owner's own number: trusted calls are forwarded here
-	CallsTrusted               string // comma-separated numbers that ring through without screening
-	CallsUserID                string // the owner's user id (calls are logged to them)
-	GeminiAPIKey               string // fast voice model key; empty disables the fast path (chat then waits for the worker)
-	GeminiModel                string // default gemini-flash-lite-latest
-	HostsEnabled               bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
-	ClaudeBinary               string
+	AIProvider          string // "antigravity" (default) or "mock"
+	ClaudeEnabled       bool   // optional second provider for language-only steps; off by default
+	ClaudeLead          bool   // the planner hands whole jobs to one Claude lead with its own sub-agents (needs a signed-in claude on a worker)
+	ClaudeLeadModel     string // model alias for lead steps (sonnet by default)
+	ClaudeEffort        string // low, medium, high, xhigh or max
+	ClaudeLeadBudgetUSD float64
+	ClaudeBudgetCapUSD  float64
+	DynamicPlanner      bool   // the fast model writes a team of workers per request (agy path); falls back to the standard plan
+	NtfyServer          string // push service for finish notifications (default https://ntfy.sh)
+	NtfyTopic           string // the private topic the phone subscribes to; empty turns notifications off
+	NtfyToken           string // optional access token for a protected topic
+	AppURL              string // the web app's address, used for the tap link
+	CallsAuthToken      string // phone provider webhook auth token; empty turns inbound calls off
+	CallsPublicURL      string // public base address the provider calls, e.g. https://api.example.com
+	CallsOwnerNumber    string // the owner's own number: trusted calls are forwarded here
+	CallsTrusted        string // comma-separated numbers that ring through without screening
+	CallsUserID         string // the owner's user id (calls are logged to them)
+	GeminiAPIKey        string // fast voice model key; empty disables the fast path (chat then waits for the worker)
+	GeminiModel         string // default gemini-flash-lite-latest
+	HostsEnabled        bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
+	ClaudeBinary        string
+	// AlumniGraduationCutoff: a person qualifies for alumni research when their known graduation year is this or earlier; an unknown year never does.
+	AlumniGraduationCutoff     int
 	GitHubLogin                string // the owner's GitHub username, for the repo hygiene tracker; empty turns that routine off
 	MaxConcurrentClaude        int
 	AgyToolsEnabled            bool     // read/act tool tiers for agy; off by default
@@ -160,6 +162,7 @@ func Load() (*Config, error) {
 		GeminiModel:                     getEnv("GEMINI_MODEL", ""),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
 		GitHubLogin:                     getEnv("GITHUB_LOGIN", ""),
+		AlumniGraduationCutoff:          getEnvAsInt("ALUMNI_GRADUATION_CUTOFF", 2022),
 		MaxConcurrentClaude:             getEnvAsInt("MAX_CONCURRENT_CLAUDE", 2),
 		AgyToolsEnabled:                 getEnvAsBool("AGY_TOOLS_ENABLED", false),
 		AgyReadArgs:                     strings.Fields(getEnv("AGY_READ_ARGS", "--mode plan --sandbox")),

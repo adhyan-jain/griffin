@@ -25,6 +25,10 @@ import (
 	"github.com/griffin/core/internal/database"
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/manager"
+	"github.com/griffin/core/internal/playbooks"
+	alumniplaybook "github.com/griffin/core/internal/playbooks/alumni"
+	companiesplaybook "github.com/griffin/core/internal/playbooks/companies"
+	"github.com/griffin/core/internal/playbooks/internships"
 	"github.com/griffin/core/internal/provider/antigravity"
 	"github.com/griffin/core/internal/provider/claudecli"
 	"github.com/griffin/core/internal/provider/router"
@@ -139,10 +143,24 @@ func main() {
 	outreachRepo := repository.NewOutreachRepository(repoDB)
 	researchRepo := repository.NewResearchRepository(repoDB)
 	knowledgeRepo := repository.NewKnowledgeRepository(repoDB)
-	researchBrain := voiceBrain(cfg)
-	researchRouter := research.NewRouter(researchBrain, researchBrain)
+	// voiceBrain returns a nil *gemini.Client without a key; stored directly in the LLMClient interface it would be
+	// a non-nil interface holding a nil pointer, which the router's nil checks cannot see. Only a real client goes in.
+	var researchLLM research.LLMClient
+	if researchBrain := voiceBrain(cfg); researchBrain != nil {
+		researchLLM = researchBrain
+	}
+	researchRouter := research.NewRouter(researchLLM, researchLLM)
 	researchTools := research.NewToolGateway(nil, nil)
 	researchEngine := research.NewEngine(researchRepo, knowledgeRepo, researchTools, researchRouter, logger)
+	// Research attaches to the existing companies and person records: the playbooks write there, not to a store of their own.
+	peopleRepo := repository.NewPeopleRepository(repoDB)
+	researchEngine.Playbooks = playbooks.Registry{
+		"company_intelligence": companiesplaybook.NewPlaybook().WithStore(listingRepo),
+		"internship_watch":     internships.NewPlaybook(nil),
+		"alumni_intelligence":  alumniplaybook.NewPlaybook(&alumniplaybook.Criteria{GraduationYearCutoff: cfg.AlumniGraduationCutoff}).WithStore(peopleRepo),
+	}
+	// The RESEARCH RUN routine (a claimed task, run in code under the claim deadline) advances runs with this
+	// engine; TrackerLists carries it (server.go and the worker), there is no global.
 
 	// 5.5 Initialize Object Storage Provider & Service (Phase 4)
 	var storageProvider storage.Provider
@@ -193,6 +211,8 @@ func main() {
 	})
 	// Application packages: the routine and the Prepare button write them; the owner's decision on one moves its listing.
 	prepRoutine := applicationPrep(cfg, listingRepo, engine, logger)
+	// An approved alumni outreach draft only records the decision on the person; nothing is sent. The owner sends by hand.
+	engine.OnOutreachDecided((&service.AlumniPeople{People: peopleRepo, Logger: logger}).OutreachDecided)
 	engine.OnPackageDecided(func(ctx context.Context, a *domain.Approval, approved bool) {
 		prepRoutine.Decided(ctx, a, approved, func(c context.Context, sub *domain.Approval) {
 			var p struct {
@@ -377,6 +397,8 @@ func main() {
 				Playbooks:         storageService,
 				Listings:          listingRepo,
 				Assess:            assessRoutine,
+				ResearchRunner:    researchEngine,
+				Alumni:            &service.AlumniPeople{Lists: storageService, People: peopleRepo},
 				Prep:              prepRoutine,
 				GitHubLogin:       cfg.GitHubLogin,
 				CommunityReplies:  communityReplier(cfg),
@@ -556,14 +578,16 @@ func main() {
 				// Briefs (once per local day, persisted) and the outreach follow-up watchdog.
 				{Name: "briefs_and_watchdog", Run: func(c context.Context) error { briefer.Tick(c); return nil }},
 			},
-			OutreachDrafter: outreachDrafter(cfg),
-			DeviceDecider:   deviceDecider(cfg),
-			VoiceBrain:      voiceBrain(cfg),
-			InstanceMgr:     instanceMgr,
-			ResearchRepo:    researchRepo,
-			KnowledgeRepo:   knowledgeRepo,
-			ResearchEngine:  researchEngine,
-			UserTx:          userTx,
+			OutreachDrafter:  outreachDrafter(cfg),
+			DeviceDecider:    deviceDecider(cfg),
+			VoiceBrain:       voiceBrain(cfg),
+			InstanceMgr:      instanceMgr,
+			ResearchRepo:     researchRepo,
+			KnowledgeRepo:    knowledgeRepo,
+			PeopleRepo:       peopleRepo,
+			OwnerProfileRepo: ownerProfiles,
+			ResearchEngine:   researchEngine,
+			UserTx:           userTx,
 		})
 
 		go func() {
