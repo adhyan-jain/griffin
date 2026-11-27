@@ -132,9 +132,12 @@ type PersonEmployment struct {
 // AlumniImportRow is one row of the Alumni tracker, read for import. Only what the row says is set.
 type AlumniImportRow struct {
 	Name, Company, Role, Club, ProfileURL string
-	GraduationYear                        int // 0 when the row shows none
-	ContactState                          ContactState
-	DoNotContact                          bool
+	// EvidenceURL and Quote are a public page (not LinkedIn) about the person and the exact words on it that show
+	// their campus, batch or ACM role. Griffin fetches the page and records the evidence only if the words are there.
+	EvidenceURL, Quote string
+	GraduationYear     int // 0 when the row shows none
+	ContactState       ContactState
+	DoNotContact       bool
 }
 
 // AlumniStatusState maps a tracker Status cell to a contact state and whether it means do-not-contact. Unknown or
@@ -172,6 +175,7 @@ func AlumniImportRows(text string) []AlumniImportRow {
 		return -1
 	}
 	nameC, batchC, companyC, roleC, clubC, linkC, statusC := col("Name"), col("Batch"), col("Company"), col("Role"), col("Club"), col("LinkedIn"), col("Status")
+	evidenceC, quoteC := col("Evidence"), col("Quote")
 	var out []AlumniImportRow
 	for _, l := range lines[2:] {
 		cells := splitRow(l)
@@ -195,7 +199,8 @@ func AlumniImportRows(text string) []AlumniImportRow {
 			club = ""
 		}
 		state, dnc := AlumniStatusState(get(statusC))
-		out = append(out, AlumniImportRow{Name: name, Company: get(companyC), Role: get(roleC), Club: club, ProfileURL: link, GraduationYear: year, ContactState: state, DoNotContact: dnc})
+		out = append(out, AlumniImportRow{Name: name, Company: get(companyC), Role: get(roleC), Club: club, ProfileURL: link, GraduationYear: year, ContactState: state, DoNotContact: dnc,
+			EvidenceURL: get(evidenceC), Quote: strings.Trim(get(quoteC), `"“”'`)})
 	}
 	return out
 }

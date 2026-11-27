@@ -438,7 +438,7 @@ func NewServer(deps ServerDependencies) *Server {
 				lists.ResearchRunner = deps.ResearchEngine
 			}
 			if deps.PeopleRepo != nil {
-				lists.Alumni = &service.AlumniPeople{Lists: deps.StorageService, People: deps.PeopleRepo}
+				lists.Alumni = service.NewAlumniPeople(deps.StorageService, deps.PeopleRepo)
 			}
 			hostHandler.WithTrackerLists(lists)
 		}

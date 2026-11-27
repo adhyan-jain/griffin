@@ -216,7 +216,7 @@ func (r *PeopleRepository) ImportAlumni(ctx context.Context, userID uuid.UUID, r
 			userID, key, link); err != nil {
 			return res, fmt.Errorf("import alumni: %w", err)
 		}
-		names, values, sets, targs := typedSQL(personTypedCols(p), 9, "canonical_entities.metadata->>'source' = '"+selfReported+"'")
+		names, values, sets, targs := typedSQL(personTypedCols(p), 9, "canonical_entities.metadata->>'source' = '"+selfReported+"' AND canonical_entities.metadata->'verification' IS NULL")
 		args := append([]any{userID, key, row.Name, string(mj), link, year, row.DoNotContact, string(row.ContactState)}, targs...)
 		var inserted bool
 		err = r.pool.QueryRow(ctx, `
@@ -386,6 +386,37 @@ func (r *PeopleRepository) UpdatePriority(ctx context.Context, userID, id uuid.U
 		WHERE id = $1 AND user_id = $2 AND kind = 'person'`, id, userID, tier, score, rationale)
 	if err != nil {
 		return fmt.Errorf("update priority: %w", err)
+	}
+	return nil
+}
+
+// EvidenceState is what the quote check needs to know about one person: who they are and which evidence (page and
+// quote) was last checked for them, so the same page is not fetched again.
+type EvidenceState struct {
+	ID      uuid.UUID
+	Checked string
+}
+
+// EvidenceStateByProfile returns the person with this profile link, or ErrNotFound.
+func (r *PeopleRepository) EvidenceStateByProfile(ctx context.Context, userID uuid.UUID, link string) (EvidenceState, error) {
+	var st EvidenceState
+	err := r.pool.QueryRow(ctx, `SELECT id, COALESCE(metadata->'evidence_check'->>'key', '') FROM canonical_entities
+		WHERE user_id = $1 AND kind = 'person' AND profile_url = $2`, userID, domain.CanonicalLinkedInURL(link)).Scan(&st.ID, &st.Checked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return st, domain.ErrNotFound
+	}
+	if err != nil {
+		return st, fmt.Errorf("evidence state: %w", err)
+	}
+	return st, nil
+}
+
+// MarkEvidenceChecked records that the evidence key (page and quote) was checked, with the result.
+func (r *PeopleRepository) MarkEvidenceChecked(ctx context.Context, userID, id uuid.UUID, key, result string) error {
+	b, _ := json.Marshal(map[string]string{"key": key, "result": result, "at": time.Now().UTC().Format(time.RFC3339)})
+	if _, err := r.pool.Exec(ctx, `UPDATE canonical_entities SET metadata = jsonb_set(metadata, '{evidence_check}', $3::jsonb)
+		WHERE id = $1 AND user_id = $2 AND kind = 'person'`, id, userID, string(b)); err != nil {
+		return fmt.Errorf("mark evidence checked: %w", err)
 	}
 	return nil
 }

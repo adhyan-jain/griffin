@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/hands/web"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/storage"
 )
@@ -26,6 +29,9 @@ type AlumniPeople struct {
 	Lists  TrackerStore
 	People PersonStore
 	Logger *slog.Logger
+	// Evidence and Fetch run the quote check (CheckEvidence); without them it is off.
+	Evidence EvidenceStore
+	Fetch    PageFetcher
 }
 
 // OutreachDecided records the owner's decision on an outreach draft on the person: approved, or back to not
@@ -88,4 +94,95 @@ func (a *AlumniPeople) DoNotContact(ctx context.Context, userID uuid.UUID) (func
 		c := domain.CanonicalLinkedInURL(link)
 		return c != "" && canon[c]
 	}, nil
+}
+
+// EvidenceStore is what the quote check reads and writes. *repository.PeopleRepository implements it.
+type EvidenceStore interface {
+	EvidenceStateByProfile(ctx context.Context, userID uuid.UUID, link string) (repository.EvidenceState, error)
+	MarkEvidenceChecked(ctx context.Context, userID, id uuid.UUID, key, result string) error
+	ApplyVerification(ctx context.Context, userID, id uuid.UUID, v *domain.VerifiedFields) (*domain.Person, error)
+}
+
+// PageFetcher returns the text of a public page. Production uses hands/web's Fetcher, which refuses private addresses.
+type PageFetcher func(ctx context.Context, url string) (string, error)
+
+// EvidenceResult says what one quote check run did.
+type EvidenceResult struct {
+	Checked, Verified, NotOnPage, Failed, Left int
+}
+
+// evidenceReserve is the time a check leaves unused before the caller's deadline, so it finishes cleanly.
+const evidenceReserve = 4 * time.Second
+
+// CheckEvidence opens the evidence page of each Alumni list row that names one and records, on the person, only
+// what the quote proves, and only when the quote is really on the page (domain.EvidenceVerification). Each page and
+// quote pair is checked once; rows it has no time for are counted in Left and checked on the next run. Nothing the
+// collector wrote counts as verified without this check.
+func (a *AlumniPeople) CheckEvidence(ctx context.Context, userID uuid.UUID, max int) (EvidenceResult, error) {
+	var res EvidenceResult
+	if a == nil || a.Evidence == nil || a.Fetch == nil {
+		return res, fmt.Errorf("%w: the evidence check is not set up", domain.ErrValidation)
+	}
+	text, err := a.listText(ctx, userID)
+	if err != nil {
+		return res, fmt.Errorf("read the Alumni list: %w", err)
+	}
+	deadline, hasDeadline := ctx.Deadline()
+	for _, row := range domain.AlumniImportRows(text) {
+		if strings.TrimSpace(row.EvidenceURL) == "" || strings.TrimSpace(row.Quote) == "" {
+			continue
+		}
+		st, err := a.Evidence.EvidenceStateByProfile(ctx, userID, row.ProfileURL)
+		if err != nil {
+			continue // not imported yet: the next run, after an import, checks it
+		}
+		key := strings.TrimSpace(row.EvidenceURL) + "\n" + strings.TrimSpace(row.Quote)
+		if st.Checked == key {
+			continue
+		}
+		if res.Checked >= max || (hasDeadline && time.Until(deadline) < evidenceReserve) {
+			res.Left++
+			continue
+		}
+		res.Checked++
+		page, err := a.Fetch(ctx, row.EvidenceURL)
+		if err != nil {
+			res.Failed++ // not marked, so a page that was down is tried again next run
+			continue
+		}
+		result := "not_on_page"
+		if v, ok := domain.EvidenceVerification(row, page); ok {
+			fields, err := v.Resolve(time.Now())
+			if err != nil {
+				return res, err
+			}
+			if _, err := a.Evidence.ApplyVerification(ctx, userID, st.ID, fields); err != nil {
+				return res, err
+			}
+			result = "verified"
+			res.Verified++
+		} else {
+			res.NotOnPage++
+		}
+		if err := a.Evidence.MarkEvidenceChecked(ctx, userID, st.ID, key, result); err != nil {
+			return res, err
+		}
+	}
+	return res, nil
+}
+
+// NewAlumniPeople connects the Alumni list to the person records, with the quote check on: evidence pages are read
+// with hands/web's Fetcher, which refuses private addresses and caps time and size.
+func NewAlumniPeople(lists TrackerStore, people *repository.PeopleRepository) *AlumniPeople {
+	f := web.NewFetcher(web.FetcherConfig{Timeout: 8 * time.Second})
+	return &AlumniPeople{Lists: lists, People: people, Evidence: people, Fetch: func(ctx context.Context, url string) (string, error) {
+		p, err := f.Fetch(ctx, url)
+		if err != nil {
+			return "", err
+		}
+		if p.Status >= 400 {
+			return "", fmt.Errorf("evidence page answered %d", p.Status)
+		}
+		return p.Title + "\n" + p.Text, nil
+	}}
 }

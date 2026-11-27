@@ -19,6 +19,17 @@ var ResumeFiles = map[string]string{
 	"software engineering": RepoResumeDir + "/Adhyan_Jain_Resume_SDE.pdf",
 }
 
+// AlumniEvidenceTitle is the routine that checks, in code, the evidence the alumni info collector wrote.
+const AlumniEvidenceTitle = "ALUMNI EVIDENCE CHECK"
+
+// AlumniEvidenceGoal is the stored goal of that routine. It runs as code (no model).
+const AlumniEvidenceGoal = "Check the evidence on the owner's Alumni list: for each person with an Evidence page and a Quote, open the page and record the campus, batch and ACM VIT role only when the quote is really on it. Griffin does this in code; nothing is sent."
+
+// IsAlumniEvidenceCheck reports whether a task is the evidence check routine.
+func IsAlumniEvidenceCheck(title string) bool {
+	return strings.Contains(strings.ToUpper(title), AlumniEvidenceTitle)
+}
+
 // IsAlumniDMBatch reports whether a task is the routine that proposes LinkedIn messages.
 func IsAlumniDMBatch(title string) bool {
 	return strings.Contains(strings.ToUpper(title), AlumniDMBatchTitle)

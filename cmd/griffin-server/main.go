@@ -398,7 +398,7 @@ func main() {
 				Listings:          listingRepo,
 				Assess:            assessRoutine,
 				ResearchRunner:    researchEngine,
-				Alumni:            &service.AlumniPeople{Lists: storageService, People: peopleRepo},
+				Alumni:            service.NewAlumniPeople(storageService, peopleRepo),
 				Prep:              prepRoutine,
 				GitHubLogin:       cfg.GitHubLogin,
 				CommunityReplies:  communityReplier(cfg),

@@ -478,18 +478,20 @@ func ReferralTaskFor(company, role string) (title, goal string, payload json.Raw
 }
 
 // AlumniHeader is the Alumni tracker's table head.
-const AlumniHeader = "| Name | Batch | Company | Role | Club | LinkedIn | Why this company | Status | Added |\n|---|---|---|---|---|---|---|---|---|"
+const AlumniHeader = "| Name | Batch | Company | Role | Club | LinkedIn | Why this company | Status | Added | Evidence | Quote |\n|---|---|---|---|---|---|---|---|---|---|---|"
 
-// AlumniGoal is what the daily Alumni routine is asked to do.
-var AlumniGoal = "Grow the owner's Alumni outreach list: VIT graduates who can refer or advise on internships. " +
-	"Who to add, in this priority order: (1) VIT alumni who were in ACM (VIT's ACM chapter), then other tech clubs such as ISTE, MFC, TAM; (2) any other VIT alumni; both only if they graduated within the last 4 years (batches 2022 to 2026). " +
-	"They must work at a company that pays interns about ₹40,000 a month or more AND where converting interns to full-time pays about ₹15 LPA or more. In the \"Why this company\" column give the evidence in a few words (e.g. \"intern ₹1.2L/mo, PPO ~₹40 LPA, Levels.fyi\"). Skip companies you cannot back with evidence. " +
-	"Find people from public pages only: LinkedIn search results, the club's pages, GitHub, company teams pages, alumni posts. Open a profile to confirm it before listing it. NEVER invent a person, a batch, a club or a link: a shorter verified list beats a long guessed one. " +
-	"Do not message anyone. Limits: about 30 tool calls and under 8 minutes; add up to 40 new people this run (the list grows every day, aiming for 100 to 200). " +
-	"Put ONLY the new people in the \"## Tracker\" table (Griffin merges them into the list and drops duplicates), with exactly the columns Name, Batch, Company, Role, Club, LinkedIn, Why this company, Status, Added. Status is \"not contacted\", Added is today's date. " +
-	"Copy the Club column exactly as the profile shows it (\"ACM VIT\", \"ISTE\", ...), or leave it empty: Griffin mentions ACM in a message only to ACM people. " +
-	"After the table, write one line: how many people were added and which clubs you reached. Griffin writes the messages itself from the owner's short template.\n\n" +
-	"The message each person will get (ACM line only for ACM VIT people):\n" + AlumniMessageFor("{FirstName}", "{Company}", true)
+// AlumniGoal is what the daily Alumni routine (the alumni info collector) is asked to do. It reads only public pages
+// that are not LinkedIn, and every person carries a page and the exact words on it, which Griffin checks in code
+// (AlumniEvidenceCheck) before anything about the person counts as verified.
+var AlumniGoal = "Collect information about VIT Vellore alumni for the owner's Alumni list: people who graduated at least 4 years ago (on or before November 2022, so batch 2022 or earlier) and now work in software, AI/ML or startup operations. " +
+	"Priority: (1) alumni who were in ACM VIT (VIT's ACM student chapter); (2) alumni from other VIT tech clubs such as ISTE, MFC, TAM; (3) other VIT Vellore alumni. Prefer startups and companies that pay interns about ₹40,000 a month or more; put the pay evidence in \"Why this company\" in a few words, or leave it empty when you have none. " +
+	"WHERE TO LOOK, public pages only: the ACM VIT website and its GitHub organisation (github.com/ACM-VIT: members, contributors, past team pages), other VIT club sites and GitHub organisations, people's own GitHub profiles and personal websites, company team and blog pages, conference and hackathon pages, and VIT news or alumni pages. " +
+	"NEVER use LinkedIn: do not search it, open it or read its results. Put a LinkedIn link in the LinkedIn column only when it is printed on one of those other pages (a GitHub profile or personal site often lists it); a person with no such link cannot be added. " +
+	"For every person fill Evidence with the URL of the page that shows they are a VIT Vellore alum (and their batch, and ACM VIT if you list the club), and Quote with the exact words copied from that page, 20 to 200 characters, for example \"B.Tech CSE, VIT Vellore (2019-2023), ACM VIT core team\". " +
+	"Griffin opens the page and checks the quote is really there; a made-up or reworded quote is thrown away. Never invent a person, a batch, a club, a link or a quote: a shorter true list beats a long guessed one. " +
+	"Do not message anyone. Limits: about 30 tool calls and under 8 minutes; add up to 25 new people this run. " +
+	"Put ONLY the new people in the \"## Tracker\" table (Griffin merges them into the list and drops duplicates), with exactly the columns Name, Batch, Company, Role, Club, LinkedIn, Why this company, Status, Added, Evidence, Quote. Status is \"not contacted\", Added is today's date. " +
+	"Copy the Club column exactly as the page shows it (\"ACM VIT\", \"ISTE\", ...), or leave it empty. After the table, write one line: how many people were added and which sources you used."
 
 func alumniPrompt(current string, today time.Time) string {
 	var b strings.Builder
@@ -567,11 +569,12 @@ func alumniKeys(text string) []string {
 }
 
 // MergeAlumni adds the people in added to the Alumni table in existing, skipping anyone already listed (same
-// LinkedIn profile, or same name and company) and anyone listed twice in added. It returns the whole table and how
-// many people were really new.
+// LinkedIn profile, or same name and company) and anyone listed twice in added. Columns are matched by name, so a
+// list made before a column existed gains it (empty for its old rows). It returns the whole table and how many
+// people were really new.
 func MergeAlumni(existing, added string) (table string, n int) {
-	var header, sep string
-	var rows []string
+	var cols []string
+	var rows [][2][]string // the row's own header and cells
 	seen := map[string]bool{}
 	take := func(text string, count bool) {
 		tbl, ok := tableIn(text)
@@ -582,10 +585,13 @@ func MergeAlumni(existing, added string) (table string, n int) {
 		if len(lines) < 3 {
 			return
 		}
-		name, company, link := alumniCols(lines[0])
-		if header == "" {
-			header, sep = lines[0], lines[1]
+		head := splitRow(lines[0])
+		for _, h := range head {
+			if !containsFold(cols, h) {
+				cols = append(cols, h)
+			}
 		}
+		name, company, link := alumniCols(lines[0])
 		for _, l := range lines[2:] {
 			c := splitRow(l)
 			if name < 0 || name >= len(c) || c[name] == "" {
@@ -596,7 +602,7 @@ func MergeAlumni(existing, added string) (table string, n int) {
 				continue
 			}
 			seen[k] = true
-			rows = append(rows, strings.TrimSpace(l))
+			rows = append(rows, [2][]string{head, c})
 			if count {
 				n++
 			}
@@ -604,10 +610,33 @@ func MergeAlumni(existing, added string) (table string, n int) {
 	}
 	take(existing, false)
 	take(added, true)
-	if header == "" {
+	if len(cols) == 0 {
 		return existing, 0
 	}
-	return header + "\n" + sep + "\n" + strings.Join(rows, "\n"), n
+	out := []string{"| " + strings.Join(cols, " | ") + " |", "|" + strings.Repeat("---|", len(cols))}
+	for _, r := range rows {
+		cells := make([]string, len(cols))
+		for i, h := range r[0] {
+			if i < len(r[1]) {
+				for j, c := range cols {
+					if strings.EqualFold(c, h) {
+						cells[j] = r[1][i]
+					}
+				}
+			}
+		}
+		out = append(out, "| "+strings.Join(cells, " | ")+" |")
+	}
+	return strings.Join(out, "\n"), n
+}
+
+func containsFold(list []string, s string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // InternshipSources tells a task where to look for internships: InternDock first, because every role there is a real,

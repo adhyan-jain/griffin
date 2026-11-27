@@ -266,7 +266,7 @@ func AlumniRows(hits []PersonHit, today time.Time, max int) (table string, st Al
 		} else {
 			seen[key] = true
 		}
-		rows = append(rows, "| "+strings.Join([]string{cell(p.Name), p.Batch, cell(p.Company), cell(p.Role), p.Club, p.LinkedIn, "", "not contacted", today.Format("2006-01-02")}, " | ")+" |")
+		rows = append(rows, "| "+strings.Join([]string{cell(p.Name), p.Batch, cell(p.Company), cell(p.Role), p.Club, p.LinkedIn, "", "not contacted", today.Format("2006-01-02"), "", ""}, " | ")+" |")
 		st.Kept++
 	}
 	if len(rows) == 0 {

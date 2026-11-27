@@ -268,14 +268,34 @@ func TestInternshipsListRulesCheckThePostingAndTheRole(t *testing.T) {
 	}
 }
 
-func TestAlumniMessageUsesTheOwnersRealFacts(t *testing.T) {
-	for _, want := range []string{"{FirstName}", "{Company}", "SDE or AI/ML", "ACM VIT", "ComputeHive", "Palni"} {
+func TestTheAlumniCollectorReadsNoLinkedInAndQuotesItsEvidence(t *testing.T) {
+	for _, want := range []string{"NEVER use LinkedIn", "github.com/ACM-VIT", "Evidence", "Quote", "exact words", "Never invent"} {
 		if !strings.Contains(AlumniGoal, want) {
-			t.Errorf("message missing %q", want)
+			t.Errorf("collector goal missing %q", want)
 		}
 	}
-	if !strings.Contains(AlumniGoal, "ACM in a message only to ACM people") {
-		t.Error("the goal must say ACM is named only to ACM people")
+	for _, bad := range []string{"LinkedIn search results", "referral"} {
+		if strings.Contains(AlumniGoal, bad) {
+			t.Errorf("collector goal must not contain %q", bad)
+		}
+	}
+	if !strings.Contains(AlumniHeader, "| Evidence | Quote |") {
+		t.Error("the list carries the evidence columns")
+	}
+}
+
+func TestMergeAlumniAddsNewColumnsToAnOldList(t *testing.T) {
+	old := "| Name | Batch | Company | Role | Club | LinkedIn | Why this company | Status | Added |\n|---|---|---|---|---|---|---|---|---|\n" +
+		"| Old Person | 2022 | Acme | SDE | ACM VIT | https://www.linkedin.com/in/old-person | why | sent 2026-11-20 | 2026-11-19 |"
+	added := AlumniHeader + "\n| New Person | 2023 | Beta | SDE |  | https://www.linkedin.com/in/new-person |  | not contacted | 2026-11-27 | https://example.org/team | B.Tech CSE, VIT Vellore (2019-2023) |\n" +
+		"| Old Person | 2022 | Acme | SDE | ACM VIT | https://linkedin.com/in/old-person/ |  | not contacted | 2026-11-27 |  |  |"
+	table, n := MergeAlumni(old, added)
+	if n != 1 {
+		t.Fatalf("one new person, got %d:\n%s", n, table)
+	}
+	rows := AlumniImportRows(table)
+	if len(rows) != 2 || rows[0].ContactState != ContactSentManually || rows[1].EvidenceURL != "https://example.org/team" || rows[1].Quote != "B.Tech CSE, VIT Vellore (2019-2023)" {
+		t.Fatalf("columns must be matched by name:\n%s\n%+v", table, rows)
 	}
 }
 

@@ -100,7 +100,7 @@ func TestAlumniRowsMatchTheListShapeAndDedupe(t *testing.T) {
 	if len(lines) != 4 || lines[0]+"\n"+lines[1] != AlumniHeader {
 		t.Fatalf("table:\n%s", table)
 	}
-	want := "| Riya Sen | 2022 | Razorpay | SDE-2 | ACM VIT | https://www.linkedin.com/in/riya-sen-1a2b3c/ |  | not contacted | 2026-11-22 |"
+	want := "| Riya Sen | 2022 | Razorpay | SDE-2 | ACM VIT | https://www.linkedin.com/in/riya-sen-1a2b3c/ |  | not contacted | 2026-11-22 |  |  |"
 	if lines[2] != want {
 		t.Fatalf("row:\n%s\nwant:\n%s", lines[2], want)
 	}

@@ -49,6 +49,8 @@ type PersonVerification struct {
 	Graduation   *GraduationClaim   `json:"graduation"`
 	ACM          *ACMClaim          `json:"acm"`
 	ContactRoute *ContactRouteClaim `json:"contact_route"`
+	// VerifiedBy is who checked the evidence: "owner" when empty (the API), or Griffin's quote check.
+	VerifiedBy string `json:"-"`
 }
 
 // VerifiedFields is a validated verification, ready to store. A nil pointer means "leave the column as it is".
@@ -100,8 +102,12 @@ func (v PersonVerification) Resolve(now time.Time) (*VerifiedFields, error) {
 		return nil, fmt.Errorf("%w: give campus, graduation, acm or contact_route", ErrValidation)
 	}
 	out := &VerifiedFields{Provenance: map[string]any{}}
+	verifiedBy := v.VerifiedBy
+	if verifiedBy == "" {
+		verifiedBy = "owner"
+	}
 	stamp := func(src, excerpt string) map[string]any {
-		m := map[string]any{"source_url": strings.TrimSpace(src), "source_kind": SourceKindOf(src), "verified_by": "owner", "verified_at": now.UTC().Format(time.RFC3339)}
+		m := map[string]any{"source_url": strings.TrimSpace(src), "source_kind": SourceKindOf(src), "verified_by": verifiedBy, "verified_at": now.UTC().Format(time.RFC3339)}
 		if excerpt != "" {
 			m["excerpt"] = strings.TrimSpace(excerpt)
 		}

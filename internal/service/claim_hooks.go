@@ -79,6 +79,9 @@ func (w *TrackerLists) RunInCode(ctx context.Context, task *domain.Task,
 	if answer, ok := w.AlumniDMBatch(ctx, task); ok {
 		return answer, Answered
 	}
+	if answer, ok := w.AlumniEvidenceCheck(ctx, task); ok {
+		return answer, Answered
+	}
 	if answer, ok := w.ResearchRun(ctx, task, create); ok {
 		return answer, Answered
 	}
@@ -140,6 +143,29 @@ func HandOverOutreach(task *domain.Task) (string, bool) {
 		goal = domain.ManualSendMarker + " Send it yourself if you still want to. What this task held:\n" + goal
 	}
 	return "DM: by hand\nPROOF: nothing was sent by Griffin.\n\n" + goal, true
+}
+
+// AlumniEvidenceCheck runs the evidence check routine in code: it imports the Alumni list into person records, then
+// checks each new Evidence page and Quote (AlumniPeople.CheckEvidence). Rows it has no time for wait for the next run.
+func (w *TrackerLists) AlumniEvidenceCheck(ctx context.Context, task *domain.Task) (string, bool) {
+	if w == nil || task == nil || !domain.IsAlumniEvidenceCheck(task.Title) {
+		return "", false
+	}
+	if w.Alumni == nil || w.Alumni.Evidence == nil || w.Alumni.Fetch == nil {
+		return "The evidence check is not set up on this server, so nothing was checked.", true
+	}
+	if _, err := w.Alumni.Import(ctx, task.UserID); err != nil && w.Logger != nil {
+		w.Logger.Warn("Alumni import before the evidence check failed", "error", err)
+	}
+	res, err := w.Alumni.CheckEvidence(ctx, task.UserID, 12)
+	if err != nil {
+		return "", false // retried by the normal path
+	}
+	if res.Checked == 0 && res.Left == 0 {
+		return "No new evidence on the Alumni list to check.", true
+	}
+	return fmt.Sprintf("Checked %d evidence pages: %d verified, %d quotes not on the page (ignored), %d pages could not be opened (tried again next run). %d left for the next run.",
+		res.Checked, res.Verified, res.NotOnPage, res.Failed, res.Left), true
 }
 
 var linkedInProfileRe = regexp.MustCompile(`https?://[^\s"'<>]*linkedin\.com/in/[^\s"'<>)]+`)
