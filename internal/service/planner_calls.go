@@ -39,6 +39,9 @@ const (
 
 // wantsCall is true when the user asks to place a voice/cellular phone call or WhatsApp call to someone.
 func wantsCall(text string) bool {
+	if _, ok := domain.ParseReminder(text); ok {
+		return false // "remind me to call mom" is a reminder, not a call
+	}
 	lower := strings.ToLower(text)
 	if nonCallRe.MatchString(lower) {
 		return false

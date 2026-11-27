@@ -38,6 +38,10 @@ func (n *TaskNotifier) TaskFinished(ctx context.Context, t *domain.Task) {
 	if n == nil || n.Sender == nil || t == nil {
 		return
 	}
+	// A reminder was itself the push: no "done" notification after it.
+	if domain.IsReminder(t.Title) && t.Status == domain.TaskStatusCompleted {
+		return
+	}
 	// A cancelled task is the owner's own decision or Griffin dropping dead work: not news.
 	if t.Status == domain.TaskStatusCancelled {
 		return

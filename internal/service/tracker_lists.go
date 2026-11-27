@@ -64,6 +64,8 @@ type TrackerLists struct {
 	// Alumni imports the Alumni list into person records and says who must never be proposed; nil leaves the
 	// ALUMNI DM BATCH as it was, without the do-not-contact check.
 	Alumni *AlumniPeople
+	// Reminders delivers a reminder task when a worker claims it before the phone poll did; nil leaves them to the poll.
+	Reminders *Reminders
 }
 
 const trackerReadLimit = 200 << 10

@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNtfyPublishesAJSONMessageWithTapAndListenAction(t *testing.T) {
@@ -71,5 +73,29 @@ func TestNtfyLimitsLengthRefusesWithoutATopicAndNeverLeaksSecrets(t *testing.T) 
 	defer bad.Close()
 	if err := (&Ntfy{Server: bad.URL, Topic: "t"}).Send(context.Background(), Message{Body: "x"}); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Errorf("a refusal must be an error: %v", err)
+	}
+}
+
+func TestNtfyDelaysAFutureMessageButNotANearOne(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = nil
+		_ = json.Unmarshal(b, &got)
+	}))
+	defer srv.Close()
+	n := &Ntfy{Server: srv.URL, Topic: "t"}
+	at := time.Now().Add(2 * time.Hour)
+	if err := n.Send(context.Background(), Message{Title: "Reminder", Body: "b", At: at}); err != nil {
+		t.Fatal(err)
+	}
+	if got["delay"] != strconv.FormatInt(at.Unix(), 10) {
+		t.Errorf("a future message carries its delivery time: %v", got)
+	}
+	if err := n.Send(context.Background(), Message{Title: "Reminder", Body: "b", At: time.Now().Add(5 * time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := got["delay"]; has {
+		t.Errorf("a message due now is not delayed: %v", got)
 	}
 }

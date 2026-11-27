@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { api, clearAuthToken, getCurrentUser, type RunnerStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -294,6 +295,14 @@ export default function SettingsPage() {
             </Button>
           )}
         </Section>
+
+        <Link
+          href="/permissions"
+          className="flex min-h-12 items-center justify-between rounded-xl border bg-card px-4 text-sm font-medium transition-colors hover:bg-muted"
+        >
+          Folder permissions
+          <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+        </Link>
 
         <Section title="System">
           <Row label="API" value={api_} />

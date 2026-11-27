@@ -12,8 +12,8 @@ import (
 type DesktopSender struct{}
 
 func (d *DesktopSender) Send(ctx context.Context, m Message) error {
-	if testing.Testing() {
-		return nil
+	if testing.Testing() || m.delayed() {
+		return nil // a message meant for later is shown by the phone push, not now
 	}
 	urgency := "normal"
 	if m.Priority >= 4 {

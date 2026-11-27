@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/griffin/core/internal/domain"
+	"github.com/griffin/core/internal/notify"
 	"github.com/griffin/core/internal/repository"
 	"github.com/griffin/core/internal/service"
 )
@@ -99,4 +101,37 @@ func TestChat_SelfCommandFailureChangesNothingAndSaysSo(t *testing.T) {
 	assert.Empty(t, ap.decided)
 	assert.Empty(t, store.tasks)
 	assert.Equal(t, 0, wake.calls)
+}
+
+type chatRemSender struct{ msgs []notify.Message }
+
+func (s *chatRemSender) Send(_ context.Context, m notify.Message) error {
+	s.msgs = append(s.msgs, m)
+	return nil
+}
+
+func TestJJChat_ReminderIsCreatedInlineAtTheOwnersMorning(t *testing.T) {
+	h, store, obj := newChat(nil, false)
+	snd := &chatRemSender{}
+	now := time.Date(2026, 11, 28, 1, 19, 0, 0, domain.ISTZone)
+	h.now = func() time.Time { return now }
+	h.WithReminders(&service.Reminders{Tasks: store, Sender: snd, Now: func() time.Time { return now }})
+	user := uuid.New()
+	code, env := sendChat(t, h, user, `{"message":"Give me a notification to remind me that I need to talk to Ankit mama tomorrow at 12 in the noon"}`, nil)
+	require.Equal(t, 200, code)
+	require.Len(t, store.tasks, 1)
+	want := time.Date(2026, 11, 28, 12, 0, 0, 0, domain.ISTZone)
+	assert.True(t, store.tasks[0].ScheduledFor.Equal(want))
+	assert.Equal(t, "REMINDER - talk to Ankit mama", store.tasks[0].Title)
+	assert.Equal(t, 0, obj.calls)
+	assert.Len(t, snd.msgs, 1)
+	assert.Contains(t, env.Data.Response, "Done. I'll remind you to talk to Ankit mama today at 12:00 pm.")
+}
+
+func TestJJChat_ReminderWithoutATimeAsks(t *testing.T) {
+	h, store, _ := newChat(nil, false)
+	h.WithReminders(&service.Reminders{Tasks: store})
+	_, env := sendChat(t, h, uuid.New(), `{"message":"remind me to call mom tomorrow"}`, nil)
+	assert.Empty(t, store.tasks)
+	assert.Contains(t, env.Data.Response, "When should I remind you to call mom?")
 }

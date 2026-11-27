@@ -29,6 +29,7 @@ type Notification struct {
 const (
 	NotificationKindTask     = "task"
 	NotificationKindApproval = "approval"
+	NotificationKindReminder = "reminder"
 )
 
 // Notification priorities.
@@ -46,6 +47,9 @@ func TaskNotificationKey(taskID uuid.UUID, status TaskStatus) string {
 func ApprovalNotificationKey(approvalID uuid.UUID) string {
 	return "approval:" + approvalID.String() + ":PENDING"
 }
+
+// ReminderNotificationKey names the event "this reminder is due".
+func ReminderNotificationKey(taskID uuid.UUID) string { return "reminder:" + taskID.String() }
 
 // TaskActionURL is the page a task's notification opens: its tracker when it is a tracker task, otherwise its
 // own task page.

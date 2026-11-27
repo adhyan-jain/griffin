@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -17,6 +18,18 @@ import (
 // last seq it showed) and asks only for what came after it, so nothing is shown twice.
 type NotificationsHandler struct {
 	repo repository.NotificationRepository
+	// reminders, when set, delivers this owner's due reminders into the outbox before every list.
+	reminders interface {
+		DeliverDue(ctx context.Context, userID uuid.UUID)
+	}
+}
+
+// WithReminders makes every list first deliver the owner's due reminders, so they arrive on time with no worker.
+func (h *NotificationsHandler) WithReminders(r interface {
+	DeliverDue(ctx context.Context, userID uuid.UUID)
+}) *NotificationsHandler {
+	h.reminders = r
+	return h
 }
 
 // NewNotificationsHandler builds a NotificationsHandler.
@@ -32,6 +45,9 @@ func (h *NotificationsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httputil.ErrorJSON(w, err)
 		return
+	}
+	if h.reminders != nil {
+		h.reminders.DeliverDue(r.Context(), userID)
 	}
 	q := r.URL.Query()
 	if q.Get("after") == "latest" {

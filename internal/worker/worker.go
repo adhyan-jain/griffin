@@ -66,6 +66,7 @@ type Worker struct {
 	assess            *service.OpportunityAssess
 	researchRunner    service.ResearchRunner
 	alumni            *service.AlumniPeople
+	reminders         *service.Reminders
 	prep              *service.ApplicationPrep
 	githubLogin       string
 	communityReplies  service.OutreachChatter
@@ -104,6 +105,8 @@ type Config struct {
 	ResearchRunner service.ResearchRunner
 	// Alumni, if set, imports the Alumni list into person records and keeps do-not-contact people out of the DM batch.
 	Alumni *service.AlumniPeople
+	// Reminders delivers a reminder task a worker claims before the phone poll did; nil leaves it to the poll.
+	Reminders *service.Reminders
 	// Prep, if set, lets the APPLICATION PREP routine run here in code.
 	Prep *service.ApplicationPrep
 	// GitHubLogin is the owner's GitHub username, for the repo hygiene routine.
@@ -150,6 +153,7 @@ func NewWorker(cfg Config) *Worker {
 		assess:            cfg.Assess,
 		researchRunner:    cfg.ResearchRunner,
 		alumni:            cfg.Alumni,
+		reminders:         cfg.Reminders,
 		prep:              cfg.Prep,
 		githubLogin:       cfg.GitHubLogin,
 		communityReplies:  cfg.CommunityReplies,

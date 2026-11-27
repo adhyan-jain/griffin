@@ -34,6 +34,9 @@ func (w *TrackerLists) RunInCode(ctx context.Context, task *domain.Task,
 	if w == nil || task == nil {
 		return "", NotInCode
 	}
+	if answer, ok := w.Remind(ctx, task); ok {
+		return answer, Answered
+	}
 	if cancel != nil && w.SkipClosedListing(ctx, task, cancel) {
 		return "", Dropped
 	}

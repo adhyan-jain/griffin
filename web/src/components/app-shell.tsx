@@ -8,27 +8,20 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
   Briefcase,
-  Building2,
-  Compass,
   FolderOpen,
   GraduationCap,
   LockKeyhole,
   LayoutDashboard,
   Laptop,
-  Lock,
   ListChecks,
   LogOut,
   MessageSquare,
   Moon,
   MoreHorizontal,
-  Notebook,
-  Rocket,
-  Send,
   Settings,
   ShieldCheck,
   Sun,
   Table2,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import { api, clearAuthToken, getCurrentUser, resolveAuthToken, type RunnerStatus, type UserProfile } from "@/lib/api";
@@ -45,24 +38,17 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
 const PRIMARY: NavItem[] = [
-  { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/chat", label: "Ask JJ", icon: MessageSquare },
-  { href: "/research", label: "Research", icon: Compass },
   { href: "/tasks", label: "Tasks", icon: ListChecks },
+  { href: "/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/trackers", label: "Trackers", icon: Table2 },
   { href: "/internships", label: "Internships", icon: Briefcase },
-  { href: "/approvals", label: "Approvals", icon: ShieldCheck },
 ];
 const SECONDARY: NavItem[] = [
-  { href: "/welcome", label: "Get started", icon: Rocket },
-  { href: "/companies", label: "Companies", icon: Building2 },
+  { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/alumni", label: "Alumni", icon: GraduationCap },
-  { href: "/outreach", label: "Outreach", icon: Send },
-  { href: "/lists", label: "Lists", icon: Notebook },
   { href: "/vault", label: "Library", icon: FolderOpen },
   { href: "/devices", label: "Devices", icon: Laptop },
-  { href: "/permissions", label: "Permissions", icon: Lock },
-  { href: "/workforce", label: "Workforce", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -283,7 +269,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
       </div>
 
-      {/* Mobile bottom tabs: four primary destinations + More */}
+      {/* Mobile bottom tabs: five primary destinations + More */}
       <nav
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t bg-background/92 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isFollowUp } from "@/lib/threads";
 import { usePolling } from "@/lib/use-polling";
 import { useRouter } from "next/navigation";
-import { Archive, ListChecks, Play, Plus, Search, Sparkles, Square, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { Archive, BellRing, ChevronDown, ListChecks, Play, Plus, Search, Sparkles, Square, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Task } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ResponsiveDialog } from "@/components/responsive-dialog";
 import { useFxActivity } from "@/lib/fx";
 import { PERIODS, canCancel, canDelete, canResume, inPeriod, runAgain, runBulk, type Period } from "@/lib/task-actions";
-import { ACTIVE_STATUSES, WAITING_STATUSES, isDone } from "@/components/StatusBadge";
+import { ACTIVE_STATUSES, WAITING_STATUSES, StatusBadge, isDone } from "@/components/StatusBadge";
+import { taskKind } from "@/lib/task-kinds";
 import { EmptyState, ErrorNote, PageContainer, PageHeader } from "@/components/page";
 import { NewTaskDialog } from "@/components/new-task-dialog";
 import { TaskRow } from "@/components/task-row";
@@ -30,6 +32,14 @@ const FILTERS = [
 type Filter = (typeof FILTERS)[number]["value"];
 
 
+
+const when = (iso: string) => {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
+  return `${day}, ${time}`;
+};
+const newest = (a: Task, b: Task) => Date.parse(b.created_at) - Date.parse(a.created_at);
 
 const matches = (t: Task, f: Filter) =>
   f === "all" ||
@@ -52,6 +62,8 @@ export default function TasksPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<Task[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showSystem, setShowSystem] = useState(false);
+  const [routinesOpen, setRoutinesOpen] = useState(false);
 
 
   const { refresh } = usePolling(
@@ -78,20 +90,44 @@ export default function TasksPage() {
 
   const showingArchive = filter === "archived";
   const loaded = showingArchive ? archivedTasks : tasks;
-  const { rows, subtaskCount } = useMemo(() => {
+  const { rows, subtaskCount, systemCount } = useMemo(() => {
     const all = (showingArchive ? archivedTasks : tasks) ?? [];
     const counts = new Map<string, number>();
     all.forEach((t) => t.parent_id && counts.set(t.parent_id, (counts.get(t.parent_id) ?? 0) + 1));
     const q = query.trim().toLowerCase();
-    const rows = all
-      .filter((t) => !t.parent_id)
-      .filter((t) => !isFollowUp(t)) // continued tasks live inside the thread of the task they continue
+    const roots = all.filter((t) => !t.parent_id).filter((t) => !isFollowUp(t)); // continued tasks live inside their thread
+    const systemCount = roots.filter((t) => taskKind(t) === "system").length;
+    const rows = roots
+      .filter((t) => {
+        const k = taskKind(t);
+        return k === "request" || (showSystem && k === "system");
+      })
+      .sort(newest)
       .filter((t) => matches(t, filter))
       .filter((t) => filter !== "done" || inPeriod(t, period))
       .filter((t) => !q || `${t.title} ${t.goal} ${t.manager_domain} ${t.id}`.toLowerCase().includes(q));
-    return { rows, subtaskCount: counts };
-  }, [tasks, archivedTasks, showingArchive, filter, query, period]);
+    return { rows, subtaskCount: counts, systemCount };
+  }, [tasks, archivedTasks, showingArchive, filter, query, period, showSystem]);
 
+  const reminders = useMemo(
+    () =>
+      (tasks ?? [])
+        .filter((t) => taskKind(t) === "reminder" && !isDone(t.status) && t.scheduled_for)
+        .sort((a, b) => Date.parse(a.scheduled_for!) - Date.parse(b.scheduled_for!)),
+    [tasks],
+  );
+  // One row per routine: its latest run, plus the next queued run's time.
+  const routines = useMemo(() => {
+    const byTitle = new Map<string, { last: Task; next: string | null }>();
+    for (const t of (tasks ?? []).filter((x) => !x.parent_id && taskKind(x) === "routine").sort(newest)) {
+      const g = byTitle.get(t.title) ?? { last: t, next: null };
+      if (!g.next && t.scheduled_for && !isDone(t.status) && Date.parse(t.scheduled_for) > Date.now()) g.next = t.scheduled_for;
+      byTitle.set(t.title, g);
+    }
+    return [...byTitle.values()];
+  }, [tasks]);
+
+  const hasAny = (loaded ?? []).some((t) => taskKind(t) === "request");
   const chosen = rows.filter((t) => selected.has(t.id));
   const exitSelect = () => {
     setSelecting(false);
@@ -273,6 +309,23 @@ export default function TasksPage() {
 
         {error && <ErrorNote message={error} />}
 
+        {!showingArchive && reminders.length > 0 && (
+          <section aria-label="Upcoming reminders" className="rounded-xl border bg-card p-3">
+            <h2 className="mb-1.5 flex items-center gap-2 text-sm font-semibold">
+              <BellRing className="size-4 text-muted-foreground" aria-hidden /> Upcoming reminders
+            </h2>
+            <ul className="space-y-1 text-sm">
+              {reminders.map((t) => (
+                <li key={t.id}>
+                  <Link href={`/tasks/${t.id}`} className="block rounded py-1 hover:underline">
+                    {t.title.replace(/^REMINDER - /i, "")} <span className="text-muted-foreground">— {when(t.scheduled_for!)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {loaded === null ? (
           <div className="space-y-2">
             {[0, 1, 2, 3].map((i) => (
@@ -282,20 +335,20 @@ export default function TasksPage() {
         ) : rows.length === 0 ? (
           <EmptyState
             icon={showingArchive ? <Archive /> : <ListChecks />}
-            title={showingArchive && !loaded.length ? "Nothing archived" : loaded.length ? "Nothing matches" : "No tasks yet"}
+            title={showingArchive && !hasAny ? "Nothing archived" : hasAny ? "Nothing matches" : "No tasks yet"}
             description={
-              showingArchive && !loaded.length
+              showingArchive && !hasAny
                 ? "Finished tasks you archive, and old minor ones, are kept here until you delete them."
-                : loaded.length
+                : hasAny
                 ? filter === "done" && period !== "all"
                   ? "Nothing finished in that window. Try a longer one."
                   : "Try another filter or search."
-                : "Create a task and it will show up here."
+                : "Nothing yet. Ask JJ for something."
             }
             action={
-              !showingArchive && !loaded.length && (
-                <Button onClick={() => setNewOpen(true)}>
-                  <Plus /> New task
+              !showingArchive && !hasAny && (
+                <Button asChild>
+                  <Link href="/chat">Ask JJ</Link>
                 </Button>
               )
             }
@@ -315,6 +368,39 @@ export default function TasksPage() {
               />
             ))}
           </div>
+        )}
+
+        {!showingArchive && routines.length > 0 && (
+          <section aria-label="Routines">
+            <button
+              type="button"
+              className="flex min-h-11 w-full items-center justify-between rounded-lg px-1 text-sm font-medium text-muted-foreground"
+              aria-expanded={routinesOpen}
+              onClick={() => setRoutinesOpen((o) => !o)}
+            >
+              Routines ({routines.length})
+              <ChevronDown className={routinesOpen ? "size-4 rotate-180" : "size-4"} aria-hidden />
+            </button>
+            {routinesOpen && (
+              <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+                {routines.map(({ last, next }) => (
+                  <li key={last.id}>
+                    <Link href={`/tasks/${last.id}`} className="flex min-h-12 items-center gap-3 px-3 py-2 text-sm hover:bg-muted/50">
+                      <span className="min-w-0 flex-1 truncate">{last.title}</span>
+                      <StatusBadge status={last.status} />
+                      <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{next ? `Next ${when(next)}` : "Not scheduled"}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {!showingArchive && systemCount > 0 && (
+          <Button variant="ghost" className="h-10 text-xs text-muted-foreground" onClick={() => setShowSystem((v) => !v)}>
+            {showSystem ? "Hide" : "Show"} system tasks ({systemCount})
+          </Button>
         )}
       </div>
 

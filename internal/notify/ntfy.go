@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,7 +28,13 @@ type Message struct {
 	// Priority is ntfy's 1 (min) to 5 (max); 0 means default.
 	Priority int
 	Tags     []string
+	// At, when more than a few seconds ahead, asks ntfy to hold the message and deliver it then (ntfy allows up to
+	// 3 days). Zero means now.
+	At time.Time
 }
+
+// delayed reports whether the message is meant for later.
+func (m Message) delayed() bool { return m.At.After(time.Now().Add(30 * time.Second)) }
 
 // Sender delivers notifications. Implementations must be safe to call from several goroutines.
 type Sender interface {
@@ -66,6 +73,9 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	}
 	if len(m.Tags) > 0 {
 		body["tags"] = m.Tags
+	}
+	if m.delayed() {
+		body["delay"] = strconv.FormatInt(m.At.Unix(), 10)
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {

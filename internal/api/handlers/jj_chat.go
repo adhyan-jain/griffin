@@ -64,11 +64,21 @@ type JJChatHandler struct {
 	self        *service.SelfCommands
 	brain       VoiceBrain
 	classifier  *service.SmartClassifier
+	// reminders makes "remind me to ..." into a timed push; nil leaves reminders to the normal path.
+	reminders *service.Reminders
+	// now is the clock; nil means time.Now.
+	now func() time.Time
 }
 
 // WithCommands lets chat handle task listings, approvals, and steering directly.
 func (h *JJChatHandler) WithCommands(c *service.VoiceCommands) *JJChatHandler {
 	h.commands = c
+	return h
+}
+
+// WithReminders lets chat set a reminder from "remind me to ... tomorrow at 12" without a model.
+func (h *JJChatHandler) WithReminders(r *service.Reminders) *JJChatHandler {
+	h.reminders = r
 	return h
 }
 
@@ -247,6 +257,9 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	if h.self != nil && !req.NewTask && h.runSelfCommand(w, r, userID, conversationID, message, managerName) {
 		return
 	}
+	if h.reminders != nil && !req.NewTask && h.runReminder(w, r, userID, conversationID, message, managerName) {
+		return
+	}
 	// "Go ahead" after a discussion submits what the owner said in it as one objective.
 	if h.objectives != nil && !req.NewTask && service.GoAhead(message) {
 		roles, texts := make([]string, len(history)), make([]string, len(history))
@@ -370,6 +383,38 @@ func (h *JJChatHandler) runSelfCommand(w http.ResponseWriter, r *http.Request, u
 		"kind":            string(service.MessageKindConversation),
 		"conversation_id": conversationID.String(),
 		"response":        res.Reply,
+	})
+	return true
+}
+
+// runReminder handles "remind me to ..." in code: it resolves the time, makes the reminder and answers inline. When
+// the message names no time it asks for one; the owner then sends the whole request again with a time.
+func (h *JJChatHandler) runReminder(w http.ResponseWriter, r *http.Request, userID, conversationID uuid.UUID, message, managerName string) bool {
+	text := message
+	if stripped := service.StripLeadingName(message, managerName); stripped != "" {
+		text = stripped
+	}
+	what, ok := domain.ParseReminder(text)
+	if !ok {
+		return false
+	}
+	now := time.Now()
+	if h.now != nil {
+		now = h.now()
+	}
+	reply := "When should I remind you to " + what + "? Send it again with a time, for example: tomorrow at 12 pm."
+	if at, ok := domain.ResolveWhen(now, text); ok {
+		if _, err := h.reminders.Create(r.Context(), userID, what, at); err != nil && !errors.Is(err, domain.ErrIdempotentConflict) {
+			slog.Error("jj chat: could not create the reminder", "user_id", userID, "error", err)
+			reply = "I could not set that reminder just now, so nothing was saved. Try again in a moment."
+		} else {
+			reply = "Done. I'll remind you to " + what + " " + domain.DescribeWhen(now, at) + "."
+		}
+	}
+	httputil.JSON(w, http.StatusOK, map[string]any{
+		"kind":            string(service.MessageKindConversation),
+		"conversation_id": conversationID.String(),
+		"response":        reply,
 	})
 	return true
 }

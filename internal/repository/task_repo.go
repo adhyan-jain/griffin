@@ -1083,3 +1083,50 @@ func (r *PostgresTaskRepository) DeferToHost(ctx context.Context, taskID uuid.UU
 	}
 	return nil
 }
+
+// DueReminders lists the user's reminder tasks that are waiting and whose time has come. It uses the
+// (user_id, status) index, so it is cheap when nothing is due.
+func (r *PostgresTaskRepository) DueReminders(ctx context.Context, userID uuid.UUID, now time.Time, limit int) ([]*domain.Task, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
+			manager_domain, title, goal, input_payload, output_payload,
+			status, priority, idempotency_key, leased_by, lease_expires_at,
+			retry_count, max_retries, failure_reason, scheduled_for, started_at, completed_at,
+			created_at, updated_at
+		FROM tasks
+		WHERE user_id = $1 AND status IN ('QUEUED', 'RETRYING') AND scheduled_for <= $2
+		  AND left(title, length($3::text)) = $3::text
+		ORDER BY scheduled_for ASC
+		LIMIT $4`, userID, now, domain.ReminderTitlePrefix, limit)
+	if err != nil {
+		return nil, fmt.Errorf("due reminders: %w", err)
+	}
+	defer rows.Close()
+	var out []*domain.Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// FinishReminder completes a waiting reminder task without a worker. It reports whether this call completed it,
+// so two polls finishing the same reminder at once are harmless: one wins, the other sees false.
+func (r *PostgresTaskRepository) FinishReminder(ctx context.Context, taskID uuid.UUID, output json.RawMessage) (bool, error) {
+	now := time.Now().UTC()
+	cmd, err := r.pool.Exec(ctx, `
+		UPDATE tasks
+		SET status = 'COMPLETED', output_payload = $1, completed_at = $2, started_at = COALESCE(started_at, $2), updated_at = $2
+		WHERE id = $3 AND status IN ('QUEUED', 'RETRYING')`, output, now, taskID)
+	if err != nil {
+		return false, fmt.Errorf("finish reminder: %w", err)
+	}
+	return cmd.RowsAffected() > 0, nil
+}

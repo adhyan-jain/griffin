@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 type mockSender struct {
@@ -38,4 +39,15 @@ func TestDesktopSender_Smoke(t *testing.T) {
 	ds := &DesktopSender{}
 	// Should not panic or crash even in test environment
 	_ = ds.Send(context.Background(), Message{Title: "Test", Body: "Body", Priority: 2})
+}
+
+func TestMultiSenderPassesTheDeliveryTimeThrough(t *testing.T) {
+	s := &mockSender{}
+	at := time.Now().Add(time.Hour)
+	if err := (MultiSender{s}).Send(context.Background(), Message{Title: "Reminder", At: at}); err != nil {
+		t.Fatal(err)
+	}
+	if !s.msg.At.Equal(at) || !s.msg.delayed() {
+		t.Errorf("At must reach the sender: %v", s.msg.At)
+	}
 }

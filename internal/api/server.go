@@ -63,6 +63,8 @@ type ServerDependencies struct {
 	GitHubLogin string
 	// CommunityReplies writes the reply for each new thread of the daily community scan on a host claim; nil leaves those cells empty.
 	CommunityReplies service.OutreachChatter
+	// Reminders sets reminders from chat and delivers due ones on each notification poll; nil leaves reminders off.
+	Reminders *service.Reminders
 	// NotificationRepo is the notification outbox devices read from; nil leaves the routes off.
 	NotificationRepo repository.NotificationRepository
 	// ReportRepo enables the scorecard and per-task audit trail; nil leaves those routes off.
@@ -325,6 +327,9 @@ func NewServer(deps ServerDependencies) *Server {
 		WithProfiles(profiles).
 		WithThreads(deps.Engine).
 		WithBrain(deps.VoiceBrain)
+	if deps.Reminders != nil {
+		jjChatHandler.WithReminders(deps.Reminders)
+	}
 	if voiceCmds != nil {
 		jjChatHandler.WithCommands(voiceCmds)
 	}
@@ -433,6 +438,7 @@ func NewServer(deps ServerDependencies) *Server {
 				lists.Opportunities = &service.OpportunityScan{Store: deps.ListingRepo}
 			}
 			lists.Assess = deps.Assess
+			lists.Reminders = deps.Reminders
 			lists.Prep = deps.Prep
 			if deps.ResearchEngine != nil {
 				lists.ResearchRunner = deps.ResearchEngine
@@ -465,6 +471,9 @@ func NewServer(deps ServerDependencies) *Server {
 
 		if deps.NotificationRepo != nil {
 			notifHandler := handlers.NewNotificationsHandler(deps.NotificationRepo)
+			if deps.Reminders != nil {
+				notifHandler.WithReminders(deps.Reminders)
+			}
 			mux.Handle("GET /api/v1/notifications", userAuth(http.HandlerFunc(notifHandler.List)))
 			mux.Handle("POST /api/v1/notifications/ack", userAuth(http.HandlerFunc(notifHandler.Ack)))
 		}

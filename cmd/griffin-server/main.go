@@ -253,6 +253,11 @@ func main() {
 		},
 		Logger: logger,
 	})
+	// Reminders: the push is held by ntfy until its time; without a topic the phone's poll delivers it from the outbox.
+	reminders := &service.Reminders{Tasks: engine, Due: taskRepo, Outbox: notificationRepo, AppURL: cfg.AppURL, Logger: logger}
+	if cfg.NtfyTopic != "" {
+		reminders.Sender = &notify.Ntfy{Server: cfg.NtfyServer, Topic: cfg.NtfyTopic, Token: cfg.NtfyToken}
+	}
 	jjOrchestrator := service.NewJJOrchestrator(engine, orchRepo, taskRepo, mgrReg, agentFactory, newPlanner(cfg, logger), logger)
 
 	// 7. Initialize Wakeup Controller for scale-to-zero
@@ -399,6 +404,7 @@ func main() {
 				Assess:            assessRoutine,
 				ResearchRunner:    researchEngine,
 				Alumni:            service.NewAlumniPeople(storageService, peopleRepo),
+				Reminders:         reminders,
 				Prep:              prepRoutine,
 				GitHubLogin:       cfg.GitHubLogin,
 				CommunityReplies:  communityReplier(cfg),
@@ -557,6 +563,7 @@ func main() {
 			ProfileRepo:      profileRepo,
 			AliasRepo:        aliasRepo,
 			NotificationRepo: notificationRepo,
+			Reminders:        reminders,
 			ListingRepo:      listingRepo,
 			Assess:           assessRoutine,
 			Prep:             prepRoutine,

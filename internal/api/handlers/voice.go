@@ -153,6 +153,12 @@ func (h *VoiceHandler) PostTurn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A reminder is set by the chat route (it needs the clock and makes a task), so voice hands it over there.
+	if _, ok := domain.ParseReminder(message); ok {
+		out.Kind, out.Reply, out.Handoff = "objective", "On it.", true
+		httputil.JSON(w, http.StatusOK, out)
+		return
+	}
 	if service.ClassifyMessage(message) == service.MessageKindObjective {
 		out.Kind, out.Reply, out.Handoff = "objective", "On it.", true
 		httputil.JSON(w, http.StatusOK, out)
