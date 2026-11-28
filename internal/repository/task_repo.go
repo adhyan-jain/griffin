@@ -1136,8 +1136,10 @@ func (r *PostgresTaskRepository) FinishReminder(ctx context.Context, taskID uuid
 // that code then declines goes back exactly as it was.
 func (r *PostgresTaskRepository) LeaseNextCodeTask(ctx context.Context, workerID string, leaseDuration time.Duration, exclude []uuid.UUID) (*domain.Task, error) {
 	now := time.Now().UTC()
-	if exclude == nil {
-		exclude = []uuid.UUID{}
+	// Sent as text: the production pooler runs the simple protocol, which cannot encode a []uuid.UUID.
+	skip := make([]string, 0, len(exclude))
+	for _, id := range exclude {
+		skip = append(skip, id.String())
 	}
 	row := r.pool.QueryRow(ctx, `
 		UPDATE tasks
@@ -1149,7 +1151,7 @@ func (r *PostgresTaskRepository) LeaseNextCodeTask(ctx context.Context, workerID
 			  AND leased_by IS NULL
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
 			  AND NOT (`+needsHandsSQL("")+`)
-			  AND NOT (id = ANY($4::uuid[]))
+			  AND NOT (id::text = ANY($4::text[]))
 			ORDER BY priority ASC, created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -1159,7 +1161,7 @@ func (r *PostgresTaskRepository) LeaseNextCodeTask(ctx context.Context, workerID
 			manager_domain, title, goal, input_payload, output_payload,
 			status, priority, idempotency_key, leased_by, lease_expires_at,
 			retry_count, max_retries, failure_reason, scheduled_for, started_at, completed_at,
-			created_at, updated_at`, workerID, now.Add(leaseDuration), now, exclude)
+			created_at, updated_at`, workerID, now.Add(leaseDuration), now, skip)
 	task, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

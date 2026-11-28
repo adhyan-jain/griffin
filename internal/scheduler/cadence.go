@@ -3,6 +3,7 @@ package scheduler
 import (
 	"errors"
 	"fmt"
+	"github.com/robfig/cron/v3"
 	"regexp"
 	"strconv"
 	"strings"
@@ -127,6 +128,13 @@ func NextOccurrence(cadence string, after time.Time) (time.Time, error) {
 			n = 1
 		}
 		return after.Add(time.Duration(n) * time.Minute).UTC(), nil
+	}
+
+	// 7. A standard 5-field cron expression ("45 7 * * *"), as the schedules table stores. Times are IST.
+	if len(strings.Fields(cadence)) == 5 {
+		if sched, err := cron.ParseStandard("CRON_TZ=Asia/Kolkata " + cadence); err == nil {
+			return sched.Next(after).UTC(), nil
+		}
 	}
 
 	return time.Time{}, fmt.Errorf("%w: %q", ErrUnknownCadence, cadence)
