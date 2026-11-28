@@ -233,7 +233,8 @@ func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 // header, which a caller cannot remove, so the public API can never reach this route.
 func EventBridgeOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("x-amzn-request-context") != "" {
+		if rc := r.Header.Get("x-amzn-request-context"); rc != "" {
+			slog.Warn("events: refused, came through API Gateway", "request_context_len", len(rc), "request_context_prefix", truncateForLog(rc, 80))
 			http.NotFound(w, r)
 			return
 		}
@@ -243,9 +244,17 @@ func EventBridgeOnly(next http.Handler) http.Handler {
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&ev); err != nil ||
 			ev.Source != "aws.events" || ev.DetailType != "Scheduled Event" {
+			slog.Warn("events: refused, not an EventBridge scheduled event", "source", ev.Source, "detail_type", ev.DetailType, "decode_error", err)
 			http.NotFound(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func truncateForLog(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
