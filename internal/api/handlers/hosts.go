@@ -237,12 +237,7 @@ func (h *HostHandler) runInCode(ctx context.Context, start time.Time, task *doma
 	if h.codeBudget > 0 {
 		budget = h.codeBudget
 	}
-	ctx, cancel := context.WithDeadline(ctx, start.Add(budget))
-	defer cancel()
-	return h.trackers.RunInCode(ctx, task, h.engine.CancelTask, func(c context.Context, t *domain.Task) error {
-		_, err := h.engine.CreateTask(c, t, nil)
-		return err
-	})
+	return h.trackers.RunInCodeUntil(ctx, h.engine, task, start.Add(budget))
 }
 
 // Claim leases the next task this host can do (204 when there is none).
@@ -273,16 +268,10 @@ func (h *HostHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	// applications split into one task each) is done here, so the device has nothing to run.
 	if h.trackers != nil && res.Task != nil {
 		answer, how := h.runInCode(r.Context(), start, res.Task)
-		switch how {
-		case service.Dropped:
+		switch service.FinishInCode(r.Context(), h.engine, res.Task, host.WorkerID(), answer, how) {
+		case service.Dropped, service.Answered:
 			w.WriteHeader(http.StatusNoContent)
 			return
-		case service.Answered:
-			out, _ := json.Marshal(map[string]string{"response": answer})
-			if err := h.engine.CompleteTask(r.Context(), res.Task.ID, host.WorkerID(), out); err == nil {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
 		}
 	}
 	// An application whose draft the owner approved is finished as written; the device has nothing to run.

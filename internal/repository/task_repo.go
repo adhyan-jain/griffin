@@ -367,6 +367,7 @@ func (r *PostgresTaskRepository) CompleteTask(ctx context.Context, taskID uuid.U
 			status = 'COMPLETED',
 			output_payload = $1,
 			completed_at = $2,
+			started_at = COALESCE(started_at, $2),
 			leased_by = NULL,
 			lease_expires_at = NULL,
 			updated_at = $2
@@ -1129,4 +1130,80 @@ func (r *PostgresTaskRepository) FinishReminder(ctx context.Context, taskID uuid
 		return false, fmt.Errorf("finish reminder: %w", err)
 	}
 	return cmd.RowsAffected() > 0, nil
+}
+
+// LeaseNextCodeTask implements TaskRepository. Unlike the other lease queries it leaves started_at alone, so a task
+// that code then declines goes back exactly as it was.
+func (r *PostgresTaskRepository) LeaseNextCodeTask(ctx context.Context, workerID string, leaseDuration time.Duration, exclude []uuid.UUID) (*domain.Task, error) {
+	now := time.Now().UTC()
+	if exclude == nil {
+		exclude = []uuid.UUID{}
+	}
+	row := r.pool.QueryRow(ctx, `
+		UPDATE tasks
+		SET status = 'RUNNING', leased_by = $1, lease_expires_at = $2, updated_at = $3
+		WHERE id = (
+			SELECT id
+			FROM tasks
+			WHERE status IN ('QUEUED', 'RETRYING')
+			  AND leased_by IS NULL
+			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
+			  AND NOT (`+needsHandsSQL("")+`)
+			  AND NOT (id = ANY($4::uuid[]))
+			ORDER BY priority ASC, created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING
+			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
+			manager_domain, title, goal, input_payload, output_payload,
+			status, priority, idempotency_key, leased_by, lease_expires_at,
+			retry_count, max_retries, failure_reason, scheduled_for, started_at, completed_at,
+			created_at, updated_at`, workerID, now.Add(leaseDuration), now, exclude)
+	task, err := scanTask(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("lease next code task: %w", err)
+	}
+	return task, nil
+}
+
+// ReleaseLeasedTask implements TaskRepository.
+func (r *PostgresTaskRepository) ReleaseLeasedTask(ctx context.Context, taskID uuid.UUID, workerID string) (bool, error) {
+	cmd, err := r.pool.Exec(ctx, `
+		UPDATE tasks
+		SET status = 'QUEUED', leased_by = NULL, lease_expires_at = NULL, updated_at = $3
+		WHERE id = $1 AND leased_by = $2 AND status = 'RUNNING'`, taskID, workerID, time.Now().UTC())
+	if err != nil {
+		return false, fmt.Errorf("release leased task: %w", err)
+	}
+	return cmd.RowsAffected() > 0, nil
+}
+
+// UsersWithDueReminders implements TaskRepository.
+func (r *PostgresTaskRepository) UsersWithDueReminders(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT user_id
+		FROM tasks
+		WHERE status IN ('QUEUED', 'RETRYING') AND scheduled_for <= $1
+		  AND left(title, length($2::text)) = $2::text
+		LIMIT $3`, now, domain.ReminderTitlePrefix, limit)
+	if err != nil {
+		return nil, fmt.Errorf("users with due reminders: %w", err)
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }

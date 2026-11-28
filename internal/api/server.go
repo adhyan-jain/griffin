@@ -81,6 +81,8 @@ type ServerDependencies struct {
 	Dsa *service.DsaCoach
 	// ProfileRepo holds the owner's settings (the manager's name).
 	ProfileRepo repository.ProfileRepository
+	// Agent answers chat with typed tools (and serves Undo); nil leaves chat on the old path.
+	Agent handlers.ChatAgent
 	// VoiceBrain is the fast model for voice chat; nil means every voice turn hands off to the worker.
 	VoiceBrain      handlers.VoiceBrain
 	ArtifactRepo    repository.ArtifactRepository
@@ -338,6 +340,10 @@ func NewServer(deps ServerDependencies) *Server {
 	}
 	if hostSvc != nil {
 		jjChatHandler.WithDeviceCheck(hostSvc.CanCover)
+	}
+	if deps.Agent != nil {
+		jjChatHandler.WithAgent(deps.Agent)
+		mux.Handle("POST /api/v1/jj/undo/{action_id}", userAuth(http.HandlerFunc(handlers.AgentUndoHandler{Agent: deps.Agent}.Undo)))
 	}
 	mux.Handle("POST /api/v1/jj/messages", userAuth(http.HandlerFunc(jjChatHandler.PostMessage)))
 	mux.Handle("POST /api/v1/tasks/{id}/follow-ups", userAuth(http.HandlerFunc(jjChatHandler.PostFollowUp)))

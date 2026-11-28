@@ -132,7 +132,7 @@ func (r *PostgresApprovalRepository) RespondToApproval(ctx context.Context, id u
 	}
 
 	// An outreach draft's task only carries the approval: approving it must never queue it for a worker.
-	if approved && a.ActionType == domain.AlumniOutreachApprovalAction {
+	if approved && (a.ActionType == domain.AlumniOutreachApprovalAction || domain.IsAgentAction(a.ActionType)) {
 		taskStatus = domain.TaskStatusCompleted
 	}
 

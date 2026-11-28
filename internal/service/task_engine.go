@@ -40,6 +40,8 @@ type TaskEngine struct {
 	// onOutreachDecided is told when the owner approves or rejects an alumni outreach draft. Approving only records
 	// the decision; nothing is sent.
 	onOutreachDecided func(ctx context.Context, a *domain.Approval, approved bool)
+	// onActionDecided is told about every decided approval; the agent runs an approved external action from it.
+	onActionDecided func(ctx context.Context, a *domain.Approval, approved bool)
 	// onPostingMissing is told when an application draft says its posting does not exist, so the listing is closed.
 	onPostingMissing func(ctx context.Context, userID uuid.UUID, company, role string)
 }
@@ -52,6 +54,11 @@ func (e *TaskEngine) OnPackageDecided(f func(ctx context.Context, a *domain.Appr
 // OnOutreachDecided sets what happens when the owner decides on an alumni outreach draft.
 func (e *TaskEngine) OnOutreachDecided(f func(ctx context.Context, a *domain.Approval, approved bool)) {
 	e.onOutreachDecided = f
+}
+
+// OnActionDecided sets what happens when any approval is decided (the JJ agent's external actions run from here).
+func (e *TaskEngine) OnActionDecided(f func(ctx context.Context, a *domain.Approval, approved bool)) {
+	e.onActionDecided = f
 }
 
 // OnPostingMissing sets what happens when an application finds no posting.
@@ -735,6 +742,10 @@ func (e *TaskEngine) RespondApproval(ctx context.Context, approvalID uuid.UUID, 
 		e.onOutreachDecided(ctx, app, approved)
 	}
 
+	if e.onActionDecided != nil && domain.IsAgentAction(app.ActionType) {
+		e.onActionDecided(ctx, app, approved)
+	}
+
 	eventType := "STATUS_CHANGE"
 	msg := fmt.Sprintf("Approval granted by user: %s", reason)
 	if !approved {
@@ -881,4 +892,32 @@ func (e *TaskEngine) HoldApplicationPackage(ctx context.Context, l *domain.Listi
 		return uuid.Nil, uuid.Nil, err
 	}
 	return approval.ID, task.ID, nil
+}
+
+// HoldAgentAction puts one exact agent action on the owner's approvals page. The approvals table needs a task, so
+// one is made that only carries the approval: it has no tools and does nothing itself. Approving it runs the stored
+// payload through the agent's executor for actionType, once; the task is finished by the approval repository.
+func (e *TaskEngine) HoldAgentAction(ctx context.Context, userID uuid.UUID, actionType, summary string, payload []byte) (*domain.Approval, error) {
+	title := "JJ ACTION - " + strings.TrimSpace(summary)
+	if r := []rune(title); len(r) > 100 {
+		title = string(r[:100])
+	}
+	taskPayload, _ := json.Marshal(map[string]any{domain.ToolModeKey: domain.ToolNone})
+	task, err := e.CreateTask(ctx, &domain.Task{
+		ID: uuid.New(), UserID: userID, Title: title, ManagerDomain: "JJ", Status: domain.TaskStatusRunning,
+		Goal:         "Hold one action JJ proposed (" + strings.TrimSpace(summary) + ") until the owner approves or rejects it. This task does nothing itself.",
+		InputPayload: taskPayload, MaxRetries: 0,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	approval := &domain.Approval{
+		ID: uuid.New(), UserID: userID, TaskID: task.ID, ActionType: actionType, RiskLevel: domain.ApprovalRiskMedium,
+		Summary: summary, ActionPayload: payload, Status: domain.ApprovalStatusPending,
+	}
+	if err := e.RequestApproval(ctx, task.ID, approval); err != nil {
+		_ = e.taskRepo.CancelTask(ctx, task.ID, "the approval could not be requested")
+		return nil, err
+	}
+	return approval, nil
 }

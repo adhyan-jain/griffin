@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,3 +42,12 @@ type Approval struct {
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
 }
+
+var agentActions sync.Map
+
+// RegisterAgentAction records that an approval type belongs to a JJ agent tool. Such an approval only carries an
+// exact payload: approving it runs that payload, and the task that holds it is finished, never queued for a worker.
+func RegisterAgentAction(actionType string) { agentActions.Store(actionType, true) }
+
+// IsAgentAction reports whether actionType is an agent tool's approval type.
+func IsAgentAction(actionType string) bool { _, ok := agentActions.Load(actionType); return ok }

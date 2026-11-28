@@ -43,6 +43,7 @@ type Config struct {
 	CallsUserID         string // the owner's user id (calls are logged to them)
 	GeminiAPIKey        string // fast voice model key; empty disables the fast path (chat then waits for the worker)
 	GeminiModel         string // default gemini-flash-lite-latest
+	GeminiAgentModel    string // the chat agent model (function calling); default gemini-flash-latest
 	HostsEnabled        bool   // Host API for laptop/phone hosts (ADR-074); off until the owner turns it on
 	ClaudeBinary        string
 	// AlumniGraduationCutoff: a person qualifies for alumni research when their known graduation year is this or earlier; an unknown year never does.
@@ -160,6 +161,7 @@ func Load() (*Config, error) {
 		CallsUserID:                     getEnv("CALLS_USER_ID", ""),
 		GeminiAPIKey:                    getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:                     getEnv("GEMINI_MODEL", ""),
+		GeminiAgentModel:                getEnv("GEMINI_AGENT_MODEL", "gemini-flash-latest"),
 		ClaudeBinary:                    getEnv("CLAUDE_BINARY", "claude"),
 		GitHubLogin:                     getEnv("GITHUB_LOGIN", ""),
 		AlumniGraduationCutoff:          getEnvAsInt("ALUMNI_GRADUATION_CUTOFF", 2022),

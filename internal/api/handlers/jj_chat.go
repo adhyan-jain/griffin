@@ -66,6 +66,8 @@ type JJChatHandler struct {
 	classifier  *service.SmartClassifier
 	// reminders makes "remind me to ..." into a timed push; nil leaves reminders to the normal path.
 	reminders *service.Reminders
+	// agent answers with typed tools before the old path; nil leaves chat as it was.
+	agent ChatAgent
 	// now is the clock; nil means time.Now.
 	now func() time.Time
 }
@@ -258,6 +260,9 @@ func (h *JJChatHandler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.reminders != nil && !req.NewTask && h.runReminder(w, r, userID, conversationID, message, managerName) {
+		return
+	}
+	if h.agent != nil && agentWants(req, message) && h.runAgent(w, r, userID, conversationID, message, managerName, req, history) {
 		return
 	}
 	// "Go ahead" after a discussion submits what the owner said in it as one objective.

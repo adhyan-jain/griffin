@@ -169,65 +169,9 @@ func (c *Client) chat(ctx context.Context, system string, turns []Turn) (string,
 		return "", err
 	}
 
-	model := c.Model
-	if model == "" {
-		model = DefaultModel
-	}
-	base := strings.TrimRight(c.BaseURL, "/")
-	if base == "" {
-		base = defaultBaseURL
-	}
-	endpoint := base + "/v1beta/models/" + url.PathEscape(model) + ":generateContent"
-	var lastErr error
-	var data []byte
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return "", ctx.Err()
-			case <-time.After(time.Duration(attempt) * 1200 * time.Millisecond):
-			}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
-		if err != nil {
-			return "", err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-goog-api-key", c.APIKey) // a header, so the key never appears in a URL or a log
-
-		client := c.HTTP
-		if client == nil {
-			client = &http.Client{Timeout: 15 * time.Second}
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("gemini: request failed: %w", scrub(err, c.APIKey))
-			continue
-		}
-		data, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
-		if err != nil {
-			lastErr = fmt.Errorf("gemini: reading the reply: %w", err)
-			continue
-		}
-
-		if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			if resp.StatusCode == http.StatusTooManyRequests {
-				lastErr = ErrRateLimited
-			} else {
-				lastErr = fmt.Errorf("gemini: HTTP %d: %s", resp.StatusCode, apiMessage(data))
-			}
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("gemini: HTTP %d: %s", resp.StatusCode, apiMessage(data))
-		}
-		lastErr = nil
-		break
-	}
-	if lastErr != nil {
-		return "", lastErr
+	data, err := c.post(ctx, raw)
+	if err != nil {
+		return "", err
 	}
 
 	var out struct {
@@ -264,6 +208,72 @@ func (c *Client) chat(ctx context.Context, system string, turns []Turn) (string,
 		return "", errors.New("gemini: the answer was empty")
 	}
 	return text, nil
+}
+
+// post sends one generateContent request body to c.Model with the retry loop shared by Chat and ChatWithTools.
+func (c *Client) post(ctx context.Context, raw []byte) ([]byte, error) {
+	model := c.Model
+	if model == "" {
+		model = DefaultModel
+	}
+	base := strings.TrimRight(c.BaseURL, "/")
+	if base == "" {
+		base = defaultBaseURL
+	}
+	endpoint := base + "/v1beta/models/" + url.PathEscape(model) + ":generateContent"
+	var lastErr error
+	var data []byte
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt) * 1200 * time.Millisecond):
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-goog-api-key", c.APIKey) // a header, so the key never appears in a URL or a log
+
+		client := c.HTTP
+		if client == nil {
+			client = &http.Client{Timeout: 15 * time.Second}
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("gemini: request failed: %w", scrub(err, c.APIKey))
+			continue
+		}
+		data, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("gemini: reading the reply: %w", err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			if resp.StatusCode == http.StatusTooManyRequests {
+				lastErr = ErrRateLimited
+			} else {
+				lastErr = fmt.Errorf("gemini: HTTP %d: %s", resp.StatusCode, apiMessage(data))
+			}
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("gemini: HTTP %d: %s", resp.StatusCode, apiMessage(data))
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return data, nil
+
 }
 
 func apiMessage(data []byte) string {
