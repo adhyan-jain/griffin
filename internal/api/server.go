@@ -419,6 +419,9 @@ func NewServer(deps ServerDependencies) *Server {
 
 	schedulerHandler := handlers.NewSchedulerHandler(deps.Engine, deps.TaskRepo, deps.ScheduleRepo, deps.Wakeup, deps.Logger).WithProactive(deps.ProactiveOps...)
 	mux.Handle("POST /api/v1/scheduler/tick", workerAuth(http.HandlerFunc(schedulerHandler.Tick)))
+	// The same tick, from an EventBridge rule that invokes the Lambda directly (the Web Adapter posts the event to
+	// /events). It needs no API key and no IAM role; API Gateway traffic is refused by EventBridgeOnly.
+	mux.Handle("POST /events", handlers.EventBridgeOnly(middleware.SystemScope()(http.HandlerFunc(schedulerHandler.Tick))))
 
 	// Execution hosts (laptop, phone). Owner routes use the user JWT; host routes use a per-host token and
 	// never touch the database directly.

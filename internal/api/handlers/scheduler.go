@@ -227,3 +227,25 @@ func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 		Operations:       opResults,
 	})
 }
+
+// EventBridgeOnly lets through only an EventBridge scheduled event that the Lambda Web Adapter passed straight to
+// the app (POST /events). A request that came through API Gateway carries the adapter's x-amzn-request-context
+// header, which a caller cannot remove, so the public API can never reach this route.
+func EventBridgeOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-amzn-request-context") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		var ev struct {
+			Source     string `json:"source"`
+			DetailType string `json:"detail-type"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&ev); err != nil ||
+			ev.Source != "aws.events" || ev.DetailType != "Scheduled Event" {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
