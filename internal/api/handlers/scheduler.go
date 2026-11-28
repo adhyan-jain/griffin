@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/griffin/core/internal/api/httputil"
@@ -233,7 +234,8 @@ func (h *SchedulerHandler) Tick(w http.ResponseWriter, r *http.Request) {
 // header, which a caller cannot remove, so the public API can never reach this route.
 func EventBridgeOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if rc := r.Header.Get("x-amzn-request-context"); rc != "" {
+		// The adapter sends "null" for a direct invoke; API Gateway always has a real request context.
+		if rc := strings.TrimSpace(r.Header.Get("x-amzn-request-context")); rc != "" && rc != "null" {
 			slog.Warn("events: refused, came through API Gateway", "request_context_len", len(rc), "request_context_prefix", truncateForLog(rc, 80))
 			http.NotFound(w, r)
 			return
