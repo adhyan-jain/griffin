@@ -666,44 +666,60 @@ func (m *Mailer) SendWithAttachments(ctx context.Context, to, subject, body stri
 - **Android:** an "Open in LinkedIn" action fires `Intent.ACTION_SEND` with `EXTRA_TEXT` = the message and `EXTRA_STREAM` = the resume, through a `FileProvider` URI, targeted at `com.linkedin.android` (falling back to the share chooser). The owner picks the chat and taps send.
 - Recording "sent by hand" works as today. The owner taps "I sent it", or the phone's notification reader sees the sent message.
 
+**Who gets messaged.** Outreach does **not** depend on having applied. The people finder and outreach queue run for every target company and person, whether or not there is a posting and whether or not the owner applied. When there is a posting, the ask names it; when there isn't, the ask is a referral for the relevant internship roles, or a pointer to the right person.
+
 **The message contract, checked in code, not prompts** (`internal/domain/outreach_rules.go`, extending `CheckOutreach`)
 - **Lengths:**
   - email body ≤ **120 words**, subject ≤ 70 characters;
-  - LinkedIn DM ≤ **90 words**;
+  - LinkedIn DM ≤ **100 words**;
   - LinkedIn connection note ≤ **300 characters**.
 - **Required parts:** each draft carries its parts structurally (`DraftParts{Greeting, Who, Ask, Done []FactRef, Offer, Close}`) and the final text is rendered from them, so code can check each part exists:
-  1. **Who**: one line on who the owner is.
-  2. **Ask**: exactly one explicit ask, naming the role and its job ID or link when known, e.g. "would you consider referring me".
-  3. **Done**: 1–2 achievements, **each a `FactRef` to a USER.md or profile fact id**. Unreferenced claims are refused, which is the existing grounding rule.
-  4. **Offer**: what the owner does to make it effortless: resume attached, job ID or link given, "I'll send anything your referral form needs".
+  1. **Who**: one line on who the owner is: year, CSE, VIT, plus CGPA when it helps. ACM VIT only for ACM recipients.
+  2. **Ask**: exactly one explicit ask, in one of two shapes:
+     - **(a)** a posting: role plus job ID or link, "would you consider referring me";
+     - **(b)** no posting or not applied: "would you be open to referring me for <SDE|AI/ML|backend> internship roles at <company>, or pointing me to the right person".
+  3. **Done**: the **two strongest** achievements for the role focus (`RoleFocus`). Each is a `FactRef` to a verified profile fact **and states one concrete engineering detail**, not just a project name; a bare name like "I built ComputeHive" is refused. Unreferenced claims are refused (grounding).
+     - **backend/SDE:** ComputeHive and EchoTales;
+     - **AI/ML:** EchoTales and the Palni AI Engineer internship;
+     - the third fact may appear only if the word limit allows.
+  4. **Offer**: what the owner does to make it effortless: resume attached, the posting link when there is one, "I'll send anything your referral form needs".
   5. **Close**: thanks, plus an easy out ("no worries if it's not possible").
 - **Refused:**
   - compliments the data doesn't support ("I really admire…");
-  - asks for a call or chat (one-shot means no meeting ask);
+  - asks for a call or chat (one-shot means no meeting ask; the current `AlumniMessageFor` "quick chat" ask must go);
   - more than one question mark;
   - ACM mentioned to anyone who isn't ACM VIT (existing rule);
   - "dear sir/madam";
   - all caps; emoji in email.
 - **Personalisation:** only verified data about the recipient (name, role, company, shared club when verified). Never invented common ground.
-- **Tests:** each rule has a table test; the examples below must pass; an example plus a "quick call?" must fail.
+- **Verified owner facts** (from the owner's resumes in `~/Documents/Griffin/resumes/`; USER.md must carry them as fact ids):
+  - pre-final-year B.Tech CSE at VIT Vellore, CGPA 8.84;
+  - senior core member of ACM VIT;
+  - AI Engineer intern at Palni (SmartBots AI);
+  - **ComputeHive**: a fault-tolerant distributed task runner; a Go coordinator schedules Docker workloads across worker nodes via Redis-backed FIFO queues with atomic Lua assignment;
+  - **EchoTales**: a bitemporal narrative knowledge-graph engine resolving character identity across aliases, title transfers and conflicting claims; a rule resolver with a learned tiebreaker over five features, evaluated on a ~200-point gold set (MUC/B3/CEAF);
+  - **Griffin**: a Go agent orchestrator;
+  - DevSoc track winner at a CodeChef-organised hackathon of 1,200+ participants.
+- **Tests:** each rule has a table test; the examples below must pass; an example plus a "quick call?" must fail; a bare-name achievement must fail.
 
-**Style examples** (committed as `internal/domain/testdata/outreach_examples.md` and used as golden test fixtures; agy writes drafters to produce this shape; the facts come from the owner's own current template in `AlumniMessageFor`)
+**Style examples** (committed as `internal/domain/testdata/outreach_examples.md` and used as golden test fixtures; agy writes drafters to produce this shape)
 
-*Email (about 95 words, resume attached):*
+*Email, no posting or not applied (about 105 words, resume attached):*
 ```
-Subject: Referral request: SDE Intern (Job ID 12345) at Acme
+Subject: SDE internship referral at Acme: Adhyan Jain, VIT CSE
 
 Hi Priya,
 
-I'm Adhyan, a pre-final-year CSE student at VIT. I'm applying for the SDE Intern role at Acme
-(Job ID 12345) and would be grateful if you'd consider referring me.
+I'm Adhyan, a pre-final-year CSE student at VIT (CGPA 8.84). I'm looking for an SDE internship
+at Acme and would be grateful if you'd consider referring me, or point me to the right person.
 
-What I've done that fits the role:
-- Built ComputeHive, a distributed task runner in Go
-- Interned as an AI Engineer at Palni
+What I've built:
+- ComputeHive: a fault-tolerant distributed task runner, with a Go coordinator scheduling Docker
+  workloads across workers through Redis queues
+- EchoTales: a bitemporal knowledge-graph engine that resolves identities across aliases,
+  evaluated against a ~200-point gold set
 
-To make it easy, I've attached my resume, and the posting is here: <link>. If your referral form
-needs anything else, I'll send it right away.
+I've attached my resume. If a referral needs anything else, I'll send it right away.
 
 Thank you for your time, and no worries at all if it's not possible.
 
@@ -711,20 +727,30 @@ Best regards,
 Adhyan Jain
 ```
 
-*LinkedIn DM (about 75 words, resume attached through the send kit; the ACM line only because the recipient is verified ACM VIT):*
+*Email, with a posting (only the ask and offer lines change):*
 ```
-Hi Priya, I'm Adhyan, a pre-final-year CSE student at VIT and a senior core member of ACM VIT.
-I'm applying for the SDE Intern role at Acme (Job ID 12345) and would be grateful for a referral
-if you think I'm a fit. I built ComputeHive, a distributed task runner in Go, and interned as an
-AI Engineer at Palni. I've attached my resume and will send anything your referral form needs.
-Thank you, and no worries if it's not possible!
+... I'm applying for the SDE Intern role at Acme (Job ID 12345) and would be grateful if you'd
+consider referring me.
+...
+I've attached my resume, and the posting is here: <link>. If your referral form needs anything
+else, I'll send it right away.
 ```
 
-*LinkedIn connection note (about 230 characters, no attachment possible):*
+*LinkedIn DM (about 90 words, resume attached through the send kit; the ACM line only because the recipient is verified ACM VIT):*
 ```
-Hi Priya, VIT CSE student here. I'm applying for SDE Intern at Acme (ID 12345) and would be
-grateful for a referral. I built ComputeHive (Go) and interned at Palni as an AI Engineer.
-Happy to share my resume. Thank you!
+Hi Priya, I'm Adhyan, a pre-final-year CSE student at VIT and a senior core member of ACM VIT.
+I'm looking for an SDE internship at Acme and would be grateful for a referral, or a pointer to
+the right person. I built ComputeHive, a distributed task runner (Go coordinator, Docker, Redis
+queues), and EchoTales, a bitemporal knowledge-graph engine for identity resolution. I've
+attached my resume and will send anything else you need. Thank you, and no worries if it's not
+possible!
+```
+
+*LinkedIn connection note (about 250 characters, no attachment possible):*
+```
+Hi Priya, VIT CSE student here (CGPA 8.84), looking for an SDE internship at Acme. I built
+ComputeHive (distributed task runner in Go) and EchoTales (temporal knowledge-graph engine).
+Would you consider a referral? Happy to share my resume. Thank you!
 ```
 
 **Placement:** Phase 1, as new steps 1.6 (mailer attachments, digest and approval card) and 1.7 (message contract, drafters, LinkedIn send kit, Android share intent).
@@ -825,7 +851,7 @@ Each step lists target files, acceptance criteria and tests. **A step is done on
 | 1.4 Risk badges | `web/src/components/risk-badge.tsx`, `action-rows.tsx`, approvals, task page | The three tiers render correctly | vitest |
 | 1.5 Approvals hotkeys, diff, batch, suggestion banner | `web/src/app/approvals/page.tsx`, `lib/diff.ts`, drafters write `template_text` | A, E and D work; diff colours render; batch approves N | vitest and Playwright |
 | 1.6 Email attachments | `internal/mailer/mailer.go`, `internal/service/attachments.go`, digest in `internal/domain`, the approval card (web and Android), the tools `send_email`/`draft_email` | A resume-attached email arrives intact (check with a local SMTP sink, mailpit in docker); swapping the attachment voids the approval | multipart golden test; digest tests; handler tests |
-| 1.7 One-shot message contract and LinkedIn send kit | `internal/domain/outreach_rules.go` (`DraftParts`, extended `CheckOutreach`), the drafters (`outreach_drafter*.go`, `AlumniMessageFor` made to render from `DraftParts` and profile facts), `testdata/outreach_examples.md`, hand-over card, Android `ShareToLinkedIn.kt` | The 3 examples pass; invented compliments, call asks and overlength drafts are refused; the phone opens LinkedIn with the text and resume attached | table tests, golden tests, Android JUnit (intent extras) |
+| 1.7 One-shot message contract and LinkedIn send kit | `internal/domain/outreach_rules.go` (`DraftParts`, extended `CheckOutreach`), the drafters (`outreach_drafter*.go`, `AlumniMessageFor` made to render from `DraftParts` and profile facts), `testdata/outreach_examples.md`, hand-over card, Android `ShareToLinkedIn.kt` | The examples pass; invented compliments, call asks and overlength drafts are refused; the phone opens LinkedIn with the text and resume attached | table tests, golden tests, Android JUnit (intent extras) |
 
 ### Phase 2: System-1 router and scorer, worktrees, roadblocks, triage
 
@@ -904,9 +930,11 @@ Work rules (non-negotiable):
   sent by Griffin.
 - Brain order: EC2 agy → laptop agy → Gemini API (free tier). allow_paid_fallback=false. Hosted Jev only when
   JEV_ENABLED=true, capped.
-- Outreach is one-shot: every email / LinkedIn draft follows the RFC "Pillar 5" contract (≤120-word email, ≤90-word
-  DM, ≤300-char note; who, one ask, 1–2 fact-referenced achievements, an offer that makes helping effortless, a
-  polite close with an easy out; resume attached). Match the three committed style examples. Attachments are passed
+- Outreach is one-shot: every email / LinkedIn draft follows the RFC "Pillar 5" contract (≤120-word email, ≤100-word
+  DM, ≤300-char note; who, one ask, the two strongest fact-referenced achievements with one concrete engineering
+  detail each, an offer that makes helping effortless, a
+  polite close with an easy out; resume attached). Message people whether or not the owner applied or a posting
+  exists. Match the committed style examples. Attachments are passed
   by reference only (resume focus or Library artifact id) and are part of the approval digest.
 - Production Postgres runs through a simple-protocol pooler: pass uuid lists as text[]. Cron strings are IST 5-field.
 - Every new tenant table: ENABLE + FORCE ROW LEVEL SECURITY with auth.uid() = user_id. Migrations are 000028
