@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/griffin/core/internal/database"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -284,6 +285,12 @@ func needsHandsSQL(alias string) string {
 	return `jsonb_array_length(` + requiresArraySQL(alias) + `) > 0`
 }
 
+// notAgentJobSQL is true for a task that is not a long agent job: those run in the scheduler tick, so no runner or
+// host claims them and they never count as runnable work for EC2.
+func notAgentJobSQL(alias string) string {
+	return `left(` + alias + `title, ` + strconv.Itoa(len(domain.AgentJobTitlePrefix)) + `) <> '` + domain.AgentJobTitlePrefix + `'`
+}
+
 // hostCanDoSQL is true when every declared capability is in the $capsParam text[] and, for a task that
 // declares none, the agent capability is present.
 func hostCanDoSQL(alias, capsParam string) string {
@@ -310,6 +317,7 @@ func (r *PostgresTaskRepository) ClaimNextTask(ctx context.Context, workerID str
 			WHERE status IN ('QUEUED', 'RETRYING')
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
 			  AND NOT (` + needsHandsSQL("") + `)
+			  AND ` + notAgentJobSQL("") + `
 			ORDER BY priority ASC, created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -874,6 +882,7 @@ func (r *PostgresTaskRepository) CountRunnableTasks(ctx context.Context) (int64,
 		   ))
 		   OR (t.status = 'RETRYING' AND (t.scheduled_for IS NULL OR t.scheduled_for <= NOW()))
 		) AND NOT (` + needsHandsSQL("t.") + `)
+		  AND ` + notAgentJobSQL("t.") + `
 		  AND COALESCE(t.leased_by, '') NOT LIKE 'host:%'
 	`
 	var count int64
@@ -980,6 +989,7 @@ func (r *PostgresTaskRepository) ClaimNextTaskForHost(ctx context.Context, userI
 			  AND status IN ('QUEUED', 'RETRYING')
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
 			  AND ` + hostCanDoSQL("", "$5") + `
+			  AND ` + notAgentJobSQL("") + `
 			ORDER BY priority ASC, created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -1151,6 +1161,7 @@ func (r *PostgresTaskRepository) LeaseNextCodeTask(ctx context.Context, workerID
 			  AND leased_by IS NULL
 			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
 			  AND NOT (`+needsHandsSQL("")+`)
+			  AND `+notAgentJobSQL("")+`
 			  AND NOT (id::text = ANY($4::text[]))
 			ORDER BY priority ASC, created_at ASC
 			LIMIT 1
@@ -1168,6 +1179,45 @@ func (r *PostgresTaskRepository) LeaseNextCodeTask(ctx context.Context, workerID
 			return nil, nil
 		}
 		return nil, fmt.Errorf("lease next code task: %w", err)
+	}
+	return task, nil
+}
+
+// LeaseNextAgentJob leases the due agent job that has waited longest since it last ran, so several jobs take turns
+// on the tick. Like LeaseNextCodeTask it leaves started_at alone and takes the excluded ids as text.
+func (r *PostgresTaskRepository) LeaseNextAgentJob(ctx context.Context, workerID string, leaseDuration time.Duration, exclude []uuid.UUID) (*domain.Task, error) {
+	now := time.Now().UTC()
+	skip := make([]string, 0, len(exclude))
+	for _, id := range exclude {
+		skip = append(skip, id.String())
+	}
+	row := r.pool.QueryRow(ctx, `
+		UPDATE tasks
+		SET status = 'RUNNING', leased_by = $1, lease_expires_at = $2, started_at = COALESCE(started_at, $3), updated_at = $3
+		WHERE id = (
+			SELECT id
+			FROM tasks
+			WHERE status IN ('QUEUED', 'RETRYING')
+			  AND leased_by IS NULL
+			  AND (scheduled_for IS NULL OR scheduled_for <= $3)
+			  AND NOT (`+notAgentJobSQL("")+`)
+			  AND NOT (id::text = ANY($4::text[]))
+			ORDER BY updated_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING
+			id, user_id, workspace_id, parent_id, root_id, assigned_agent_id,
+			manager_domain, title, goal, input_payload, output_payload,
+			status, priority, idempotency_key, leased_by, lease_expires_at,
+			retry_count, max_retries, failure_reason, scheduled_for, started_at, completed_at,
+			created_at, updated_at`, workerID, now.Add(leaseDuration), now, skip)
+	task, err := scanTask(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("lease next agent job: %w", err)
 	}
 	return task, nil
 }

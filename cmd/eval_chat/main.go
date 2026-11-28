@@ -163,6 +163,7 @@ func newDry(user uuid.UUID, now time.Time) *dry {
 		Trackers:  newFakeTrackers(),
 		Vault:     fakeVault{},
 		CheckLink: func(context.Context, string) service.PostingState { return service.PostingOpen },
+		More:      newDryMore(user),
 	}
 	return d
 }

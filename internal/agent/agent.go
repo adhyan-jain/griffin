@@ -71,6 +71,9 @@ type Tool struct {
 	Effect Effect
 	// OwnerOnly tools refuse to run in a scheduled run (the owner alone decides approvals, for one).
 	OwnerOnly bool
+	// HoldAfterUntrusted makes an external tool wait for approval, even in the owner's chat, when an earlier tool in the
+	// same turn returned untrusted text (a prompt-injection guard for tools that run commands).
+	HoldAfterUntrusted bool
 	// Run executes a read or internal tool.
 	Run func(ctx context.Context, c *Call, args json.RawMessage) (Output, error)
 	// Undo reverses an internal tool's action from the data its Run returned.
@@ -132,6 +135,8 @@ type WorkingSet struct {
 	Handles       map[string]string `json:"handles,omitempty"`
 	HandleOrder   []string          `json:"handle_order,omitempty"`
 	SummarizedSeq int64             `json:"summarized_seq,omitempty"`
+	// Job is the state of a long job running in this conversation (see jobs.go); chats never set it.
+	Job *JobState `json:"job,omitempty"`
 }
 
 func (w *WorkingSet) has(id string) bool {

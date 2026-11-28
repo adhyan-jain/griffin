@@ -91,7 +91,7 @@ func (r *Registry) Decided(ctx context.Context, a *domain.Approval, approved boo
 		r.audit(ctx, a.TaskID, "Agent action rejected by the owner: "+a.Summary)
 		return
 	}
-	done, err := t.Exec(ctx, a.UserID, a.ActionPayload)
+	done, err := t.Exec(withoutLaptopWait(ctx), a.UserID, a.ActionPayload)
 	if err != nil {
 		slog.Error("agent: approved action failed", "tool", t.Name, "approval_id", a.ID, "error", err)
 		r.audit(ctx, a.TaskID, fmt.Sprintf("Approved action %s failed: %v", t.Name, err))

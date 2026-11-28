@@ -51,7 +51,9 @@ type Config struct {
 	// ask for in its own options (default 2.00): the payload can lower the limit, never raise it past this.
 	LeadBudgetUSD float64
 	BudgetCapUSD  float64
-	Logger        *slog.Logger
+	// MCP, when set, gives each step JJ's typed tools through griffin-mcp.
+	MCP    *MCP
+	Logger *slog.Logger
 }
 
 // Executor implements worker.TaskExecutor.
@@ -241,6 +243,15 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 
 	opts := domain.ParseClaudeOptions(task.InputPayload)
 	args := []string{"-p", buildPrompt(task), "--output-format", "json"}
+	allowed := ""
+	if m := e.cfg.MCP; m != nil && task.ID != uuid.Nil {
+		cfgPath := filepath.Join(ws, "mcp.json")
+		if err := os.WriteFile(cfgPath, m.config(task.ID.String()), 0o600); err != nil {
+			return fail(execID, err, false)
+		}
+		args = append(args, "--mcp-config", cfgPath)
+		allowed = "mcp__" + mcpServerName
+	}
 	model := e.cfg.Model
 	if opts.Model != "" {
 		model = opts.Model
@@ -268,8 +279,22 @@ func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.Exec
 		}
 		// dontAsk refuses anything not listed, so a lead can use these read-only tools and nothing else, and
 		// bypassPermissions is never used.
-		args = append(args, "--agents", rosterPath, "--allowedTools", leadTools, "--permission-mode", "dontAsk",
+		lead := leadTools
+		if allowed != "" {
+			lead += "," + allowed
+		}
+		args = append(args, "--agents", rosterPath, "--allowedTools", lead, "--permission-mode", "dontAsk",
 			"--max-budget-usd", strconv.FormatFloat(budget, 'f', 2, 64))
+	}
+	if allowed != "" {
+		if opts.Lead {
+			args[1] = strings.Replace(args[1], leadPreamble, leadPreamble+leadToolsNote, 1)
+		} else {
+			args[1] = strings.Replace(args[1], noToolsLine, toolsLine, 1)
+		}
+	}
+	if allowed != "" && !opts.Lead {
+		args = append(args, "--allowedTools", allowed)
 	}
 	if model != "" {
 		args = append(args, "--model", model)

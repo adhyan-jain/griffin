@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/worker"
 )
@@ -264,5 +266,57 @@ func TestOrdinaryStepsAreUnchanged(t *testing.T) {
 	}
 	if string(res.Output) != `{"response":"plain"}` {
 		t.Errorf("ordinary output is just the response, got %s", res.Output)
+	}
+}
+
+func TestExecute_MCPGivesToolsAndDropsTheNoToolsLine(t *testing.T) {
+	t.Setenv("MOCK_MODE", "args")
+	af := filepath.Join(t.TempDir(), "args.txt")
+	t.Setenv("ARGS_FILE", af)
+	e, err := New(Config{BinaryPath: mockCLI(t), WorkspaceRoot: t.TempDir(), Timeout: 5 * time.Second,
+		MCP: &MCP{Binary: "/bin/griffin-mcp", APIURL: "http://localhost:8080", HostToken: "ghk_x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk := task()
+	tk.ID = uuid.New()
+	if _, err := e.Execute(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(af)
+	got := string(b)
+	for _, want := range []string{"--mcp-config", "--allowedTools\nmcp__griffin", "mcp__griffin__*"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("args lack %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "You have NO tools") {
+		t.Fatal("the no-tools line must go where tools are provided")
+	}
+	// without MCP the prompt keeps the line
+	e2 := newExec(t, 5*time.Second)
+	if _, err := e2.Execute(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(af)
+	if !strings.Contains(string(b), "You have NO tools") || strings.Contains(string(b), "--mcp-config") {
+		t.Fatalf("no-MCP args wrong:\n%s", b)
+	}
+}
+
+func TestMCPConfigCarriesTheTasksEnv(t *testing.T) {
+	m := &MCP{Binary: "/bin/griffin-mcp", APIURL: "http://x", HostToken: "tok"}
+	var c struct {
+		McpServers map[string]struct {
+			Command string
+			Env     map[string]string
+		}
+	}
+	if err := json.Unmarshal(m.config("task-1"), &c); err != nil {
+		t.Fatal(err)
+	}
+	g := c.McpServers["griffin"]
+	if g.Command != "/bin/griffin-mcp" || g.Env["GRIFFIN_TASK_ID"] != "task-1" || g.Env["GRIFFIN_HOST_TOKEN"] != "tok" || g.Env["GRIFFIN_API_URL"] != "http://x" {
+		t.Fatalf("config = %+v", c)
 	}
 }

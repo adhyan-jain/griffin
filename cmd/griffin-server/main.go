@@ -361,6 +361,7 @@ func main() {
 					Effort:        cfg.ClaudeEffort,
 					LeadBudgetUSD: cfg.ClaudeLeadBudgetUSD,
 					BudgetCapUSD:  cfg.ClaudeBudgetCapUSD,
+					MCP:           claudecli.MCPFromEnv(),
 					Logger:        logger,
 				})
 				if cerr != nil {
@@ -542,6 +543,7 @@ func main() {
 		Trackers: service.NewCodeLists(service.CodeListsDeps{Store: storageService, Tasks: taskRepo, Engine: engine, Logger: logger,
 			GitHubLogin: cfg.GitHubLogin, CommunityReplies: communityReplier(cfg), Listings: listingRepo, Assess: assessRoutine,
 			Prep: prepRoutine, Reminders: reminders, Research: researchRunner(researchEngine), People: peopleRepo})}
+	chatAgent := buildChatAgent(cfg, repoDB, engine, approvalRepo, repository.NewPostgresScheduleRepository(repoDB), reminders, ownerProfiles, storageService, listingRepo, chatExtras{Research: researchEngine, ResearchRepo: researchRepo, Briefer: briefer, Dsa: dsaCoach})
 	var server *api.Server
 	if runAPI {
 		// 10. HTTP API Server
@@ -554,7 +556,7 @@ func main() {
 			ApprovalRepo:     approvalRepo,
 			AgentRepo:        agentRepo,
 			ScheduleRepo:     repository.NewPostgresScheduleRepository(repoDB),
-			Agent:            buildChatAgent(cfg, repoDB, engine, approvalRepo, repository.NewPostgresScheduleRepository(repoDB), reminders, ownerProfiles, storageService, listingRepo),
+			Agent:            chatAgent,
 			ArtifactRepo:     artifactRepo,
 			StorageService:   storageService,
 			WorkerDefRepo:    workerDefRepo,
@@ -593,6 +595,8 @@ func main() {
 					return service.DeliverDueReminders(c, reminders, taskRepo)
 				}},
 				{Name: "code_routines", Timeout: 19 * time.Second, Run: codeRoutines.Run},
+				// Long agent jobs run a few rounds per tick, inside the Lambda (10s of model work within a 12s slot).
+				{Name: "agent_jobs", Timeout: 12 * time.Second, Run: agentJobsOp(chatAgent, taskRepo, engine, 10*time.Second)},
 				// Briefs (once per local day, persisted) and the outreach follow-up watchdog.
 				{Name: "briefs_and_watchdog", Run: func(c context.Context) error { briefer.Tick(c); return nil }},
 			},
@@ -667,6 +671,7 @@ func newPlanner(cfg *config.Config, logger *slog.Logger) service.Planner {
 				Effort:        cfg.ClaudeEffort,
 				LeadBudgetUSD: cfg.ClaudeLeadBudgetUSD,
 				BudgetCapUSD:  cfg.ClaudeBudgetCapUSD,
+				MCP:           claudecli.MCPFromEnv(),
 				Logger:        logger,
 			})
 			if cerr != nil {

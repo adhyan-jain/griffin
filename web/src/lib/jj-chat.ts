@@ -3,7 +3,7 @@
  * output_payload, history truncation, the poll cadence and a tiny safe markdown parser.
  * No React and no network here, so every rule is unit-tested.
  */
-import type { DeviceNote, JJAction, ImageData, JJHistoryTurn, JJMessageResult, RunnerWake, SubmitResult, Task } from "@/lib/api";
+import type { DeviceNote, JJAction, JJStoredTurn, ImageData, JJHistoryTurn, JJMessageResult, RunnerWake, SubmitResult, Task } from "@/lib/api";
 
 export interface Provider {
   name?: string;
@@ -153,4 +153,24 @@ export function parseBlocks(src: string): Block[] {
   }
   flush();
   return blocks;
+}
+
+/** Stored turns -> chat turns: each user message is paired with the assistant turn after it. */
+export function turnsFromStored(stored: JJStoredTurn[]): Turn[] {
+  const out: Turn[] = [];
+  for (let i = 0; i < stored.length; i++) {
+    const t = stored[i];
+    if (t.role !== "user") continue;
+    const next = stored[i + 1];
+    const answer = next?.role === "assistant" ? next : undefined;
+    if (answer) i++;
+    out.push({
+      id: out.length + 1,
+      text: t.text,
+      reply: answer
+        ? { phase: "done", text: answer.text, actions: answer.actions.length ? answer.actions : undefined }
+        : { phase: "failed", reason: "No answer was saved for this message." },
+    });
+  }
+  return out;
 }

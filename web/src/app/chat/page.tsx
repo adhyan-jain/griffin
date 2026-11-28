@@ -2,14 +2,15 @@
 
 import { Kinetic } from "@/components/fx/kinetic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, Image as ImageIcon, Loader2, Mic, RotateCcw, Sparkles, WifiOff, X } from "lucide-react";
-import { api, JJEndpointUnavailable, type ImageData, type Task } from "@/lib/api";
+import { ArrowUp, History, Image as ImageIcon, Loader2, Mic, RotateCcw, SquarePen, Sparkles, WifiOff, X } from "lucide-react";
+import { api, JJEndpointUnavailable, type ImageData, type JJConversationSummary, type Task } from "@/lib/api";
 import { useManagerName } from "@/lib/manager-name";
-import { buildHistory, pollIntervalMs, reduceReply, type Provider, type ReplyEvent, type Turn } from "@/lib/jj-chat";
+import { buildHistory, pollIntervalMs, reduceReply, turnsFromStored, type Provider, type ReplyEvent, type Turn } from "@/lib/jj-chat";
 import { usePolling } from "@/lib/use-polling";
 import { useOnline } from "@/lib/use-online";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { VoicePanel } from "@/components/voice-panel";
 import { ErrorNote } from "@/components/page";
 import { ChatText } from "@/components/chat-text";
@@ -41,6 +42,15 @@ function adoptConversationId(id: string) {
     sessionStorage.setItem(CONVERSATION_KEY, id);
   } catch {
     // memory copy is enough for this page load
+  }
+}
+
+/** The id this tab's thread already has, without minting one (a fresh page has nothing to restore). */
+function storedConversationId(): string | null {
+  try {
+    return sessionStorage.getItem(CONVERSATION_KEY) ?? memoryConversationId;
+  } catch {
+    return memoryConversationId;
   }
 }
 
@@ -81,6 +91,48 @@ export default function ChatPage() {
   const turnsRef = useRef<Turn[]>([]);
   const endpointMissing = useRef(false); // POST /jj/messages answered 404: never ask again this session
   const [wakeBusy, setWakeBusy] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
+  const [recent, setRecent] = useState<JJConversationSummary[] | null>(null);
+  const [recentError, setRecentError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  /** Show a stored conversation's messages. Never overwrites messages the user has already started. */
+  const loadConversation = useCallback(async (id: string, replace: boolean) => {
+    setLoadError(null);
+    try {
+      const loaded = turnsFromStored(await api.getJJConversationTurns(id));
+      nextId.current = loaded.length + 1;
+      setTurns((ts) => (replace || ts.length === 0 ? loaded : ts));
+    } catch {
+      setLoadError("Could not load this conversation.");
+    }
+  }, []);
+
+  useEffect(() => {
+    const id = storedConversationId();
+    if (id) void loadConversation(id, false);
+  }, [loadConversation]);
+
+  const openRecent = (open: boolean) => {
+    setRecentOpen(open);
+    if (!open) return;
+    setRecentError(null);
+    api.listJJConversations().then(setRecent, () => setRecentError("Could not load recent chats."));
+  };
+
+  const openConversation = (id: string) => {
+    adoptConversationId(id);
+    setRecentOpen(false);
+    void loadConversation(id, true);
+  };
+
+  const newChat = () => {
+    adoptConversationId(crypto.randomUUID());
+    nextId.current = 1;
+    setTurns([]);
+    setLoadError(null);
+    setRecentOpen(false);
+  };
 
   useEffect(() => {
     turnsRef.current = turns;
@@ -175,6 +227,43 @@ export default function ChatPage() {
           You are offline. {managerName} will be available again when your connection returns.
         </div>
       )}
+
+      <div className="flex items-center justify-end gap-1 pt-3">
+        <Sheet open={recentOpen} onOpenChange={openRecent}>
+          <SheetTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className="h-11">
+              <History /> Recent chats
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-full sm:max-w-sm">
+            <SheetHeader>
+              <SheetTitle>Recent chats</SheetTitle>
+              <SheetDescription>Reopen a past conversation with {managerName}.</SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 space-y-1 overflow-y-auto px-4 pb-4">
+              {recentError && <ErrorNote message={recentError} />}
+              {!recentError && recent === null && <p className="text-sm text-muted-foreground">Loading</p>}
+              {recent?.length === 0 && <p className="text-sm text-muted-foreground">No past chats yet.</p>}
+              {recent?.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  data-testid="recent-chat"
+                  onClick={() => openConversation(c.id)}
+                  className="block min-h-12 w-full rounded-lg border bg-card px-3 py-2 text-left text-sm transition-colors active:bg-muted md:hover:bg-muted"
+                >
+                  <span className="line-clamp-2 break-words">{c.preview || "Conversation"}</span>
+                  <span className="text-xs text-muted-foreground">{new Date(c.updated_at).toLocaleString()}</span>
+                </button>
+              ))}
+            </div>
+          </SheetContent>
+        </Sheet>
+        <Button type="button" variant="ghost" size="sm" className="h-11" onClick={newChat} disabled={empty}>
+          <SquarePen /> New chat
+        </Button>
+      </div>
+      {loadError && <ErrorNote message={loadError} />}
 
       <div className="flex-1 space-y-4 overflow-y-auto py-5" aria-live="polite" aria-busy={anyPending}>
         {empty && (

@@ -86,6 +86,8 @@ type run struct {
 	wake           bool
 	toolLog        []map[string]any
 	gFirst, gFinal int
+	// sawUntrusted is set once a tool in this turn returned open-web or other untrusted text.
+	sawUntrusted bool
 }
 
 // Run answers one message. Nothing is stored when it returns an error, so the caller can fall back cleanly.
@@ -275,6 +277,9 @@ func (a *Agent) execute(ctx context.Context, rs *run, c gemini.FunctionCall) map
 		return fail(err.Error())
 	}
 	rs.call.conv.WorkingSet.mark(out.IDs...)
+	if out.Untrusted {
+		rs.sawUntrusted = true
+	}
 	rs.evidence.WriteString(out.Text + "\n" + out.Summary + "\n" + strings.Join(out.IDs, " ") + "\n")
 	if out.Wake {
 		rs.wake = true
@@ -311,7 +316,8 @@ func (a *Agent) executeExternal(ctx context.Context, rs *run, t *Tool, raw json.
 		return fail(err.Error())
 	}
 	rs.evidence.WriteString(summary + " " + string(payload) + "\n")
-	if rs.call.Origin == OriginOwnerChat {
+	// A tool that runs commands is held for approval, even for the owner, once untrusted text has been read this turn.
+	if rs.call.Origin == OriginOwnerChat && !(t.HoldAfterUntrusted && rs.sawUntrusted) {
 		done, err := t.Exec(ctx, rs.call.UserID, payload)
 		if err != nil {
 			return fail("it was not done: " + err.Error())

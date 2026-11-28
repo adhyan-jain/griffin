@@ -357,6 +357,21 @@ export interface JJAction {
   pending?: boolean;
 }
 
+/** One row of GET /api/v1/jj/conversations. */
+export interface JJConversationSummary {
+  id: string;
+  updated_at: string;
+  preview: string;
+}
+
+/** One stored message from GET /api/v1/jj/conversations/{id}/turns. */
+export interface JJStoredTurn {
+  role: "user" | "assistant";
+  text: string;
+  actions: JJAction[];
+  created_at: string;
+}
+
 /** 201 body of POST /api/v1/jj/messages. */
 export type JJMessageResult = (
   | { kind: "conversation"; conversation_id: string; task_id: string; runner?: RunnerWake }
@@ -1209,6 +1224,16 @@ export const api = {
   },
   /** Reverses one agent action, once. Non-2xx (ApiError) means it could not be undone. */
   undoAgentAction: (undoId: string) => fetchWithAuth<unknown>(`/api/v1/jj/undo/${encodeURIComponent(undoId)}`, { method: "POST" }),
+  /** The owner's recent JJ conversations, newest first. */
+  async listJJConversations(): Promise<JJConversationSummary[]> {
+    const r = await fetchWithAuth<{ conversations?: JJConversationSummary[] }>("/api/v1/jj/conversations");
+    return r.conversations ?? [];
+  },
+  /** Every stored turn of one conversation, oldest first. ApiError 404 if it is not the owner's. */
+  async getJJConversationTurns(id: string): Promise<JJStoredTurn[]> {
+    const r = await fetchWithAuth<{ turns?: JJStoredTurn[] }>(`/api/v1/jj/conversations/${encodeURIComponent(id)}/turns`);
+    return (r.turns ?? []).map((t) => ({ ...t, actions: t.actions ?? [] }));
+  },
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
   /**
    * One spoken turn: a quick answer, a task command (list, cancel, delete, approvals) or a hand-off of real work.

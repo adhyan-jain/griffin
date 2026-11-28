@@ -31,6 +31,11 @@ class PhoneRunner(
         try {
             val task = api.claimPhoneTask() ?: return
             log("phone job started: ${task.id}")
+            task.control?.let { c ->
+                val r = runPhoneControl(c, ActionsPhoneControl(Actions(context)))
+                if (r.ok) api.completeTask(task.id, r.text) else api.failTask(task.id, r.text, retryable = false)
+                return
+            }
             try {
                 // Wake display and request keyguard dismissal so UI accessibility and dialer are available
                 try {

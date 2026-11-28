@@ -41,6 +41,7 @@ import (
 	"github.com/griffin/core/internal/gateway"
 	"github.com/griffin/core/internal/hands"
 	"github.com/griffin/core/internal/hands/desktop"
+	"github.com/griffin/core/internal/hands/shell"
 	"github.com/griffin/core/internal/hands/web"
 	"github.com/griffin/core/internal/hostagent"
 	"github.com/griffin/core/internal/provider/antigravity"
@@ -114,6 +115,17 @@ func run(logger *slog.Logger, check bool) error {
 		deskSvc = desktop.NewService(logger)
 		backedCapabilities[domain.HostCapDesktop] = true
 	}
+	// Shell, terminal and app control of the owner's laptop. Off unless HOST_SHELL=on, because it runs commands
+	// as the owner; the owner must also grant the "shell" capability to this host in the app. App launching
+	// (the "desktop" capability) is offered whenever the desktop hands are on.
+	var shellSvc *shell.Service
+	shellOn := execKind == "agy" && strings.ToLower(envOr("HOST_SHELL", "off")) == "on"
+	if shellOn || deskSvc != nil {
+		shellSvc = shell.NewService(shellOn, newShellAudit(filepath.Join(stateDir(), "audit.log"), logger))
+		if shellOn {
+			backedCapabilities[domain.HostCapShell] = true
+		}
+	}
 	// The browser hand uses the owner's signed-in browser for any goal; it is off until the owner turns it on.
 	var browserSvc *hands.BrowserService
 	if execKind == "agy" {
@@ -162,8 +174,8 @@ func run(logger *slog.Logger, check bool) error {
 	// exists, because the agent is where the owner's policy arrives.
 	var handsExec *hands.Executor
 	liSvc := newLinkedInService(logger)
-	if wa != nil || webSvc != nil || deskSvc != nil || browserSvc != nil || liSvc != nil {
-		handsExec = &hands.Executor{Agent: exec, Web: webSvc, Desktop: deskSvc, Browser: browserSvc, LinkedIn: liSvc, Logger: logger}
+	if wa != nil || webSvc != nil || deskSvc != nil || shellSvc != nil || browserSvc != nil || liSvc != nil {
+		handsExec = &hands.Executor{Agent: exec, Web: webSvc, Desktop: deskSvc, Shell: shellSvc, Browser: browserSvc, LinkedIn: liSvc, Logger: logger}
 		if wa != nil {
 			handsExec.WhatsApp = wa.messenger
 		}

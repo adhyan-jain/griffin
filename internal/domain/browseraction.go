@@ -213,6 +213,9 @@ func ParsePhoneAction(payload json.RawMessage) (*BrowserAction, error) {
 
 // ValidatePhone checks a task payload at creation: a phone job must be valid and require the phone_ui capability.
 func ValidatePhone(payload json.RawMessage) error {
+	if call, ok := phoneCallOf(payload); ok {
+		return validatePhoneCall(payload, call)
+	}
 	b, err := ParsePhoneAction(payload)
 	if err != nil || b == nil {
 		return err
@@ -227,4 +230,41 @@ func ValidatePhone(payload json.RawMessage) error {
 		}
 	}
 	return fmt.Errorf("%w: a step with a phone job must require the %q capability", ErrValidation, HostCapPhoneUI)
+}
+
+// PhoneCallActions are the phone jobs that place a call. They are not screen-driving jobs: they carry who to call,
+// not a goal, and need the calls capability.
+var PhoneCallActions = map[string]bool{"automated_call": true, "direct_call": true, "whatsapp_call": true}
+
+type phoneCall struct {
+	Action string `json:"action"`
+	Number string `json:"number"`
+}
+
+// phoneCallOf reads input_payload.phone as a call job when its action is a call action.
+func phoneCallOf(payload json.RawMessage) (phoneCall, bool) {
+	var v struct {
+		Phone *phoneCall `json:"phone"`
+	}
+	if len(payload) == 0 || json.Unmarshal(payload, &v) != nil || v.Phone == nil || !PhoneCallActions[v.Phone.Action] {
+		return phoneCall{}, false
+	}
+	return *v.Phone, true
+}
+
+// validatePhoneCall checks a call job: someone to call and the calls capability.
+func validatePhoneCall(payload json.RawMessage, c phoneCall) error {
+	if strings.TrimSpace(c.Number) == "" {
+		return fmt.Errorf("%w: a call job needs someone to call", ErrValidation)
+	}
+	caps, err := parseRequires(payload)
+	if err != nil {
+		return err
+	}
+	for _, cp := range caps {
+		if cp == HostCapCalls {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: a call job must require the %q capability", ErrValidation, HostCapCalls)
 }

@@ -64,6 +64,12 @@ type Deps struct {
 	Vault           VaultLister
 	CheckLink       func(ctx context.Context, link string) service.PostingState
 	ListingsChanged func(ctx context.Context, userID uuid.UUID)
+	// Jobs says the agent_jobs tick operation runs long jobs; without it start_job hands the goal to the old path.
+	Jobs bool
+	// PhoneLive reports whether one of the owner's phones is online and can take phone jobs. Nil leaves the phone tool out.
+	PhoneLive func(ctx context.Context, userID uuid.UUID) bool
+	// More holds the second batch's services (tools_more.go).
+	More MoreDeps
 }
 
 // decode reads tool arguments strictly: an unknown field is an error the model can correct.
@@ -134,10 +140,14 @@ func NewTools(d Deps) []*Tool {
 	if d.Tasks != nil {
 		ts = append(ts, placeCall(d), laptop(d))
 	}
+	if d.Tasks != nil && d.PhoneLive != nil {
+		ts = append(ts, phoneTool(d))
+	}
 	if d.Vault != nil {
 		ts = append(ts, listVault(d))
 	}
-	return append(ts, readMore(), startJob())
+	ts = append(ts, newMoreTools(d)...)
+	return append(ts, readMore(), startJob(d))
 }
 
 // ---- reminders ----
@@ -910,7 +920,7 @@ func readMore() *Tool {
 	}
 }
 
-func startJob() *Tool {
+func startJob(d Deps) *Tool {
 	return &Tool{
 		Name:        "start_job",
 		Description: "Start a longer background job for work that cannot finish in a few seconds (research, many pages, preparing documents). Give the goal in the owner's words.",
@@ -921,10 +931,45 @@ func startJob() *Tool {
 			if err := decode(raw, &a); err != nil {
 				return Output{}, err
 			}
-			if strings.TrimSpace(a.Goal) == "" {
+			goal := strings.TrimSpace(a.Goal)
+			if goal == "" {
 				return Output{}, errors.New("goal is required")
 			}
-			return Output{Handoff: &Handoff{Goal: strings.TrimSpace(a.Goal)}}, nil
+			if !d.Jobs || d.Tasks == nil || d.Store == nil {
+				return Output{Handoff: &Handoff{Goal: goal}}, nil
+			}
+			if c.Origin != OriginOwnerChat {
+				return Output{}, errors.New("a job can only be started when the owner asks for it directly")
+			}
+			jobConv := uuid.New()
+			if err := d.Store.SaveConversation(ctx, &Conversation{ID: jobConv, UserID: c.UserID}); err != nil {
+				return Output{}, err
+			}
+			payload, _ := json.Marshal(domain.AgentJobPayload{Kind: "agent_job", Goal: goal, ConversationID: jobConv.String(), OriginConversation: c.conv.ID.String()})
+			t, err := d.Tasks.CreateTask(ctx, &domain.Task{UserID: c.UserID, ManagerDomain: "JJ", Title: domain.AgentJobTitlePrefix + truncate(goal, 80),
+				Goal: goal, Priority: domain.TaskPriorityNormalP2, InputPayload: payload}, nil)
+			if err != nil {
+				return Output{}, err
+			}
+			undo, _ := json.Marshal(map[string]string{"task_id": t.ID.String()})
+			return Output{
+				Text:     "The job started as task " + t.ID.String() + ". It runs in the background and the result is posted in this chat when it is done.",
+				Summary:  "Started a background job (task " + t.ID.String() + "): " + truncate(goal, 120),
+				UndoData: undo,
+				IDs:      []string{t.ID.String()},
+			}, nil
+		},
+		Undo: func(ctx context.Context, _ uuid.UUID, data json.RawMessage) (string, error) {
+			var u struct {
+				TaskID uuid.UUID `json:"task_id"`
+			}
+			if err := json.Unmarshal(data, &u); err != nil || d.Tasks == nil {
+				return "", errors.New("cannot undo this job")
+			}
+			if err := d.Tasks.CancelTask(ctx, u.TaskID, "The owner undid the job"); err != nil {
+				return "", err
+			}
+			return "Cancelled the background job.", nil
 		},
 	}
 }

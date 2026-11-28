@@ -231,6 +231,7 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         val message: String = "",
         val callId: String = "",
         val inBackground: Boolean = false,
+        val control: PhoneControl? = null,
     )
 
     /** Leases the next task for this phone, or null. Tasks that are not phone jobs are failed back, not run. */
@@ -246,6 +247,7 @@ class ApiClient(private val store: SecretStore, private val prefs: android.conte
         val action = phoneObj?.optString("action").orEmpty()
         val goal = phoneObj?.optString("goal").orEmpty().ifEmpty { task.optString("goal").orEmpty() }
         val approved = root.optJSONArray("approved_actions")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+        parsePhoneControl(payload?.optJSONObject("phone_control"))?.let { return PhoneTask(id, "Phone: ${it.action}", approved, action = it.action, control = it) }
         val callActions = setOf("automated_call", "call", "direct_call", "whatsapp_call")
         if (action in callActions) {
             val inBackground = phoneObj?.optBoolean("in_background", false) ?: false

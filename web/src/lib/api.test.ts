@@ -315,6 +315,27 @@ describe("undoAgentAction", () => {
   });
 });
 
+describe("JJ chat history", () => {
+  it("lists recent conversations", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ conversations: [{ id: "c1", updated_at: "2026-01-01T00:00:00Z", preview: "hi" }] }), 200));
+    const r = await mod.api.listJJConversations();
+    expect(lastCall().url).toBe("http://api.test/api/v1/jj/conversations");
+    expect(r[0].id).toBe("c1");
+  });
+
+  it("gets turns with the id encoded and defaults missing actions", async () => {
+    fetchMock.mockResolvedValue(json(envelope({ turns: [{ role: "user", text: "hi", created_at: "t" }] }), 200));
+    const r = await mod.api.getJJConversationTurns("a/b");
+    expect(lastCall().url).toBe("http://api.test/api/v1/jj/conversations/a%2Fb/turns");
+    expect(r[0].actions).toEqual([]);
+  });
+
+  it("rejects when the conversation is not found", async () => {
+    fetchMock.mockResolvedValue(json({ success: false, error: { message: "not found" } }, 404));
+    await expect(mod.api.getJJConversationTurns("x")).rejects.toThrow();
+  });
+});
+
 describe("Research & Intelligence API", () => {
   // Fixtures copy the JSON field names of domain.ResearchRun / ResearchFinding / EvidenceItem.
   const runFixture = {

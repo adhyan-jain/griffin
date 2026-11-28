@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/griffin/core/internal/agent"
 	"github.com/griffin/core/internal/api/handlers"
 	"github.com/griffin/core/internal/api/middleware"
 	"github.com/griffin/core/internal/config"
@@ -347,6 +348,15 @@ func NewServer(deps ServerDependencies) *Server {
 		jjChatHandler.WithAgent(deps.Agent)
 		mux.Handle("POST /api/v1/jj/undo/{action_id}", userAuth(http.HandlerFunc(handlers.AgentUndoHandler{Agent: deps.Agent}.Undo)))
 	}
+	if deps.DB != nil {
+		var histDB database.Querier = deps.DB.Pool
+		if deps.UserTx != nil || (deps.Config != nil && deps.Config.IsProduction()) {
+			histDB = database.NewScoped(deps.DB.Pool) // resolves to the request's RLS tx; denied otherwise
+		}
+		jjHistory := handlers.JJHistoryHandler{Store: agent.NewPGStore(histDB)}
+		mux.Handle("GET /api/v1/jj/conversations", userAuth(http.HandlerFunc(jjHistory.ListConversations)))
+		mux.Handle("GET /api/v1/jj/conversations/{id}/turns", userAuth(http.HandlerFunc(jjHistory.ConversationTurns)))
+	}
 	mux.Handle("POST /api/v1/jj/messages", userAuth(http.HandlerFunc(jjChatHandler.PostMessage)))
 	mux.Handle("POST /api/v1/tasks/{id}/follow-ups", userAuth(http.HandlerFunc(jjChatHandler.PostFollowUp)))
 	if profiles != nil {
@@ -500,6 +510,12 @@ func NewServer(deps ServerDependencies) *Server {
 		}
 		if deps.DeviceDecider != nil {
 			mux.Handle("POST /api/v1/host/device/next", hostAuth(http.HandlerFunc(handlers.NewDeviceHandler(deps.DeviceDecider).Next)))
+		}
+		// The agent's typed tools for a host's model tasks (read by cmd/griffin-mcp); only for a task the host holds.
+		if tr, ok := deps.Agent.(handlers.AgentToolRunner); ok && deps.Engine != nil {
+			ha := handlers.HostAgentHandler{Tools: tr, Tasks: deps.Engine}
+			mux.Handle("GET /api/v1/host/agent/tools", hostAuth(http.HandlerFunc(ha.ListTools)))
+			mux.Handle("POST /api/v1/host/agent/tools/{name}", hostAuth(http.HandlerFunc(ha.CallTool)))
 		}
 		mux.Handle("POST /api/v1/host/heartbeat", hostAuth(http.HandlerFunc(hostHandler.Heartbeat)))
 		mux.Handle("POST /api/v1/host/claim", hostAuth(http.HandlerFunc(hostHandler.Claim)))

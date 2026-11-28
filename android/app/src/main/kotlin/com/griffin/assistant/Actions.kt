@@ -133,15 +133,27 @@ class Actions(private val context: Context) {
         "I could not reach your Clock app."
     }
 
-    fun timer(seconds: Int): String = clockIntent(
-        Intent(android.provider.AlarmClock.ACTION_SET_TIMER).putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds),
+    fun timer(seconds: Int, label: String? = null): String = clockIntent(
+        Intent(android.provider.AlarmClock.ACTION_SET_TIMER).putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds)
+            .apply { if (!label.isNullOrBlank()) putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label) },
         "Timer set for ${spokenDuration(seconds)} in your Clock app.",
     )
 
-    fun alarm(hour: Int, minute: Int): String = clockIntent(
-        Intent(android.provider.AlarmClock.ACTION_SET_ALARM).putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour).putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute),
+    /** [days] uses java.util.Calendar numbers (Sunday 1 to Saturday 7); empty means a one-off alarm. */
+    fun alarm(hour: Int, minute: Int, label: String? = null, days: List<Int> = emptyList()): String = clockIntent(
+        Intent(android.provider.AlarmClock.ACTION_SET_ALARM).putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour).putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
+            .apply {
+                if (!label.isNullOrBlank()) putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label)
+                if (days.isNotEmpty()) putIntegerArrayListExtra(android.provider.AlarmClock.EXTRA_DAYS, ArrayList(days))
+            },
         "Alarm set for ${spokenTime(hour, minute)} in your Clock app.",
     )
+
+    /** Opens a web address in the phone's browser. Only http and https; anything else is refused. */
+    fun openUrl(url: String): String {
+        if (!isWebUrl(url)) return "Only http and https links can be opened."
+        return launchIntent(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url.trim())), url.trim().take(80))
+    }
 
     private var isTorchOn = false
 
@@ -334,6 +346,11 @@ class Actions(private val context: Context) {
     }
 
     companion object {
+        fun isWebUrl(url: String): Boolean {
+            val u = url.trim()
+            return (u.startsWith("http://", true) || u.startsWith("https://", true)) && u.length > 10 && u.none { it.isWhitespace() }
+        }
+
         fun spokenDuration(seconds: Int): String {
             val h = seconds / 3600
             val m = seconds % 3600 / 60

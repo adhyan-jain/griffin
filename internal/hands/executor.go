@@ -16,6 +16,7 @@ import (
 	"github.com/griffin/core/internal/domain"
 	"github.com/griffin/core/internal/gateway"
 	"github.com/griffin/core/internal/hands/desktop"
+	"github.com/griffin/core/internal/hands/shell"
 	"github.com/griffin/core/internal/hands/whatsapp"
 	"github.com/griffin/core/internal/policy"
 	"github.com/griffin/core/internal/worker"
@@ -39,6 +40,8 @@ type Executor struct {
 	Web *WebService
 	// Desktop provides media playback and desktop application management.
 	Desktop *desktop.Service
+	// Shell runs commands, drives tmux terminals and opens apps on the owner's laptop; nil unless the host opted in.
+	Shell *shell.Service
 	// Browser uses the owner's logged-in browser for a goal; nil when this host has none set up.
 	Browser *BrowserService
 	// LinkedIn scans the owner's LinkedIn feed into the shared Internships list; nil when not set up.
@@ -68,6 +71,11 @@ func fail(err error, retryable bool) (*worker.ExecutionResult, error) {
 
 // Execute implements worker.TaskExecutor.
 func (e *Executor) Execute(ctx context.Context, task *domain.Task) (*worker.ExecutionResult, error) {
+	if sa, err := domain.ParseShellAction(task.InputPayload); err != nil {
+		return fail(err, false)
+	} else if sa != nil {
+		return e.runShell(ctx, task, sa)
+	}
 	if da, err := domain.ParseDesktopAction(task.InputPayload); err != nil {
 		return fail(err, false)
 	} else if da != nil {
@@ -372,4 +380,28 @@ func (e *Executor) runDesktop(ctx context.Context, task *domain.Task, da *domain
 	default:
 		return fail(fmt.Errorf("unsupported desktop op: %s", da.Op), false)
 	}
+}
+
+// runShell runs a laptop shell, terminal or app action. The step must itself declare the capability its op needs,
+// so a payload cannot reach shell hands through a host that was only granted something weaker.
+func (e *Executor) runShell(ctx context.Context, task *domain.Task, sa *domain.ShellAction) (*worker.ExecutionResult, error) {
+	if e.Shell == nil {
+		return fail(errors.New("shell and terminal control is not switched on for this host"), false)
+	}
+	need := sa.Op.RequiredCapability()
+	declared := false
+	for _, c := range domain.RequiredCapabilities(task.InputPayload) {
+		if c == need {
+			declared = true
+		}
+	}
+	if !declared {
+		return fail(fmt.Errorf("a %s step must declare the %q capability", sa.Op, need), false)
+	}
+	text, err := e.Shell.Do(ctx, sa)
+	if err != nil {
+		return fail(err, false)
+	}
+	raw, _ := json.Marshal(map[string]any{"status": "done", "op": sa.Op, "text": text})
+	return &worker.ExecutionResult{ExecutionID: uuid.New(), ProviderName: "hands-shell", Status: "SUCCESS", Output: raw, TextOutput: text}, nil
 }

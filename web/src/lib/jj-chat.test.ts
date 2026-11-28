@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Task } from "@/lib/api";
 import { fixtures } from "@/test/fixtures";
 import {
+  turnsFromStored,
   buildHistory,
   extractReply,
   parseBlocks,
@@ -173,5 +174,25 @@ describe("parseBlocks", () => {
   });
   it("returns no blocks for blank input", () => {
     expect(parseBlocks("  \n ")).toEqual([]);
+  });
+});
+
+describe("turnsFromStored", () => {
+  const at = "2026-01-01T00:00:00Z";
+  it("pairs each user message with the assistant answer after it", () => {
+    const acts = [{ tool: "pause_routine", summary: "Paused", undo_id: "u1" }];
+    const out = turnsFromStored([
+      { role: "user", text: "pause", actions: [], created_at: at },
+      { role: "assistant", text: "Done", actions: acts, created_at: at },
+      { role: "user", text: "again", actions: [], created_at: at },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out[0].reply).toEqual({ phase: "done", text: "Done", actions: acts });
+    expect(out[1].reply.phase).toBe("failed");
+    expect(out.map((t) => t.id)).toEqual([1, 2]);
+  });
+  it("skips a stray assistant turn and returns nothing for an empty thread", () => {
+    expect(turnsFromStored([{ role: "assistant", text: "x", actions: [], created_at: at }])).toEqual([]);
+    expect(turnsFromStored([])).toEqual([]);
   });
 });

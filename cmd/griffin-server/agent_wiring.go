@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -21,7 +22,7 @@ import (
 // buildChatAgent makes JJ's tool-using chat agent, or returns nil (the old chat path stays) when no Gemini key is set.
 // External agent actions run from the engine's approval hook, so they execute only what the owner approved.
 func buildChatAgent(cfg *config.Config, repoDB database.Querier, engine *service.TaskEngine, approvalRepo repository.ApprovalRepository,
-	schedules repository.ScheduleRepository, reminders *service.Reminders, profiles *repository.OwnerProfileRepository, store *storage.StorageService, listings *repository.OpportunityRepository) handlers.ChatAgent {
+	schedules repository.ScheduleRepository, reminders *service.Reminders, profiles *repository.OwnerProfileRepository, store *storage.StorageService, listings *repository.OpportunityRepository, extras chatExtras) handlers.ChatAgent {
 	if strings.TrimSpace(cfg.GeminiAPIKey) == "" {
 		return nil
 	}
@@ -34,6 +35,13 @@ func buildChatAgent(cfg *config.Config, repoDB database.Querier, engine *service
 			return service.CheckPosting(ctx, nil, link)
 		},
 	}
+	deps.More = chatMoreDeps(cfg, repoDB, engine, store, listings, service.OwnerProfileWithLibrary{Structured: profiles}, extras)
+	deps.Jobs = true // the agent_jobs tick operation runs them
+	hostRepo := repository.NewPostgresHostRepository(repoDB)
+	deps.PhoneLive = func(ctx context.Context, user uuid.UUID) bool {
+		hosts, err := hostRepo.ListHosts(ctx, user)
+		return err == nil && domain.AnyHostCovers(hosts, []string{domain.HostCapPhoneApps}, time.Now())
+	}
 	if listings != nil {
 		deps.Listings = listings
 	}
@@ -45,7 +53,11 @@ func buildChatAgent(cfg *config.Config, repoDB database.Querier, engine *service
 		}
 		deps.Trackers, deps.Vault = lists, store
 	}
-	tools, err := agent.NewRegistry(agent.NewTools(deps)...)
+	laptopTools := agent.NewLaptopTools(agent.LaptopDeps{Tasks: engine, Covers: func(ctx context.Context, user uuid.UUID, required []string) bool {
+		hosts, err := hostRepo.ListHosts(ctx, user)
+		return err == nil && domain.AnyHostCovers(hosts, required, time.Now().UTC())
+	}})
+	tools, err := agent.NewRegistry(append(agent.NewTools(deps), laptopTools...)...)
 	if err != nil {
 		panic("agent tools: " + err.Error()) // a duplicate or incomplete tool is a coding error
 	}
@@ -91,3 +103,15 @@ func (v chatApprovals) ListApprovals(ctx context.Context, user uuid.UUID, st *do
 func (v chatApprovals) RespondApproval(ctx context.Context, id, user uuid.UUID, ok bool, reason string) (*domain.Approval, error) {
 	return v.engine.RespondApproval(ctx, id, user, ok, reason)
 }
+
+// agentJobsOp is the "agent_jobs" tick operation: it works on due AGENT JOB tasks inside the Lambda. It does nothing
+// when the chat agent is not configured.
+func agentJobsOp(chat handlers.ChatAgent, queue agent.JobQueue, engine agent.JobEngine, budget time.Duration) func(context.Context) error {
+	ag, ok := chat.(*agent.Agent)
+	if !ok || ag == nil {
+		return func(context.Context) error { return nil }
+	}
+	return (&agent.JobRunner{Queue: queue, Engine: engine, Agent: ag, Budget: budget}).Run
+}
+
+var _ handlers.AgentToolRunner = (*agent.Agent)(nil) // the host tools route is served only if this holds
