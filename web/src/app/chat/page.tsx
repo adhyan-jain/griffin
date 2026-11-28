@@ -14,6 +14,7 @@ import { VoicePanel } from "@/components/voice-panel";
 import { ErrorNote } from "@/components/page";
 import { ChatText } from "@/components/chat-text";
 import { PlanCard } from "@/components/plan-card";
+import { ActionRows } from "@/components/action-rows";
 
 const SUGGESTIONS = ["Plan a weekly status report", "Review this repo for security issues", "Draft a launch checklist for next week"];
 const CONVERSATION_KEY = "griffin_jj_conversation";
@@ -30,6 +31,16 @@ function conversationId(): string {
     return fresh;
   } catch {
     return (memoryConversationId ??= crypto.randomUUID());
+  }
+}
+
+/** Adopt the server's id for this thread so every later turn (and a reload) reuses it. */
+function adoptConversationId(id: string) {
+  memoryConversationId = id;
+  try {
+    sessionStorage.setItem(CONVERSATION_KEY, id);
+  } catch {
+    // memory copy is enough for this page load
   }
 }
 
@@ -107,6 +118,7 @@ export default function ChatPage() {
       if (!endpointMissing.current) {
         try {
           const result = await api.sendJJMessage({ message, conversation_id: conversationId(), history, images });
+          if (result.conversation_id) adoptConversationId(result.conversation_id);
           dispatch(id, { type: "accepted", result });
           return;
         } catch (e) {
@@ -239,6 +251,7 @@ export default function ChatPage() {
             {t.reply.phase === "done" && (
               <div data-testid="jj-reply" className="w-full max-w-[96%] space-y-1.5 rounded-2xl rounded-bl-md border bg-card px-4 py-3">
                 <ChatText text={t.reply.text} />
+                {t.reply.actions && <ActionRows actions={t.reply.actions} />}
                 {t.reply.provider && providerLine(t.reply.provider) && <p className="text-[11px] text-muted-foreground">{providerLine(t.reply.provider)}</p>}
               </div>
             )}

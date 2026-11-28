@@ -3,7 +3,7 @@
  * output_payload, history truncation, the poll cadence and a tiny safe markdown parser.
  * No React and no network here, so every rule is unit-tested.
  */
-import type { DeviceNote, ImageData, JJHistoryTurn, JJMessageResult, RunnerWake, SubmitResult, Task } from "@/lib/api";
+import type { DeviceNote, JJAction, ImageData, JJHistoryTurn, JJMessageResult, RunnerWake, SubmitResult, Task } from "@/lib/api";
 
 export interface Provider {
   name?: string;
@@ -15,7 +15,7 @@ export interface Provider {
 export type Reply =
   | { phase: "sending" }
   | { phase: "waiting"; taskId: string; wake?: RunnerWake }
-  | { phase: "done"; text: string; provider?: Provider }
+  | { phase: "done"; text: string; provider?: Provider; actions?: JJAction[] }
   | { phase: "failed"; reason: string }
   | { phase: "plan"; result: SubmitResult; planOnly: boolean; needsDevice?: DeviceNote };
 
@@ -82,6 +82,7 @@ export function reduceReply(state: Reply, ev: ReplyEvent): Reply {
     case "accepted": {
       if (state.phase !== "sending") return state;
       const r = ev.result;
+      if (r.kind === "conversation" && r.task_id === undefined) return { phase: "done", text: r.response, actions: r.actions?.length ? r.actions : undefined };
       if (r.kind === "conversation") return { phase: "waiting", taskId: r.task_id, wake: r.runner };
       return { phase: "plan", result: { orchestration: r.orchestration, plan: r.plan }, planOnly: false, needsDevice: r.needs_device };
     }

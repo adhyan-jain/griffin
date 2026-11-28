@@ -309,7 +309,9 @@ func NewServer(deps ServerDependencies) *Server {
 			Approvals: voiceApprovals{deps.ApprovalRepo, deps.Engine},
 			Secret:    []byte(deps.Config.SupabaseJWTSecret),
 			Aliases:   deps.AliasRepo,
-			Caller:    deps.Calls,
+		}
+		if deps.Calls != nil { // a nil *CallsHandler in the interface would pass the nil check and panic
+			voiceCmds.Caller = deps.Calls
 		}
 	}
 
@@ -430,28 +432,13 @@ func NewServer(deps ServerDependencies) *Server {
 			hostHandler.WithAutoArchive(&service.AutoArchiver{Store: archiver})
 		}
 		if deps.StorageService != nil {
-			lists := &service.TrackerLists{Store: deps.StorageService, Tasks: deps.TaskRepo, Logger: deps.Logger, ApprovedDrafts: deps.Engine.ApprovedDraftTasks,
-				CheckPosting: func(ctx context.Context, link string) service.PostingState {
-					return service.CheckPosting(ctx, nil, link)
-				},
-				Hackathons: &service.HackathonSync{}, OpenSource: &service.OpenSourceSync{}, Hygiene: &service.HygieneSync{Login: deps.GitHubLogin}}
-			if deps.CommunityReplies != nil {
-				lists.ReplyModel, lists.OwnerFacts = deps.CommunityReplies, deps.Engine.OwnerFacts
-			}
-			if deps.ListingRepo != nil {
-				lists.Details = service.DetailsFor(deps.ListingRepo)
-				lists.Sync = &service.ListingSync{Listings: deps.ListingRepo, Details: lists.Details}
-				lists.Opportunities = &service.OpportunityScan{Store: deps.ListingRepo}
-			}
-			lists.Assess = deps.Assess
-			lists.Reminders = deps.Reminders
-			lists.Prep = deps.Prep
+			var research service.ResearchRunner
 			if deps.ResearchEngine != nil {
-				lists.ResearchRunner = deps.ResearchEngine
+				research = deps.ResearchEngine
 			}
-			if deps.PeopleRepo != nil {
-				lists.Alumni = service.NewAlumniPeople(deps.StorageService, deps.PeopleRepo)
-			}
+			lists := service.NewCodeLists(service.CodeListsDeps{Store: deps.StorageService, Tasks: deps.TaskRepo, Engine: deps.Engine, Logger: deps.Logger,
+				GitHubLogin: deps.GitHubLogin, CommunityReplies: deps.CommunityReplies, Listings: deps.ListingRepo, Assess: deps.Assess,
+				Prep: deps.Prep, Reminders: deps.Reminders, Research: research, People: deps.PeopleRepo})
 			hostHandler.WithTrackerLists(lists)
 		}
 		mux.Handle("POST /api/v1/hosts", userAuth(http.HandlerFunc(hostHandler.RegisterHost)))

@@ -147,7 +147,14 @@ func (a *Agent) Run(ctx context.Context, in Input) (*Result, error) {
 		if round > maxRounds {
 			return nil, ErrTooManyRounds
 		}
-		rep, err := a.Model.Generate(ctx, system, contents, decls)
+		roundDecls := decls
+		if round == maxRounds && round > 0 {
+			// The last step offers no tools, so the owner gets an answer from what was found rather than an error.
+			roundDecls = nil
+			last := &contents[len(contents)-1]
+			last.Parts = append(last.Parts, gemini.Part{Text: lastRoundNote})
+		}
+		rep, err := a.Model.Generate(ctx, system, contents, roundDecls)
 		if err != nil {
 			return nil, err
 		}
@@ -192,6 +199,8 @@ func (a *Agent) Run(ctx context.Context, in Input) (*Result, error) {
 	}
 	return a.finish(ctx, in, conv, rs, userTurnID, reply)
 }
+
+const lastRoundNote = "No more tool steps are available. Answer the owner now using only what the tool results showed. Say plainly what is done and what is not, and ask for any detail you are missing."
 
 func retryNote(vs []Violation) string {
 	var b strings.Builder

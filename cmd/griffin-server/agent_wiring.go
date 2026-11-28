@@ -21,16 +21,31 @@ import (
 // buildChatAgent makes JJ's tool-using chat agent, or returns nil (the old chat path stays) when no Gemini key is set.
 // External agent actions run from the engine's approval hook, so they execute only what the owner approved.
 func buildChatAgent(cfg *config.Config, repoDB database.Querier, engine *service.TaskEngine, approvalRepo repository.ApprovalRepository,
-	schedules repository.ScheduleRepository, reminders *service.Reminders, profiles *repository.OwnerProfileRepository, store *storage.StorageService) handlers.ChatAgent {
+	schedules repository.ScheduleRepository, reminders *service.Reminders, profiles *repository.OwnerProfileRepository, store *storage.StorageService, listings *repository.OpportunityRepository) handlers.ChatAgent {
 	if strings.TrimSpace(cfg.GeminiAPIKey) == "" {
 		return nil
 	}
 	pg := agent.NewPGStore(repoDB)
-	tools, err := agent.NewRegistry(agent.NewTools(agent.Deps{
+	deps := agent.Deps{
 		Tasks: engine, Routines: schedules, Reminders: reminders,
 		Approvals: chatApprovals{approvalRepo, engine},
 		Search:    web.SearcherFromEnv(), Fetch: web.NewFetcher(web.FetcherConfig{}), Store: pg,
-	})...)
+		CheckLink: func(ctx context.Context, link string) service.PostingState {
+			return service.CheckPosting(ctx, nil, link)
+		},
+	}
+	if listings != nil {
+		deps.Listings = listings
+	}
+	if store != nil { // a nil *StorageService inside an interface would pass the nil check and panic
+		lists := &service.TrackerLists{Store: store}
+		if listings != nil {
+			lists.Sync = &service.ListingSync{Listings: listings}
+			deps.ListingsChanged = func(ctx context.Context, user uuid.UUID) { _ = lists.WriteListingsList(ctx, user) }
+		}
+		deps.Trackers, deps.Vault = lists, store
+	}
+	tools, err := agent.NewRegistry(agent.NewTools(deps)...)
 	if err != nil {
 		panic("agent tools: " + err.Error()) // a duplicate or incomplete tool is a coding error
 	}

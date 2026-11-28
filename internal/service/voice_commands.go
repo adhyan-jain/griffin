@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -947,7 +948,7 @@ func (v *VoiceCommands) aliasCommand(ctx context.Context, user uuid.UUID, c Task
 }
 
 func (v *VoiceCommands) makeAutomatedCall(ctx context.Context, user uuid.UUID, c TaskCommand) (Result, error) {
-	if v.Caller == nil {
+	if rv := reflect.ValueOf(v.Caller); v.Caller == nil || (rv.Kind() == reflect.Ptr && rv.IsNil()) { // a typed nil pointer is not a nil interface
 		return Result{Reply: "Autonomous calling is not configured on this server."}, nil
 	}
 	who := v.Expand(ctx, user, c.Ref)

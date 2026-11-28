@@ -101,6 +101,9 @@ func (p *RuleBasedPlanner) GeneratePlan(ctx context.Context, req *domain.UserReq
 
 	switch planKey {
 	case "call":
+		if callRecipient(req.RequestText) == "" {
+			return nil, ErrCallRecipientMissing
+		}
 		childTasks, dependencies = callSteps(req)
 
 	case "whatsapp":

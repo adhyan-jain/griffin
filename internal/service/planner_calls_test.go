@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -116,4 +117,61 @@ func TestCallStepsDecomposition(t *testing.T) {
 		assert.Contains(t, string(task.InputPayload), `"message":"wake up bitch"`)
 		assert.Contains(t, string(task.InputPayload), `"requires":["calls"]`)
 	})
+}
+
+func TestCallRecipientSkipsFillerWords(t *testing.T) {
+	cases := map[string]string{
+		"call him instead":                        "",
+		"call them now":                           "",
+		"do a normal sim call again":              "",
+		"call back":                               "",
+		"call normal sim call to hiten":           "hiten",
+		"calling hiten now":                       "hiten",
+		"make a sim call to mitul":                "mitul",
+		"sim call hiten":                          "hiten",
+		"call her back and tell her i'll be late": "",
+		"call mom":                                "mom",
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, callRecipient(in), in)
+	}
+	for _, in := range []string{"calling hiten", "do a sim call", "call him instead"} {
+		assert.True(t, wantsCall(in), in)
+	}
+}
+
+func TestCallWithoutRecipientAsksInsteadOfGuessing(t *testing.T) {
+	planner := NewRuleBasedPlanner()
+	reg := manager.NewDefaultRegistry()
+	_, err := planner.GeneratePlan(context.Background(), &domain.UserRequest{RequestText: "call him instead", Priority: domain.TaskPriorityNormalP2}, reg)
+	require.ErrorIs(t, err, ErrCallRecipientMissing)
+
+	plan, err := planner.GeneratePlan(context.Background(), &domain.UserRequest{RequestText: "calling anish and say wake up", Priority: domain.TaskPriorityNormalP2}, reg)
+	require.NoError(t, err)
+	require.Len(t, plan.ChildTasks, 1)
+	assert.NotContains(t, plan.ChildTasks[0].Title, "Hiten")
+	assert.Contains(t, strings.ToLower(plan.ChildTasks[0].Title), "anish")
+}
+
+type nilCaller struct{}
+
+func (*nilCaller) MakeOutboundCall(context.Context, uuid.UUID, string, string, string) (string, error) {
+	return "", nil
+}
+
+func TestVoiceCommandsTypedNilCallerIsNotConfigured(t *testing.T) {
+	var c *nilCaller // a nil pointer inside an interface value is not == nil
+	v := &VoiceCommands{Caller: c}
+	res, err := v.makeAutomatedCall(context.Background(), uuid.New(), TaskCommand{Ref: "hiten", Target: "hi"})
+	require.NoError(t, err)
+	assert.Contains(t, res.Reply, "not configured")
+}
+
+func TestPrepListingIDs(t *testing.T) {
+	id := uuid.New()
+	assert.Equal(t, []uuid.UUID{id}, PrepListingIDs([]byte(`{"prepare_listings":["`+id.String()+`"]}`)))
+	assert.Empty(t, PrepListingIDs([]byte(`{}`)))
+	assert.Empty(t, PrepListingIDs([]byte(`not json`)))
+	assert.False(t, ValidCallContact("instead"))
+	assert.True(t, ValidCallContact("Hiten"))
 }

@@ -263,6 +263,9 @@ func (r *OpportunityRepository) ListAssessed(ctx context.Context, userID uuid.UU
 	if len(f.Stages) > 0 {
 		q += " AND " + in("j.stage", f.Stages)
 	}
+	if len(f.Tiers) > 0 {
+		q += " AND " + in("j.tier", f.Tiers)
+	}
 	if len(f.Classes) > 0 {
 		q += " AND " + in("a.value_class", f.Classes)
 	}

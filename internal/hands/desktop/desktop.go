@@ -359,6 +359,30 @@ func (s *Service) LaunchApp(ctx context.Context, appName string) (string, error)
 	}
 }
 
+// OpenURL opens an http(s) address in the owner's default browser.
+func (s *Service) OpenURL(ctx context.Context, rawURL string) (string, error) {
+	u := strings.TrimSpace(rawURL)
+	if l := strings.ToLower(u); !strings.HasPrefix(l, "https://") && !strings.HasPrefix(l, "http://") {
+		return "", fmt.Errorf("only http(s) addresses can be opened")
+	}
+	var cmd *exec.Cmd
+	switch s.Env.OS {
+	case "linux":
+		cmd = exec.Command("xdg-open", u)
+	case "darwin":
+		cmd = exec.CommandContext(ctx, "open", u)
+	case "windows":
+		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", u)
+	default:
+		return "", fmt.Errorf("opening addresses unsupported on OS: %s", s.Env.OS)
+	}
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("could not open the address: %w", err)
+	}
+	go func() { _ = cmd.Wait() }()
+	return "Opened " + u + " in the browser.", nil
+}
+
 // ScreenshotResult holds metadata and data about a captured screen or phone image.
 type ScreenshotResult struct {
 	Target   string `json:"target"` // "screen" or "phone"

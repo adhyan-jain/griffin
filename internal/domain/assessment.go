@@ -194,6 +194,7 @@ func (s AssessmentSubject) Stale() bool {
 // "unknown" also matches a listing that has not been assessed yet: it is waiting for review.
 type AssessedFilter struct {
 	Stages      []string
+	Tiers       []string // pay tiers A, B, C
 	Classes     []string
 	Eligibility []string
 	Limit       int

@@ -349,9 +349,18 @@ export interface DeviceNote {
   message: string;
 }
 
+/** One thing JJ did during an agent turn. `pending`: waiting in Approvals. `undo_id`: reversible once. */
+export interface JJAction {
+  tool: string;
+  summary: string;
+  undo_id?: string;
+  pending?: boolean;
+}
+
 /** 201 body of POST /api/v1/jj/messages. */
 export type JJMessageResult = (
   | { kind: "conversation"; conversation_id: string; task_id: string; runner?: RunnerWake }
+  | { kind: "conversation"; conversation_id: string; task_id?: undefined; response: string; actions?: JJAction[]; runner?: RunnerWake }
   | { kind: "objective"; conversation_id: string; orchestration: Orchestration; plan: OrchestrationPlan; runner?: RunnerWake; needs_device?: DeviceNote }
 ) & { continued?: JJContinued; suggestion?: JJSuggestion };
 
@@ -1198,6 +1207,8 @@ export const api = {
       throw e;
     }
   },
+  /** Reverses one agent action, once. Non-2xx (ApiError) means it could not be undone. */
+  undoAgentAction: (undoId: string) => fetchWithAuth<unknown>(`/api/v1/jj/undo/${encodeURIComponent(undoId)}`, { method: "POST" }),
   listManagers: () => fetchList<Manager>("/api/v1/managers"),
   /**
    * One spoken turn: a quick answer, a task command (list, cancel, delete, approvals) or a hand-off of real work.

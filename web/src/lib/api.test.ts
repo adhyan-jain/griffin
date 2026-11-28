@@ -292,6 +292,29 @@ describe("sendJJMessage", () => {
   });
 });
 
+describe("undoAgentAction", () => {
+  it("POSTs to the undo endpoint with the id encoded", async () => {
+    fetchMock.mockResolvedValue(json(envelope({}), 200));
+    await mod.api.undoAgentAction("u/1");
+    const { url, init } = lastCall();
+    expect(url).toBe("http://api.test/api/v1/jj/undo/u%2F1");
+    expect(init.method).toBe("POST");
+  });
+
+  it("throws the server message when it cannot be undone", async () => {
+    fetchMock.mockResolvedValue(json({ success: false, error: { message: "already undone" } }, 409));
+    await expect(mod.api.undoAgentAction("u1")).rejects.toThrow("already undone");
+  });
+
+  it("sendJJMessage returns an inline reply with actions", async () => {
+    const body = { kind: "conversation", conversation_id: "c1", response: "Done", actions: [{ tool: "pause_routine", summary: "Paused X", undo_id: "u1" }] };
+    fetchMock.mockResolvedValue(json(envelope(body), 201));
+    const r = await mod.api.sendJJMessage({ message: "pause X" });
+    if (r.kind === "conversation" && r.task_id === undefined) expect(r.actions?.[0].undo_id).toBe("u1");
+    else throw new Error("expected inline reply");
+  });
+});
+
 describe("Research & Intelligence API", () => {
   // Fixtures copy the JSON field names of domain.ResearchRun / ResearchFinding / EvidenceItem.
   const runFixture = {

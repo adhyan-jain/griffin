@@ -554,7 +554,7 @@ func main() {
 			ApprovalRepo:     approvalRepo,
 			AgentRepo:        agentRepo,
 			ScheduleRepo:     repository.NewPostgresScheduleRepository(repoDB),
-			Agent:            buildChatAgent(cfg, repoDB, engine, approvalRepo, repository.NewPostgresScheduleRepository(repoDB), reminders, ownerProfiles, storageService),
+			Agent:            buildChatAgent(cfg, repoDB, engine, approvalRepo, repository.NewPostgresScheduleRepository(repoDB), reminders, ownerProfiles, storageService, listingRepo),
 			ArtifactRepo:     artifactRepo,
 			StorageService:   storageService,
 			WorkerDefRepo:    workerDefRepo,

@@ -330,6 +330,19 @@ func (e *Executor) runDesktop(ctx context.Context, task *domain.Task, da *domain
 			Output:       raw,
 			TextOutput:   msg,
 		}, nil
+	case domain.DesktopOpOpenURL:
+		msg, err := e.Desktop.OpenURL(ctx, da.URL)
+		if err != nil {
+			return fail(err, false)
+		}
+		raw, _ := json.Marshal(map[string]any{"status": "opened", "message": msg})
+		return &worker.ExecutionResult{
+			ExecutionID:  uuid.New(),
+			ProviderName: "hands-desktop",
+			Status:       "SUCCESS",
+			Output:       raw,
+			TextOutput:   msg,
+		}, nil
 	case domain.DesktopOpEnv:
 		raw, _ := json.Marshal(e.Desktop.Env)
 		return &worker.ExecutionResult{

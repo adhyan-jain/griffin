@@ -71,6 +71,12 @@ describe("reduceReply", () => {
     expect(r).toMatchObject({ phase: "waiting", taskId: fixtures.jjConversation.task_id, wake: { wake: "failed", detail: "x" } });
   });
 
+  it("sending -> done on an inline agent reply, keeping its actions", () => {
+    const actions = [{ tool: "pause_routine", summary: "Paused X", undo_id: "u1" }];
+    const result = { kind: "conversation", conversation_id: "c1", response: "Paused.", actions } as never;
+    expect(reduceReply(sending, { type: "accepted", result })).toEqual({ phase: "done", text: "Paused.", actions });
+  });
+
   it("sending -> plan on an objective result", () => {
     const r = reduceReply(sending, { type: "accepted", result: fixtures.jjObjective as never });
     expect(r.phase).toBe("plan");

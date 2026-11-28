@@ -44,6 +44,7 @@ type AssessedLister interface {
 
 var (
 	valueClasses  = map[string]bool{domain.ValueExceptional: true, domain.ValueStrong: true, domain.ValueGood: true, domain.ValueExploratory: true, domain.ValueLow: true}
+	tiers         = map[string]bool{"A": true, "B": true, "C": true}
 	eligibilities = map[string]bool{domain.EligibilityConfirmed: true, domain.EligibilityLikely: true, domain.EligibilityUnknown: true, domain.EligibilityIneligible: true}
 )
 
@@ -66,7 +67,7 @@ func listParam(r *http.Request, name string, allowed map[string]bool) ([]string,
 }
 
 // List returns the owner's listings with their assessments, best value first (listings not yet assessed last).
-// ?stage=verified,drafted filters by stage, ?class=exceptional,strong by value class and ?eligibility=unknown by
+// ?stage=verified,drafted filters by stage, ?tier=A,B by pay tier, ?class=exceptional,strong by value class and ?eligibility=unknown by
 // eligibility (unknown also matches a listing not assessed yet: it is waiting for review).
 func (h *ListingsHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r.Context())
@@ -88,9 +89,14 @@ func (h *ListingsHandler) List(w http.ResponseWriter, r *http.Request) {
 		httputil.ErrorJSON(w, err)
 		return
 	}
+	tierList, err := listParam(r, "tier", tiers)
+	if err != nil {
+		httputil.ErrorJSON(w, err)
+		return
+	}
 	var rows []*domain.Listing
 	if lister, ok := h.repo.(AssessedLister); ok {
-		rows, err = lister.ListAssessed(r.Context(), userID, domain.AssessedFilter{Stages: stages, Classes: classes, Eligibility: elig, Limit: 500})
+		rows, err = lister.ListAssessed(r.Context(), userID, domain.AssessedFilter{Stages: stages, Tiers: tierList, Classes: classes, Eligibility: elig, Limit: 500})
 	} else {
 		rows, err = h.repo.List(r.Context(), userID, stages, 500)
 	}

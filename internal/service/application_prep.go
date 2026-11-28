@@ -396,11 +396,48 @@ func (w *TrackerLists) PrepareApplications(ctx context.Context, task *domain.Tas
 	if w == nil || w.Prep == nil || task == nil || !domain.IsApplicationPrep(task.Title) {
 		return "", false
 	}
+	if ids := PrepListingIDs(task.InputPayload); len(ids) > 0 {
+		return w.prepareListed(ctx, task.UserID, ids), true
+	}
 	res, err := w.Prep.Run(ctx, task.UserID)
 	if err != nil {
 		return "Application prep could not run: " + err.Error(), true
 	}
 	return res.Summary(), true
+}
+
+// PrepListingsKey is the task payload key naming the listings the owner asked, in chat, to prepare packages for.
+const PrepListingsKey = "prepare_listings"
+
+// PrepListingIDs reads the listing ids an APPLICATION PREP task was asked to prepare; none means the routine's own pick.
+func PrepListingIDs(payload json.RawMessage) []uuid.UUID {
+	var p struct {
+		Listings []uuid.UUID `json:"prepare_listings"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return nil
+	}
+	return p.Listings
+}
+
+// prepareListed prepares the package of each listing the owner named. Each drafts into the approvals page as always;
+// nothing is submitted.
+func (w *TrackerLists) prepareListed(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) string {
+	var done, problems []string
+	for _, id := range ids {
+		pkg, err := w.Prep.Prepare(ctx, userID, id)
+		switch {
+		case err != nil:
+			problems = append(problems, fmt.Sprintf("%s: %v", id, err))
+		default:
+			done = append(done, fmt.Sprintf("%s (%s)", id, pkg.Status))
+		}
+	}
+	out := fmt.Sprintf("Prepared %d of %d requested application packages: %s.", len(done), len(ids), strings.Join(done, ", "))
+	if len(problems) > 0 {
+		out += "\nProblems: " + strings.Join(problems, "; ") + "."
+	}
+	return out + "\nNothing was sent to anyone."
 }
 
 // HoldPackageTask answers the task an application package was held on, once the owner has decided: it carries only

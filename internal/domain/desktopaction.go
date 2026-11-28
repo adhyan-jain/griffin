@@ -17,6 +17,7 @@ const (
 	DesktopOpLaunch     DesktopOp = "launch"
 	DesktopOpEnv        DesktopOp = "env"
 	DesktopOpScreenshot DesktopOp = "screenshot"
+	DesktopOpOpenURL    DesktopOp = "open_url"
 )
 
 // DesktopAction is one desktop job. A step that carries one requires the "desktop" capability.
@@ -27,6 +28,7 @@ type DesktopAction struct {
 	App      string    `json:"app,omitempty"`       // app name to launch
 	Target   string    `json:"target,omitempty"`    // screen (default), window, or phone
 	SavePath string    `json:"save_path,omitempty"` // custom output path
+	URL      string    `json:"url,omitempty"`       // http(s) address to open in the default browser
 }
 
 // ParseDesktopAction reads and validates the desktop action in a payload; (nil, nil) when there is none.
@@ -66,6 +68,12 @@ func (d *DesktopAction) Validate() error {
 		}
 		return nil
 	case DesktopOpEnv:
+		return nil
+	case DesktopOpOpenURL:
+		u := strings.ToLower(strings.TrimSpace(d.URL))
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			return fmt.Errorf("%w: desktop open_url needs an http(s) url", ErrValidation)
+		}
 		return nil
 	case DesktopOpScreenshot:
 		if strings.TrimSpace(d.Target) == "" {

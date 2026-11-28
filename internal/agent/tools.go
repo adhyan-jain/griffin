@@ -57,6 +57,13 @@ type Deps struct {
 	Search    Searcher
 	Fetch     Fetcher
 	Store     Store
+	// Listings, Trackers and Vault serve the work tools; CheckLink checks one listing link; ListingsChanged re-renders
+	// the Internships list after listings are closed. A nil dependency leaves its tools out.
+	Listings        ListingsAPI
+	Trackers        TrackerAPI
+	Vault           VaultLister
+	CheckLink       func(ctx context.Context, link string) service.PostingState
+	ListingsChanged func(ctx context.Context, userID uuid.UUID)
 }
 
 // decode reads tool arguments strictly: an unknown field is an error the model can correct.
@@ -114,6 +121,21 @@ func NewTools(d Deps) []*Tool {
 	}
 	if d.Store != nil {
 		ts = append(ts, remember(d), forget(d), noToolFits(d))
+	}
+	if d.Trackers != nil {
+		ts = append(ts, readTracker(d), removeTrackerRows(d), updateTrackerRow(d))
+	}
+	if d.Listings != nil {
+		ts = append(ts, listListings(d), closeListings(d))
+		if d.Tasks != nil {
+			ts = append(ts, checkListingLinks(d), prepareApplications(d))
+		}
+	}
+	if d.Tasks != nil {
+		ts = append(ts, placeCall(d), laptop(d))
+	}
+	if d.Vault != nil {
+		ts = append(ts, listVault(d))
 	}
 	return append(ts, readMore(), startJob())
 }
@@ -192,10 +214,11 @@ func ownedTasks(ctx context.Context, d Deps, user uuid.UUID) (map[uuid.UUID]*dom
 
 func listTasks(d Deps) *Tool {
 	return &Tool{
-		Name:        "list_tasks",
-		Description: "List the owner's tasks (newest first) with their ids and status. Use it before cancelling or retrying. 'status' optionally filters: active, failed, completed, cancelled.",
-		Effect:      EffectRead,
-		Schema:      obj(map[string]any{"status": str("optional: active, failed, completed or cancelled"), "limit": num("at most this many (default 30)")}),
+		Name: "list_tasks",
+		Description: "List the owner's tasks (newest first) with their ids and status. A task is one run of anything Griffin did or is doing: a routine's run, a research job, an application, a reminder, a call. " +
+			"Use it to answer whether something ran, finished or failed ('did you do the README update?', 'what is running?') and before cancelling or retrying. 'status' optionally filters: active, failed, completed, cancelled.",
+		Effect: EffectRead,
+		Schema: obj(map[string]any{"status": str("optional: active, failed, completed or cancelled"), "limit": num("at most this many (default 30)")}),
 		Run: func(ctx context.Context, c *Call, raw json.RawMessage) (Output, error) {
 			var a struct {
 				Status string
@@ -244,29 +267,49 @@ func listTasks(d Deps) *Tool {
 
 func cancelTasks(d Deps) *Tool {
 	return &Tool{
-		Name:        "cancel_tasks",
-		Description: "Cancel tasks by id. Only ids returned by list_tasks in this conversation are accepted. Any number of tasks may be cancelled at once; the owner can undo.",
-		Effect:      EffectInternal,
-		Schema:      obj(map[string]any{"ids": strs("task ids from list_tasks")}, "ids"),
+		Name: "cancel_tasks",
+		Description: "Cancel (stop, abort, pause) tasks. Either give task ids from list_tasks, or give 'status' to cancel every task in that state in one call: " +
+			"'running', 'queued' or 'active' (all running and queued tasks); 'title_contains' narrows it to tasks whose title has those words. " +
+			"So 'stop everything that is running' is one call with status=active. Any number may be cancelled at once; the owner can undo.",
+		Effect: EffectInternal,
+		Schema: obj(map[string]any{"ids": strs("task ids from list_tasks"), "status": str("instead of ids: running, queued or active"),
+			"title_contains": str("with status: only tasks whose title contains this text")}),
 		Run: func(ctx context.Context, c *Call, raw json.RawMessage) (Output, error) {
-			var a struct{ IDs []string }
+			var a struct {
+				IDs           []string
+				Status        string
+				TitleContains string `json:"title_contains"`
+			}
 			if err := decode(raw, &a); err != nil {
 				return Output{}, err
 			}
-			if len(a.IDs) == 0 {
-				return Output{}, errors.New("ids is empty")
-			}
-			var ids []uuid.UUID
-			for _, s := range a.IDs {
-				id, err := c.ParseSeenID(s)
-				if err != nil {
-					return Output{}, err
-				}
-				ids = append(ids, id)
-			}
-			byID, _, err := ownedTasks(ctx, d, c.UserID)
+			byID, top, err := ownedTasks(ctx, d, c.UserID)
 			if err != nil {
 				return Output{}, err
+			}
+			var ids []uuid.UUID
+			switch st := strings.ToLower(strings.TrimSpace(a.Status)); {
+			case len(a.IDs) > 0:
+				for _, s := range a.IDs {
+					id, err := c.ParseSeenID(s)
+					if err != nil {
+						return Output{}, err
+					}
+					ids = append(ids, id)
+				}
+			case st == "running" || st == "queued" || st == "active":
+				for _, t := range top { // ids resolved here come from the owner's own task list, so they need no earlier listing
+					s := strings.ToLower(string(t.Status))
+					if t.IsTerminal() || (st != "active" && s != st) || !strings.Contains(strings.ToLower(t.Title), strings.ToLower(strings.TrimSpace(a.TitleContains))) {
+						continue
+					}
+					ids = append(ids, t.ID)
+				}
+				if len(ids) == 0 {
+					return Output{Text: "No " + st + " tasks match. Nothing was cancelled."}, nil
+				}
+			default:
+				return Output{}, errors.New("give ids, or a status of running, queued or active")
 			}
 			var done []uuid.UUID
 			var titles, skipped []string
@@ -419,9 +462,10 @@ func stateOf(s *domain.Schedule, withTemplate bool) json.RawMessage {
 
 func listRoutines(d Deps) *Tool {
 	return &Tool{
-		Name:        "list_routines",
-		Description: "List the owner's recurring routines with ids, state, next run and goal. Use it before pausing, resuming, running or editing one.",
-		Effect:      EffectRead,
+		Name: "list_routines",
+		Description: "List the owner's recurring routines (the jobs that run on a schedule, such as the internship search, the hackathon tracker, the README updates or the community scan) with id, name, state, next run and the full goal text (its instructions: source websites, topics, filters, what it writes). " +
+			"Use it before pausing, resuming, running or editing a routine, and to find which routine a request is about. It shows what routines are set up, not whether a run happened: for that use list_tasks.",
+		Effect: EffectRead,
 		Run: func(ctx context.Context, c *Call, raw json.RawMessage) (Output, error) {
 			list, err := d.Routines.ListSchedules(ctx, c.UserID)
 			if err != nil {
@@ -440,7 +484,7 @@ func listRoutines(d Deps) *Tool {
 				var spec struct{ Goal string }
 				_ = json.Unmarshal(s.TaskSpecTemplate, &spec)
 				ids = append(ids, s.ID.String())
-				fmt.Fprintf(&b, "%s | %s | %s | %s | next run %s | goal: %s\n", s.ID, s.Name, state, s.CronExpression, stamp(s.NextRunAt), truncate(spec.Goal, 200))
+				fmt.Fprintf(&b, "%s | %s | %s | %s | next run %s | goal: %s\n", s.ID, s.Name, state, s.CronExpression, stamp(s.NextRunAt), truncate(spec.Goal, 1500))
 			}
 			if len(ids) == 0 {
 				return Output{Text: "The owner has no routines."}, nil
@@ -596,10 +640,11 @@ func runRoutineNow(d Deps) *Tool {
 
 func editRoutine(d Deps) *Tool {
 	return &Tool{
-		Name:        "edit_routine",
-		Description: "Change what a routine does by giving it a new goal (its instructions). The id must come from list_routines.",
-		Effect:      EffectInternal,
-		Schema:      obj(map[string]any{"id": str("routine id from list_routines"), "goal": str("the routine's new goal")}, "id", "goal"),
+		Name: "edit_routine",
+		Description: "Change what a routine does by replacing its goal (its instructions). Use it for 'change the source to X', 'from now on do Y in that routine', 'only look for remote ones', 'also include Z'. " +
+			"The id must come from list_routines. The goal replaces the old one entirely, so write the complete new goal: the current goal from list_routines with the owner's change applied.",
+		Effect: EffectInternal,
+		Schema: obj(map[string]any{"id": str("routine id from list_routines"), "goal": str("the routine's new goal")}, "id", "goal"),
 		Run: func(ctx context.Context, c *Call, raw json.RawMessage) (Output, error) {
 			var a struct{ ID, Goal string }
 			if err := decode(raw, &a); err != nil {
@@ -887,7 +932,7 @@ func startJob() *Tool {
 func noToolFits(d Deps) *Tool {
 	return &Tool{
 		Name:        "no_tool_fits",
-		Description: "Call this when the owner asks for something none of the other tools can do. It records the gap; then tell the owner plainly that you cannot do that yet.",
+		Description: "Last resort: call this only when the owner asks for something that no other tool does at all. Requests to call someone, play music, open things on the laptop, change routines, trackers or listings all have tools, even when a detail such as a name is missing: use that tool. It records the gap; then tell the owner plainly that you cannot do that yet.",
 		Effect:      EffectInternal,
 		Schema:      obj(map[string]any{"request": str("what the owner asked for")}, "request"),
 		Run: func(ctx context.Context, c *Call, raw json.RawMessage) (Output, error) {

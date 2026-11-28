@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -12,10 +13,28 @@ import (
 )
 
 var (
-	callLead  = regexp.MustCompile(`(?i)\b(?:call|phone|dial|ring|voice\s*call|make\s+(?:a\s+)?call\s+to|place\s+(?:a\s+)?call\s+to|automated\s+call\s+to|whatsapp\s+call\s+to|whatsapp\s+call)\s+(?:to\s+)?(?:my\s+)?([A-Za-z0-9+]+)`)
-	callWord  = regexp.MustCompile(`(?i)\b(?:automated\s+call|phone\s+call|cellular\s+call|voice\s+call|whatsapp\s+call|call\s+(?:on|via)\s+whatsapp)\b`)
+	callLead  = regexp.MustCompile(`(?i)\b(?:calling|call|phone|dial|ring|sim\s+call|voice\s*call|make\s+(?:a\s+)?call\s+to|place\s+(?:a\s+)?call\s+to|automated\s+call\s+to|whatsapp\s+call\s+to|whatsapp\s+call)\s+(?:to\s+)?(?:my\s+)?([A-Za-z0-9+]+)`)
+	callWord  = regexp.MustCompile(`(?i)\b(?:automated\s+call|phone\s+call|cellular\s+call|voice\s+call|sim\s+call|whatsapp\s+call|call\s+(?:on|via)\s+whatsapp)\b`)
 	nonCallRe = regexp.MustCompile(`(?i)\b(?:api|function|method|system|rpc|rest|webhook|contract|database|sql)\s+call\b|\bcall\s+stack\b|\bso[- ]called\b|\bcall\s+it\s+a\s+day\b`)
 )
+
+// callFiller are words that follow "call" without naming anyone ("call him instead", "do a normal sim call again").
+var callFiller = map[string]bool{"instead": true, "now": true, "him": true, "her": true, "them": true, "normal": true,
+	"sim": true, "again": true, "back": true, "me": true, "to": true, "my": true, "a": true, "the": true}
+
+// callRecipient is the contact named in a call request: the first word after a call verb that is not filler, or ""
+// when none is named (the caller must then ask, never guess).
+func callRecipient(text string) string {
+	for _, m := range callLead.FindAllStringSubmatch(text, -1) {
+		if w := strings.TrimSpace(m[1]); w != "" && !callFiller[strings.ToLower(w)] {
+			return w
+		}
+	}
+	return ""
+}
+
+// ErrCallRecipientMissing is returned when a call request names nobody; the owner is asked who to call.
+var ErrCallRecipientMissing = errors.New("who should I call? Tell me the contact's name")
 
 // CallChannel represents the transport: cellular SIM or WhatsApp VoIP.
 type CallChannel string
@@ -93,12 +112,7 @@ func extractCallDetails(text string) (target string, message string, channel Cal
 		mode = CallModeAutomatedBg
 	}
 
-	if m := callLead.FindStringSubmatch(text); len(m) > 1 {
-		target = strings.TrimSpace(m[1])
-	}
-	if target == "" {
-		target = "Hiten"
-	}
+	target = callRecipient(text)
 
 	msgPatterns := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\b(?:tell|telling)\s+(?:him|her|them|[A-Za-z0-9+]+)\s+(?:that\s+)?(.*)$`),
@@ -119,7 +133,7 @@ func extractCallDetails(text string) (target string, message string, channel Cal
 		}
 	}
 
-	if message == "" && mode != CallModeDirectTalk {
+	if message == "" && mode != CallModeDirectTalk && target != "" {
 		message = fmt.Sprintf("Hello %s, this is an automated message from Griffin, an assistant calling on behalf of its owner.", target)
 	}
 
@@ -129,6 +143,12 @@ func extractCallDetails(text string) (target string, message string, channel Cal
 // callSteps decomposes a phone call request into a cellular/whatsapp call task.
 func callSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDependency) {
 	target, message, channel, mode, inBackground := extractCallDetails(req.RequestText)
+	return []domain.ChildTaskPlan{BuildCallTask(target, message, channel, mode, inBackground, req.Priority)}, nil
+}
+
+// BuildCallTask is the one task shape for a phone call: the phone resolves the contact name and asks the owner
+// before dialling.
+func BuildCallTask(target, message string, channel CallChannel, mode CallMode, inBackground bool, priority domain.TaskPriority) domain.ChildTaskPlan {
 	callID := uuid.New().String()
 	action := "automated_call"
 	if mode == CallModeDirectTalk {
@@ -137,7 +157,6 @@ func callSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDe
 	if channel == CallChannelWhatsApp {
 		action = "whatsapp_call"
 	}
-
 	inputJSON, _ := json.Marshal(map[string]any{
 		"requires": []string{domain.HostCapCalls},
 		"phone": map[string]any{
@@ -175,16 +194,20 @@ func callSteps(req *domain.UserRequest) ([]domain.ChildTaskPlan, []domain.PlanDe
 		goal = fmt.Sprintf("Open %s call to %s for owner to speak directly", strings.ToLower(channelTitle), target)
 	}
 
-	return []domain.ChildTaskPlan{
-		{
-			Key:                  "cellular_call",
-			Title:                title,
-			Goal:                 goal,
-			ManagerDomain:        "personal_ops",
-			WorkerKey:            "cellular_caller",
-			InputPayload:         inputJSON,
-			Priority:             req.Priority,
-			CapabilitiesRequired: []string{domain.HostCapCalls},
-		},
-	}, nil
+	return domain.ChildTaskPlan{
+		Key:                  "cellular_call",
+		Title:                title,
+		Goal:                 goal,
+		ManagerDomain:        "personal_ops",
+		WorkerKey:            "cellular_caller",
+		InputPayload:         inputJSON,
+		Priority:             priority,
+		CapabilitiesRequired: []string{domain.HostCapCalls},
+	}
+}
+
+// ValidCallContact reports whether a name can be called: it is a real name or number, not a filler word.
+func ValidCallContact(name string) bool {
+	n := strings.TrimSpace(name)
+	return n != "" && !callFiller[strings.ToLower(n)]
 }
