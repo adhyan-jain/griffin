@@ -1,5 +1,7 @@
 # Plan: Antigravity (agy) becomes JJ's brain, plus finishing and testing everything
 
+> **Absorbed** into `docs/plans/2026-11-28-griffin-v2-rfc.md` as Phase 0. The brain order there is EC2 agy, then laptop agy, then the Gemini API. Where the two differ, the RFC wins. Sections 1 (rules), 5 (device tests), 6 (harness) and 7 (deploy) still apply.
+
 - **Date:** 2026-11-28
 - **Implementer:** Antigravity (agy), working in this repo
 - **Reviewer:** the owner and Claude
